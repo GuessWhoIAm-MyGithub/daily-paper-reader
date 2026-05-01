@@ -89,6 +89,20 @@ window.PrivateDiscussionChat = (function () {
       stream: true,
     };
   };
+  const buildChatRequest = (options) => {
+    const utils = window.DPRLLMConfigUtils || {};
+    if (typeof utils.buildChatRequest === 'function') {
+      return utils.buildChatRequest(options);
+    }
+    return null;
+  };
+  const extractChatResponseText = (data, requestFormat) => {
+    const utils = window.DPRLLMConfigUtils || {};
+    if (typeof utils.extractChatResponseText === 'function') {
+      return utils.extractChatResponseText(data, requestFormat);
+    }
+    return '';
+  };
 
   let chatDbPromise = null;
 
@@ -1021,24 +1035,9 @@ window.PrivateDiscussionChat = (function () {
       return;
     }
 
-    const endpoint = (() => {
-      const raw = (modelEntry && modelEntry.baseUrl ? modelEntry.baseUrl : '').trim();
-      if (!raw) return '';
-      if (
-        window.DPRLLMConfigUtils &&
-        typeof window.DPRLLMConfigUtils.buildChatCompletionsEndpoint === 'function'
-      ) {
-        return window.DPRLLMConfigUtils.buildChatCompletionsEndpoint(raw);
-      }
-      if (raw.includes('/chat/completions')) return raw;
-      const normalized = raw.replace(/\/+$/, '');
-      if (/\/v\d+$/i.test(normalized)) {
-        return `${normalized}/chat/completions`;
-      }
-      return `${normalized}/v1/chat/completions`;
-    })();
+    const requestFormat = (modelEntry && modelEntry.requestFormat ? modelEntry.requestFormat : '').trim();
 
-    if (!endpoint) {
+    if (!(modelEntry && modelEntry.baseUrl)) {
       aiAnswerDiv.textContent = '当前模型配置缺少 baseUrl。';
       if (statusEl) {
         statusEl.textContent = 'Chat 模型配置缺少 baseUrl，请在配置页修正。';
@@ -1165,22 +1164,35 @@ window.PrivateDiscussionChat = (function () {
 
       const baseUrl = (modelEntry && modelEntry.baseUrl ? modelEntry.baseUrl : '').trim();
       const chatProfile = inferChatApiProfile(baseUrl, model);
-      const primaryPayload = buildStreamingChatPayload(baseUrl, model, messages);
-      const fallbackPayload = {
+      const request = buildChatRequest({
+        requestFormat,
+        baseUrl,
+        apiKey,
         model,
         messages,
         stream: true,
-      };
+      });
+      if (!request || !request.endpoint) {
+        throw new Error('当前模型配置无法构造请求，请检查 request_format / base_url。');
+      }
+      const primaryPayload = request.body || buildStreamingChatPayload(baseUrl, model, messages);
+      const fallbackPayload = request.requestFormat === 'anthropic'
+        ? {
+            ...primaryPayload,
+            system: primaryPayload.system || undefined,
+          }
+        : {
+            model,
+            messages,
+            stream: true,
+          };
 
-      const doChatFetch = async (payload) => fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          signal: controller.signal,
-          body: JSON.stringify(payload),
-        });
+      const doChatFetch = async (payload) => fetch(request.endpoint, {
+        method: 'POST',
+        headers: request.headers,
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      });
 
       try {
         resp = await doChatFetch(primaryPayload);
@@ -1240,14 +1252,7 @@ window.PrivateDiscussionChat = (function () {
       if (!resp.body) {
         // 回退：如果不支持流，则按一次性响应处理
         const data = await resp.json();
-        const answer =
-          data &&
-          data.choices &&
-          data.choices[0] &&
-          data.choices[0].message &&
-          data.choices[0].message.content
-            ? data.choices[0].message.content
-            : '（模型未返回内容）';
+        const answer = extractChatResponseText(data, request.requestFormat) || '（模型未返回内容）';
         answerBuffer = answer;
         scheduleRender();
       } else {
@@ -1264,33 +1269,61 @@ window.PrivateDiscussionChat = (function () {
           buffer = parts.pop() || '';
 
           for (const part of parts) {
-            const line = part.trim();
-            if (!line || !line.startsWith('data:')) continue;
-            const jsonStr = line.replace(/^data:\s*/, '');
-            if (jsonStr === '[DONE]') continue;
-            let payload;
-            try {
-              payload = JSON.parse(jsonStr);
-            } catch {
-              continue;
-            }
-            const choice =
-              payload.choices && payload.choices[0]
-                ? payload.choices[0]
-                : null;
-            const delta = choice ? choice.delta || {} : {};
-            const reasoning =
-              delta.reasoning_content || delta.thinking || '';
-            const contentPiece = delta.content || '';
+            const lines = part
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean);
+            let eventName = 'message';
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                eventName = line.replace(/^event:\s*/, '') || 'message';
+                continue;
+              }
+              if (!line.startsWith('data:')) continue;
+              const jsonStr = line.replace(/^data:\s*/, '');
+              if (jsonStr === '[DONE]') continue;
+              let payload;
+              try {
+                payload = JSON.parse(jsonStr);
+              } catch {
+                continue;
+              }
 
-            if (reasoning) {
-              thinkingBuffer += reasoning;
-            }
-            if (contentPiece) {
-              answerBuffer += contentPiece;
-            }
-            if (reasoning || contentPiece) {
-              scheduleRender();
+              let reasoning = '';
+              let contentPiece = '';
+              if (request.requestFormat === 'anthropic') {
+                if (eventName === 'content_block_delta') {
+                  const delta = payload.delta || {};
+                  if (delta.type === 'text_delta') {
+                    contentPiece = delta.text || '';
+                  } else if (delta.type === 'thinking_delta') {
+                    reasoning = delta.thinking || '';
+                  }
+                } else if (eventName === 'message_delta') {
+                  const delta = payload.delta || {};
+                  if (delta.stop_reason === 'max_tokens') {
+                    contentPiece = '';
+                  }
+                }
+              } else {
+                const choice =
+                  payload.choices && payload.choices[0]
+                    ? payload.choices[0]
+                    : null;
+                const delta = choice ? choice.delta || {} : {};
+                reasoning = delta.reasoning_content || delta.thinking || '';
+                contentPiece = delta.content || '';
+              }
+
+              if (reasoning) {
+                thinkingBuffer += reasoning;
+              }
+              if (contentPiece) {
+                answerBuffer += contentPiece;
+              }
+              if (reasoning || contentPiece) {
+                scheduleRender();
+              }
             }
           }
         }
@@ -1475,7 +1508,7 @@ window.PrivateDiscussionChat = (function () {
         }
         if (!names.length && status) {
           status.textContent =
-            '未检测到可用 Chat 模型，请在新配置指引中配置 chatLLMs。';
+            '未检测到可用 Chat 模型，请在新配置指引中补全 llm.models.chat。';
           status.style.color = '#c00';
         }
 

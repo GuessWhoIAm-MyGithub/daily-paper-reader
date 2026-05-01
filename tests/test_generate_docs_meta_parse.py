@@ -21,12 +21,24 @@ class GenerateDocsMetaParseTest(unittest.TestCase):
 
             llm_stub = types.ModuleType("llm")
 
-            class DummyBltClient:
+            class DummyLLMClient:
                 def __init__(self, *args, **kwargs):
                     pass
 
-            llm_stub.BltClient = DummyBltClient
+            class DummyFactory:
+                @staticmethod
+                def from_config(*args, **kwargs):
+                    return DummyLLMClient()
+
+            llm_stub.BaseLLMClient = DummyLLMClient
+            llm_stub.ClientFactory = DummyFactory
             sys.modules["llm"] = llm_stub
+        if "paper_figures" not in sys.modules:
+            import types
+
+            figures_stub = types.ModuleType("paper_figures")
+            figures_stub.ensure_paper_figures = lambda **kwargs: []
+            sys.modules["paper_figures"] = figures_stub
 
         src_path = root / "src" / "6.generate_docs.py"
         spec = importlib.util.spec_from_file_location("gen6_mod", src_path)

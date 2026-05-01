@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # 自动补全 config.yaml 中的 related / rewrite 字段：
-# - keywords 缺少 related 时，调用 BLT gpt-4o-mini 生成相关词
-# - llm_queries 缺少 rewrite 时，调用 BLT gpt-4o-mini 生成英文改写
+# - keywords 缺少 related 时，调用统一 LLM 配置生成相关词
+# - llm_queries 缺少 rewrite 时，调用统一 LLM 配置生成英文改写
 
 import os
 import json
@@ -10,12 +10,12 @@ from typing import Any, Dict, List
 
 import yaml  # type: ignore
 
-from llm import BltClient
+from llm import BaseLLMClient, ClientFactory
 
 SCRIPT_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "config.yaml"))
 
-MODEL_NAME = os.getenv("BLT_REWRITE_MODEL", "gemini-3-flash-preview")
+MODEL_NAME = os.getenv("LLM_ENRICH_MODEL", "gpt-4.1-mini")
 
 def log(message: str) -> None:
   ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -106,7 +106,7 @@ def build_rewrite_prompt(query: str) -> List[Dict[str, str]]:
   ]
 
 
-def call_llm_json(client: BltClient, messages: List[Dict[str, str]], schema_name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+def call_llm_json(client: BaseLLMClient, messages: List[Dict[str, str]], schema_name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
   resp = client.chat_structured(
     messages,
     schema_name=schema_name,
@@ -140,9 +140,8 @@ def main() -> None:
     if not os.path.exists(CONFIG_FILE):
         raise FileNotFoundError(f"找不到 config.yaml：{CONFIG_FILE}")
 
-    api_key = os.getenv("BLT_API_KEY")
-    if not api_key:
-        raise RuntimeError("缺少 BLT_API_KEY 环境变量，无法调用 BLT。")
+    if not str(os.getenv("LLM_API_KEY") or "").strip():
+        raise RuntimeError("缺少 LLM_API_KEY 环境变量，无法调用统一 LLM 配置。")
 
     group_start("Step 0.0 - load config")
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -153,7 +152,14 @@ def main() -> None:
     keywords = subs.get("keywords") or []
     llm_queries = subs.get("llm_queries") or []
 
-    client = BltClient(api_key=api_key, model=MODEL_NAME)
+    client = ClientFactory.from_config(
+      {
+        "request_format": os.getenv("LLM_REQUEST_FORMAT"),
+        "base_url": os.getenv("LLM_BASE_URL"),
+        "api_key": os.getenv("LLM_API_KEY"),
+        "model": MODEL_NAME,
+      }
+    )
 
     related_schema = {
       "type": "object",

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from llm import LLMClient
+from llm import AnthropicClient, ClientFactory, LLMClient
 
 
 class LlmBaseUrlTest(unittest.TestCase):
@@ -77,6 +77,40 @@ class LlmBaseUrlTest(unittest.TestCase):
             mock_post.call_args.args[0],
             "https://api.openai.com/v1/chat/completions",
         )
+
+    @patch("llm.requests.post")
+    def test_anthropic_chat_uses_messages_endpoint(self, mock_post):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {
+            "content": [{"type": "text", "text": "ok"}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "stop_reason": "end_turn",
+        }
+        mock_post.return_value = resp
+        client = AnthropicClient(
+            api_key="test-key",
+            model="claude-sonnet-4-20250514",
+            base_url="https://api.anthropic.com/v1",
+        )
+
+        client.chat([{"role": "user", "content": "hello"}])
+
+        self.assertEqual(
+            mock_post.call_args.args[0],
+            "https://api.anthropic.com/v1/messages",
+        )
+
+    def test_client_factory_builds_anthropic_client(self):
+        client = ClientFactory.from_config(
+            {
+                "request_format": "anthropic",
+                "base_url": "https://api.anthropic.com/v1",
+                "api_key": "test-key",
+                "model": "claude-sonnet-4-20250514",
+            }
+        )
+        self.assertIsInstance(client, AnthropicClient)
 
 
 if __name__ == "__main__":

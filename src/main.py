@@ -25,7 +25,6 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.yaml")
 LONG_RANGE_DAYS_THRESHOLD = 10
 MAIN_DEFAULT_DAYS = 9
 SKIMS_FETCH_DAYS_THRESHOLD = 11
-BLT_PROVIDER_BASE_KEYWORDS = ("bltcy.ai", "gptbest.vip", "blt", "gptbest")
 
 
 def run_step(label: str, args: list[str], env: dict[str, str] | None = None) -> None:
@@ -188,25 +187,6 @@ def _read_env_text(*names: str) -> str:
     return ""
 
 
-def _looks_like_blt_base(base_url: str) -> bool:
-    lowered = str(base_url or "").strip().lower()
-    return any(keyword in lowered for keyword in BLT_PROVIDER_BASE_KEYWORDS)
-
-
-def should_skip_rerank() -> tuple[bool, str]:
-    primary_base = _read_env_text(
-        "LLM_PRIMARY_BASE_URL",
-        "BLT_PRIMARY_BASE_URL",
-        "GPTBEST_BASE_URL",
-        "BLT_API_BASE",
-    )
-    if not primary_base:
-        return False, ""
-    if _looks_like_blt_base(primary_base):
-        return False, primary_base
-    return True, primary_base
-
-
 def score_to_stars(score: float) -> int:
     if score >= 0.9:
         return 5
@@ -300,20 +280,7 @@ def prepare_rerank_fallback(input_path: str, output_path: str) -> bool:
 
 
 def resolve_summary_step_env() -> dict[str, str]:
-    env = os.environ.copy()
-    summary_api_key = _read_env_text("SUMMARY_API_KEY", "BLT_SUMMARY_API_KEY")
-    summary_base_url = _read_env_text("SUMMARY_BASE_URL", "BLT_SUMMARY_BASE_URL")
-    summary_model = _read_env_text("SUMMARY_MODEL", "BLT_SUMMARY_MODEL")
-
-    if summary_api_key:
-        env["BLT_API_KEY"] = summary_api_key
-    if summary_base_url:
-        env["LLM_PRIMARY_BASE_URL"] = summary_base_url
-        env["BLT_PRIMARY_BASE_URL"] = summary_base_url
-        env["BLT_API_BASE"] = summary_base_url
-    if summary_model:
-        env["BLT_SUMMARY_MODEL"] = summary_model
-    return env
+    return os.environ.copy()
 
 
 def build_paper_index(papers: Any, trace_set: set[str]) -> dict[str, dict[str, Any]]:
@@ -693,19 +660,10 @@ def main() -> None:
     )
     if trace_ids:
         print_trace_retrieval("RRF", rrf_path, trace_ids)
-    skip_rerank, rerank_base = should_skip_rerank()
-    if skip_rerank:
-        print(
-            f"[INFO] Step 3 - Rerank 已跳过：当前主 LLM base 不属于柏拉图/BLT，"
-            f"缺少稳定 /rerank 能力。base={rerank_base}",
-            flush=True,
-        )
-        prepare_rerank_fallback(rrf_path, rerank_path)
-    else:
-        run_step(
-            "Step 3 - Rerank",
-            [python, os.path.join(SRC_DIR, "3.rank_papers.py")],
-        )
+    run_step(
+        "Step 3 - Rerank",
+        [python, os.path.join(SRC_DIR, "3.rank_papers.py")],
+    )
     if trace_ids:
         print_trace_retrieval("RERANK", rerank_path, trace_ids)
     run_step(

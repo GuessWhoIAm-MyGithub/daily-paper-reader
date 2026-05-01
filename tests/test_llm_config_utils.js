@@ -2,8 +2,11 @@ const assert = require('node:assert/strict');
 
 const {
   normalizeBaseUrlForStorage,
+  buildRequestEndpoint,
   buildChatCompletionsEndpoint,
   sanitizeModelList,
+  migrateLegacySecret,
+  resolveLLMConfig,
   resolveChatModels,
   resolveSummaryLLM,
   inferProviderType,
@@ -12,6 +15,8 @@ const {
   shouldUseXApiKeyHeader,
   buildStreamingChatPayload,
   buildConnectivityTestPayload,
+  buildChatRequest,
+  extractChatResponseText,
 } = require('../app/llm-config-utils.js');
 
 function testNormalizeBaseUrlForStorage() {
@@ -20,19 +25,19 @@ function testNormalizeBaseUrlForStorage() {
     'https://api.example.com/v1',
   );
   assert.equal(
-    normalizeBaseUrlForStorage('https://api.example.com/v1/'),
-    'https://api.example.com/v1',
+    normalizeBaseUrlForStorage('https://api.anthropic.com/v1/messages'),
+    'https://api.anthropic.com/v1',
   );
 }
 
-function testBuildChatCompletionsEndpoint() {
+function testBuildRequestEndpoint() {
   assert.equal(
     buildChatCompletionsEndpoint('https://api.example.com/v1'),
     'https://api.example.com/v1/chat/completions',
   );
   assert.equal(
-    buildChatCompletionsEndpoint('https://api.example.com/custom-root'),
-    'https://api.example.com/custom-root/v1/chat/completions',
+    buildRequestEndpoint('https://api.anthropic.com/v1', 'anthropic'),
+    'https://api.anthropic.com/v1/messages',
   );
 }
 
@@ -43,92 +48,95 @@ function testSanitizeModelList() {
   );
 }
 
-function testResolveChatModelsAndSummary() {
+function testResolveUnifiedSecret() {
   const secret = {
+    llm: {
+      request_format: 'openai',
+      base_url: 'https://api.example.com/v1',
+      api_key: 'sk-unified',
+      models: {
+        chat: ['gpt-4.1-mini', 'claude-sonnet-4'],
+        enrich: 'gpt-4.1-mini',
+        refine: 'gpt-4.1-mini',
+        summary: 'gpt-4.1',
+        rerank: 'gpt-4.1-mini',
+      },
+    },
+  };
+
+  const llm = resolveLLMConfig(secret);
+  assert.equal(llm.requestFormat, 'openai');
+  assert.equal(llm.models.summary, 'gpt-4.1');
+
+  const chatModels = resolveChatModels(secret);
+  assert.equal(chatModels.length, 2);
+  assert.equal(chatModels[0].requestFormat, 'openai');
+
+  const summary = resolveSummaryLLM(secret);
+  assert.equal(summary.model, 'gpt-4.1');
+}
+
+function testMigrateLegacySecret() {
+  const migrated = migrateLegacySecret({
     summarizedLLM: {
       apiKey: 'sk-summary',
-      baseUrl: 'https://api.example.com/v1',
-      model: 'gpt-4.1-mini',
+      baseUrl: 'https://api.bltcy.ai/v1',
+      model: 'gpt-5-chat',
+    },
+    rerankerLLM: {
+      apiKey: 'sk-summary',
+      baseUrl: 'https://api.bltcy.ai/v1',
+      model: 'qwen3-reranker-4b',
     },
     chatLLMs: [
       {
         apiKey: 'sk-chat',
-        baseUrl: 'https://api.example.com/v1/',
-        models: ['gpt-4.1-mini', 'claude-sonnet-4'],
+        baseUrl: 'https://api.bltcy.ai/v1',
+        models: ['gpt-5-chat', 'deepseek-v3.2'],
       },
     ],
-  };
+  });
 
-  const chatModels = resolveChatModels(secret);
-  assert.equal(chatModels.length, 2);
-  assert.deepEqual(chatModels.map((item) => item.name), [
-    'gpt-4.1-mini',
-    'claude-sonnet-4',
-  ]);
-
-  const summary = resolveSummaryLLM(secret);
-  assert.equal(summary.model, 'gpt-4.1-mini');
-  assert.equal(summary.baseUrl, 'https://api.example.com/v1');
+  assert.equal(migrated.llm.request_format, 'openai');
+  assert.equal(migrated.llm.base_url, 'https://api.bltcy.ai/v1');
+  assert.deepEqual(migrated.llm.models.chat, ['gpt-5-chat', 'deepseek-v3.2']);
+  assert.equal(migrated.llm.models.rerank, 'qwen3-reranker-4b');
 }
 
 function testInferProviderType() {
   assert.equal(
     inferProviderType({
-      summarizedLLM: {
-        apiKey: 'sk',
-        baseUrl: 'https://api.bltcy.ai/v1',
-        model: 'gemini-3-flash-preview-thinking-1000',
+      llm: {
+        request_format: 'anthropic',
+        base_url: 'https://api.anthropic.com/v1',
+        api_key: 'sk',
+        models: { chat: ['claude-sonnet-4'], summary: 'claude-sonnet-4' },
       },
     }),
-    'plato',
+    'anthropic',
   );
   assert.equal(
     inferProviderType({
-      summarizedLLM: {
-        apiKey: 'sk',
-        baseUrl: 'https://api.openai.com/v1',
-        model: 'gpt-4.1-mini',
+      llm: {
+        request_format: 'openai',
+        base_url: 'https://api.openai.com/v1',
+        api_key: 'sk',
+        models: { chat: ['gpt-4.1-mini'], summary: 'gpt-4.1-mini' },
       },
     }),
     'openai-compatible',
   );
 }
 
-function testGetOpenAICompatiblePreset() {
+function testGetPreset() {
   assert.deepEqual(
-    getOpenAICompatiblePreset('deepseek'),
+    getOpenAICompatiblePreset('anthropic'),
     {
-      key: 'deepseek',
-      label: 'DeepSeek 官方',
-      baseUrl: 'https://api.deepseek.com',
-      models: ['deepseek-chat', 'deepseek-reasoner'],
-    },
-  );
-  assert.deepEqual(
-    getOpenAICompatiblePreset('glm'),
-    {
-      key: 'glm',
-      label: 'GLM Coding Plan',
-      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-      models: ['GLM-4.7', 'GLM-5', 'GLM-4.6'],
-    },
-  );
-  assert.deepEqual(
-    getOpenAICompatiblePreset('minimax'),
-    {
-      key: 'minimax',
-      label: 'MiniMax Coding Plan',
-      baseUrl: 'https://api.minimaxi.com/v1',
-      models: ['MiniMax-M2.5', 'MiniMax-M2.7', 'MiniMax-M2.1'],
-    },
-  );
-  assert.deepEqual(
-    getOpenAICompatiblePreset('kimi'),
-    {
-      key: 'kimi',
-      label: 'Kimi 编程预设',
-      baseUrl: 'https://api.moonshot.ai/v1',
-      models: ['kimi-k2.5', 'kimi-k2-turbo-preview', 'kimi-k2-thinking'],
+      key: 'anthropic',
+      label: 'Anthropic 官方',
+      requestFormat: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      models: ['claude-sonnet-4-20250514', 'claude-3-7-sonnet-latest'],
     },
   );
 }
@@ -139,8 +147,8 @@ function testInferChatApiProfile() {
     'deepseek',
   );
   assert.equal(
-    inferChatApiProfile('https://api.bltcy.ai/v1', 'gpt-5-chat'),
-    'plato',
+    inferChatApiProfile('https://api.anthropic.com/v1', 'claude-sonnet-4-20250514'),
+    'anthropic',
   );
   assert.equal(
     inferChatApiProfile('https://api.openai.com/v1', 'gpt-4.1-mini'),
@@ -168,19 +176,7 @@ function testShouldUseXApiKeyHeader() {
 function testBuildStreamingChatPayload() {
   assert.deepEqual(
     buildStreamingChatPayload({
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-chat',
-      messages: [{ role: 'user', content: 'hi' }],
-    }),
-    {
-      model: 'deepseek-chat',
-      messages: [{ role: 'user', content: 'hi' }],
-      stream: true,
-    },
-  );
-
-  assert.deepEqual(
-    buildStreamingChatPayload({
+      requestFormat: 'openai',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-reasoner',
       messages: [{ role: 'user', content: 'hi' }],
@@ -195,16 +191,20 @@ function testBuildStreamingChatPayload() {
 
   assert.deepEqual(
     buildStreamingChatPayload({
-      baseUrl: 'https://api.bltcy.ai/v1',
-      model: 'gpt-5-chat',
-      messages: [{ role: 'user', content: 'hi' }],
+      requestFormat: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-20250514',
+      messages: [
+        { role: 'system', content: 'Only answer briefly.' },
+        { role: 'user', content: 'hi' },
+      ],
     }),
     {
-      model: 'gpt-5-chat',
+      model: 'claude-sonnet-4-20250514',
       messages: [{ role: 'user', content: 'hi' }],
       stream: true,
-      reasoning: { effort: 'medium' },
-      extra_body: { return_reasoning: true },
+      max_tokens: 4096,
+      system: 'Only answer briefly.',
     },
   );
 }
@@ -212,65 +212,90 @@ function testBuildStreamingChatPayload() {
 function testBuildConnectivityTestPayload() {
   assert.deepEqual(
     buildConnectivityTestPayload({
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-reasoner',
+      requestFormat: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-20250514',
     }),
     {
-      model: 'deepseek-reasoner',
+      model: 'claude-sonnet-4-20250514',
+      system: 'Reply with exactly: hello world',
       messages: [
-        { role: 'system', content: 'Reply with exactly: hello world' },
         { role: 'user', content: 'hello world' },
       ],
       temperature: 0,
       max_tokens: 256,
-      max_completion_tokens: 256,
-      thinking: { type: 'disabled' },
-    },
-  );
-
-  assert.deepEqual(
-    buildConnectivityTestPayload({
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-chat',
-    }),
-    {
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: 'Reply with exactly: hello world' },
-        { role: 'user', content: 'hello world' },
-      ],
-      temperature: 0,
-      max_tokens: 256,
-    },
-  );
-
-  assert.deepEqual(
-    buildConnectivityTestPayload({
-      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-      model: 'GLM-4.7',
-    }),
-    {
-      model: 'GLM-4.7',
-      messages: [
-        { role: 'system', content: 'Reply with exactly: hello world' },
-        { role: 'user', content: 'hello world' },
-      ],
-      temperature: 0,
-      max_tokens: 256,
-      max_completion_tokens: 256,
     },
   );
 }
 
+function testBuildChatRequest() {
+  const openaiRequest = buildChatRequest({
+    requestFormat: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: 'sk-openai',
+    model: 'gpt-4.1-mini',
+    messages: [{ role: 'user', content: 'hi' }],
+    stream: false,
+    temperature: 0,
+    maxTokens: 256,
+    responseFormat: { type: 'json_object' },
+  });
+  assert.equal(openaiRequest.endpoint, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(openaiRequest.headers.Authorization, 'Bearer sk-openai');
+  assert.equal(openaiRequest.body.response_format.type, 'json_object');
+
+  const anthropicRequest = buildChatRequest({
+    requestFormat: 'anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    apiKey: 'sk-anthropic',
+    model: 'claude-sonnet-4-20250514',
+    messages: [
+      { role: 'system', content: 'Only JSON.' },
+      { role: 'user', content: 'hi' },
+    ],
+    stream: false,
+    temperature: 0,
+    maxTokens: 256,
+    responseFormat: { type: 'json_object' },
+  });
+  assert.equal(anthropicRequest.endpoint, 'https://api.anthropic.com/v1/messages');
+  assert.equal(anthropicRequest.headers['x-api-key'], 'sk-anthropic');
+  assert.equal(anthropicRequest.body.system.includes('Only JSON.'), true);
+}
+
+function testExtractChatResponseText() {
+  assert.equal(
+    extractChatResponseText(
+      {
+        choices: [{ message: { content: 'hello openai' } }],
+      },
+      'openai',
+    ),
+    'hello openai',
+  );
+  assert.equal(
+    extractChatResponseText(
+      {
+        content: [{ type: 'text', text: 'hello anthropic' }],
+      },
+      'anthropic',
+    ),
+    'hello anthropic',
+  );
+}
+
 testNormalizeBaseUrlForStorage();
-testBuildChatCompletionsEndpoint();
+testBuildRequestEndpoint();
 testSanitizeModelList();
-testResolveChatModelsAndSummary();
+testResolveUnifiedSecret();
+testMigrateLegacySecret();
 testInferProviderType();
-testGetOpenAICompatiblePreset();
+testGetPreset();
 testInferChatApiProfile();
 testShouldUseXApiKeyHeader();
 testBuildStreamingChatPayload();
 testBuildConnectivityTestPayload();
+testBuildChatRequest();
+testExtractChatResponseText();
 
 console.log('llm config utils tests passed');

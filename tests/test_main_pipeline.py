@@ -54,70 +54,39 @@ class MainPipelineTest(unittest.TestCase):
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         return path
 
-    def test_resolve_summary_step_env_uses_summary_overrides(self):
+    def test_resolve_summary_step_env_keeps_unified_llm_env(self):
         with patch.dict(
             os.environ,
             {
-                "BLT_API_KEY": "base-key",
-                "BLT_API_BASE": "https://api.bltcy.ai/v1",
-                "SUMMARY_API_KEY": "summary-key",
-                "SUMMARY_BASE_URL": "https://summary.example.com/v1",
-                "SUMMARY_MODEL": "gpt-4.1-mini",
+                "LLM_REQUEST_FORMAT": "openai",
+                "LLM_BASE_URL": "https://api.openai.com/v1",
+                "LLM_API_KEY": "shared-key",
+                "LLM_SUMMARY_MODEL": "gpt-4.1-mini",
             },
             clear=True,
         ):
             env = self.mod.resolve_summary_step_env()
 
-        self.assertEqual(env["BLT_API_KEY"], "summary-key")
-        self.assertEqual(env["BLT_API_BASE"], "https://summary.example.com/v1")
-        self.assertEqual(env["BLT_PRIMARY_BASE_URL"], "https://summary.example.com/v1")
-        self.assertEqual(env["LLM_PRIMARY_BASE_URL"], "https://summary.example.com/v1")
-        self.assertEqual(env["BLT_SUMMARY_MODEL"], "gpt-4.1-mini")
+        self.assertEqual(env["LLM_REQUEST_FORMAT"], "openai")
+        self.assertEqual(env["LLM_BASE_URL"], "https://api.openai.com/v1")
+        self.assertEqual(env["LLM_API_KEY"], "shared-key")
+        self.assertEqual(env["LLM_SUMMARY_MODEL"], "gpt-4.1-mini")
 
-    def test_main_skips_rerank_for_non_blt_base_and_builds_fallback(self):
+    def test_prepare_rerank_fallback_builds_ranked_from_sim_scores(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            src_dir = root / "src"
-            src_dir.mkdir(parents=True, exist_ok=True)
             token = "20260310"
-            self._write_rrf_input(root, token)
-            calls = []
-
-            def fake_run_step(label, args, env=None):
-                calls.append((label, args, env))
-
-            with patch.object(self.mod, "ROOT_DIR", str(root)), patch.object(
-                self.mod, "SRC_DIR", str(src_dir)
-            ), patch.object(
-                self.mod, "resolve_run_date_token", return_value=token
-            ), patch.object(
-                self.mod, "resolve_sidebar_date_label", return_value=None
-            ), patch.object(
-                self.mod, "parse_trace_ids", return_value=[]
-            ), patch.object(
-                self.mod, "run_step", side_effect=fake_run_step
-            ), patch.object(
-                sys, "argv", ["main.py"]
-            ), patch.dict(
-                os.environ,
-                {"LLM_PRIMARY_BASE_URL": "https://api.openai.com/v1"},
-                clear=True,
-            ):
-                self.mod.main()
-
-            labels = [item[0] for item in calls]
-            self.assertNotIn("Step 3 - Rerank", labels)
-            self.assertIn("Step 4 - LLM refine", labels)
-
+            input_path = self._write_rrf_input(root, token)
             rerank_path = root / "archive" / token / "rank" / f"arxiv_papers_{token}.json"
-            self.assertTrue(rerank_path.exists())
+            ok = self.mod.prepare_rerank_fallback(str(input_path), str(rerank_path))
+            self.assertTrue(ok)
             data = json.loads(rerank_path.read_text(encoding="utf-8"))
             ranked = data["queries"][0]["ranked"]
             self.assertEqual([item["paper_id"] for item in ranked], ["p1", "p2", "p3"])
             self.assertEqual(ranked[0]["star_rating"], 5)
             self.assertGreaterEqual(ranked[1]["star_rating"], ranked[2]["star_rating"])
 
-    def test_main_keeps_rerank_in_blt_mode(self):
+    def test_main_always_runs_rerank_step(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             src_dir = root / "src"
@@ -143,7 +112,7 @@ class MainPipelineTest(unittest.TestCase):
                 sys, "argv", ["main.py"]
             ), patch.dict(
                 os.environ,
-                {"LLM_PRIMARY_BASE_URL": "https://api.bltcy.ai/v1"},
+                {"LLM_BASE_URL": "https://api.openai.com/v1"},
                 clear=True,
             ):
                 self.mod.main()

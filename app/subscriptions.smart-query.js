@@ -465,20 +465,12 @@ window.SubscriptionsSmartQuery = (function () {
 
   const loadLlmConfig = () => {
     const secret = window.decoded_secret_private || {};
-    const summarized = secret.summarizedLLM || {};
-    const baseUrl = normalizeText(summarized.baseUrl || '');
-    const apiKey = normalizeText(summarized.apiKey || '');
-    const model = normalizeText(summarized.model || '');
-    if (baseUrl && apiKey && model) return { baseUrl, apiKey, model };
-
-    const chatLLMs = Array.isArray(secret.chatLLMs) ? secret.chatLLMs : [];
-    if (chatLLMs.length > 0) {
-      const first = chatLLMs[0] || {};
-      const cBase = normalizeText(first.baseUrl || '');
-      const cKey = normalizeText(first.apiKey || '');
-      const models = Array.isArray(first.models) ? first.models : [];
-      const cModel = normalizeText(models[0] || '');
-      if (cBase && cKey && cModel) return { baseUrl: cBase, apiKey: cKey, model: cModel };
+    const utils = window.DPRLLMConfigUtils || {};
+    if (typeof utils.resolveSummaryLLM === 'function') {
+      const resolved = utils.resolveSummaryLLM(secret);
+      if (resolved && resolved.baseUrl && resolved.apiKey && resolved.model) {
+        return resolved;
+      }
     }
     return null;
   };
@@ -785,68 +777,22 @@ window.SubscriptionsSmartQuery = (function () {
     const subs = (cfg && cfg.subscriptions) || {};
     const template = defaultPromptTemplate;
     const prompt = buildPromptFromTemplate(tag, desc, template);
-    const buildEndpoints = () => {
-      const out = [];
-      const pushUnique = (u) => {
-        if (u && !out.includes(u)) out.push(u);
-      };
-      const expandEndpoint = (base) => {
-        const src = normalizeText(base).replace(/\/+$/, '');
-        if (!src) return;
-        if (src.includes('/chat/completions')) {
-          pushUnique(src);
-          pushUnique(src.replace(/\/chat\/completions$/, '/v1/chat/completions'));
-          return;
-        }
-        if (/\/v\d+$/i.test(src)) {
-          pushUnique(`${src}/chat/completions`);
-          pushUnique(`${src}/v1/chat/completions`);
-          return;
-        }
-        pushUnique(`${src}/v1/chat/completions`);
-        pushUnique(`${src}/chat/completions`);
-      };
-
-      expandEndpoint('https://hk-api.gptbest.vip');
-      expandEndpoint('https://api.bltcy.ai');
-
-      const raw = normalizeText(llm.baseUrl);
-      if (!raw) {
-        return out;
-      }
-      expandEndpoint(raw);
-      return out;
-    };
-    const endpoints = buildEndpoints();
-    if (!endpoints.length) {
+    const utils = window.DPRLLMConfigUtils || {};
+    if (!llm.baseUrl) {
       throw new Error('LLM 配置缺少 baseUrl。');
     }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120000);
-    const requestPayload = ({ useResponseFormat = true, includeTools = true }) => {
-      const payload = {
-        model: llm.model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a retrieval planning assistant and can only return valid JSON. '
-              + 'The response must be fully based on the current user input and must not reference prior conversation history.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.1,
-      };
-      if (includeTools) {
-        payload.tools = [];
-        payload.tool_choice = 'none';
-      }
-      if (useResponseFormat) {
-        payload.response_format = { type: 'json_object' };
-      }
-      return payload;
-    };
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are a retrieval planning assistant and can only return valid JSON. '
+          + 'The response must be fully based on the current user input and must not reference prior conversation history.',
+      },
+      { role: 'user', content: prompt },
+    ];
 
     const textSafeFromError = (e) => {
       if (!e) return '';
@@ -854,19 +800,31 @@ window.SubscriptionsSmartQuery = (function () {
       return '';
     };
 
-    const doFetch = async (
-      endpoint,
-      options = { useResponseFormat: true, includeTools: true },
-    ) => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${llm.apiKey}`,
-      };
-      return fetch(endpoint, {
+    const buildRequest = (responseFormat) => {
+      if (typeof utils.buildChatRequest !== 'function') {
+        return null;
+      }
+      return utils.buildChatRequest({
+        requestFormat: llm.requestFormat,
+        baseUrl: llm.baseUrl,
+        apiKey: llm.apiKey,
+        model: llm.model,
+        messages,
+        stream: false,
+        temperature: 0.1,
+        maxTokens: 3000,
+        responseFormat,
+      });
+    };
+
+    const doFetch = async (request) => {
+      if (!request || !request.endpoint) {
+        throw new Error('无法构造 LLM 请求，请检查 request_format 与 base_url。');
+      }
+      return fetch(request.endpoint, {
         method: 'POST',
-        headers,
-        body: JSON.stringify(requestPayload(options)),
+        headers: request.headers,
+        body: JSON.stringify(request.body),
         signal: controller.signal,
       });
     };
@@ -875,54 +833,28 @@ window.SubscriptionsSmartQuery = (function () {
     let errorText = '';
     let fetchError = '';
     try {
-      for (let i = 0; i < endpoints.length; i++) {
-        const endpoint = endpoints[i];
-        try {
-          let current = null;
-          let txt = '';
-          current = await doFetch(endpoint, {
-            useResponseFormat: true,
-            includeTools: true,
-          });
-          if (current && !current.ok) {
-            txt = await current.text().catch(() => '');
-            if (current.status === 400 && /response[\s-]*format|json_object/i.test(txt)) {
-              current = await doFetch(endpoint, {
-                useResponseFormat: false,
-                includeTools: true,
-              });
-            }
-            if (current && !current.ok && current.status === 400 && /tool_choice|tools/i.test(txt)) {
-              current = await doFetch(endpoint, {
-                useResponseFormat: false,
-                includeTools: false,
-              });
-            }
-          }
-          if (current && !current.ok) {
-            txt = await current.text().catch(() => '');
-            if (current.status === 400 || current.status === 401 || current.status === 403) {
-              throw new Error(`HTTP ${current.status} ${txt || current.statusText}`);
-            }
-            if (current.status === 429 || current.status >= 500) {
-              errorText = txt;
-              continue;
-            }
+      try {
+        let current = await doFetch(buildRequest({ type: 'json_object' }));
+        if (current && !current.ok) {
+          const txt = await current.text().catch(() => '');
+          if (current.status === 400 && /response[\s-]*format|json_object/i.test(txt)) {
+            current = await doFetch(buildRequest(null));
+          } else {
             errorText = txt;
-            break;
           }
-
-          res = current;
-          break;
-        } catch (e) {
-          fetchError = textSafeFromError(e);
-          if (e && e.name === 'AbortError') {
-            throw new Error('生成超时，请稍后重试。');
+        }
+        if (current && !current.ok) {
+          const txt = errorText || await current.text().catch(() => '');
+          if (current.status === 400 || current.status === 401 || current.status === 403) {
+            throw new Error(`HTTP ${current.status} ${txt || current.statusText}`);
           }
-          if (i < endpoints.length - 1) {
-            // 网络类错误尝试下一个端点
-            continue;
-          }
+          throw new Error(txt || `HTTP ${current.status}`);
+        }
+        res = current;
+      } catch (e) {
+        fetchError = textSafeFromError(e);
+        if (e && e.name === 'AbortError') {
+          throw new Error('生成超时，请稍后重试。');
         }
       }
     } catch (e) {

@@ -68,7 +68,7 @@ class RankGlobalPoolTest(unittest.TestCase):
 
         self.assertEqual(ids, ["p1", "p2", "p3"])
 
-    def test_process_file_reranks_intent_query_on_global_pool(self):
+    def test_process_file_scores_intent_query_on_global_pool(self):
         payload = {
             "generated_at": "2026-03-11T00:00:00+00:00",
             "papers": [
@@ -99,32 +99,46 @@ class RankGlobalPoolTest(unittest.TestCase):
             ],
         }
 
-        class FakeReranker:
-            def rerank(self, **kwargs):
-                documents = kwargs.get("documents") or []
-                self.last_documents = documents
+        class FakeClient:
+            def __init__(self):
+                self.kwargs = {}
+
+            def chat_structured(self, messages, schema_name, schema, strict=True, allow_json_object_fallback=True):
+                prompt = messages[-1]["content"]
+                marker = "Candidate papers:\n"
+                start = prompt.index(marker) + len(marker)
+                end = prompt.index("\n\nReturn exactly one result", start)
+                docs = json.loads(prompt[start:end])
+                results = []
+                for doc in docs:
+                    pid = doc["id"]
+                    if pid == "p1":
+                        score = 9.5
+                    elif pid == "p2":
+                        score = 8.0
+                    else:
+                        score = 2.0
+                    results.append({"id": pid, "score": score, "reason": f"reason-{pid}"})
                 return {
-                    "results": [
-                        {"index": 1, "relevance_score": 0.95},
-                        {"index": 0, "relevance_score": 0.80},
-                    ]
+                    "refusal": "",
+                    "finish_reason": "stop",
+                    "parse_error": None,
+                    "parsed": {"results": results},
                 }
 
-        reranker = FakeReranker()
+        client = FakeClient()
 
         with tempfile.TemporaryDirectory() as tmp:
             input_path = pathlib.Path(tmp) / "input.json"
             output_path = pathlib.Path(tmp) / "output.json"
             input_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-            with patch.object(self.mod.random, "shuffle", side_effect=lambda items: None):
-                self.mod.process_file(
-                    reranker=reranker,
-                    input_path=str(input_path),
-                    output_path=str(output_path),
-                    top_n=None,
-                    rerank_model="fake-model",
-                )
+            self.mod.process_file(
+                client=client,
+                input_path=str(input_path),
+                output_path=str(output_path),
+                top_n=None,
+            )
 
             saved = json.loads(output_path.read_text(encoding="utf-8"))
             queries = saved.get("queries") or []
@@ -132,11 +146,12 @@ class RankGlobalPoolTest(unittest.TestCase):
             self.assertEqual(len(intent_queries), 1)
             ranked = intent_queries[0].get("ranked") or []
             ranked_ids = [item.get("paper_id") for item in ranked]
-            self.assertEqual(ranked_ids, ["p1", "p2"])
+            self.assertEqual(ranked_ids, ["p1", "p2", "p3"])
             self.assertEqual(saved.get("global_candidate_ids"), ["p2", "p1", "p3"])
             self.assertEqual(saved.get("global_pool_lane_top_k"), 30)
             self.assertEqual(saved.get("global_pool_limit"), 60)
             self.assertEqual(saved.get("global_pool_guaranteed_per_lane"), 8)
+            self.assertEqual(ranked[0]["reason"], "reason-p1")
 
 
 if __name__ == "__main__":
