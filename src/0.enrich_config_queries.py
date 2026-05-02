@@ -116,7 +116,7 @@ def call_llm_json(client: BaseLLMClient, messages: List[Dict[str, str]], schema_
   )
   if resp.get("refusal"):
     raise ValueError(f"模型拒绝输出结构化结果：{resp.get('refusal')}")
-  if resp.get("finish_reason") not in (None, "stop"):
+  if resp.get("finish_reason") not in (None, "stop", "end_turn"):
     raise ValueError(f"结构化输出未完成：finish_reason={resp.get('finish_reason')}")
   if resp.get("parse_error") is not None:
     raise ValueError(f"模型未返回合法 JSON：{resp.get('content')}")

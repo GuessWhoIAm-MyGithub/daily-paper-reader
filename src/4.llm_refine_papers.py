@@ -432,7 +432,7 @@ def call_filter(
     try:
         if resp.get("refusal"):
             raise ValueError(f"structured output refusal: {resp.get('refusal')}")
-        if resp.get("finish_reason") not in (None, "stop"):
+        if resp.get("finish_reason") not in (None, "stop", "end_turn"):
             raise ValueError(f"unexpected finish_reason: {resp.get('finish_reason')}")
         if resp.get("parse_error") is not None:
             raise resp["parse_error"]

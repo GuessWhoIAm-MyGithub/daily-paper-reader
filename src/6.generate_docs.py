@@ -92,7 +92,7 @@ def call_llm_structured_json(
     if resp.get("refusal"):
         log(f"[WARN] Structured output refusal: {resp.get('refusal')}")
         return None
-    if resp.get("finish_reason") not in (None, "stop"):
+    if resp.get("finish_reason") not in (None, "stop", "end_turn"):
         log(f"[WARN] Structured output 未完成：finish_reason={resp.get('finish_reason')}")
         return None
     if resp.get("parse_error") is not None:
