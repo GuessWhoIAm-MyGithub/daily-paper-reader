@@ -1,0 +1,408 @@
+Title: Bridging the Micro--Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization
+
+URL Source: https://arxiv.org/pdf/2604.12341v1
+
+Published Time: Wed, 15 Apr 2026 01:17:18 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Bridging the Micro–Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization 
+
+# Xiaojie Liang 
+
+liangxj53@mail2.sysu.edu.cn School of Computer Science and Engineering, Sun Yat-sen University Guangzhou, China 
+
+# Zhimin Chen 
+
+chenzhm56@mail2.sysu.edu.cn School of Computer Science and Engineering, Sun Yat-sen University Guangzhou, China 
+
+# Ziqi Sheng 
+
+shengzq3@mail.sysu.edu.cn School of Computer Science and Engineering, Sun Yat-sen University Guangzhou, China 
+
+# Wei Lu ∗
+
+luwei3@mail.sysu.edu.cn School of Computer Science and Engineering, Sun Yat-sen University Guangzhou, China 
+
+## Abstract 
+
+As generative image editing advances, image manipulation local-ization (IML) must handle both traditional manipulations with con-spicuous forensic artifacts and diffusion-generated edits that appear locally realistic. Existing methods typically rely on either low-level forensic cues or high-level semantics alone, leading to a funda-mental micro–macro gap. To bridge this gap, we propose FASA, a unified framework for localizing both traditional and diffusion-generated manipulations. Specifically, we extract manipulation-sensitive frequency cues through an adaptive dual-band DCT mod-ule and learn manipulation-aware semantic priors via patch-level contrastive alignment on frozen CLIP representations. We then inject these priors into a hierarchical frequency pathway through a semantic-frequency side adapter for multi-scale feature interaction, and employ a prototype-guided, frequency-gated mask decoder to integrate semantic consistency with boundary-aware localization for tampered region prediction. Extensive experiments on OpenSDI and multiple traditional manipulation benchmarks demonstrate state-of-the-art localization performance, strong cross-generator and cross-dataset generalization, and robust performance under common image degradations. 
+
+## CCS Concepts 
+
+• Computing methodologies → Artificial intelligence ; • Se-curity and privacy → Intrusion/anomaly detection and mal-ware mitigation .
+
+## Keywords 
+
+Image forgery detection, image manipulation localization 
+
+## 1 Introduction 
+
+With the rapid advancement of generative models and image editing tools, manipulated images pose growing threats to media credibility and information security [ 19 ]. Image manipulation localization (IML) identifies tampered regions at the pixel level and provides fine-grained forensic evidence. Most existing IML methods [ 12 , 14 , 26 , 27 , 36 – 41 ] have been de-veloped for traditional manipulations such as splicing, copy-move,  
+
+> ∗Corresponding author. Manipulate
+> d
+> Zoomed in Artifacts Manipulate
+> d
+> Zoomed in Artifacts
+
+（a）
+
+（b）
+
+Figure 1: Comparison of manipulation traces. (a) Traditional manipulations leave conspicuous artifacts. (b) Diffusion-generated edits produce locally realistic content with coher-ent low-level statistics. 
+
+and inpainting [ 7]. These manipulations typically disrupt intrinsic image statistics and leave microscopic forensic traces, including ab-normal noise patterns and frequency artifacts. As a result, methods designed to capture such deviations achieve strong performance on traditional manipulation benchmarks. Diffusion-generated edits, however, introduce a substantially different challenge. As shown in Figure 1, diffusion models can produce locally realistic content with coherent low-level statistics while altering image semantics at a higher level. This shift reduces the effectiveness of traditional IML methods and calls for models that can jointly exploit low-level forensic evidence and high-level semantic cues. The challenge has recently become more prominent with the introduction of bench-marks such as OpenSDI [34]. As illustrated in Figure 2, existing methods exhibit a clear ar-chitectural bias. Artifact-driven models struggle with diffusion-generated edits, whereas CLIP-based approaches capture seman-tic information effectively but lack explicit mechanisms for fine-grained frequency modeling. Diffusion models do not eliminate     
+
+> arXiv:2604.12341v1 [cs.CV] 14 Apr 2026 Conference’17, July 2017, Washington, DC, USA Liang et al. SD1.5
+> SD2.1
+> SDXL
+> SD3
+> Flux.1
+> Average
+> 0
+> 20
+> 40
+> 60
+> 80
+> Pixel F1 (%)
+> +4.93%
+> +9.93%
+> +13.62%
+> +12.09%
+> +7.66%
+> +10.05%
+> CAT-Net TruFor MaskCLIP Ours
+
+Figure 2: Localization performance on the OpenSDI bench-mark measured by Pixel F1. The proposed framework con-sistently outperforms previous traditional IML methods, in-cluding CAT-Net and TruFor, as well as the recent diffusion-oriented state-of-the-art method MaskCLIP across all evalu-ated generators. 
+
+frequency cues entirely, since their generation process still intro-duces subtle spectral irregularities through operations such as up-sampling and latent decoding. Frequency cues therefore remain informative in both settings, revealing statistical anomalies in tradi-tional manipulations and generation-induced artifacts in diffusion edits. Most existing methods, however, emphasize either micro-scopic forensic traces or macroscopic semantic inconsistencies in isolation. This separation creates a fundamental micro–macro gap. The key challenge is to align frequency evidence with semantic reasoning in a unified localization framework. We propose FASA (Frequency-Aware Semantic Alignment), a unified framework for localizing both traditional manipulations and diffusion-generated edits. Manipulation-sensitive frequency cues are extracted through an adaptive dual-band DCT decomposition, while multi-scale patch semantics are aggregated from a frozen CLIP [ 24 ] image encoder. A patch-level contrastive alignment strat-egy is introduced to learn discriminative prototypes for authentic and manipulated regions in a shared latent space with text-guided initialization. A semantic-frequency side adapter injects multi-scale semantic priors into hierarchical frequency representations, and a frequency-gated mask decoder uses the optimized fake proto-type as a semantic query to localize statistically suspicious and semantically inconsistent regions. In summary, our main contributions are as follows: 
+
+• We propose FASA, a unified framework that explicitly bridges microscopic frequency cues and macroscopic semantic rea-soning for image manipulation localization across traditional manipulations and diffusion-generated edits. 
+
+• We introduce a dual-level alignment strategy that learns manipulation-aware semantic prototypes through contrastive alignment and integrates them with frequency evidence through prototype-guided decoding. 
+
+• Extensive experiments on both traditional manipulation and diffusion-generated benchmarks demonstrate state-of-the-art performance, strong generalization across settings, and robust localization under common degradations. 
+
+## 2 Related Work 2.1 Image Manipulation Localization 
+
+Early work on image manipulation localization mainly focused on traditional manipulations, which disrupt image statistics and leave local forensic traces. CNN-based methods have long been the dominant approach in this setting. MVSS-Net [ 1 ] improves localization with boundary supervision. CAT-Net [ 10 ] exploits RGB and DCT representations to capture compression artifacts. PSCC-Net [ 13 ] performs progressive coarse-to-fine prediction with spatio-channel correlation modeling. Recent methods increasingly adopt Transformers to model long-range dependencies and global context. ObjectFormer [ 32 ] com-bines RGB and high-frequency features with learnable object pro-totypes. IML-ViT [ 17 ] establishes a pure ViT baseline for IML. TruFor [ 5 ] builds on learned noise-sensitive fingerprints and a transformer-style decoder. SparseViT [ 29 ] promotes manipulation-sensitive non-semantic representations through sparse attention. Mesorch [ 42 ] integrates CNN and Transformer branches across mul-tiple scales. DeCLIP [ 28 ] further shows that frozen CLIP represen-tations can support dense deepfake localization through a learned decoder. Despite strong performance on conventional benchmarks, most of these methods are still tailored to traditional manipulations and often struggle with highly coherent diffusion-generated edits. 
+
+## 2.2 Diffusion-Generated Forensics 
+
+The rise of diffusion models has shifted visual forensics toward AI-generated content. Most existing studies focus on image-level detection rather than pixel-level localization. CNNDet [ 33 ] and GramNet [16] rely on CNN-based representations and texture sta-tistics, while FreqNet [ 30 ] emphasizes frequency-domain artifacts. More recent methods improve cross-generator generalization with pretrained vision-language models. UniFD [ 22 ] uses CLIP represen-tations with lightweight classifiers, and RINE [ 9 ] exploits interme-diate encoder-block features for synthetic image detection. Pixel-level localization of diffusion-generated edits remains rel-atively underexplored. OpenSDI [ 34 ] introduces an open-world benchmark for detecting and localizing such manipulations, and MaskCLIP [ 34 ] combines CLIP and MAE [ 6] in this setting. Ex-isting diffusion-oriented methods still emphasize either semantic reasoning or generator-specific artifacts, while explicit alignment between semantic priors and fine-grained frequency evidence re-mains limited. This gap motivates FASA, which unifies semantic alignment and frequency-aware localization across both traditional and diffusion-generated manipulations. 
+
+## 3 Proposed Method 3.1 Overview 
+
+Given an input image I, the goal of image manipulation localization is to predict a pixel-wise probability map ˆM, where each value indicates the likelihood that the corresponding spatial location has been manipulated. The proposed framework jointly exploits microscopic frequency evidence and macroscopic semantic priors for both traditional manipulations and diffusion-generated edits. As shown in Figure 3, the proposed framework follows a dual-level alignment paradigm. In the first stage, an Adaptive Dual-Band Bridging the Micro–Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization Conference’17, July 2017, Washington, DC, USA Block 1 
+
+> Block  i
+> Block j
+> Block 24
+
+# … … …                              
+
+> CLIP visual encoder
+> …
+> CLS Token Patch Token
+> Stage 1
+> Stage 2
+> Stage 3
+> Stage 4
+> ConvNeXt
+> 1
+> 4𝐻 ×1
+> 4W1
+> 8𝐻 ×1
+> 8W1
+> 16 𝐻 ×1
+> 16 W1
+> 32 𝐻 ×1
+> 32 W
+> Input Image
+> 𝐻
+> 𝑊
+> 𝐻′
+> 𝑃 ×𝑊′
+> 𝑃
+> 𝑈𝑝𝐶𝑜𝑛𝑣 ↑𝑈𝑝𝐶𝑜𝑛𝑣 ↑𝑈𝑝𝐶𝑜𝑛𝑣 ↑𝑈𝑝𝐶𝑜𝑛𝑣 ↑
+> SF -SA
+> 𝐻′ ×W′
+> 𝑈𝑝𝐶𝑜𝑛𝑣 ↑
+> ADB -DCT
+> IDCT
+> IDCT
+> High Frequency
+> Low Frequency
+> MLP
+> 𝐻  × W
+> ConCat
+> Cross -Attention
+> High Frequency
+> Low Frequency
+> Input Image
+> Gate Network
+> Residual
+> PG -FMD
+
+𝓛 𝓶𝓪𝓼𝓴 
+
+𝓛 𝓮𝓭𝓰𝓮  
+
+> Groundtruth Prediction
+> Self -Attention
+> reshape
+> real prototype
+> fake prototype
+> PSA
+
+𝓛 𝓹𝓬  
+
+> fake prototype
+> Frozen Trainable
+> Macro
+> Micro
+
+Figure 3: Overview of the proposed Frequency-Aware Semantic Alignment (FASA) framework. Given an input image, FASA extracts microscopic frequency features via ADB-DCT and macroscopic semantic priors using a frozen CLIP encoder. To explicitly bridge the fundamental micro–macro gap, the proposed framework employs a coherent dual-level alignment strategy. First, the Patch-Level Semantic Alignment (PSA) module learns discriminative real/fake prototypes to establish manipulation-aware semantic priors in a shared latent space. Second, the Semantic-Frequency Side Adapter (SF-SA) structurally injects these macroscopic priors into the frequency pathway. Finally, the Prototype-Guided Frequency-Gated Mask Decoder (PG-FMD) dynamically fuses the aligned representations, mitigating semantic over-segmentation and delineating precise manipulation boundaries in the final mask. 
+
+DCT module extracts manipulation-sensitive frequency cues, while the Patch-Level Semantic Alignment module derives manipulation-aware semantic priors from a frozen CLIP encoder. In the sec-ond stage, a Semantic-Frequency Side Adapter injects these priors into the hierarchical frequency pathway, and a Prototype-Guided Frequency-Gated Mask Decoder dynamically aggregates the aligned representations to predict the final mask. In this way, microscopic forensic evidence and macroscopic semantic reasoning are inte-grated within a unified localization framework. 
+
+## 3.2 Frequency and Semantic Prior Construction 
+
+The proposed framework is built on a clear division of roles be-tween two complementary branches. The semantic branch provides manipulation-aware priors with strong global context, while the frequency branch preserves localized forensic sensitivity to sub-tle artifacts and boundary variations. Instead of merging these cues only at the final prediction stage, the two branches are con-nected progressively through prototype construction, multi-scale semantic injection, and prototype-guided decoding. This staged interaction allows semantic reasoning to guide localization with-out overwhelming the fine-grained evidence required for precise boundary delineation. 
+
+Adaptive Dual-Band Frequency Decomposition (ADB-DCT). 
+
+Manipulated regions, especially those generated by recent diffu-sion models, often appear visually plausible in the RGB domain while still leaving subtle spectral irregularities. Existing forensic pipelines frequently rely on fixed high-pass filters such as SRM or Laplacian operators. Although effective for exposing specific handcrafted traces, these filters are restricted to predefined fre-quency bands and may miss the diverse artifacts introduced by different editing pipelines and generative mechanisms. For this reason, an adaptive dual-band DCT module is introduced to learn manipulation-sensitive frequency cues in a data-driven manner. The input image is first transformed into the DCT domain and decomposed into high-frequency and low-frequency components: 
+
+Iℎ = IDCT (D ⊙ Mℎ (𝛼 ℎ )) , I𝑙 = IDCT (D ⊙ M𝑙 (𝛼 𝑙 )) , (1) where D = DCT (I), ⊙ denotes element-wise multiplication, and Mℎ
+
+and M𝑙 are sigmoid-based soft masks parameterized by learnable frequency cutoffs 𝛼 ℎ and 𝛼 𝑙 . This continuous formulation approxi-mates hard frequency truncation while preserving differentiability and stable gradient propagation. The high-frequency branch em-phasizes fine-grained forensic traces such as noise inconsistencies and generation artifacts, whereas the low-frequency branch pre-serves coarse structural layout and global content organization. The original RGB image is then concatenated with the two re-constructed frequency components to form a frequency-enhanced representation for the subsequent backbone. 
+
+Patch-Level Semantic Alignment (PSA). In parallel to the frequency branch, macroscopic semantic priors are extracted using a frozen CLIP image encoder. Instead of relying only on the final-layer representation, patch tokens are aggregated from selected intermediate and deep layers so that both local structural cues and high-level semantic information can be retained. Let t𝑙 𝑖 denote the Conference’17, July 2017, Washington, DC, USA Liang et al. 
+
+patch token at spatial location 𝑖 from the 𝑙 -th selected CLIP layer. The tokens from these layers are concatenated and projected into a shared embedding space: 
+
+p𝑖 = W𝑚 
+
+ 
+
+> 𝑙 ∈ S
+
+t𝑙 𝑖 
+
+
+
+, (2) where S denotes the selected layer set and ∥ denotes channel-wise concatenation. To strengthen contextual interaction among patches, the projected token sequence is further refined by a multi-head self-attention module: 
+
+ˆP = MSA (P) + P. (3) The refined tokens are then rearranged into a dense semantic fea-ture map F𝑐 that captures both local visual structure and global semantic coherence. To make this representation explicitly aware of manipulation, a real prototype e𝑟 and a fake prototype e𝑓 are initialized in the shared latent space using CLIP text embeddings generated from prompts such as “an authentic image region” and “a manipulated image region”, and are subsequently optimized during training as task-specific semantic anchors for authentic and manip-ulated regions. A linear projector then maps each patch feature in 
+
+F𝑐 to a visual embedding z𝑖 , and patch-to-prototype alignment is enforced with the following InfoNCE objective: 
+
+L𝑝𝑐 = − 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+log exp (sim (z𝑖 , e𝑦 𝑖 )/ 𝜏 )
+
+Í𝑐 ∈ { 𝑟,𝑓 } exp (sim (z𝑖 , e𝑐 )/ 𝜏 ) , (4) where 𝑦 𝑖 is the supervision label of the 𝑖 -th patch, sim (· , ·) denotes cosine similarity, and 𝜏 is a learnable temperature parameter. This alignment encourages authentic and manipulated regions to occupy distinct semantic subspaces, improves feature separability under both traditional and diffusion-generated manipulations, and pro-duces a task-adapted fake prototype for subsequent mask decoding. From the perspective of representation learning, PSA serves two roles simultaneously: it strengthens the discriminability of patch-level semantic features and also supplies an explicit semantic query for dense localization. This coupling between semantic supervi-sion and mask prediction is important for maintaining consistency between semantic alignment and final localization. 
+
+## 3.3 Prototype-Guided Mask Decoding 
+
+Semantic-Frequency Side Adapter (SF-SA). The frequency-enhanced representation is fed into a hierarchical convolutional side back-bone whose first stem is expanded to accommodate the augmented input channels. This side pathway produces multi-scale frequency features at progressively reduced resolutions, but these features mainly encode local forensic evidence and do not directly model semantic inconsistency. To explicitly connect the two modalities, the semantic map F𝑐 is injected into each stage of the frequency pathway through a semantic-frequency side adapter: 
+
+˜F𝑘 𝑠 = F𝑘 𝑠 + A 𝑘 (F𝑐 ), 𝑘 ∈ { 1, 2, 3, 4}, (5) where F𝑘 𝑠 denotes the frequency feature at stage 𝑘 , and A𝑘 (·) de-notes the adaptation module. Specifically, the adapter progressively upsamples the semantic map to the target spatial resolution us-ing transposed convolutions, and then applies a 1 × 1 convolution followed by a 3 × 3 convolution to align channel capacity and smooth the adapted representation. Layer normalization is inserted between these operations to stabilize optimization. This design al-lows semantic priors to be injected into the hierarchical frequency pathway in a structurally compatible manner, so that low-level forensic sensitivity is preserved while high-level semantic guidance is introduced at multiple scales. 
+
+Prototype-Guided Frequency-Gated Mask Decoder (PG-FMD). Given the aligned multi-scale features { ˜F𝑘 𝑠 }4
+
+> 𝑘 =1
+
+, the decoder first upsamples them to a common resolution and then performs cross-attention between the semantic prototype and the spatial feature maps. For each scale, the fake prototype is linearly projected as the semantic query, while the aligned feature map provides the keys and values: 
+
+B𝑘 = Proj 
+
+
+
+CrossAttn (Q𝑘 , K𝑘 , V𝑘 )
+
+
+
+. (6) The resulting basis mask B𝑘 reflects the response of semantically suspicious regions at each scale. However, semantic queries alone may lead to over-segmentation, especially when visually salient but authentic regions trigger strong semantic responses. To alleviate this issue, a spatial gating network is introduced to operate on the frequency-enhanced input and predict scale-wise weights for these basis masks. The final pre-activation logit map is computed as 
+
+O =
+
+> 4
+
+∑︁ 
+
+> 𝑘 =1
+
+G𝑘 ⊙ B𝑘 + 𝜙 (B), (7) where G denotes the predicted gating map, B is the concatenation of all basis masks, and 𝜙 (·) is a 1 × 1 convolution used to preserve holistic semantic evidence. This formulation contains two com-plementary pathways: the gated summation term uses frequency evidence to refine local structure and sharpen manipulation bound-aries, while the residual semantic pathway preserves global ma-nipulation cues and serves as a fallback when forensic traces are weakened by degradations such as JPEG compression or blur. The final manipulation mask is obtained by upsampling O to the original image resolution and applying a sigmoid function: 
+
+ˆM = 𝜎 (Up (O)) . (8) This decoder design is well aligned with the visual characteristics of the two manipulation paradigms. For diffusion-generated edits, semantic inconsistency often provides stronger evidence than obvi-ous local artifacts, so the prototype-guided query helps highlight suspicious content regions. For traditional manipulations, low-level traces and boundary discontinuities remain highly informative, so frequency gating plays an important role in suppressing false positives and refining mask contours. By combining these effects within the same decoder, the proposed framework remains effective across both semantically deceptive diffusion edits and artifact-rich traditional manipulations. Based on the predicted manipulation mask, the framework also performs image-level detection so that localization and classifica-tion remain tightly coupled. Following standard evaluation practice, the image-level score is defined as the maximum predicted proba-bility over all spatial locations: 
+
+𝑆 = max 
+
+> ℎ,𝑤
+
+ˆM(ℎ, 𝑤 ). (9) Bridging the Micro–Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization Conference’17, July 2017, Washington, DC, USA 
+
+Table 1: Quantitative comparison of pixel-level localization performance on the OpenSDI benchmark. Pixel F1 and IoU are reported for each diffusion generator, and Average denotes the mean performance across all generators. Bold indicates the best result, and underline indicates the second-best result. 
+
+Method SD1.5 SD2.1 SDXL SD3 Flux.1 Average F1 IoU F1 IoU F1 IoU F1 IoU F1 IoU F1 IoU MVSS-Net [1] 0.6420 0.5656 0.5011 0.4299 0.2202 0.1758 0.3569 0.2950 0.0889 0.0674 0.3618 0.3067 PSCC-Net [13] 0.6243 0.5156 0.5029 0.4055 0.3323 0.2514 0.4135 0.3215 0.1238 0.0850 0.3994 0.3158 CAT-Net [10] 0.7460 0.6589 0.6254 0.5450 0.3464 0.2861 0.4459 0.3764 0.0777 0.0583 0.4483 0.3849 TruFor [5] 0.7626 0.6862 0.6278 0.5540 0.3195 0.2636 0.3733 0.3101 0.1160 0.0891 0.4398 0.3806 IML-ViT [17] 0.7724 0.7031 0.5940 0.5266 0.3151 0.2626 0.3502 0.2933 0.0910 0.0707 0.4245 0.3713 Mesorch [42] 0.7998 0.7319 0.6344 0.5709 0.3232 0.2781 0.3735 0.3238 0.0863 0.0696 0.4434 0.3949 SparseViT [29] 0.7539 0.6854 0.5845 0.5207 0.3396 0.2920 0.4020 0.3485 0.0987 0.0801 0.4357 0.3853 MaskCLIP [34] 0.7463 0.6731 0.6239 0.5530 0.3552 0.2996 0.4965 0.4254 0.1671 0.1330 0.4778 0.4168 Ours 0.8119 0.7340 0.7271 0.6431 0.4914 0.4103 0.6174 0.5285 0.2437 0.1885 0.5783 0.5009 
+
+The input image is classified as manipulated if 𝑆 exceeds a pre-defined threshold. This unified formulation preserves consistency between pixel-level localization and image-level classification. 
+
+## 3.4 Overall Optimization Objective 
+
+The proposed framework is optimized end-to-end with a multi-term objective. Following prior IML works [ 17 , 34 ], dense localization is supervised by a binary cross-entropy loss on the predicted mask and an edge-aware loss that emphasizes manipulation boundaries. Together with the prototype contrastive loss, the overall objective is written as 
+
+L = 𝜆 𝑚 L𝑚𝑎𝑠𝑘 + 𝜆 𝑒 L𝑒𝑑𝑔𝑒 + 𝜆 𝑝𝑐 L𝑝𝑐 , (10) where 𝜆 𝑚 , 𝜆 𝑒 , and 𝜆 𝑝𝑐 are balancing coefficients. These three terms play complementary roles: L𝑚𝑎𝑠𝑘 supervises dense region pre-diction, L𝑒𝑑𝑔𝑒 improves boundary precision, and L𝑝𝑐 enforces manipulation-aware semantic alignment. Their joint optimization enables the proposed framework to learn semantically discrimina-tive, frequency-sensitive, and spatially precise representations for robust image manipulation localization. 
+
+## 4 Experiments 4.1 Experimental Setup 
+
+Datasets. Experiments are conducted on two complementary set-tings. For diffusion-generated edits, we use the OpenSDI bench-mark [ 34 ]. The model is trained on authentic images and SD1.5-based edited samples. Cross-generator generalization is then evalu-ated on test sets built from authentic images and manipulations pro-duced by five generators, namely SD1.5 [ 25 ], SD2.1 [ 25 ], SDXL [ 23 ], SD3 [ 3 ], and Flux.1 [ 11 ]. For traditional manipulations, training fol-lows the CAT-Net protocol [ 10 ] adopted by recent state-of-the-art methods [ 29 , 42 ]. The training set combines CASIAv2 [ 2], Fantas-ticReality [ 8 ], IMD2020 [ 21 ], and TampCOCO [ 10 ]. Cross-dataset evaluation is conducted on CASIAv1 [ 2], Columbia [ 20 ], Cover-age [35], and NIST16 [4] without fine-tuning. 
+
+Evaluation Metrics. For diffusion-generated edits, we follow the evaluation protocol of OpenSDI. Pixel-level localization is eval-uated with pixel-level F1 and IoU after thresholding the predicted masks at 0.5, while image-level detection is evaluated with image-level F1 and Accuracy. For traditional manipulations, we follow the common IMDL-BenCo protocol and report pixel-level F1 and AUC to evaluate cross-dataset localization performance. 
+
+Baseline Methods. The proposed framework is compared with 14 state-of-the-art methods. For pixel-level localization on both settings, eight representative models are considered: MVSS-Net [ 1 ], PSCC-Net [ 13 ], CAT-Net [ 10 ], TruFor [ 5 ], IML-ViT [ 17 ], Mesorch [ 42 ], SparseViT [ 29 ], and MaskCLIP [ 34 ]. For image-level detection, six dedicated binary detectors are additionally included: CNNDet [ 33 ], GramNet [ 16 ], UniFD [ 22 ], FreqNet [ 30 ], NPR [ 31 ], and RINE [ 9 ]. To ensure fair comparison, all localization baselines are retrained and evaluated under the same setting on OpenSDI, while all localization methods on traditional manipulation benchmarks are trained and evaluated within the unified IMDL-BenCo framework [18]. 
+
+Implementation Details. Macroscopic semantic priors are ex-tracted from selected intermediate and deep layers of a frozen CLIP-ViT-L/14 [ 24 ] encoder, which provide complementary texture, structural, and semantic information, while the microscopic fre-quency pathway is built on ConvNeXt-Base [15]. During training, images are augmented with Gaussian blur, JPEG compression, ran-dom scaling, random cropping, and horizontal flipping. All images are resized to 224 × 224 for CLIP and 512 × 512 for ConvNeXt. The whole framework is trained end-to-end for 20 epochs with AdamW, using a weight decay of 0.05 and a batch size of 32. The initial learning rate is set to 1 × 10 −4 and decayed with a cosine annealing schedule. The loss weights are set to 𝜆 𝑚 = 1.0, 𝜆 𝑝𝑐 = 1.0,and 𝜆 𝑒 = 20 .0. The image-level decision threshold is set to 0.5. All experiments are conducted on four RTX 4090 GPUs. 
+
+## 4.2 Performance Comparisons 
+
+Pixel-Level Localization on Diffusion-Generated Edits. Ta-ble 1 reports the localization results on OpenSDI, which provides a rigorous test of cross-generator generalization. Although many existing methods perform competitively on SD1.5, their accuracy drops substantially on unseen generators. In contrast, the proposed framework establishes state-of-the-art performance across all gen-erators. The average pixel-level F1 reaches 0.5783 and the average IoU reaches 0.5009, outperforming the second-best method by 10.05 Conference’17, July 2017, Washington, DC, USA Liang et al. 
+
+Table 2: Quantitative comparison of image-level detection performance on the OpenSDI benchmark. Image F1 and Accuracy are reported for each diffusion generator, and Average denotes the mean performance across all generators. The upper group contains image-level detection methods, and the lower group contains pixel-level localization methods. Bold indicates the best result, and underline indicates the second-best result. 
+
+Method SD1.5 SD2.1 SDXL SD3 Flux.1 Average F1 Acc F1 Acc F1 Acc F1 Acc F1 Acc F1 Acc CNNDet [33] 0.8460 0.8504 0.7156 0.7594 0.5970 0.6872 0.5627 0.6708 0.3572 0.5757 0.6157 0.7087 GramNet [16] 0.8051 0.8035 0.7401 0.7666 0.6528 0.7076 0.6435 0.7029 0.5200 0.6337 0.6723 0.7229 UniFD [22] 0.7745 0.7760 0.8062 0.8192 0.7074 0.7483 0.7109 0.7517 0.6110 0.6906 0.7220 0.7572 FreqNet [30] 0.7588 0.7770 0.6097 0.6837 0.5315 0.6402 0.5350 0.6437 0.3847 0.5708 0.5639 0.6631 NPR [31] 0.7941 0.7928 0.8167 0.8184 0.7212 0.7428 0.7343 0.7547 0.6762 0.7136 0.7485 0.7645 RINE [9] 0.9108 0.9098 0.8747 0.8812 0.7343 0.7876 0.7205 0.7678 0.5586 0.6702 0.7598 0.8033 MVSS-Net [1] 0.9194 0.9205 0.7674 0.7998 0.5886 0.6912 0.6702 0.7388 0.3788 0.5976 0.6649 0.7496 PSCC-Net [13] 0.9576 0.9579 0.7773 0.8138 0.6217 0.7207 0.6040 0.7116 0.4584 0.6426 0.6838 0.7693 CAT-Net [10] 0.9494 0.9481 0.8378 0.8531 0.7449 0.7868 0.7509 0.7911 0.3583 0.5897 0.7283 0.7938 TruFor [5] 0.9555 0.9545 0.8817 0.8891 0.6556 0.7314 0.6845 0.7491 0.3505 0.5877 0.7056 0.7824 IML-ViT [17] 0.9645 0.9642 0.8668 0.8788 0.7291 0.7802 0.7459 0.7923 0.4581 0.6384 0.7529 0.8108 Mesorch [42] 0.9729 0.9732 0.7942 0.8279 0.5541 0.6885 0.5555 0.6897 0.2446 0.5665 0.6242 0.7492 SparseViT [29] 0.9597 0.9604 0.7865 0.8214 0.5707 0.6955 0.6383 0.7309 0.2983 0.5822 0.6507 0.7581 MaskCLIP [34] 0.9127 0.9143 0.8595 0.8728 0.7431 0.7882 0.7007 0.7634 0.5484 0.6798 0.7529 0.8037 Ours 0.9375 0.9343 0.9391 0.9373 0.8926 0.8931 0.8774 0.8810 0.6282 0.7041 0.8550 0.8700 Table 3: Quantitative comparison of pixel-level localization performance on four traditional manipulation benchmarks. Pixel F1 and AUC are reported for each dataset, and Average denotes the mean performance across all evaluated datasets. Bold indicates the best result, and underline indicates the second-best result. 
+
+Method CASIAv1 Columbia Coverage NIST16 Average F1 AUC F1 AUC F1 AUC F1 AUC F1 AUC MVSS-Net [1] 0.5775 0.9117 0.7274 0.9237 0.4663 0.8632 0.3301 0.7883 0.5253 0.8717 PSCC-Net [13] 0.5690 0.9188 0.8555 0.9458 0.4034 0.8838 0.3655 0.8279 0.5484 0.8941 CAT-Net [10] 0.8081 0.9804 0.9150 0.9457 0.4273 0.9168 0.2522 0.8216 0.6007 0.9161 TruFor [5] 0.8208 0.9742 0.8754 0.8996 0.4506 0.9424 0.3359 0.8782 0.6207 0.9236 IML-ViT [17] 0.8137 0.9726 0.8864 0.9544 0.6135 0.9407 0.3983 0.8828 0.6780 0.9376 Mesorch [42] 0.8398 0.9852 0.8905 0.9095 0.5862 0.9327 0.3921 0.8883 0.6772 0.9289 SparseViT [29] 0.8196 0.9687 0.9568 0.9770 0.5165 0.9386 0.3726 0.8508 0.6664 0.9338 MaskCLIP [34] 0.8627 0.9858 0.8681 0.8981 0.5691 0.9382 0.4345 0.8884 0.6836 0.9276 Ours 0.8777 0.9900 0.9057 0.9577 0.6537 0.9562 0.4092 0.8768 0.7116 0.9452 
+
+percentage points in F1 and 8.41 percentage points in IoU. The gain is especially notable on the more challenging cross-generator settings. Compared with the corresponding second-best results, the improvement reaches 9.27 percentage points on SD2.1, 13.62 per-centage points on SDXL, and 12.09 percentage points on SD3 in F1. Even on Flux.1, which is the most difficult setting in the benchmark, the proposed framework still achieves the best F1 score of 0.2437, exceeding the second-best result by 7.66 percentage points. These results indicate that explicit alignment between semantic priors and microscopic frequency evidence is highly effective for exposing subtle traces left by diverse diffusion generators. 
+
+Image-Level Detection on Diffusion-Generated Edits. Ta-ble 2 presents the image-level detection results on OpenSDI. A similar generalization pattern is observed in image-level detection. Traditional IML models tend to overfit the SD1.5 training domain and suffer from clear generalization drops on newer generators, while dedicated binary detectors provide only limited overall robust-ness. The proposed framework outperforms all detection baselines and localization-based competitors, achieving an average F1 of 0.8550 and an average Accuracy of 0.8700. These scores exceed the second-best results by 9.52 percentage points in F1 and 5.92 percentage points in Accuracy. Although the proposed framework does not achieve its largest advantage on the SD1.5 intra-generator setting, the benefit becomes clear on cross-generator evaluation. In terms of F1, the margin over the second-best method reaches 5.74 percentage points on SD2.1, 14.77 percentage points on SDXL, 12.65 percentage points on SD3, and 10.82 percentage points on Flux.1. This result suggests that the semantic alignment module Bridging the Micro–Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization Conference’17, July 2017, Washington, DC, USA Input  GT  MVSS -Net  PSCC -Net  CAT -Net  TruFor  IML -ViT  Mesorch  SparseViT  MaskCLIP  Ours 
+
+> SD1.5 SD2.1 SDXL SD3 Flux.1 CASIAv1 Columbia Coverage NIST16
+
+Figure 4: Qualitative comparison of localization results on diffusion-generated and traditional manipulation datasets. Existing methods often suffer from missed detections or over-segmentation, whereas the proposed framework produces more complete masks and more precise boundaries across diverse manipulation types. 
+
+improves not only dense localization but also the aggregation of manipulation evidence at the image level. 
+
+Pixel-Level Localization on Traditional Manipulations. Ta-ble 3 shows the cross-dataset localization results on traditional manipulation benchmarks. Strong performance is maintained in this setting as well. The proposed framework achieves the best av-erage F1 of 0.7116 and the best average AUC of 0.9452, surpassing previous state-of-the-art methods overall. The advantage is particu-larly clear on the challenging Coverage and CASIAv1 benchmarks, where the improvement over the corresponding second-best F1 result reaches 4.02 and 1.50 percentage points, respectively. Com-petitive performance is also observed on Columbia and NIST16. These results indicate that the proposed framework does not sacri-fice performance on conventional manipulations while extending effectively to diffusion-generated edits. 
+
+Qualitative Comparison. As illustrated in Figure 4, existing methods often struggle to balance sensitivity to manipulated re-gions with suppression of false positives across different manipu-lation types. On advanced diffusion-generated edits such as SD3 and Flux.1, artifact-driven baselines frequently miss manipulated content because the synthetic regions remain highly coherent in local texture and statistics. On traditional manipulation datasets with cluttered backgrounds, recent state-of-the-art methods includ-ing IML-ViT, SparseViT, and Mesorch often produce severe over-segmentation. In contrast, the proposed framework yields masks Conference’17, July 2017, Washington, DC, USA Liang et al. 3 7 11 15 19 23                                            
+
+> Gaussian Blur Level
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Pixel F1
+> Gaussian Blur (SD1.5)
+> 100 90 80 70 60 50
+> JPEG Compression Quality
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> JPEG Compression (SD1.5)
+> 3711 15 19 23
+> Gaussian Blur Level
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Gaussian Blur (SD3)
+> 100 90 80 70 60 50
+> JPEG Compression Quality
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> JPEG Compression (SD3)
+> 3711 15 19 23
+> Gaussian Blur Level
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Pixel F1
+> Gaussian Blur (CASIAv1)
+> 100 90 80 70 60 50
+> JPEG Compression Quality
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> JPEG Compression (CASIAv1)
+> 3711 15 19 23
+> Gaussian Blur Level
+> 0.2
+> 0.3
+> 0.4
+> Gaussian Blur (Coverage)
+> 100 90 80 70 60 50
+> JPEG Compression Quality
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> JPEG Compression (Coverage)
+> MVSS-Net PSCC-Net CAT-Net TruFor IML-ViT Mesorch SparseViT MaskCLIP Ours
+
+Figure 5: Robustness comparison of different methods under Gaussian blur and JPEG compression. The first row reports results on OpenSDI with SD1.5 and SD3, while the second row reports results on the IML benchmark with CASIAv1 and Coverage. Pixel-level F1 is used for evaluation, and higher values indicate better robustness. 
+
+that are both more complete and more precise. It reduces missed detections in semantically suspicious yet visually smooth diffusion-generated regions, while suppressing background activation and preserving compact foreground masks on traditional benchmarks. These observations are consistent with the design intuition of the proposed framework, where semantic priors improve sensitivity and frequency evidence controls spatial precision. This advantage is particularly visible in challenging cases where manipulated re-gions are either smoothly blended into the surrounding content or embedded in visually complex backgrounds. 
+
+## 4.3 Robustness Evaluation 
+
+Robustness is further evaluated under two common image degra-dations, namely Gaussian blur and JPEG compression at different severity levels. Figure 5 reports the corresponding pixel-level F1 scores on both diffusion-generated edits and traditional manip-ulations. On diffusion-generated data, the proposed framework maintains a clear advantage under all degradation settings, with the margin being especially pronounced in the SD3 cross-generator case as competing methods degrade rapidly. A similar pattern is ob-served on traditional manipulation benchmarks, particularly under JPEG compression on CASIAv1 and Gaussian blur on Coverage. As image quality deteriorates, the gap between the proposed frame-work and artifact-driven competitors becomes increasingly large. These results show that semantic-frequency alignment improves robustness across both diffusion-generated and traditional manip-ulations: semantic priors remain stable when forensic traces are corrupted, while the frequency pathway still provides useful local evidence when image quality is less severely degraded. 
+
+Table 4: Ablation study of main components in FASA on the OpenSDI benchmark (average performance). 
+
+Model Variation Pixel F1 Pixel IoU Baseline 0.4303 0.3758 + ADB-DCT 0.4607 0.4039 + PSA 0.4917 0.4289 + SF-SA 0.5128 0.4388 + PG-FMD (Full FASA) 0.5783 0.5009 
+
+## 4.4 Ablation Study 
+
+Table 4 reports a progressive ablation study on OpenSDI. Start-ing from a pure spatial baseline composed of a ConvNeXt back-bone and a simple decoder, the average pixel-level F1 and IoU are 0.4303 and 0.3758, respectively. Introducing ADB-DCT improves the scores to 0.4607 and 0.4039, showing that adaptive frequency decomposition provides useful microscopic evidence for localiza-tion. Adding the frozen CLIP encoder together with PSA further raises the performance to 0.4917 in F1 and 0.4289 in IoU, indicating that manipulation-aware semantic priors improve feature discrim-inability and semantic consistency. After SF-SA is incorporated, the performance increases to 0.5128 in F1 and 0.4388 in IoU, confirming the benefit of injecting semantic priors into the frequency path-way at multiple scales. Replacing the simple decoder with PG-FMD yields the best performance of 0.5783 in F1 and 0.5009 in IoU. The consistent gains across all stages validate the necessity of each component in the full architecture. Bridging the Micro–Macro Gap: Frequency-Aware Semantic Alignment for Image Manipulation Localization Conference’17, July 2017, Washington, DC, USA 
+
+## 5 Conclusions 
+
+This paper presents FASA, a unified framework for image ma-nipulation localization across both traditional manipulations and diffusion-generated edits. By combining manipulation-aware se-mantic alignment with adaptive frequency modeling, the proposed framework explicitly bridges the micro–macro gap between se-mantic inconsistency and forensic evidence. Extensive experiments demonstrate state-of-the-art localization performance, strong cross-generator and cross-dataset generalization, and robust behavior under common image degradations. These findings highlight the importance of jointly exploiting semantic priors and frequency cues for robust localization across diverse and increasingly challenging manipulation paradigms. 
+
+## References 
+
+[1] Xinru Chen, Chengbo Dong, Jiaqi Ji, Juan Cao, and Xirong Li. 2021. Image manipulation detection by multi-view multi-scale supervision. In Proceedings of the IEEE/CVF international conference on computer vision . 14185–14193. [2] Jing Dong, Wei Wang, and Tieniu Tan. 2013. Casia image tampering detection evaluation database. In 2013 IEEE China summit and international conference on signal and information processing . IEEE, 422–426. [3] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al . 2024. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning .[4] Haiying Guan, Mark Kozak, Eric Robertson, Yooyoung Lee, Amy N Yates, Andrew Delgado, Daniel Zhou, Timothee Kheyrkhah, Jeff Smith, and Jonathan Fiscus. 2019. MFC datasets: Large-scale benchmark datasets for media forensic chal-lenge evaluation. In 2019 IEEE Winter Applications of Computer Vision Workshops (WACVW) . IEEE, 63–72. [5] Fabrizio Guillaro, Davide Cozzolino, Avneesh Sud, Nicholas Dufour, and Luisa Verdoliva. 2023. Trufor: Leveraging all-round clues for trustworthy image forgery detection and localization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 20606–20615. [6] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, and Ross Girshick. 2022. Masked autoencoders are scalable vision learners. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 16000–16009. [7] Gurpreet Kaur, Navdeep Singh, and Munish Kumar. 2023. Image forgery tech-niques: a review. Artificial Intelligence Review 56, 2 (2023), 1577–1625. [8] Vladimir V Kniaz, Vladimir Knyaz, and Fabio Remondino. 2019. The point where reality meets fantasy: Mixed adversarial generators for image splice detection. 
+
+Advances in neural information processing systems 32 (2019). [9] Christos Koutlis and Symeon Papadopoulos. 2024. Leveraging representations from intermediate encoder-blocks for synthetic image detection. In European Conference on computer vision . Springer, 394–411. [10] Myung-Joon Kwon, Seung-Hun Nam, In-Jae Yu, Heung-Kyu Lee, and Changick Kim. 2022. Learning jpeg compression artifacts for image manipulation detection and localization. International Journal of Computer Vision 130, 8 (2022), 1875– 1895. [11] Black Forest Labs. 2024. FLUX. https://github.com/black-forest-labs/flux. [12] Fengyong Li, Zhenjia Pei, Xinpeng Zhang, and Chuan Qin. 2022. Image manipu-lation localization using multi-scale feature fusion and adaptive edge supervision. 
+
+IEEE Transactions on Multimedia 25 (2022), 7851–7866. [13] Xiaohong Liu, Yaojie Liu, Jun Chen, and Xiaoming Liu. 2022. PSCC-Net: Progres-sive spatio-channel correlation network for image manipulation detection and localization. IEEE Transactions on Circuits and Systems for Video Technology 32, 11 (2022), 7505–7517. [14] Xuntao Liu, Yuzhou Yang, Haoyue Wang, Qichao Ying, Zhenxing Qian, Xinpeng Zhang, and Sheng Li. 2024. Multi-view feature extraction via tunable prompts is enough for image manipulation localization. In Proceedings of the 32nd ACM International Conference on Multimedia . 9999–10007. [15] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feichtenhofer, Trevor Darrell, and Saining Xie. 2022. A convnet for the 2020s. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 11976–11986. [16] Zhengzhe Liu, Xiaojuan Qi, and Philip HS Torr. 2020. Global texture enhancement for fake face detection in the wild. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 8060–8069. [17] Xiaochen Ma, Bo Du, Zhuohang Jiang, Ahmed Y Al Hammadi, and Jizhe Zhou. 2023. IML-ViT: Benchmarking image manipulation localization by vision trans-former. arXiv preprint arXiv:2307.14863 (2023). [18] Xiaochen Ma, Xuekang Zhu, Lei Su, Bo Du, Zhuohang Jiang, Bingkui Tong, Zeyu Lei, Xinyu Yang, Chi-Man Pun, Jiancheng Lv, et al . 2024. Imdl-benco: A comprehensive benchmark and codebase for image manipulation detection & localization. Advances in Neural Information Processing Systems 37 (2024), 134591–134613. [19] Fatemeh Zare Mehrjardi, Ali Mohammad Latif, Mohsen Sardari Zarchi, and Razieh Sheikhpour. 2023. A survey on deep learning-based image forgery detection. 
+
+Pattern Recognition 144 (2023), 109778. [20] Tian-Tsong Ng, Jessie Hsu, and Shih-Fu Chang. 2009. Columbia image splicing detection evaluation dataset. DVMM lab. Columbia Univ CalPhotos Digit Libr 
+
+(2009). [21] Adam Novozamsky, Babak Mahdian, and Stanislav Saic. 2020. IMD2020: A large-scale annotated dataset tailored for detecting manipulated images. In Proceedings of the IEEE/CVF winter conference on applications of computer vision workshops .71–80. [22] Utkarsh Ojha, Yuheng Li, and Yong Jae Lee. 2023. Towards universal fake image detectors that generalize across generative models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 24480–24489. [23] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. 2023. Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 
+
+(2023). [24] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al . 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning . PmLR, 8748–8763. [25] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .10684–10695. [26] Ziqi Sheng, Zuomin Qu, Wei Lu, Xiaochun Cao, and Jiwu Huang. 2024. DiRLoc: disentanglement representation learning for robust image forgery localization. 
+
+IEEE Transactions on Dependable and Secure Computing 22, 3 (2024), 2841–2854. [27] Zenan Shi, Xuanjing Shen, Haipeng Chen, and Yingda Lyu. 2023. PL-GNet: Pixel Level Global Network for detection and localization of image forgeries. Signal Processing: Image Communication 119 (2023), 117029. [28] Stefan Smeu, Elisabeta Oneata, and Dan Oneata. 2025. DeCLIP: Decoding CLIP representations for deepfake localization. In 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) . IEEE, 149–159. [29] Lei Su, Xiaochen Ma, Xuekang Zhu, Chaoqun Niu, Zeyu Lei, and Ji-Zhe Zhou. 2025. Can we get rid of handcrafted feature extractors? sparsevit: Nonsemantics-centered, parameter-efficient image manipulation localization through spare-coding transformer. In Proceedings of the AAAI conference on artificial intelligence ,Vol. 39. 7024–7032. [30] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. 2024. Frequency-aware deepfake detection: Improving generalizability through frequency space domain learning. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 38. 5052–5060. [31] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. 2024. Rethinking the up-sampling operations in cnn-based generative network for generalizable deepfake detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 28130–28139. [32] Junke Wang, Zuxuan Wu, Jingjing Chen, Xintong Han, Abhinav Shrivastava, Ser-Nam Lim, and Yu-Gang Jiang. 2022. Objectformer for image manipulation detection and localization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 2364–2373. [33] Sheng-Yu Wang, Oliver Wang, Richard Zhang, Andrew Owens, and Alexei A Efros. 2020. CNN-generated images are surprisingly easy to spot... for now. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .8695–8704. [34] Yabin Wang, Zhiwu Huang, and Xiaopeng Hong. 2025. Opensdi: Spotting diffusion-generated images in the open world. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 4291–4301. [35] Bihan Wen, Ye Zhu, Ramanathan Subramanian, Tian-Tsong Ng, Xuanjing Shen, and Stefan Winkler. 2016. COVERAGE—A novel database for copy-move forgery detection. In 2016 IEEE international conference on image processing (ICIP) . Ieee, 161–165. [36] Haiwei Wu, Jiantao Zhou, Jinyu Tian, and Jun Liu. 2022. Robust image forgery detection over online social network shared images. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 13440–13449. [37] Yue Wu, Wael AbdAlmageed, and Premkumar Natarajan. 2019. Mantra-net: Manipulation tracing network for detection and localization of image forgeries with anomalous features. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 9543–9552. [38] Marcello Zanardelli, Fabrizio Guerrini, Riccardo Leonardi, and Nicola Adami. 2023. Image forgery detection: a survey of recent deep-learning approaches. 
+
+Multimedia Tools and Applications 82, 12 (2023), 17521–17566. [39] Kunlun Zeng, Ri Cheng, Weimin Tan, and Bo Yan. 2024. MGQFormer: Mask-guided query-based transformer for image manipulation localization. In Proceed-ings of the AAAI Conference on Artificial Intelligence , Vol. 38. 6944–6952. Conference’17, July 2017, Washington, DC, USA Liang et al. 
+
+[40] Tianyi Zhang, Qinglong Lin, Yang Hu, Pengming Feng, and Rubo Zhang. 2025. Edge-aware Affinity Enhancement for Image Manipulation Localization. In Pro-ceedings of the 33rd ACM International Conference on Multimedia . 324–332. [41] Haochen Zhu, Gang Cao, and Xianglin Huang. 2023. Progressive feedback-enhanced transformer for image forgery localization. arXiv preprint arXiv:2311.08910 (2023). [42] Xuekang Zhu, Xiaochen Ma, Lei Su, Zhuohang Jiang, Bo Du, Xiwen Wang, Zeyu Lei, Wentao Feng, Chi-Man Pun, and Ji-Zhe Zhou. 2025. Mesoscopic insights: orchestrating multi-scale & hybrid architecture for image manipulation localization. In Proceedings of the AAAI conference on artificial intelligence , Vol. 39. 11022–11030.

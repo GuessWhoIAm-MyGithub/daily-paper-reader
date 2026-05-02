@@ -1,0 +1,327 @@
+Title: LOGER: Local--Global Ensemble for Robust Deepfake Detection in the Wild
+
+URL Source: https://arxiv.org/pdf/2604.03558v1
+
+Published Time: Tue, 07 Apr 2026 00:20:55 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# LOGER: Local–Global Ensemble for Robust Deepfake Detection in the Wild   
+
+> Fei Wu 1, Dagong Lu 2, Mufeng Yao 2, Xinlei Xu 2, Fengjun Guo 2,B
+> 1Shanghai Jiao Tong University
+> 2INTSIG Information
+
+# Abstract 
+
+Robust deepfake detection in the wild remains challeng-ing due to the ever-growing variety of manipulation tech-niques and uncontrolled real-world degradations. Forensic cues for deepfake detection reside at two complementary levels: global-level anomalies in semantics and statistics that require holistic image understanding, and local-level forgery traces concentrated in manipulated regions that are easily diluted by global averaging. Since no single back-bone or input scale can effectively cover both levels, we propose LOGER, a LO cal– Global Ensemble framework for 
+
+Robust deepfake detection. The global branch employs het-erogeneous vision foundation model backbones at multiple resolutions to capture holistic anomalies with diverse visual priors. The local branch performs patch-level modeling with a Multiple Instance Learning top-k aggregation strat-egy that selectively pools only the most suspicious regions, mitigating evidence dilution caused by the dominance of normal patches; dual-level supervision at both the aggre-gated image level and individual patch level keeps local responses discriminative. Because the two branches differ in both granularity and backbone, their errors are largely decorrelated, a property that logit-space fusion exploits for more robust prediction. LOGER achieves 2nd place in the NTIRE 2026 Robust Deepfake Detection Challenge, and further evaluation on multiple public benchmarks confirms its strong robustness and generalization across diverse ma-nipulation methods and real-world degradation conditions. 
+
+# 1. Introduction 
+
+Modern face manipulation methods produce deepfakes re-alistic enough to fool both humans and automated sys-tems [15, 42], fueling growing concerns about identity fraud, political disinformation, and financial scams [7, 49]. While detecting a known manipulation type under con-trolled conditions is largely solved, the real challenge is generalization: deployed detectors must handle unseen gen- 
+
+> BCorresponding author.
+
+erators, diverse manipulation categories, and unpredictable post-processing that content undergoes in the wild. Deep-fakes are rarely encountered in pristine form: media is rou-tinely compressed, resized, or blurred during transmission, and adversaries may intentionally degrade quality to sup-press forgery artifacts. The NTIRE 2026 Robust Deepfake Detection Challenge [20] targets exactly this setting, requir-ing detectors to remain accurate under diverse manipula-tions and realistic degradations. Early detectors relied on low-level artifacts such as blending boundaries [27], texture irregularities [64], and frequency-domain anomalies [12, 13], but these cues de-grade quickly under JPEG compression and spatial resiz-ing [46]. Subsequent work on data alignment [4, 16], latent-space augmentation [57], and orthogonal decomposi-tion [58] improves cross-generator transfer, yet scaling-law studies show that detection error decreases only as a power law of data diversity, meaning improvements slow down rapidly and a single model trained on limited sources faces inherent generalization ceilings [50]. Vision foundation models (VFMs) offer a promising alternative. Pre-trained on web-scale data with self-supervised or contrastive ob-jectives, VFMs encode both low-level texture patterns and high-level semantic structures that are highly discrimina-tive for distinguishing real from generated content. Mod-els such as DINOv3 [45] and MetaCLIP2 [8], even with minimal adaptation, outperform purpose-built detectors on in-the-wild benchmarks [62, 67], confirming that these pre-trained representations transfer well to the forensic domain. However, VFM-based full-image classification still has a fundamental limitation: it averages features over the en-tire image, capturing holistic anomalies (e.g., unnatural fa-cial symmetry) but diluting the subtle forgery traces that concentrate in small manipulated regions [28]. Conversely, patch-level analysis can detect such fine-grained local ar-tifacts but lacks the global context needed to recognize semantic-level inconsistencies. Since forensic cues reside at both global and local levels, combining detection strategies at different granularities with different backbones is more promising than perfecting any single strategy. We propose LOGER , a two-branch local–global ensem-1
+
+> arXiv:2604.03558v1 [cs.CV] 4 Apr 2026
+
+ble framework that acts on this observation. The global branch leverages heterogeneous VFM backbones at multi-ple resolutions for holistic anomaly detection, while the lo-cal branch uses MIL top-k aggregation to focus on the most suspicious patches with dual-level supervision. Because the two branches differ in both granularity and backbone, their errors are largely decorrelated, which logit-space fusion ex-ploits for more stable predictions. Our main contributions are as follows: • We propose LOGER, a two-branch local–global ensem-ble framework whose global branch leverages heteroge-neous VFM backbones at multiple resolutions for holistic anomaly detection while the local branch focuses on sus-picious regions, providing comprehensive forensic cover-age of both global and local forgery traces for more accu-rate detection. • We design a local detection branch with MIL top-k ag-gregation that mitigates evidence dilution by selectively pooling only the most suspicious patches, jointly super-vised at both the aggregated and individual patch levels to ensure accurate image-level predictions while maintain-ing discriminative local responses. • We adopt logit-space fusion that preserves each model’s full confidence range. LOGER achieves 2nd place in the NTIRE 2026 Robust Deepfake Detection Challenge [20] and generalizes well across multiple public benchmarks. 
+
+# 2. Related Work 
+
+2.1. Deepfake Detection Datasets 
+
+Benchmark datasets have shaped deepfake detection re-search by defining increasingly challenging evaluation set-tings. FaceForensics++ [43] established the first large-scale benchmark with multiple manipulation techniques and compression levels, and Celeb-DF [29] subsequently ex-posed severe cross-dataset performance drops, making gen-eralization a central concern. Later benchmarks extend evaluation along two axes. The first is scale and diversity : DFDC [11] provides large-scale real-world diversity, DF40 [59] covers 40 manipula-tion methods, HydraFake [47] defines a hierarchical out-of-distribution evaluation protocol, and ScaleDF [50] reveals power-law scaling between data diversity and detection ac-curacy. The second is robustness : DeeperForensics [23] in-troduces controlled perturbations, WildDeepfake [68] cap-tures noise from network propagation, and MFFI [36] tar-gets multi-level degradation. A consistent lesson is that data diversity, rather than sheer quantity, is the primary driver of generalization [50], a principle that informs our multi-source training strategy. 
+
+2.2. Deepfake Detection Methods 
+
+Deepfake detection methods can be broadly grouped into three categories based on the type of representation they ex-ploit. 
+
+Artifact-based methods. Early approaches target spe-cific forgery artifacts: blending boundaries [27], texture ir-regularities [64], and frequency-domain anomalies [12, 13]. Data-synthesis strategies such as SBI [44] further improve generalization by creating pseudo-fakes during training. While effective on controlled benchmarks, these hand-crafted cues are sensitive to post-processing and do not transfer well across generators. 
+
+Generalization-oriented methods. A second category focuses on closing the domain gap between training and unseen generators. Data alignment (DDA [4], B-Free [16]) and latent-space augmentation (LSDA [57]) re-duce distribution-specific biases. Orthogonal decomposi-tion (Effort [58]) decomposes the feature space into orthog-onal subspaces, preserving pre-trained knowledge while learning forgery-specific cues. These methods improve cross-generator transfer but still face inherent generaliza-tion ceilings when training data diversity is limited [50]. 
+
+Foundation-model-based methods. The most recent line of work adapts VFMs to forensics. Forensics Adapter [10] and LoRA-based methods [25, 26] fine-tune pre-trained CLIP representations with minimal extra parameters. Multi-source training pipelines (D 3 [61], GenD [62]) pair diverse generators with parameter-efficient adaptation; no-tably, GenD demonstrates that tuning only the Layer Nor-malization parameters of a VFM backbone can achieve competitive cross-benchmark performance. MLLM-based detectors such as Veritas [47], FakeShield [54], and Le-gion [24] add semantic reasoning for more explainable pre-dictions, though their robustness on degraded inputs still lags behind specialized visual approaches. Despite this progress, cross-benchmark evaluations con-sistently show that no single detection strategy is suf-ficient [50, 56]. Our work combines local and global branches with heterogeneous VFM backbones, exploiting their complementary strengths through logit-space fusion. 
+
+2.3. Impact of Degradation 
+
+Deployed deepfake content inevitably undergoes JPEG compression, blur, and resolution reduction, disrupting the fine-grained cues that detectors rely on [23, 43]. Strong compression suppresses high-frequency forensic traces [12], and resolution loss distorts local textures critical for artifact-based methods [49]. Recent studies show that 2Official Data 
+
+> FF++
+> Celeb -DF
+> HydraFake
+> DF40
+> ScaleDF
+> Large -scale (~700K images)
+
+Multi -Source  Data  Multi -branch Ensemble     
+
+> M4: DINOv3 -L38 4*3 84
+> M5: DINOv3 -L3 38 *3 38
+> MLP
+> Multi Instance
+> M1: DINOv3 -H 256*256
+> M3: MetaCLIP -H 378*378
+> M2: DINOv3 -H 384*384
+> Patch -level
+> Top 10%
+
+Weighted 
+
+Logits  Fusion 
+
+Final prediction: 
+
+Real  / Fake 
+
+## Inference  
+
+> Ori
+> Flip MLP
+
+Local Branch Global Branch         
+
+> Blur Color JPEG Noise
+> Brightness Spatial Contrast
+> Diverse Data Augmentation Figure 1. Overview of the proposed LOGER framework. Training data are sampled from a multi-source candidate pool with diverse degradation augmentation. The global branch performs full-image detection using DINOv3-H (M1, M2) and MetaCLIP2-H (M3) at multiple resolutions. The local branch employs DINOv3-L (M4, M5) with patch-level modeling and top-10% MIL pooling. All outputs are fused via logit-space averaging with test-time augmentation.
+
+even state-of-the-art detectors experience significant perfor-mance drops when evaluated on compressed or resized in-puts compared to pristine conditions [46, 59]. Degradation-aware augmentation [36] and robustness benchmarking [23] partially address the gap, yet scaling-law analyses show that augmentation alone cannot fully compensate and remains essential even at large data scales [50]. These findings mo-tivate our multi-scale input processing, heterogeneous back-bones, and aggressive degradation augmentation, which to-gether improve resilience across a wide range of real-world post-processing conditions. 
+
+# 3. Method 
+
+3.1. Overview 
+
+LOGER adopts a two-branch design to jointly capture global-level and local-level forensic cues (Fig. 1). The 
+
+global branch performs full-image detection using three models with heterogeneous backbones or inference reso-lutions (M1–M3), while the local branch performs patch-level forensic analysis using two models with MIL-based aggregation (M4–M5). All outputs are fused in the logit space with optional test-time augmentation. To maximize generator diversity, we build a multi-source candidate pool (approximately 700K images) from several public deepfake benchmarks and sample a subset for each model’s training (see Sec. 4.1 for per-model configurations). All models fur-ther apply degradation augmentation that randomly com-poses perturbations from multiple groups to simulate real-world post-processing conditions (details in Sec. 4.1). We describe each component below. 
+
+3.2. Global Branch 
+
+The global branch performs full-image detection at multi-ple scales with diverse backbones to capture both semantic inconsistencies and statistical artifacts. 
+
+Multi-scale DINOv3 detection. M1 and M2 share the same DINOv3-Huge backbone [45] with full-parameter fine-tuning. We use full-parameter fine-tuning rather than parameter-efficient alternatives (e.g., LoRA [25] or linear probing), as the gap between the VFM pre-training objec-tive and forensic binary classification is large enough that partial adaptation tends to underfit forgery-relevant cues. M1 is trained and inferred at the same resolution, while M2 is trained at the same resolution as M1 but inferred at a higher resolution, so that fine-grained forensic details (e.g., subtle boundary artifacts or compression traces) that a single fixed resolution might discard are preserved at one scale or the other. Each backbone is followed by a two-layer MLP classification head ( din → 256 → 2) with ReLU activation and Dropout(0.1). Both models are trained with Focal Loss [30], which down-weights well-classified exam-ples and focuses gradient on hard samples, improving dis-crimination on ambiguous or degraded inputs. 
+
+Backbone heterogeneity via MetaCLIP2. M3 uses MetaCLIP2-Huge [8] as the backbone. DINOv3 is trained via self-supervised objectives on image patches, encoding rich spatial and structural representations that are sensi-tive to local texture and boundary irregularities. Meta-CLIP2, in contrast, is trained through contrastive image-3text alignment, learning visual features grounded in high-level semantic concepts such as object identity and scene context. Because their pre-training objectives differ fun-damentally, the two backbones encode complementary pri-ors: DINOv3 is more sensitive to spatial and structural de-tails while MetaCLIP2 brings stronger high-level semantic grounding, and their combination reduces correlated errors in the ensemble. M3 uses a staged loss schedule: cross-entropy for the first 20% of training to ensure stable conver-gence, then Focal Loss for the remaining 80% to shift focus toward hard samples. 
+
+3.3. Local Branch 
+
+Face swapping and local reenactment often leave forgery traces concentrated in specific regions (e.g., blending boundaries, eye/mouth areas). Global detectors average over all spatial locations and therefore suffer from evidence dilution when strong signals from a few forged patches are overwhelmed by numerous normal ones [28]. The local branch counters this by operating at the patch level and ag-gregating only the most suspicious regions. 
+
+Patch-level modeling and MIL top-k aggregation. M4 and M5 use DINOv3-Large [45] as the backbone, since patch-level modeling produces substantially more tokens than full-image classification and the Large variant offers a better efficiency trade-off. The input image is split into a grid of non-overlapping patches, and each patch feature is mapped to real/fake logits via lightweight classification lay-ers, yielding a response map {di}Ni=1 where N is the patch count and di = lfake  
+
+> i
+
+− lreal  
+
+> i
+
+is the logit difference of patch 
+
+i. We aggregate patch-level predictions into an image-level score using Multiple Instance Learning (MIL) top-k pool-ing. Only the top k = ⌊0.1 · N ⌋ patches with the highest fake scores are selected for pooling: 
+
+dimg = 1
+
+k
+
+X
+
+> i∈S k
+
+di, Sk = top -k( {di}Ni=1 ), (1) where Sk denotes the index set of the k highest-scoring patches. By focusing on the most suspicious regions, this strategy enhances sensitivity to small forged areas while suppressing noise from normal patches. 
+
+Training objective and multi-resolution inference. M4 and M5 are optimized with a weighted multi-term objective: 
+
+Llocal = LCE + 0 .5 LAUC + 0 .5 LMIL + Lreg , (2) where LCE and LAUC are both computed on the aggregated image-level score dimg from Eq. 1: LCE is the binary cross-entropy loss applied to σ(dimg ), and LAUC is a pairwise AUC surrogate loss that maximizes the margin between positive and negative samples to directly optimize ranking quality. 
+
+LMIL is a patch-level MIL loss applied on the selected top-k
+
+patch scores {di}i∈S k , encouraging each individual patch to produce discriminative local responses rather than relying solely on the aggregated signal. Lreg consists of regulariza-tion terms that prevent degenerate solutions where all patch scores collapse to uniformly positive or negative values. Su-pervising at both levels keeps individual patch responses discriminative while still producing accurate image-level predictions. M4 is trained at a lower resolution and inferred at a higher resolution, producing a denser patch grid that al-lows the model to observe finer spatial details at test time without retraining. M5 is initialized from M4’s best check-point and further fine-tuned at a different resolution with reduced learning rates, adapting to a different spatial granu-larity while retaining the forensic representations learned by M4. This continuation training strategy produces two com-plementary local detectors: M4 benefits from the resolution gap between training and inference, while M5 operates at a resolution it was explicitly optimized for. 
+
+3.4. Logit-Space Fusion 
+
+We aggregate predictions from all five models in the logit space rather than averaging output probabilities. For each global-branch model m, we convert its two-class logits into a single directional evidence score dm = lfake  
+
+> m
+
+− lreal  
+
+> m
+
+; for each local-branch model, dm is directly set to the aggre-gated score dimg from Eq. 1, which is already a logit dif-ference. This formulation retains only the directional ev-idence for or against the fake class, providing a compara-ble scale across models regardless of individual logit mag-nitudes. The fused evidence and final fake probability are computed via averaging: 
+
+¯d(x) = 
+
+> M
+
+X
+
+> m=1
+
+αm dm(x), p(x) = σ  ¯d(x) , (3) where M =5 , σ is the sigmoid function, and we use uniform weights αm = 1 /M . We prefer logit-space fusion over probability averaging because the sigmoid compresses large logit differences into near-saturated probabilities, masking inter-model disagreements. Fusing before the sigmoid re-tains each model’s full confidence range, allowing a confi-dent minority opinion to influence the final decision. 
+
+Test-time augmentation. For M1, M2, M4, and M5, we apply horizontal-flip TTA: each model processes both the original image and its horizontally flipped version, and their logits are averaged before entering the fusion. Since horizontal flipping does not change a face’s authenticity, the detector should yield consistent predictions for both views; averaging the two reduces variance from orientation-dependent artifacts. 4Table 1. Training and inference configurations for all five models. LR b and LR h denote the learning rates for the backbone and classification head, respectively.                                                                   
+
+> Model Branch Backbone Fine-tune Train Res. Infer Res. LR bLR hLoss Epochs TTA GPUs M1 Global DINOv3-H Full 256 ×256 256 ×256 8e-5 2e-3 Focal 10 Flip 8×H800 M2 Global DINOv3-H Full 256 ×256 384 ×384 8e-5 2e-3 Focal 10 Flip 8×H800 M3 Global MetaCLIP2-H Full 378 ×378 378 ×378 1e-4 1e-4 CE →Focal 20 –16 ×A10 M4 Local DINOv3-L Full 224 ×224 384 ×384 1e-4 5e-6 CE+AUC+MIL 20 Flip 16 ×A10 M5 Local DINOv3-L From M4 338 ×338 338 ×338 1e-5 5e-7 CE+AUC+MIL 20 Flip 16 ×A10
+
+# 4. Experiments 
+
+4.1. Experimental Setup 
+
+Datasets. The official competition training set [20] con-tains only 1,000 images, which is insufficient to cover the wide variety of manipulation types and degradation condi-tions encountered at test time. To provide broader gener-ator diversity, we construct a multi-source candidate pool (approximately 700K images) from several public deep-fake benchmarks, including HydraFake [47], FaceForen-sics++ [43], DF40 [59], Celeb-DF [29], and ScaleDF [50]. For M1, M2, M4, and M5, the training data consist of 1,000 official samples plus 20K images randomly sampled from this pool. For M3, we sample 150K images from the of-ficial set, DF40, and HydraFake to expose the MetaCLIP2 backbone to a broader range of forgery types and increase the diversity of training sources within the ensemble. All models apply competition-provided degradation augmenta-tion [9], which randomly composes perturbations from mul-tiple groups (blur, noise, JPEG compression, color shift, spatial distortion) to simulate real-world post-processing. 
+
+Implementation details. All models are implemented in PyTorch 2.3.1 with timm 1.0.20. The detailed per-model training configurations are summarized in Table 1. All mod-els use AdamW ( β1=0 .9, β2=0 .999 , weight decay 10 −2)with discriminative learning rates for the backbone and clas-sification head, and gradient clipping at max norm 1.0. All models adopt a WeightedRandomSampler to address class imbalance in the training set. For the global branch, M1 and M2 share the same checkpoint trained at 256 ×256, with M1 inferred at 256 ×256 and M2 inferred at 384 ×384; M3 is trained and inferred at 378 ×378. For the local branch, M4 is trained at 224 ×224 and inferred at 384 ×384; M5 is ini-tialized from M4 and fine-tuned at 338 ×338 with reduced learning rates. On a single H800 GPU, the five-model en-semble processes images at approximately 17 FPS in steady state, making it practical for offline forensic analysis. 
+
+Evaluation metrics and comparative methods. We re-port AUC as the primary evaluation metric. For cross-dataset evaluation, we cite video-level AUC results re-ported in Effort [58] and GenD [62] as baselines. On the NTIRE 2026 competition validation set, we report image-level AUC and compare against representative methods: Effort [58], DDA [4], MIRROR [33], and GenD [62] are evaluated using their officially released pre-trained weights; CLIP-ViT-L [40], ConvNeXt-Large [34], and Qwen3-VL [1] are trained on the 21K configuration (offi-cial + 20K external, same as M1/M2) and evaluated on the validation set; Reality Defender [41] is tested via its public API; zero-shot commercial MLLMs (GPT-5.2, Claude Son-net 4.5, Gemini 3 Pro) are queried with a binary real/fake prompt using default parameters. 
+
+4.2. Comparison with State-of-the-Art 
+
+Cross-dataset generalization. We follow the evaluation pipelines of Effort [58] and GenD [62]: faces are de-tected with RetinaFace, cropped with a 1.3 × margin, and for video-level evaluation, 32 frames are uniformly sam-pled and their probabilities averaged. Baseline methods are trained on FF++ c23 following the standard protocol. LOGER is trained on a multi-source pool (see Sec. 4.1), so training data configurations differ from the baselines. Table 2 presents cross-dataset and cross-manipulation re-sults following the evaluation of Effort [58]. The left group (Protocol-1) evaluates cross-dataset generalization on five benchmarks; the right group (Protocol-2) evaluates cross-manipulation generalization on eight forgery methods from DF40 [59] using their test splits. Baseline results are di-rectly cited from [58]. We note that multi-source training is integral to our framework design [50], and that DFDC, DFDCP, and WDF are entirely absent from our training pool; for Protocol-2, all eight DF40 forgery methods are evaluated on test splits disjoint from our training data. On Protocol-1, LOGER achieves an average AUC of 92.6%, outperforming Effort (90.4%) by +2.2%. The largest gains appear on DFDC (+6.0%) and DFDCP (+3.4%), both of which contain diverse manipulation types with significant compression artifacts, demonstrating the robustness and re-liability of our approach under challenging conditions. On Protocol-2, LOGER reaches an average of 96.4%, surpass-ing Effort (94.0%) by +2.4% and ranking first on 6 out of 8 forgery methods. Performance is especially strong on UniFace (99.1%), e4s (98.9%), and SimSwap (98.6%), all of which are face-swapping methods that leave localized blending artifacts in specific facial regions. These local-5Table 2. Cross-dataset (Protocol-1) and cross-manipulation (Protocol-2) evaluation following Effort [58]. All baseline methods are trained on FF++ c23; LOGER uses multi-source training (Sec. 4.1). We report video-level AUC (%). Baseline results are cited from [58]. Best and second-best results are in bold and underline. DFo and FFIW are omitted from Protocol-1 as their test data are not easily accessible. 
+
+Protocol-1: Cross-Dataset Protocol-2: Cross-Manipulation (DF40) Method CDF-v2 DFD DFDC DFDCP WDF Avg. UniFace BleFace MobSwap e4s FaceDan FSGAN InSwap SimSwap Avg. 
+
+F3Net [39] 0.789 0.844 0.718 0.749 0.728 0.766 0.809 0.808 0.867 0.494 0.717 0.845 0.757 0.674 0.746 SPSL [32] 0.799 0.871 0.724 0.770 0.702 0.773 0.747 0.748 0.885 0.514 0.666 0.812 0.643 0.665 0.710 SRM [35] 0.840 0.885 0.695 0.728 0.702 0.770 0.749 0.704 0.779 0.704 0.659 0.772 0.793 0.694 0.732 CORE [38] 0.809 0.882 0.721 0.720 0.724 0.771 0.871 0.843 0.959 0.679 0.774 0.958 0.855 0.724 0.833 RECCE [2] 0.823 0.891 0.696 0.734 0.756 0.780 0.898 0.832 0.925 0.683 0.848 0.949 0.848 0.768 0.844 SLADD [3] 0.837 0.904 0.772 0.756 0.690 0.792 0.878 0.882 0.954 0.765 0.825 0.943 0.879 0.794 0.865 SBI [44] 0.886 0.827 0.717 0.848 0.703 0.796 0.724 0.891 0.952 0.750 0.594 0.803 0.712 0.701 0.766 UCF [55] 0.837 0.867 0.742 0.770 0.774 0.798 0.831 0.827 0.950 0.731 0.862 0.937 0.809 0.647 0.824 IID [21] 0.838 0.939 0.700 0.689 0.666 0.766 0.839 0.789 0.888 0.766 0.844 0.927 0.789 0.644 0.811 LSDA [57] 0.875 0.881 0.701 0.812 0.797 0.813 0.872 0.875 0.930 0.694 0.721 0.939 0.855 0.793 0.835 ProDet [5] 0.926 0.901 0.707 0.828 0.781 0.829 0.908 0.929 0.975 0.771 0.747 0.928 0.837 0.844 0.867 CDFA [31] 0.938 0.954 0.830 0.881 0.796 0.880 0.762 0.756 0.823 0.631 0.803 0.942 0.772 0.757 0.781 Effort [58] 0.956 0.965 0.843 0.909 0.848 0.904 0.962 0.873 0.953 0.983 0.926 0.957 0.936 0.926 0.940 
+
+LOGER (Ours) 0.959 0.962 0.903 0.943 0.863 0.926 0.991 0.963 0.961 0.989 0.950 0.980 0.890 0.986 0.964 
+
+Table 3. Cross-dataset evaluation following GenD [62]. All base-line methods are trained on FF++ c23; LOGER uses multi-source training (Sec. 4.1). We report video-level AUC (%). Baseline re-sults are cited from [62]. Best and second-best results are in bold 
+
+and underline.                                                                                                     
+
+> Method Input Backbone CDF-v2 DFD DFDC
+> LipForensics [17] Video ResNet-18 82.4 –73.5 FTCN [66] Video 3D ResNet-50 86.9 –74.0 RealForensics [18] Video Modified CSN 86.9 –75.9 SBI [44] Frame EfficientNet-B4 93.2 82.7 72.4 AUNet [65] Video Xception 92.8 99.2 73.8 LSDA [57] Frame EfficientNet-B4 91.1 –77.0 LAA-Net [37] Frame EfficientNet-B4 95.4 98.4 86.9 AltFreezing [51] Video 3D ResNet-50 89.5 98.5 –NACO [63] Video ViT-B/16 89.5 –76.7 RAE [48] Frame ViT-B/16 95.5 99.0 80.2 TALL++ [53] Video Swin-B 92.0 –78.5 ProDet [5] Frame EfficientNet-B4 92.5 –77.0 UDD [14] Frame CLIP ViT-B/16 93.1 95.5 81.2 P&P [60] Video CLIP ViT-L/14 94.7 96.5 84.3 DFD-FCG [19] Video CLIP ViT-L/14 95.0 –81.8 ForAda [10] Frame CLIP ViT-L/14 95.7 97.2 87.2 Effort [58] Frame CLIP ViT-L/14 95.6 96.5 84.3 GenD [62] Frame DINOv3 ViT-L/16 92.2 96.6 84.7
+> LOGER (Ours) Frame DINOv3+MetaCLIP2 95.9 96.2 90.3
+
+ized traces are particularly amenable to the local branch’s patch-level MIL aggregation. Table 3 presents cross-dataset results on three bench-marks following the evaluation of GenD [62], with the backbone architecture and input type listed for each method. Baseline results are directly cited from [62]. LOGER achieves the highest AUC on CDFv2 (95.9%) and DFDC (90.3%). The DFDC result is noteworthy: LOGER out-performs ForAda (87.2%), the previous best frame-level method, by +3.1 points on a dataset known for its diverse manipulation types, low-quality sources, and heavy com-
+
+Table 4. Comparison with representative methods on the NTIRE 2026 validation set (image-level AUC). Method AUC Method AUC GPT-5.2 0.43 DDA [4] 0.49 Claude Sonnet 4.5 0.44 MIRROR [33] 0.59 Gemini 3 Pro 0.56 Effort [58] 0.65 CLIP-ViT-L [40] 0.66 Reality Defender [41] 0.70 Qwen3-VL-2B [1] 0.73 GenD [62] 0.74 ConvNeXt-L [34] 0.75 LOGER (Ours) 0.92 
+
+pression. On DFD, a near-saturated benchmark, LOGER achieves 96.2% and remains competitive. 
+
+Competition validation set. Table 4 compares LOGER against representative methods on the NTIRE 2026 com-petition validation set (image-level AUC). Commercial MLLMs perform poorly regardless of adaptation strategy: zero-shot GPT-5.2 (43%), Claude Sonnet 4.5 (44%), and Gemini 3 Pro (56%) all fall near or below chance, and even fine-tuned Qwen3-VL (73%) remains below specialized ap-proaches, confirming that general-purpose reasoning is in-sufficient under heavy degradation. Among released de-tectors, DDA (49%) and Effort (65%) suffer from distribu-tion shift, while GenD (74%) benefits from diverse training. CLIP-ViT-L (66%) and ConvNeXt-L (75%), trained on our 21K data, show that conventional backbones alone cannot close the gap. LOGER achieves 92% AUC, outperform-ing the best baseline by +17 points. On the official com-petition leaderboard, LOGER achieves 0.8901 AUC on the public test set and 0.8824 on the private test set, achieving 2nd place. The moderate drop from the validation set is ex-pected, as both test splits introduce novel degradation types not seen during training; the consistent performance across the two test splits confirms strong generalization. 6Table 5. Per-model ablation on the NTIRE 2026 competition val-idation set. Each group shows progressive training enhancements for one backbone. Configuration AUC                    
+
+> (a) DINOv3-H (Global)
+> Baseline (official data only) 0.5601 + External data (ED) 0.7714 + Focal Loss (FL) 0.7882 + Degradation augmentation (DG) 0.8464 + Flip TTA (M1) 0.8515 + Higher-res inference 384 (M2) 0.8584
+> (b) MetaCLIP2-H (Global)
+> Baseline 0.7190 + External data (ED) 0.7562 + Focal Loss (FL) 0.7767 + Degradation augmentation (M3) 0.8008
+> (c) DINOv3-L (Local)
+> Baseline 0.7316 + External data (ED) 0.8192 + Higher-res inference 384 (M4) 0.8296 + Further fine-tuning 338 (M5) 0.8720
+
+4.3. Ablation Study 
+
+We conduct ablation experiments to analyze the contribu-tion of each design dimension. 
+
+Per-model training strategies. Table 5 presents progres-sive training enhancements for each backbone on the com-petition validation set. For DINOv3-H (group a), start-ing from a baseline trained only on official data (0.5601 AUC), external data brings the largest single improvement (+0.211); Focal Loss adds +0.017; degradation augmen-tation contributes +0.058; and flip TTA provides +0.005. M2, which increases inference resolution from 256 to 384 without retraining, adds another +0.007 over M1. For MetaCLIP2-H (group b), M3 achieves 0.8008 AUC after incorporating external data, Focal Loss, and degradation augmentation. Although its standalone accuracy is lower than DINOv3 models, MetaCLIP2’s contrastive image-text pre-training encodes fundamentally different visual pri-ors, contributing diversity rather than individual strength. For DINOv3-L (group c), M4 achieves 0.8296 AUC with higher-resolution inference, and M5, fine-tuned from M4 at 338 ×338, attains 0.8720 AUC, the highest among all indi-vidual models. 
+
+Ensemble composition and fusion strategy. Table 6 an-alyzes the ensemble on the public test set from three per-spectives: global branch effectiveness, local branch effec-tiveness, and fusion strategy. The global-only sub-ensemble (M1+M2+M3) reaches 0.8812 AUC, showing that back-bone heterogeneity yields clear gains over any single global            
+
+> Table 6. Ablation study on ensemble composition and fusion strat-egy on the NTIRE 2026 public test set. All results are image-level AUC. Configuration AUC
+> (a) Global branch
+> M1 (DINOv3-H, 256) 0.8674 M2 (DINOv3-H, 384) 0.8684 M3 (MetaCLIP2-H, 378) 0.8465 M1+M2+M3 0.8812
+> (b) Local branch
+> M4 (DINOv3-L, 384) 0.8437 M5 (DINOv3-L, 338) 0.8487 M4+M5 0.8612
+> (c) Full ensemble (M1–M5)
+> Majority voting 0.8812 Probability averaging 0.8887 Logit averaging (Ours) 0.8901
+
+model. The local sub-ensemble (M4+M5) reaches 0.8612 AUC, confirming that patch-level MIL top-k aggregation is a strong detection paradigm on its own. The full five-model ensemble with logit averaging achieves 0.8901 AUC, sub-stantially outperforming both the global-only and local-only sub-ensembles, directly validating the local–global comple-mentarity that is central to our framework design. Com-paring fusion strategies, logit averaging (0.8901) outper-forms probability averaging (0.8887) and majority voting (0.8812), confirming that fusing in the logit space before the sigmoid preserves inter-model disagreements and yields more robust predictions. 
+
+4.4. Further Analysis 
+
+VFM backbone capability. We train a single DINOv3-Huge with cross-entropy loss on HydraFake [47] and eval-uate on its hierarchical test protocol. As shown in Table 7, even without Focal Loss, degradation augmentation, or en-semble, it achieves 99.4% averaged accuracy, surpassing Veritas (90.7%) and Co-SPY (84.7%) by a large margin, justifying our choice of VFM backbones. 
+
+Robustness under degradation. We construct a con-trolled robustness benchmark of 1,000 videos (100 real + 100 fake from each of the five test sets) and apply JPEG compression (QF 100 →40), spatial resizing (scale 0.5 →2.0), and Gaussian blurring ( σ 0→2.0) independently at varying severity levels. Fig. 2 compares LOGER with four baselines spanning different detection paradigms. NPR [46], based on neigh-boring pixel relationships, hovers near chance ( ∼50% )across all conditions. MIRROR [33] stays in the 69 –80% 
+
+range, showing limited effectiveness. Effort and GenD both start above 91% under clean conditions but degrade notice-7100 90 80 60 40             
+
+> JPEG Quality Factor
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> AUC (%)
+> 0.5 0.75 1.0 1.5 2.0
+> Resizing Scale
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> AUC (%)
+> 00.5 1.0 1.5 2.0
+> Blurring Sigma
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> AUC (%)
+> NPR MIRROR Effort GenD LOGER
+
+Figure 2. Robustness analysis under three degradation types: JPEG compression (left), spatial resizing (middle), and Gaussian blurring (right). AUC (%) is computed over 1,000 videos sampled from five cross-dataset benchmarks. Table 7. Accuracy (%) on the HydraFake benchmark following the hierarchical evaluation protocol of Veritas [47]. All methods are trained on the HydraFake training set. ID: In-Domain, CM: Cross-Model, CF: Cross-Forgery, CD: Cross-Domain. Method ID CM CF CD Avg. 
+
+Small vision models 
+
+D3 [61] 87.3 93.6 73.7 73.1 81.1 Effort [58] 94.7 82.8 88.0 67.1 82.2 Co-SPY [6] 86.3 93.5 87.3 74.7 84.7 
+
+MLLM-based detectors 
+
+SIDA-7B [22] – 76.0 63.3 69.9 76.3 FakeVLM [52] – 77.0 77.7 75.7 77.3 Veritas [47] 97.3 94.8 91.7 82.2 90.7 
+
+DINOv3-H 99.5 99.9 99.8 98.4 99.4 
+
+ably under severe perturbations: GenD drops from 91 .9% 
+
+to 86 .9% under heavy JPEG compression (QF=40), and Ef-fort falls from 92 .0% to 80 .2% under strong Gaussian blur-ring ( σ=2.0), an 11 .7 point decline. LOGER consistently achieves the highest AUC across all degradation types and severity levels. Under JPEG compression, it drops only 1.1
+
+points; under resizing, it remains above 92 .0% at all scales; under blurring, its largest drop is 4.7 points (from 93 .0% 
+
+to 88 .4% at σ=2.0), less than half of Effort’s decline under the same condition. These results demonstrate the strong robustness of LOGER under diverse real-world degradation conditions. 
+
+Failure analysis. Fig. 3 shows representative failure cases from the NTIRE 2026 public test set. False negatives (top) are fake images misclassified as real, typically suf-fering from heavy noise, severe blur, extreme darkness, or grayscale conversion that destroys the forgery traces the de-tector relies on. False positives (bottom) are real images misclassified as fake, where strong lens flare, color noise, or heavy compression introduces visual patterns that mimic (a) False 
+
+> Negatives
+> (b) False
+> Positives
+
+Figure 3. Representative failure cases on the NTIRE 2026 public test set. Top: false negatives (fake →real). Bottom: false positives (real →fake). 
+
+generation artifacts. Both failure modes share the same root cause: extreme degradation erases the boundary between real and fake distributions, making reliable discrimination difficult. 
+
+# 5. Conclusion 
+
+We present LOGER, a local–global ensemble framework for robust deepfake detection. The global branch captures holistic anomalies via heterogeneous VFM backbones at multiple resolutions, while the local branch mitigates evi-dence dilution through MIL top-k aggregation with dual-level supervision. Logit-space fusion exploits the decor-related errors of the two branches for stable predictions. Experiments across multiple cross-dataset benchmarks, the NTIRE 2026 Robust Deepfake Detection Challenge, and controlled robustness stress tests consistently demonstrate strong generalization and robustness under diverse manip-ulation methods and real-world degradations. Our failure analysis identifies extreme degradation as the primary re-maining bottleneck, where discriminative information be-tween real and fake content is largely destroyed. Future work will explore degradation-adaptive inference strategies that explicitly account for input quality during detection. 8References 
+
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. 5, 6 [2] Junyi Cao, Chao Ma, Taiping Yao, Shen Chen, Shouhong Ding, and Xiaokang Yang. End-to-end reconstruction-classification learning for face forgery detection. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4113–4122, 2022. 6 [3] Liang Chen, Yong Zhang, Yibing Song, Lingqiao Liu, and Jue Wang. Self-supervised learning of adversarial example: Towards good generalizations for deepfake detection. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 18710–18719, 2022. 6 [4] Ruoxin Chen, Junwei Xi, Zhiyuan Yan, Ke-Yue Zhang, Shuang Wu, Jingyi Xie, Xu Chen, Lei Xu, Isabel Guan, Taip-ing Yao, and Shouhong Ding. Dual data alignment makes AI-generated image detector easier generalizable. In The Thirty-ninth Annual Conference on Neural Information Pro-cessing Systems , 2025. 1, 2, 5, 6 [5] Jikang Cheng, Zhiyuan Yan, Ying Zhang, Yuhao Luo, Zhongyuan Wang, and Chen Li. Can we leave deepfake data behind in training deepfake detector? Advances in Neural Information Processing Systems , 37:21979–21998, 2024. 6 [6] Siyuan Cheng, Lingjuan Lyu, Zhenting Wang, Xiangyu Zhang, and Vikash Sehwag. Co-spy: Combining seman-tic and pixel features to detect synthetic images by ai. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13455–13465, 2025. 8 [7] Robert Chesney and Danielle Citron. Deep fakes: A loom-ing challenge for privacy, democracy, and national security. 
+
+California Law Review , 107(6):1753–1820, 2019. 1 [8] Yung-Sung Chuang, Yang Li, Dong Wang, Ching-Feng Yeh, Kehan Lyu, Ramya Raghavendra, James Glass, Lifei Huang, Jason Weston, Luke Zettlemoyer, et al. Meta clip 2: A world-wide scaling recipe. arXiv preprint arXiv:2507.22062 , 2025. 1, 3 [9] Codabench. Real-world degradation simulation tools. 
+
+https://www.codabench.org/competitions/ 12761/#/pages-tab , 2024. Accessed: 2026-03-20. 5 [10] Xinjie Cui, Yuezun Li, Ao Luo, Jiaran Zhou, and Junyu Dong. Forensics adapter: Adapting CLIP for generaliz-able face forgery detection. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 19207– 19217, 2025. 2, 6 [11] Brian Dolhansky, Russell Howes, Ben Pflaum, Netanel Baram, and Cristian Canton Ferrer. The deepfake detection challenge dataset. arXiv preprint arXiv:2006.07397 , 2020. 2 [12] Ricard Durall, Margret Keuper, and Janis Keuper. Watch your up-convolution: Cnn based generative deep neural net-works are failing to reproduce spectral distributions. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 7890–7899, 2020. 1, 2 [13] Joel Frank, Thorsten Eisenhofer, Lea Sch¨ onherr, Asja Fis-cher, Dorothea Kolossa, and Thorsten Holz. Leveraging fre-quency analysis for deep fake image recognition. In Inter-national conference on machine learning , pages 3247–3258. PMLR, 2020. 1, 2 [14] Xinghe Fu, Zhiyuan Yan, Taiping Yao, Shen Chen, and Xi Li. Exploring unbiased deepfake detection via token-level shuffling and mixing. In Proceedings of the AAAI Confer-ence on Artificial Intelligence , pages 3040–3048, 2025. 6 [15] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. In Advances in Neural Information Processing Systems (NeurIPS) , 2014. 1 [16] Fabrizio Guillaro, Giada Zingarini, Ben Usman, Avneesh Sud, Davide Cozzolino, and Luisa Verdoliva. A bias-free training paradigm for more general ai-generated image de-tection. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 18685–18694, 2025. 1, 2 [17] Alexandros Haliassos, Konstantinos Vougioukas, Stavros Petridis, and Maja Pantic. Lips don’t lie: A generalisable and robust approach to face forgery detection. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5039–5049, 2021. 6 [18] Alexandros Haliassos, Rodrigo Mira, Stavros Petridis, and Maja Pantic. Leveraging real talking faces via self-supervision for robust forgery detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 14950–14962, 2022. 6 [19] Yue-Hua Han, Tai-Ming Huang, Kai-Lung Hua, and Jun-Cheng Chen. Towards more general video-based deepfake detection through facial component guided adaptation for foundation model. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 22995–23005, 2025. 6 [20] Benedikt Hopf, Radu Timofte, et al. Robust deepfake de-tection, ntire 2026 challenge: Report. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , 2026. 1, 2, 5 [21] Baojin Huang, Zhongyuan Wang, Jifan Yang, Jiaxin Ai, Qin Zou, Qian Wang, and Dengpan Ye. Implicit identity driven deepfake face swapping detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4490–4499, 2023. 6 [22] Zhenglin Huang, Jinwei Hu, Xiangtai Li, Yiwei He, Xingyu Zhao, Bei Peng, Baoyuan Wu, Xiaowei Huang, and Guan-gliang Cheng. Sida: Social media image deepfake detection, localization and explanation with large multimodal model. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28831–28841, 2025. 8 [23] Liming Jiang, Ren Li, Wayne Wu, Chen Qian, and Chen Change Loy. Deeperforensics-1.0: A large-scale dataset for real-world face forgery detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 2889–2898, 2020. 2, 3 [24] Hengrui Kang, Siwei Wen, Zichen Wen, Junyan Ye, Wei-jia Li, Peilin Feng, Baichuan Zhou, Bin Wang, Dahua Lin, Linfeng Zhang, et al. Legion: Learning to ground and ex-plain for synthetic image detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 18937–18947, 2025. 2 
+
+9[25] Chenqi Kong, Haoliang Li, and Shiqi Wang. Enhancing gen-eral face forgery detection via vision transformer with low-rank adaptation. In 2023 IEEE 6th international conference on multimedia information processing and retrieval (MIPR) ,pages 102–107. IEEE, 2023. 2, 3 [26] Chenqi Kong, Anwei Luo, Peijun Bao, Yi Yu, Haoliang Li, Zengwei Zheng, Shiqi Wang, and Alex C Kot. Moe-ffd: Mixture of experts for generalized and parameter-efficient face forgery detection. IEEE Transactions on Dependable and Secure Computing , 2025. 2 [27] Lingzhi Li, Jianmin Bao, Ting Zhang, Hao Yang, Dong Chen, Fang Wen, and Baining Guo. Face x-ray for more gen-eral face forgery detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 5001–5010, 2020. 1, 2 [28] Xiaodan Li, Yining Lang, Yuefeng Chen, Xiaofeng Mao, Yuan He, Shuhui Wang, Hui Xue, and Quan Lu. Sharp mul-tiple instance learning for deepfake video detection. In Pro-ceedings of the 28th ACM international conference on mul-timedia , pages 1864–1872, 2020. 1, 4 [29] Yuezun Li, Xin Yang, Pu Sun, Honggang Qi, and Siwei Lyu. Celeb-df: A large-scale challenging dataset for deep-fake forensics. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 3207– 3216, 2020. 2, 5 [30] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Doll´ ar. Focal loss for dense object detection. In Pro-ceedings of the IEEE international conference on computer vision , pages 2980–2988, 2017. 3 [31] Yuzhen Lin, Wentang Song, Bin Li, Yuezun Li, Jiangqun Ni, Han Chen, and Qiushi Li. Fake it till you make it: Curricu-lar dynamic forgery augmentations towards general deepfake detection. In European conference on computer vision , pages 104–122. Springer, 2024. 6 [32] Honggu Liu, Xiaodan Li, Wenbo Zhou, Yuefeng Chen, Yuan He, Hui Xue, Weiming Zhang, and Nenghai Yu. Spatial-phase shallow learning: rethinking face forgery detection in frequency domain. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 772–781, 2021. 6 [33] Ruiqi Liu, Manni Cui, Ziheng Qin, Zhiyuan Yan, Ruoxin Chen, Yi Han, Zhiheng Li, Junkai Chen, ZhiJin Chen, Kaiqing Lin, et al. Mirror: Manifold ideal reference re-constructor for generalizable ai-generated image detection. 
+
+arXiv preprint arXiv:2602.02222 , 2026. 5, 6, 7 [34] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feicht-enhofer, Trevor Darrell, and Saining Xie. A convnet for the 2020s. In Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , pages 11976–11986, 2022. 5, 6 [35] Yuchen Luo, Yong Zhang, Junchi Yan, and Wei Liu. Gener-alizing face forgery detection with high-frequency features. In Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 16317–16326, 2021. 6 [36] Changtao Miao, Yi Zhang, Man Luo, Weiwei Feng, Kaiyuan Zheng, Qi Chu, Tao Gong, Jianshu Li, Yunfeng Diao, Wei Zhou, et al. Mffi: Multi-dimensional face forgery im-age dataset for real-world scenarios. In Proceedings of the 33rd ACM International Conference on Multimedia , pages 13235–13242, 2025. 2, 3 [37] Dat Nguyen, Nesryne Mejri, Inder Pal Singh, Polina Kuleshova, Marcella Astrid, Anis Kacem, Enjie Ghorbel, and Djamila Aouada. Laa-net: Localized artifact attention network for quality-agnostic and generalizable deepfake de-tection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 17395– 17405, 2024. 6 [38] Yunsheng Ni, Depu Meng, Changqian Yu, Chengbin Quan, Dongchun Ren, and Youjian Zhao. Core: Consistent repre-sentation learning for face forgery detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12–21, 2022. 6 [39] Yuyang Qian, Guojun Yin, Lu Sheng, Zixuan Chen, and Jing Shao. Thinking in frequency: Face forgery detection by min-ing frequency-aware clues. In European conference on com-puter vision , pages 86–103. Springer, 2020. 6 [40] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 5, 6 [41] Reality Defender. Reality defender. https : / / realitydefender.com , 2024. Commercial platform for detecting AI-generated media. 5, 6 [42] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10684–10695, 2022. 1 [43] Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Chris-tian Riess, Justus Thies, and Matthias Nießner. Faceforen-sics++: Learning to detect manipulated facial images. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 1–11, 2019. 2, 5 [44] Kaede Shiohara and Toshihiko Yamasaki. Detecting deep-fakes with self-blended images. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 18720–18729, 2022. 2, 6 [45] Oriane Sim´ eoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Micha¨ el Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. 1, 3, 4 [46] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. Rethinking the up-sampling op-erations in cnn-based generative network for generalizable deepfake detection. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 28130–28139, 2024. 1, 3, 7 [47] Hao Tan, Jun Lan, Zichang Tan, Ajian Liu, Chuanbiao Song, Senyuan Shi, Huijia Zhu, Weiqiang Wang, Jun Wan, and Zhen Lei. Veritas: Generalizable deepfake detection via pattern-aware reasoning. In International Conference on Learning Representations , 2026. 2, 5, 7, 8 
+
+10 [48] Jiahe Tian, Cai Yu, Xi Wang, Peng Chen, Zihao Xiao, Jiao Dai, Jizhong Han, and Yesheng Chai. Real appearance mod-eling for more general deepfake detection. In European Con-ference on Computer Vision , pages 402–419. Springer, 2024. 6[49] Ruben Tolosana, Ruben Vera-Rodriguez, Julian Fierrez, Aythami Morales, and Javier Ortega-Garcia. Deepfakes and beyond: A survey of face manipulation and fake detection. 
+
+Information Fusion , 64:131–148, 2020. 1, 2 [50] Wenhao Wang, Longqi Cai, Taihong Xiao, Yuxiao Wang, and Ming-Hsuan Yang. Scaling laws for deepfake detection. 
+
+arXiv preprint arXiv:2510.16320 , 2025. 1, 2, 3, 5 [51] Zhendong Wang, Jianmin Bao, Wengang Zhou, Weilun Wang, and Houqiang Li. Altfreezing for more general video face forgery detection. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 4129–4138, 2023. 6 [52] Siwei Wen, Junyan Ye, Peilin Feng, Hengrui Kang, Zichen Wen, Yize Chen, Jiang Wu, Wenjun Wu, Conghui He, and Weijia Li. Spot the fake: Large multimodal model-based synthetic image detection with artifact explanation. arXiv preprint arXiv:2503.14905 , 2025. 8 [53] Yuting Xu, Jian Liang, Lijun Sheng, and Xiao-Yu Zhang. Learning spatiotemporal inconsistency via thumbnail layout for face deepfake detection. International Journal of Com-puter Vision , 132(12):5663–5680, 2024. 6 [54] Zhipei Xu, Xuanyu Zhang, Runyi Li, Zecheng Tang, Qing Huang, and Jian Zhang. Fakeshield: Explainable image forgery detection and localization via multi-modal large lan-guage models. In International Conference on Learning Representations , 2025. 2 [55] Zhiyuan Yan, Yong Zhang, Yanbo Fan, and Baoyuan Wu. Ucf: Uncovering common features for generalizable deep-fake detection. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pages 22412–22423, 2023. 6 [56] Zhiyuan Yan, Yong Zhang, Xinhang Yuan, Siwei Lyu, and Baoyuan Wu. Deepfakebench: A comprehensive benchmark of deepfake detection. In Advances in Neural Information Processing Systems , pages 4534–4565, 2023. 2 [57] Zhiyuan Yan, Yuhao Luo, Siwei Lyu, Qingshan Liu, and Baoyuan Wu. Transcending forgery specificity with latent space augmentation for generalizable deepfake detection. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 8984–8994, 2024. 1, 2, 6[58] Zhiyuan Yan, Jiangming Wang, Peng Jin, Ke-Yue Zhang, Chengchun Liu, Shen Chen, Taiping Yao, Shouhong Ding, Baoyuan Wu, and Li Yuan. Orthogonal subspace decompo-sition for generalizable ai-generated image detection. arXiv preprint arXiv:2411.15633 , 2024. 1, 2, 5, 6, 8 [59] Zhiyuan Yan, Taiping Yao, Shen Chen, Yandan Zhao, Xinghe Fu, Junwei Zhu, Donghao Luo, Chengjie Wang, Shouhong Ding, Yunsheng Wu, et al. Df40: Toward next-generation deepfake detection. Advances in Neural Informa-tion Processing Systems , 37:29387–29434, 2024. 2, 3, 5 [60] Zhiyuan Yan, Yandan Zhao, Shen Chen, Mingyi Guo, Xinghe Fu, Taiping Yao, Shouhong Ding, Yunsheng Wu, and Li Yuan. Generalizing deepfake video detection with plug-and-play: Video-level blending and spatiotemporal adapter tuning. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 12615–12625, 2025. 6 [61] Yongqi Yang, Zhihao Qian, Ye Zhu, Olga Russakovsky, and Yu Wu. Dˆ 3: scaling up deepfake detection by learning from discrepancy. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 23850–23859, 2025. 2, 8 [62] Andrii Yermakov, Jan Cech, Jiri Matas, and Mario Fritz. Deepfake detection that generalizes across benchmarks. In 
+
+Proceedings of the IEEE/CVF Winter Conference on Appli-cations of Computer Vision , pages 773–783, 2026. 1, 2, 5, 6[63] Daichi Zhang, Zihao Xiao, Shikun Li, Fanzhao Lin, Jianmin Li, and Shiming Ge. Learning natural consistency represen-tation for face forgery video detection. In European confer-ence on computer vision , pages 407–424. Springer, 2024. 6 [64] Hanqing Zhao, Wenbo Zhou, Dongdong Chen, Tianyi Wei, Weiming Zhang, and Nenghai Yu. Multi-attentional deep-fake detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 2185– 2194, 2021. 1, 2 [65] Tianchen Zhao, Xiang Xu, Mingze Xu, Hui Ding, Yuanjun Xiong, and Wei Xia. Learning self-consistency for deepfake detection. In Proceedings of the IEEE/CVF international conference on computer vision , pages 15023–15033, 2021. 6[66] Yinglin Zheng, Jianmin Bao, Dong Chen, Ming Zeng, and Fang Wen. Exploring temporal coherence for more gen-eral video face forgery detection. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 15044–15054, 2021. 6 [67] Yue Zhou, Xinan He, Kaiqing Lin, Bing Fan, Feng Ding, Jin-hua Zeng, and Bin Li. Brought a gun to a knife fight: Modern vfm baselines outgun specialized detectors on in-the-wild ai image detection. arXiv preprint arXiv:2509.12995 , 2025. 1 [68] Bojia Zi, Minghao Chang, Jingjing Chen, Xingjun Ma, and Yu-Gang Jiang. Wilddeepfake: A challenging real-world dataset for deepfake detection. In Proceedings of the 28th ACM international conference on multimedia , pages 2382– 2390, 2020. 2 
+
+11
