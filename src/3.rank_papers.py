@@ -18,6 +18,7 @@ RANKED_DIR = os.path.join(ARCHIVE_DIR, "rank")
 
 MAX_CHARS_PER_DOC = 850
 BATCH_SIZE = 24
+RERANK_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_RERANK_MAX_TOKENS") or "12000")
 RRF_K = 60
 LANE_TOP_K_BASE = 30
 LANE_TOP_K_STEP = 10
@@ -27,6 +28,11 @@ GLOBAL_POOL_GUARANTEED_MAX = 20
 GLOBAL_POOL_RRF_MIN = 60
 GLOBAL_POOL_RRF_MAX = 300
 MAX_BATCH_RETRIES = 2
+MIN_BATCH_SIZE = 4
+
+
+class BatchOutputTruncatedError(ValueError):
+    pass
 
 
 def log(message: str) -> None:
@@ -310,7 +316,7 @@ def score_batch(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    client.kwargs.update({"temperature": 0.0, "max_tokens": 3000})
+    client.kwargs.update({"temperature": 0.0, "max_tokens": RERANK_MAX_OUTPUT_TOKENS})
     response = client.chat_structured(
         messages=messages,
         schema_name="rerank_batch_scores",
@@ -320,6 +326,8 @@ def score_batch(
     )
     if response.get("refusal"):
         raise ValueError(f"structured output refusal: {response.get('refusal')}")
+    if response.get("finish_reason") == "max_tokens":
+        raise BatchOutputTruncatedError("finish_reason=max_tokens")
     if response.get("finish_reason") not in (None, "stop", "end_turn"):
         raise ValueError(f"unexpected finish_reason: {response.get('finish_reason')}")
     if response.get("parse_error") is not None:
@@ -335,28 +343,73 @@ def score_query_candidates(
     query_text: str,
     docs: List[Dict[str, str]],
 ) -> List[Dict[str, Any]]:
-    merged: Dict[str, Dict[str, Any]] = {}
-    batches = chunk_docs(docs, BATCH_SIZE)
-    for batch_idx, batch_docs in enumerate(batches, start=1):
-        last_error: Exception | None = None
-        for attempt in range(1, MAX_BATCH_RETRIES + 1):
-            retry_note = ""
-            if last_error is not None:
-                retry_note = (
-                    f"Attempt {attempt}. Previous output invalid: {last_error}. "
-                    f"Return exactly these ids once: {', '.join(doc['id'] for doc in batch_docs)}."
+    def _score_docs(
+        current_docs: List[Dict[str, str]],
+        *,
+        batch_size: int,
+        depth: int = 0,
+    ) -> List[Dict[str, Any]]:
+        merged: Dict[str, Dict[str, Any]] = {}
+        batches = chunk_docs(current_docs, batch_size)
+        for batch_idx, batch_docs in enumerate(batches, start=1):
+            effective_batch_size = batch_size
+            while True:
+                last_error: Exception | None = None
+                retry_succeeded = False
+                for attempt in range(1, MAX_BATCH_RETRIES + 1):
+                    retry_note = ""
+                    if last_error is not None:
+                        retry_note = (
+                            f"Attempt {attempt}. Previous output invalid: {last_error}. "
+                            f"Return exactly these ids once: {', '.join(doc['id'] for doc in batch_docs)}."
+                        )
+                    try:
+                        results = score_batch(client, query_text, batch_docs, retry_note=retry_note)
+                        for item in results:
+                            merged[item["id"]] = item
+                        retry_succeeded = True
+                        break
+                    except BatchOutputTruncatedError as exc:
+                        last_error = exc
+                        log(
+                            f"[WARN] batch {batch_idx}/{len(batches)} output truncated at batch_size="
+                            f"{len(batch_docs)}: {exc}"
+                        )
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        log(f"[WARN] batch {batch_idx}/{len(batches)} attempt {attempt} failed: {exc}")
+                        if attempt >= MAX_BATCH_RETRIES:
+                            raise
+
+                if retry_succeeded:
+                    break
+
+                if not isinstance(last_error, BatchOutputTruncatedError):
+                    raise last_error if last_error is not None else RuntimeError("unknown rerank batch failure")
+
+                if len(batch_docs) <= MIN_BATCH_SIZE:
+                    raise last_error
+
+                next_batch_size = max(MIN_BATCH_SIZE, len(batch_docs) // 2)
+                if next_batch_size >= len(batch_docs):
+                    next_batch_size = len(batch_docs) - 1
+                log(
+                    f"[INFO] split rerank batch {batch_idx}/{len(batches)}: "
+                    f"{len(batch_docs)} -> <= {next_batch_size}"
                 )
-            try:
-                results = score_batch(client, query_text, batch_docs, retry_note=retry_note)
-                for item in results:
+                split_results = _score_docs(
+                    batch_docs,
+                    batch_size=next_batch_size,
+                    depth=depth + 1,
+                )
+                for item in split_results:
                     merged[item["id"]] = item
                 break
-            except Exception as exc:
-                last_error = exc
-                log(f"[WARN] batch {batch_idx}/{len(batches)} attempt {attempt} failed: {exc}")
-                if attempt >= MAX_BATCH_RETRIES:
-                    raise
-    return [merged[doc["id"]] for doc in docs if doc["id"] in merged]
+
+        return [merged[doc["id"]] for doc in current_docs if doc["id"] in merged]
+
+    return _score_docs(docs, batch_size=BATCH_SIZE)
 
 
 def normalize_ranked_scores(

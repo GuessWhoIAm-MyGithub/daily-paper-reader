@@ -153,6 +153,41 @@ class RankGlobalPoolTest(unittest.TestCase):
             self.assertEqual(saved.get("global_pool_guaranteed_per_lane"), 8)
             self.assertEqual(ranked[0]["reason"], "reason-p1")
 
+    def test_score_query_candidates_splits_when_max_tokens_truncates(self):
+        class FakeClient:
+            def __init__(self):
+                self.kwargs = {}
+
+            def chat_structured(self, messages, schema_name, schema, strict=True, allow_json_object_fallback=True):
+                prompt = messages[-1]["content"]
+                marker = "Candidate papers:\n"
+                start = prompt.index(marker) + len(marker)
+                end = prompt.index("\n\nReturn exactly one result", start)
+                docs = json.loads(prompt[start:end])
+                if len(docs) > 4:
+                    return {
+                        "refusal": "",
+                        "finish_reason": "max_tokens",
+                        "parse_error": None,
+                        "parsed": None,
+                    }
+                return {
+                    "refusal": "",
+                    "finish_reason": "stop",
+                    "parse_error": None,
+                    "parsed": {
+                        "results": [
+                            {"id": doc["id"], "score": 8.0, "reason": f"ok-{doc['id']}"}
+                            for doc in docs
+                        ]
+                    },
+                }
+
+        docs = [{"id": f"p{i}", "content": f"paper-{i}"} for i in range(1, 9)]
+        scored = self.mod.score_query_candidates(FakeClient(), "query", docs)
+        self.assertEqual([item["id"] for item in scored], [f"p{i}" for i in range(1, 9)])
+        self.assertEqual(scored[0]["reason"], "ok-p1")
+
 
 if __name__ == "__main__":
     unittest.main()
