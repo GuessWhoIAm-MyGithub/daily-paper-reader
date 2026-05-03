@@ -1,0 +1,557 @@
+Title: DDA-Thinker: Decoupled Dual-Atomic Reinforcement Learning for Reasoning-Driven Image Editing
+
+URL Source: https://arxiv.org/pdf/2604.25477v1
+
+Published Time: Wed, 29 Apr 2026 00:49:57 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> 1
+
+# DDA-Thinker: Decoupled Dual-Atomic Reinforcement Learning for Reasoning-Driven Image Editing 
+
+Hanqing Yang, Qiang Zhou, Yongchao Du, Sashuai Zhou, Zhibin Wang, Jun Song, Tiezheng Ge, Cheng Yu, Bo Zheng 
+
+Abstract —Recent image editing models have achieved strong visual fidelity but often struggle with tasks requiring complex reasoning. To investigate and enhance the reasoning-grounded planning for image editing, we propose DDA-Thinker, a Thinker-centric framework designed for the independent optimization of a planning module (Thinker) over a fixed generative model (Editor). This decoupled Thinker-centric paradigm facilitates a controlled analysis of the planning module and makes its contribution under a fixed Editor easier to assess. To effectively guide this Thinker, we introduce a dual-atomic reinforcement learning framework. This framework decomposes feedback into two distinct atomic rewards implemented through verifiable checklists: a cognitive-atomic reward to directly assess the quality of the Thinker’s executable plan, which serves as the actionable outcome of the Thinker’s reasoning, and a visual-atomic reward to assess the final image quality. To improve checklist quality, our checklist synthesis is grounded not only in the source image and user instruction but also in a rational reference description of the ideal post-edit scene. To support this training, we further develop a two-stage data curation pipeline that first synthesizes a diverse and reasoning-focused dataset, then applies difficulty-aware refinement to curate an effective training curriculum for reinforcement learning. Extensive experiments on reasoning-driven image editing benchmarks, including RISE-Bench and KRIS-Bench, demonstrate that our approach substantially improves overall performance. Our method enables a community model to achieve results competitive with strong proprietary models, highlighting the practical potential of Thinker-centric optimization under a fixed-editor setting. 
+
+Index Terms —Reasoning-driven image editing, reinforcement learning, dual-atomic reward, visual-language models. 
+
+I. I NTRODUCTION 
+
+Recent advances in image editing have been significantly propelled by large-scale vision-language models and diffusion models [1]–[7]. These models demonstrate strong capabilities in attribute-level modifications [8]–[12] such as color adjustment, object insertion, and style transfer. However, despite their impressive visual fidelity, they often struggle with tasks requiring complex reasoning, such as maintaining physical plausibility, logical coherence, and factual correctness [13]– [17]. This limitation largely stems from the absence of an explicit planning stage: these systems directly translate user instructions into visual modifications without reasoning about the underlying physical, causal, or logical constraints that govern the desired transformation. 
+
+Hanqing Yang, Qiang Zhou, Yongchao Du, Sashuai Zhou, Zhibin Wang, Jun Song, Tiezheng Ge, Cheng Yu, and Bo Zheng are with Alibaba Group. Sashuai Zhou is also with Zhejiang University. Hanqing Yang, Qiang Zhou, Yongchao Du, and Sashuai Zhou contributed equally to this work. Jun Song is the corresponding author. Source Image          
+
+> User Instruction
+> Thinker
+> Trainable
+> Editor
+> Trainable Edited Image Plan
+> Policy Update
+> Source Image
+> User Instruction
+> Thinker
+> Trainable
+> Editor
+> Frozen Edited Image Plan
+> Cognitive -Atomic
+> Reward
+> Visual -Atomic
+> Reward
+> Visual -level
+> Reward
+> Policy Update
+> Policy Update
+> (a) Prior Optimization Paradigm
+> (b) Our Decoupled Dual -Atomic Thinker
+
+Fig. 1. Comparison of Training Paradigms. (a) Prior paradigms jointly or alternately train both Thinker and Editor. In this intertwined optimization, feedback from a single outcome is used to update both modules, making it harder to isolate whether errors arise from planning or execution. Additionally, visual-only rewards may provide limited guidance on the quality of the executable plan. (b) Our DDA-Thinker decouples planning from generation by exclusively optimizing the Thinker while keeping the Editor frozen. This design decouples the Thinker’s optimization, allowing its contribution to be more easily assessed and guided with fine-grained dual-atomic feedback on both the executable plan and the visual outcome. 
+
+To bridge this gap, recent works have explored incorporating explicit planning into editing pipelines [14], [18]–[21]. For example, Unified Thinker [18] and ThinkRL-Edit [19] introduce planning components to bridge user instructions and image editing operations. While promising, these methods typically rely on optimization strategies where planning and generation components are jointly or alternately trained. As illustrated in Figure 1(a), prior paradigms raise two practical issues for analyzing and improving the planning module. First, the intertwined optimization complicates error attribution, as a poor edit may arise either from a flawed plan or from the generator’s failure to execute an otherwise valid one. As a result, the contribution of the planning module becomes harder to assess cleanly, motivating our decoupled Thinker-centric setting for more controlled investigation. Second, many existing reinforcement learning schemes in this domain [18]–[20] largely depend on visual-only reward signals. These signals are often unreliable due to coarse-grained assessment and offer only indirect evidence about the underlying executable plan. This creates a “cognitive blind spot”: a flawed executable plan can still be positively reinforced if the final image appears acceptable, while a sound plan paired with imperfect generation is penalized. As a result, the policy may over-rely on visually plausible outcomes even when the underlying executable plan 
+
+> arXiv:2604.25477v1 [cs.CV] 28 Apr 2026 2
+
+is incomplete or imprecise. In this work, we explore an alternative to the prevailing paradigms where both planning and generation modules are actively trained. We shift our focus toward a more controlled investigation, asking a different research question: To what extent can performance in reasoning-intensive image editing be improved by exclusively optimizing the planning module? 
+
+This question is motivated by our insight that for a fixed editor, the quality of the executable plan often represents a key immediate and tractable bottleneck. Here, planning refers to the form in which the Thinker turns its reasoning into instructions executable by the Editor. To answer this question, we propose DDA-Thinker, a framework built upon a Thinker-centric paradigm (Figure 1(b)). A dedicated planning module (Thinker) is trained for a strictly frozen image editor. We clarify that our goal is not to establish the superiority of decoupled Thinker-centric optimization over joint or alternating training of the Thinker and Editor. Instead, we adopt a decoupled Thinker-centric setup as a controlled analytical setting to study the impact of improving the planning module under a fixed editor. Our approach therefore explores a Thinker-centric optimization setting: we focus on teaching the Thinker to produce plans that are logically sound and better aligned with the Editor’s execution capabilities. However, such a decoupled Thinker-centric strategy intro-duces a critical challenge: how to provide effective and fine-grained feedback for the Thinker. Existing reward formulations ranging from scalar scores to visual-only checklists [18], [19], [22], [23] are often inadequate, as they either fail to capture the quality of the executable plan or are susceptible to ambiguity and noise. To overcome these limitations, we propose a dual-atomic reinforcement learning framework .This framework decomposes the reward into two distinct atomic rewards, each implemented through a verifiable checklist, for executable planning and visual outcomes: a cognitive-atomic reward assessing the executable planning output, which serves as the actionable outcome of the Thinker’s reasoning, in terms of intent preservation, logical soundness, and plan executability; and a complementary visual-atomic reward assessing the final image’s instruction following, appearance consistency, and hallucination detection. We apply this cognitive-atomic reward at the plan level because the executable plan is the most direct and least ambiguous optimization target under a frozen Editor. To make these binary-verified checklists more precise and reliable, they are synthesized using not only the source image and user instruction but also a rational reference description, i.e., a textual depiction of the ideal post-edit scene. Grounding checklist generation in this textual reference helps reduce reward noise and ambiguity. By providing explicit guidance on both plan quality and visual outcomes, this dual-faceted feedback mechanism helps optimize the Thinker for more reliable execution. Effective reinforcement learning under this framework re-quires a data corpus that is both diverse in reasoning scenarios and appropriately challenging for policy optimization. To this end, we develop a two-stage generative data pipeline. The first stage synthesizes a diverse reasoning-focused dataset for initial supervised training: guided by a reasoning-centric taxonomy, a powerful Large Language Model (LLM) acts as a scenario generator, creating data triplets consisting of source image description, user instruction, and rational reference description. Source images are then synthesized from their corresponding descriptions using a high-fidelity text-to-image (T2I) model. This generation-driven strategy offers greater control over scenario distribution and scenario coherence, helping mitigate the coverage limitations often found in web-crawled or repurposed datasets. Subsequently, the second stage applies difficulty-aware refinement, curating a training curriculum by filtering out samples that are either too easy or too hard. This process yields a dataset that provides a stronger and more targeted learning signal, thereby supporting more effective policy optimization. Our contributions are threefold:  
+
+> •
+
+We propose a decoupled Thinker-centric paradigm that independently optimizes the planning module, enabling a controlled study of how improving the Thinker affects the final editing outcomes under a fixed Editor.  
+
+> •
+
+To effectively guide this paradigm, we introduce a dual-atomic reinforcement learning framework. It provides fine-grained verifiable feedback on both the executable plan and the visual outcome through checklist-based rewards, with checklist generation additionally grounded in rational reference descriptions.  
+
+> •
+
+Through extensive experiments on reasoning-driven image editing benchmarks, we show that Thinker-centric opti-mization can substantially improve a strong fixed Editor. Under this setting, our method establishes new state-of-the-art results among community models and achieves performance competitive with leading proprietary models. II. R ELATED WORK 
+
+A. Reasoning-Driven Image Editing 
+
+General image editing models [1], [2], [24]–[29] have achieved remarkable proficiency in basic attribute-level modifi-cations but often fail to handle tasks requiring sophisticated physical causality or temporal evolution. To bridge this gap, recent works [14], [18]–[20], [30]–[32] have integrated planning modules into the editing pipeline. However, these methods often rely on complex coupled optimization strategies and frequently suffer from a lack of fine-grained reinforcement feedback during training. Specifically, ThinkGen [20] employs a training pipeline that requires an auxiliary instruction refinement module and per-scenario rule-based models. Unified Thinker [18] relies on joint supervised fine-tuning of both planning and generative components, which complicates the optimization landscape and limits feedback granularity. ThinkRL-Edit [19] employs a training paradigm that involves updating both the planning and generation modules. Its feedback mechanism focuses predominantly on image-level verification, largely neglecting the cognitive plan itself. While effective, these optimization strategies complicate the assessment of the planning module’s contribution to the final editing outcome. Furthermore, iterative architectures such as EditThinker [14] and ReasonEdit [21] utilize multi-round reflection cycles to improve accuracy, yet 3
+
+such designs incur substantial computational overhead and inference latency. In contrast, we adopt a Thinker-centric strategy that provides a more controlled setting for studying the planning module. Specifically, we optimize the Thinker while keeping the generative model strictly frozen, thereby decoupling planning optimization from image generation. By introducing a dual-atomic reinforcement learning framework, our approach pro-vides fine-grained reward signals to better align planning quality with visual execution. 
+
+B. Reinforcement Learning for Image Editing 
+
+Recent research [22], [33]–[38] has increasingly employed reinforcement learning to improve the capabilities of Vision-Language Models (VLMs) and diffusion-based models. A core challenge in this domain is translating holistic evaluation into actionable training signals for image editing, where success depends on both accurate intent comprehension and high-precision pixel-level execution [17], [39]–[42]. Several existing approaches [43], [44] prioritize the development of domain-specialized reward models to improve the quality assessment of edited images. For example, EditScore [43] trains specialized VLM-based judges to provide more reliable feedback than general-purpose reward models. Other methods [18]–[20] leverage pre-trained foundation models as reward models to generate training signals for optimizing both the reasoning VLM and the diffusion-based generation model. Some of these methods have introduced checklist-style rewards to decompose complex visual editing tasks into measurable units. However, they remain limited to visual-level signals and do not provide direct feedback on the executable plan. Furthermore, the checklist generation process in such methods often lacks grounding in the intended editing result, which can lead to noisy rewards. In this work, we propose a dual-atomic reinforcement learning framework to address these limitations. Rather than relying on scalar-based or purely visual feedback, our approach decomposes the reward process into binary-verified checklists across both visual and cognitive domains. To ensure the quality and reliability of these checklists, their generation is guided not only by the source image and user instruction, but also by a rational reference description of the ideal post-edit scene. This description serves as a semantic reference, helping align checklist generation with the intended editing target and reduce potential noise and ambiguity. III. M ETHODOLOGY 
+
+In this work, we propose DDA-Thinker , a framework for reasoning-driven image editing. Our approach adopts a 
+
+Thinker-centric strategy , where we exclusively optimize a Thinker module to act as an intelligent planner for a frozen Editor. This strategy is realized through a dual-atomic reinforcement learning framework, which refines the Thinker’s planning abilities by providing fine-grained feedback on both the executable plan and visual outcomes. The entire training process is supported by a two-stage generative data pipeline designed to provide a diverse and effective training curriculum. This section first outlines our conceptual framework, then details the data synthesis and training processes that enable our Thinker-centric approach. 
+
+A. Conceptual Framework and Innovations 
+
+While prior works often employ schemes where both planning and generation modules are actively trained [18]– [20], our approach is intentionally designed to optimize the Thinker module in a more controlled setting. We clarify that our goal is not to establish the superiority of this Thinker-centric strategy over joint or alternating training of the Thinker and Editor. This methodology is motivated by the observation that a sufficiently capable Thinker can learn to better leverage the capabilities of a fixed generative model. To this end, we adopt a Thinker-centric strategy, concentrating all optimization efforts on the Thinker while treating the Editor as a frozen execution engine throughout training. However, this Thinker-centric strategy introduces a critical challenge: how to provide a reward signal that is both fine-grained and reliable enough to guide the Thinker effectively. Conventional reward signals, such as interval-based scalar scores or visual-only feedback, are often insufficient for this purpose. To address this, we build upon the principle of atomic rewards, which decompose a single ambiguous score [18], [22], [23], [45] into a set of verifiable questions, each yielding a binary outcome. Building on this principle, our dual-atomic reinforcement learning framework advances beyond the visual-only feedback schemes by addressing two key limitations. First, to improve checklist quality and reduce noise, our checklist generation is grounded not only in the source image and user instruction but also in a rational reference description of the ideal post-edit scene. Second, we introduce a cognitive-atomic reward that explicitly evaluates the quality of the Thinker’s executable plan. This dual-faceted feedback, supported by a purpose-built data corpus, effectively helps optimize the Thinker for stronger planning and more reliable visual outcomes. 
+
+B. Reasoning-Enhanced Data Corpus 
+
+Effective training of the dedicated Thinker for reasoning-driven image editing requires a data corpus with diverse reasoning-driven scenarios and an appropriate level of task difficulty. To this end, we develop a two-stage data curation pipeline, as illustrated in Figure 2. 
+
+1) Generative Data Curation Pipeline: Our generative data curation pipeline, depicted in Stage 1 of Figure 2, allows us to better control scenario content during data construction. To build a training data corpus that covers diverse reasoning demands in image editing, we guide generation with a taxonomy spanning three broad domains. The first, Physical Common-sense Reasoning, includes scenarios requiring reasoning about material properties, object interactions, temporal evolution, and spatial relationships. The second, Logical & Causal Reasoning, focuses on the ability to deduce and infer abstract relationships, eliciting tasks involving multi-step problem solving, causal inference, and adherence to logical constraints. The third, Knowledge-Based Reasoning, includes edits that depend on 4Stage 1: Generative Data Curation Pipeline Stage 2: Difficulty -Aware Refinement                 
+
+> Taxonomy LLM
+> (Scenario Generator) •Physics
+> Commonsense Reasoning
+> •Logical & Causal
+> Reasoning
+> •Knowledge -Based
+> Reasoning
+> Source Image
+> Desc.
+> User
+> Instruction (!)
+> Rational Ref.
+> Desc. ("!"# )
+> VLM
+> (Cognitive Planner)
+> Source Image (#)
+> T2I Model
+> Filter SFT Dataset
+> ($$%& )
+> Thinker Editor
+> Cognitive Plan (z) Edited Image (%)
+> VLM Scorer
+> RFT Dataset
+> ($'%& )Keep (Optional Difficulty)
+> Difficulty Filter
+> Reject
+> （Too Easy ）
+> Reject
+> （Too Hard/Noisy ）
+> Cognitive Plan (&∗)
+
+Fig. 2. Overview of the Reasoning-Enhanced Data Curation Process. This process constructs two datasets: an initial set for supervised fine-tuning ( DSFT )and a refined set for reinforcement learning ( DRFT ). Stage 1 (Generative Data Curation Pipeline): Guided by a reasoning taxonomy, an LLM serves as the scenario generator to create diverse data triplets. A T2I model then synthesizes the source images, and a VLM-based planner produces the corresponding cognitive plans. This stage is designed to achieve broad scenario coverage and yields the initial dataset DSFT . Stage 2 (Difficulty-Aware Refinement): Samples from DSFT are processed by our Thinker and Editor. A VLM-based evaluator then scores the quality of the overall outcome. Based on this score, a difficulty filter selects samples within a moderate difficulty range, creating the final dataset DRFT by rejecting those that are too easy or too hard/noisy. 
+
+domain-specific knowledge, such as historical facts, cultural context, and biological processes. Guided by this taxonomy, a powerful off-the-shelf LLM serves as the scenario generator to create data triplets consisting of source image description, user instruction, rational reference description. The rational reference description, a textual depiction of the ideal post-edit scene, is specifically introduced to support the later generation of more reliable checklists. Source images are then synthesized from their corresponding descriptions using a high-fidelity T2I model. This generative strategy helps mitigate the coverage limitations often found in web-crawled or repurposed datasets, where reasoning-intensive editing scenarios are often scarce [18], [20], [44]. Subsequently, for each sample, a powerful VLM-based planner is employed to synthesize the cognitive plan in a structured format: z =
+
+<think> c </think> <answer> a </answer> where 
+
+c denotes the intermediate chain of thought and a is the final executable plan. Finally, after automated checks and manual inspection, the resulting data forms our initial supervised training set DSFT .
+
+2) Difficulty-Aware Refinement: To construct a more effec-tive training curriculum for the reinforcement learning stage, we perform difficulty-aware rejection sampling, as depicted in Stage 2 of Figure 2. This strategy is motivated by the observation that not all samples provide equally useful learning signals [46]. Trivial examples offer diminishing returns, while excessively difficult or noisy ones, where the model consistently fails, can introduce misleading gradients and hinder policy updates [46]. Our goal is therefore to curate a dataset of moderately difficult samples, which represent an effective “sweet spot” for learning [46], [47]. Specifically, we employ a powerful VLM-based evaluator to provide a holistic quality score for each attempted edit. This score serves as a heuristic proxy for overall sample quality, informed by two key aspects: the quality of the generated plan (e.g., clarity, correctness, executability) and the visual quality of the final image (e.g., instruction following, consistency, plausibility). We then filter out samples that are either too easy (high score) or too hard/noisy (low score), retaining only those within a moderate difficulty range. This curated set, denoted as DRFT , provides a more robust and sample-efficient curriculum for subsequent policy optimization. 
+
+C. Thinker-Centric Dual-Atomic Optimization 
+
+Our training procedure is designed to exclusively optimize the Thinker’s policy πθ (z | x, u ), parameterized by θ, which generates a structured cognitive plan z based on the source image x and user instruction u. Throughout this process, the Editor E(x, a ) remains frozen. The training unfolds in two main phases. 
+
+1) Supervised Fine-Tuning Initialization: We first initial-ize the Thinker’s policy πθ via Supervised Fine-Tuning (SFT). Given the training dataset DSFT of ground-truth triples 
+
+(x, u, z ∗), the objective is to minimize the negative log-likelihood of the expert-written target z∗:
+
+LSFT = −E(x,u,z ∗)∼D SFT [log πθ (z∗ | x, u )] . (1) This stage aligns the Thinker with the desired output format and teaches it to transform the user instruction into a final executable plan, accompanied by intermediate reasoning chain in the structured response. 5"Let the dog blast               
+
+> off with a jetpack."
+> User Instruction (")
+> Source Image ( #)Thinker (!!)
+> Trainable
+> Editor (#)
+> Frozen
+> Cognitive Plan Rollouts $!…$"
+> Reasoning & Execution
+> Visual Rollouts &!…&"
+> Cognitive Checklist Focus:
+> IP, LS, PE
+> •source image ( #)
+> •user instruction ( ")
+> •rational reference ( '#$% )
+> Planning
+
+!           
+
+> "
+> GRPO Update
+> •Logical Soundness (LS) :
+> Infers blast effects (smoke, wind)?
+> •Intent Preservation (IP) :
+> Describes dog & jetpack ?
+> •Plan Executability (PE):
+> Specifies visual details (pose, shape)?
+> Dual -Atomic Reward Cognitive -Atomic Reward
+> visual reward
+> Visual -Atomic Reward
+> •Instruction Following (IF):
+> Shows dog with jetpack & blast?
+> •Appearance Consistency (AC):
+> Trees & frisbee unchanged?
+> •Hallucination Detection (HD):
+> No extra objects (e.g., UFO, text)?
+
+"" Visual Checklist Focus:           
+
+> IF, AC, HD
+> #Synthesis Input: #Synthesis Input:
+> •source image ( #)
+> •user instruction ( ")
+> •rational reference ( '#$% )
+> Think :"blast off" implies effects
+> (smoke, wind), dynamic pose...
+> Answer :Golden dog ,leaping, jetpack
+> with smoke & fire, in an action pose ...
+> Execution
+> cognitive reward
+
+Fig. 3. The DDA-Thinker Training Framework. Our framework trains a Thinker ( πθ ) over a frozen Editor ( E). The core of our method is the dual-atomic reward mechanism, which provides fine-grained feedback on both the executable plan and the final image. The cognitive-atomic reward assesses the plan’s quality (e.g., IP, LS, PE), while the visual-atomic reward assesses the final image’s quality (e.g., IF, AC, HD). The binary checklists for both rewards are synthesized using the source image ( x), user instruction ( u), and the rational reference description ( dref ). The combined rewards then update only the Thinker’s policy via GRPO. 
+
+2) Reinforcement Fine-Tuning with Dual-Atomic Rewards: 
+
+After supervised initialization, we further optimize the Thinker using reinforcement learning. As illustrated in Figure 3, the core of this stage is to move beyond a single ambiguous score by decomposing feedback into a set of atomic and verifiable questions. Our dual-atomic reward mechanism extends this principle by addressing two limitations in prior checklist-based methods. First, it improves the quality and reliability of the checklist questions. By grounding offline checklist generation not only in the source image and user instruction but also on a rational reference description of the ideal post-edit scene, our approach reduces noise in the generated checklist. Second, it expands the scope of feedback beyond visual reward by introducing a cognitive-atomic reward to directly guide the Thinker’s executable plan. We formalize the offline preparation of each checklist Q
+
+(visual or cognitive) as sampling an optimal set of questions from a conditional probability distribution: 
+
+Q∗ = arg max  
+
+> Q
+
+P (Q | x, u, d ref ), (2) where x is the source image, u is the user instruction, dref is the rational reference description, and P (Q | · ) represents the likelihood of a question set being effective and comprehensive. In practice, we approximate this ideal by prompting a powerful VLM to generate a high-quality checklist Q.
+
+Visual-Atomic Reward. This reward assesses the overall quality and correctness of the edited output image y, providing a visual feedback signal that encourages the Thinker to generate plans leading to better visual outcomes. To generate a high-quality checklist for this assessment, we leverage the rational reference description, i.e., a textual depiction of the expected post-edit scene. Rather than relying on an explicit post-edit reference image, which is often difficult to construct reliably, this approach uses the description as a semantic reference. Grounded in this reference, together with the source image and user instruction, we generate a set of M visual-related binary questions Qvisual . The visual checklist is designed to primarily probe three core attributes: (1) Instruction Following (IF), which assesses whether the primary edits are correctly applied; (2) Appearance Consistency (AC), which verifies that unedited regions remain unchanged; (3) Hallucination Detection (HD), which ensures that no extraneous objects or artifacts are introduced. A VLM-based reward model, denoted as R(·),conceptually provides a binary score for each question. In practice, for efficiency, all M questions for a given sample are evaluated in a single forward pass. The resulting visual reward is the average success rate, formally defined as: 
+
+rvisual = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+R(x, u, y, q visual  
+
+> i
+
+), (3) where x is the source image, u is the user instruction, y is the edited output image being evaluated, qvisual  
+
+> i
+
+∈ Qvisual is the specific question, and the output of R(·) lies in {0, 1}.
+
+Cognitive-Atomic Reward. A visual-level reward is essential, but it provides only indirect feedback for the Thinker’s planning process. A good image may be generated from an imprecise plan, offering a noisy learning signal for the Thinker’s planning process. To address this, our cognitive-atomic reward directly assesses the quality of the Thinker’s executable plan, independent of the final visual outcome. The cognitive-atomic reward is calculated based exclusively on the final executable plan a within the <answer> field. This design choice is directly aligned with our core objective: to optimize the quality of the actionable instruction sent to the Editor. The final plan a serves as the most direct and least ambiguous proxy for this objective. While the <think> 6
+
+field contains the detailed reasoning process, our goal is to reward the successful outcome of that process, which is a correct and executable plan, since this is what ultimately determines the quality of the final image edit. Similar to its visual counterpart, the cognitive checklist Qcognitive is generated based on the source image, user instruction, and rational reference description. However, its purpose is fundamentally different: to probe the logical and semantic integrity of the executable plan. The cognitive checklist is designed to assess three key aspects of the cognitive plan: (1) Intent Preservation (IP), which ensures that the plan accurately reflects the user’s core request without omission or misinterpretation; (2) Logical Soundness (LS), which verifies that the plan is factually correct and logically coherent, without violating commonsense; (3) Plan Executability (PE), which confirms that the plan translates abstract concepts into actionable, concrete, and unambiguous instructions that the Editor can directly process. We employ the same VLM-based reward model R(·) to evaluate the executable plan a, again processing all N cognitive questions in a single forward pass for computational efficiency. The resulting cognitive reward is computed as: 
+
+rcognitive = 1
+
+N
+
+> N
+
+X
+
+> j=1
+
+R(x, u, a, q cognitive  
+
+> j
+
+), (4) where x is the source image, u is the user instruction, a is the executable plan being evaluated, qcognitive  
+
+> j
+
+∈ Qcognitive is the specific question, and the output of R(·) lies in {0, 1}.
+
+Policy Optimization. Our dual-atomic framework provides two distinct reward signals, rcognitive and rvisual , which guide the Thinker towards plan quality and visual effectiveness, respectively. A common approach is to combine them into a single weighted sum and apply an optimization algorithm such as Group Relative Policy Optimization (GRPO) [48] to the merged reward. However, this method entangles the two objectives through a shared advantage calculation and requires hand-tuning the weighting coefficient. We instead keep the two reward signals separate throughout optimization. During Reinforcement Fine-Tuning (RFT), every training example is used to form two parallel mini-batch streams, 
+
+Dcog and Dvis . This allows the same input to contribute to both objectives through independent rollout groups, rather than through a merged scalar reward. Both streams therefore cover the full training pool, meaning the two objectives are separated through distinct reward signals rather than by a disjoint data partition. For a mini-batch drawn from a specific stream D∗ ∈ {D cog , Dvis }, the Thinker’s policy πθ is optimized using only the corresponding reward signal, so that it receives clear and focused feedback on each objective. The policy is updated using the GRPO objective: 
+
+LGRPO = −E(x,u )∼D ∗
+
+"
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+Ak log πθ (zk | x, u )
+
+#
+
+, (5) where for each input (x, u ) we sample K responses 
+
+{z1, . . . , z K } and score each response zk with the reward signal associated with D∗. The advantage Ak is the within-group standardized reward of zk computed over all K responses. Since this standardization is performed independently for each reward channel, the resulting advantages are comparably scaled, thus requiring no hand-tuned weighting between them. By optimizing the Thinker with this dual-faceted and group-relative feedback, DDA-Thinker learns to generate executable plans that are not only logically sound but also highly executable, leading to high-quality visual edits. IV. E XPERIMENTS 
+
+A. Experimental Setup 
+
+Models and Training Setup. We utilize Qwen3-VL-32B as the primary trained Thinker, with additional results reported for Qwen3-VL-8B [60]. Throughout training, the image generation Editor remains frozen. Unless otherwise specified, we use Qwen-Image-Edit-2511 [1] as the default Editor. The training pipeline follows a two-stage paradigm. First, the Thinker undergoes SFT on our 5k synthesized dataset, performed on 16 NVIDIA H200 GPUs. Second, it is optimized via dual-atomic RFT using GRPO [48] on a curated 1.4k dataset, performed on 40 NVIDIA H200 GPUs. The RFT dataset is curated using difficulty-aware rejection sampling. To efficiently filter the initial candidate pool, we employ a coarse-grained assessment as a cost-effective proxy to assign a holistic quality score (on a 5-point scale) to each sample. We retain samples with scores in the empirically determined range of 2 to 4. For the RFT itself, where reward precision is paramount, the policy is guided exclusively by our fine-grained dual-atomic rewards. 
+
+Data and Reward Generation Details. Following common practice in recent image editing and reward-modeling works [18], [19], [30], [32], our data creation and reward computation process rely on a suite of high-performance off-the-shelf foundation models. We emphasize that these external models serve as implementation dependencies for data synthesis and reward provision, while the conceptual contribution of this work lies in the Thinker-centric training paradigm and dual-atomic reward design. For the initial data synthesis, we use Gemini-3-Pro to generate both the data tuples (source image description, user instruction, and rational reference description) based on our taxonomy and the expert-written target for SFT. Source images are synthesized from these source image descriptions using Gemini-2.5-Flash-Image. The checklists for our atomic reward mechanism are also generated by Gemini-3-Pro using the source image, user instruction, and rational reference description as input. To ensure focused and high-quality assessment, we constrain generation to a maximum of 6 questions for each checklist type (visual and cognitive). During the RFT stage, Gemini-3-Flash serves as the reward model within our dual-atomic reward framework to provide fine-grained feedback across both visual and cognitive dimensions. 
+
+Evaluation Benchmarks. We evaluate our model on two comprehensive benchmarks designed for reasoning-driven image editing. RISE-Bench [17] presents complex reasoning challenges spanning temporal, causal, spatial, and logical axes. It evaluates the quality of the resulting edits based on three core metrics: instruction reasoning, appearance consistency, and visual plausibility. Complementing this, KRIS-Bench [61] 7                                                                                                                                                                                                       
+
+> TABLE I QUANTITATIVE COMPARISON ON RISE-B ENCH ACROSS DIVERSE REASONING DIMENSIONS . P ERFORMANCE IS EVALUATED BASED ON INSTRUCTION
+> REASONING (R EASON .), A PPEARANCE CONSISTENCY (C ONSIST .), AND VISUAL PLAUSIBILITY (V ISUAL .). A CCURACY (%) IS BROKEN DOWN INTO FOUR CORE REASONING CATEGORIES ,AND OVERALL ACC .IS CALCULATED AS THE MEAN OF THESE FOUR CATEGORIES .
+> Model Reason. Consist. Visual. Temporal Causal Spatial Logical Overall Acc.
+> Proprietary Models
+> GPT-Image-1-mini 54.1 71.5 93.7 24.7 28.9 33.0 9.4 24.4 GPT-Image-1 62.8 80.2 94.9 34.1 32.2 37.0 10.6 28.9 Gemini-2.5-Flash-Image (NanoBanana) 61.2 86.0 91.3 25.9 47.8 37.0 18.8 32.8 Gemini-3-Pro-Image (NanoBanana-Pro) 77.0 85.5 94.4 41.2 61.1 48.0 37.6 47.2
+> Community Models
+> EMU2 [49] 22.6 38.2 78.3 1.2 1.1 0.0 0.0 0.5 OmniGen [50] 25.1 41.5 73.5 1.2 1.0 0.0 1.2 0.8 Step1X-Edit [10] 30.3 12.6 74.9 0.0 2.2 2.0 3.5 1.9 Ovis-U1 [51] 33.9 52.7 72.9 1.2 3.3 4.0 2.4 2.8 FLUX.1-Kontext-Dev [2] 26.0 71.6 85.2 2.3 5.5 13.0 1.2 5.8 BAGEL (w/ CoT) [52] 45.9 73.8 80.1 5.9 17.8 21.0 1.2 11.9 Uni-CoT [53] ---8.2 18.9 20.0 1.2 12.5 ThinkGen [20] ---16.4 17.7 16.0 1.1 13.0 DeepGen [30] ---15.3 18.9 14.0 4.7 13.3 EditThinker [14] ---10.8 23.3 27.0 8.2 17.8 Unified Thinker [18] 61.9 76.2 90.5 32.9 30.0 41.0 9.4 28.9 ThinkRL-Edit [19] 61.7 81.6 62.5 18.8 37.5 25.0 37.5 29.7 Qwen-Image-Edit-2509 37.2 66.4 86.9 4.7 10.0 17.0 2.4 8.9 + DDA-Thinker-8B 60.8 78.5 88.4 25.9 40.0 42.0 10.6 30.3 + DDA-Thinker-32B 67.2 79.2 89.5 34.1 36.7 47.0 15.1 33.9 Qwen-Image-Edit-2511 49.9 71.0 91.5 21.2 18.9 31.0 4.7 19.4 + DDA-Thinker-8B 66.3 79.5 91.5 31.8 41.1 40.0 12.9 31.9 + DDA-Thinker-32B 68.4 84.4 92.1 45.9 50.0 47.0 15.3 40.0
+
+provides a multifaceted assessment of factual, conceptual, and procedural knowledge, further organized into seven distinct cognitive dimensions. 
+
+B. Main Results 
+
+Performance on RISE-Bench. As shown in Table I, when paired with Qwen-Image-Edit-2511, DDA-Thinker-32B achieves an overall accuracy of 40.0%, the strongest perfor-mance among the reported community models on RISE-Bench. Our models also show substantial gains over the base Qwen-Image-Edit-2511 (19.4%). We additionally report results on the Qwen-Image-Edit-2509 for a broader comparison. In this setting, our models again demonstrate strong performance, outperforming previous methods like Unified Thinker [18] (28.9%) and ThinkRL-Edit [19] (29.7%). This result is notable because our approach exclusively optimizes the Thinker, whereas strong prior methods either additionally update the Editor (e.g., Unified Thinker, ThinkRL-Edit) or rely on multi-round iterative refinement (e.g., EditThinker). The performance boost observed in DDA-Thinker-32B suggests that scaling the Thinker improves its ability to interpret complex instructions for visual transformation. This consistent scalability supports the efficacy of our dual-atomic RFT strategy. When evaluated against proprietary systems, DDA-Thinker-32B demonstrates competitive performance. It outperforms Gemini-2.5-Flash-Image (32.8%) and achieves stronger temporal performance than Gemini-3-Pro-Image (45.9% vs. 41.2%). While a perfor-mance gap remains against the frontier Gemini-3-Pro-Image in broader causal and logical reasoning, our analysis suggests this is partly attributable to the limitations of the frozen Editor. The logical sub-task is particularly illustrative, as successfully rendering abstract concepts often pushes beyond the capabilities of current community editors. Despite this constraint, our model still achieves the second-best performance on this task among all community models. Importantly, these results should not be interpreted as evidence that decoupled optimization is superior to joint training. Instead, they demonstrate that improving the planning module alone can already yield substantial gains and achieve high performance under a fixed editor setting. 
+
+Performance on KRIS-Bench. Table II shows that DDA-Thinker-32B reaches 79.94% on KRIS-Bench with Qwen-Image-Edit-2511, outperforming all reported community mod-els. We additionally report results on Qwen-Image-Edit-2509 for completeness. DDA-Thinker-32B (72.21%) remains slightly above strong prior methods such as EditThinker (71.91%) and ThinkRL-Edit (71.65%). This comparison is noteworthy because our method uses a single-pass, frozen-editor setting, whereas EditThinker adopts a multi-round iterative refinement framework and ThinkRL-Edit updates the Editor during training. 8
+
+TABLE II PERFORMANCE EVALUATION ON KRIS-B ENCH . M ODELS ARE EVALUATED ACROSS THREE KNOWLEDGE DOMAINS : F ACTUAL , C ONCEPTUAL , AND 
+
+PROCEDURAL , FURTHER SUBDIVIDED INTO SEVEN DIMENSIONS . T HE OVERALL SCORE IS COMPUTED AS THE AVERAGE ACROSS THESE DIMENSIONS .                                                                                                                                                                                                                                                                                                                      
+
+> Model Factual Knowledge Conceptual Knowledge Procedural Knowledge Overall Average Attribute Spatial Temporal Average Social Sci. Natural Sci. Average Logical Instruction Average
+> Proprietary Models
+> Gemini 2.0 66.33 63.33 63.92 65.26 68.19 56.94 59.65 54.13 71.67 62.90 62.41 Gemini-2.5-Flash-Image (NanoBanana) 78.97 80.17 86.49 80.48 83.7 76.34 78.11 63.96 90.44 75.31 78.17 GPT-4o 83.17 79.08 68.25 79.80 85.50 80.06 81.37 71.56 85.08 78.32 80.09 Gemini-3-Pro-Image (NanoBanana-Pro) 85.61 87.17 88.06 86.36 85.25 83.64 84.03 81.42 93.22 86.48 85.31
+> Community Models
+> InstructPix2Pix [8] 30.33 21.33 -23.33 22.56 26.56 25.59 19.81 14.75 17.28 22.82 OmniGen [50] 37.92 28.25 21.83 33.11 30.63 27.19 28.02 11.94 35.83 23.89 28.85 MagicBrush [54] 53.92 39.58 -41.84 42.94 38.06 39.24 30.00* 23.08 26.54 37.15 AnyEdit [55] 47.67 45.17 -39.26 38.56 42.94 41.88 36.56 26.92 31.74 38.55 Emu2 [49] 51.50 48.83 22.17 45.40 34.69 38.44 37.54 24.81 45.00 34.91 39.70 Step1X-Edit [10] 55.50 51.75 -45.52 44.69 49.06 48.01 40.88 22.75 31.82 43.29 HiDream-E1 [56] 52.75 49.42 -43.31 52.56 49.25 50.05 45.19 30.08 37.64 44.72 ByteMorph [57] 61.17 62.00 -51.27 45.50 47.38 46.92 32.00 31.33 31.67 44.85 FLUX.1-Kontext-Dev [2] 64.83 60.92 -53.28 48.94 50.81 50.36 46.06 39.00 42.53 49.54 OmniGen2 [58] 59.92 52.25 54.75 57.36 47.56 43.12 44.20 32.50 63.08 47.79 49.71 UniWorld-V1 [59] 58.17 54.50 63.00 47.71 47.50 43.94 44.80 42.00 53.83 47.92 50.27 Step1X-Edit v1.1 [10] 64.17 61.75 -53.05 52.06 55.06 54.34 52.56 36.75 44.66 51.59 BAGEL [52] 64.27 62.42 42.45 60.26 55.40 56.01 55.86 52.54 50.56 51.69 56.21 BAGEL-Think [52] 67.42 68.33 58.67 66.18 63.55 61.40 61.92 48.12 50.22 49.02 60.18 Uni-CoT [53] 72.76 72.87 67.10 71.85 70.81 66.00 67.16 53.43 73.93 63.68 68.00 ThinkRL-Edit [19] 81.02 81.45 -81.13 75.67 71.25 72.31 49.07 79.71 57.44 71.65 EditThinker [14] 78.48 73.83 -77.24 76.20 70.69 72.02 65.23 66.89 65.94 71.91 Qwen-Image-Edit-2509 72.44 79.10 55.07 71.05 66.14 57.75 59.78 49.83 77.61 61.94 63.71 + DDA-Thinker-8B 71.55 77.00 72.52 72.92 76.55 68.15 70.18 54.47 86.56 68.25 70.55 + DDA-Thinker-32B 72.79 77.92 73.09 73.98 76.90 70.60 72.13 55.43 89.39 70.07 72.21 Qwen-Image-Edit-2511 74.85 84.50 68.13 75.89 66.10 59.54 61.15 58.42 79.61 67.55 67.14 + DDA-Thinker-8B 79.14 79.33 74.43 78.41 79.86 76.93 77.64 68.97 80.11 73.83 76.99 + DDA-Thinker-32B 82.16 84.58 75.00 81.52 84.71 77.77 79.44 74.45 84.67 78.88 79.94
+
+We observe a consistent scaling trend across both Editor settings, with DDA-Thinker-32B consistently outperforming DDA-Thinker-8B. This pattern suggests that our framework can effectively benefit from stronger Thinkers. This trend is consistent with the Thinker’s central role in planning. At the same time, the 2509 results also reveal a limitation: although both the 8B and 32B Thinkers substantially improve the overall score, some sub-dimensions remain slightly below the base editor. We attribute this to the limited capacity of the older frozen Editor, which may not fully realize more sophisticated plans. The decoupled setting makes this behavior easier to analyze by separating planning quality from editor execution. In a granular analysis against proprietary models, our DDA-Thinker-32B paired with Qwen-Image-Edit-2511 not only surpasses Gemini-2.5-Flash-Image (78.17%) but also comes close to GPT-4o (80.09%). It further outperforms GPT-4o in both Factual Knowledge (81.52% vs. 79.80%) and Procedural Knowledge (78.88% vs. 78.32%). While a performance gap exists relative to the frontier Gemini-3-Pro-Image (85.31%), our model’s strong performance supports the effectiveness of our Thinker-centric design in narrowing the gap between high-level instruction understanding and precise visual manipulation. 
+
+C. Ablation Study 
+
+To validate the effectiveness of the key components in our DDA-Thinker, we conduct a series of ablation studies. Unless otherwise noted, all ablation experiments use our DDA-Thinker-32B and Qwen-Image-Edit-2511 on the challenging RISE-Bench dataset. 
+
+TABLE III ABLATION STUDY ON DUAL -ATOMIC REWARD . T HE FIRST ROW REPRESENTS OUR THINKER INITIALIZED VIA SFT. Visual-Atomic Cognitive-Atomic Reason. Consist. Visual. Overall Acc. 65.9 81.1 91.5 34.2 
+
+✓ 66.8 83.5 91.8 36.6 
+
+✓ ✓ 68.4 84.4 92.1 40.0 
+
+Effectiveness of Dual-Atomic Reward. Table III reveals the impact of the proposed dual-atomic reward components. Compared to the SFT-initialized base (34.2%), integrating visual-atomic reward improves the overall accuracy to 36.6%. As evidenced by the table, this visual-atomic reward enhances appearance consistency (from 81.1% to 83.5%), as it leverages execution feedback from the final edited image. However, this purely visual-centric approach lacks direct feedback on the planning stage. By further incorporating cognitive-atomic reward, we achieve an additional performance gain to 40.0%. Notably, this cognitive-atomic reward drives an improvement in instruction reasoning (from 66.8% to 68.4%), as it provides a more direct reward signal for plan quality. The synergy between these two dimensions confirms that, while visual feedback is essential for maintaining output quality, cognitive verification is necessary to reduce plan drift. Figure 4 qualitatively visualizes this synergy: the visual reward corrects scene consistency (top), while the cognitive reward supports physically grounded reasoning to produce a faithful impact shatter (bottom). By 9Draw what it will look like          
+
+> after hydraulic compression.
+> Input SFT +Visual Reward +Dua lReward Case 143
+> Case 107
+> Draw what it will look like
+> after being hit by a baseball.
+
+Fig. 4. Qualitative Visualization of Our Reward Components. The top row (‘hydraulic press’) shows the visual reward correcting the SFT model’s hallucinated press to improve scene consistency. The bottom row (‘baseball’) highlights the role of the cognitive reward in supporting physically grounded reasoning to render a faithful impact shatter. TABLE IV ABLATION STUDY ON REWARD GRANULARITY . C OMPARISON BETWEEN COARSE SCALAR SCORES AND OUR ATOMIC -BASED REWARD MECHANISM .BOTH CONFIGURATIONS USE OUR DUAL -REWARD (VISUAL + COGNITIVE )
+
+> REINFORCEMENT LEARNING
+
+.Method Reason. Consist. Visual. Overall Acc. coarse scalar reward 67.1 83.3 91.9 36.9 atomic-based reward 68.4 84.4 92.1 40.0 
+
+bridging the gap between pixel-level generation and instruction-level planning, our dual-atomic framework helps ensure that generated plans remain both executable and logically coherent for complex tasks. 
+
+Impact of Reward Granularity. Table IV shows that our atomic-based reward mechanism achieves 40.0%, outperform-ing the interval-based coarse scalar reward (36.9%) [18], [22], [23]. This performance gap highlights the limitations of using coarse scalar ratings for complex reasoning tasks, as they conflate multiple quality dimensions into a single ambiguous signal and lack the sensitivity to penalize subtle yet critical flaws. By contrast, our atomic-based approach decomposes holistic assessment into objective binary predicates that verify specific constraints. This shift from ambiguous scalar feedback to explicit and verifiable constraints provides the policy with clearer learning signals, helping the model remain aligned with physical logic and avoid visually plausible but logically inconsistent results. 
+
+Impact of Reference-Grounded Checklists. A design choice in our checklist synthesis is to ground checklist generation not only in the source image and user instruction but also in a rational reference description of the ideal post-edit scene. This grounding is intended to enhance checklist quality and reduce reward noise. To validate this design, we conduct an ablation study, presented in Table V. We compare our full DDA-Thinker model against a variant where checklists are generated without this rational reference description. Both models are trained using the dual-atomic (visual + cognitive) RL framework. Our reference-grounded strategy improves performance from 38.1% to 40.0%. Without this grounding, checklists are more susceptible to ambiguity in the user instruction, leading to less precise and potentially conflicting reward signals. By aligning 
+
+TABLE V ABLATION STUDY ON THE IMPACT OF REFERENCE -GROUNDED CHECKLISTS .THE ONLY DIFFERENCE IS WHETHER THE CHECKLISTS ARE GENERATED WITH THE AID OF A RATIONAL REFERENCE DESCRIPTION .Checklist Generation Reason. Consist. Visual. Overall Acc. w/o rational reference 67.5 83.2 92.0 38.1 w/ rational reference 68.4 84.4 92.1 40.0 
+
+TABLE VI ABLATION STUDY ON REWARD INTEGRATION STRATEGY . B OTH CONFIGURATIONS USE THE SAME DUAL -ATOMIC REWARDS AND DIFFER ONLY IN HOW THE VISUAL AND COGNITIVE SIGNALS ARE INTEGRATED DURING OPTIMIZATION .Optimization Strategy Reason. Consist. Visual. Overall Acc. weighted sum 67.3 83.6 92.0 37.5 separate rewards 68.4 84.4 92.1 40.0 
+
+the verification questions with the rational reference description of the ideal post-edit scene, our method supports more robust policy optimization, ultimately leading to superior planning and editing capabilities. 
+
+Impact of Reward Integration Strategy. A natural alternative for integrating the visual and cognitive reward signals is to combine them into a single reward via a weighted sum and then apply standard GRPO on the merged reward. We compare this baseline (using equal weighting) against our design, which keeps the two rewards separate throughout optimization: each rollout group is associated with a single reward signal, and GRPO is applied to each group independently. Both configurations share identical data and dual-atomic rewards; they differ only in how the two reward signals are processed during optimization. As shown in Table VI, our design improves overall accuracy from 37.5% to 40.0%. We attribute this gap to two effects associated with the weighted-sum scheme. First, these two rewards encode semantically distinct dimensions (plan quality and visual quality) and often exhibit different within-group variances. When merged, the advantage is shaped by a single pooled standard deviation, allowing the objective with higher variance to overshadow the other and diminishing the relative gradient contribution of the more stable signal. Second, within a single rollout group, responses that excel in visual quality but fail in logic, as well as those that are logically sound but visually deficient, receive a moderate average reward. This suppresses the advantage value and weakens the policy-gradient signal when the two objectives are in conflict. In contrast, our design evaluates each objective independently within its own rollout group, ensuring that each reward signal provides a clear and well-scaled advantage to the subsequent policy update process. 
+
+Impact of Difficulty-Aware Refinement. We introduce a difficulty-aware refinement pipeline to curate an effective training curriculum for reinforcement learning. To quantify the impact of this strategy, we conduct an ablation study comparing our model trained on the refined dataset against a baseline 10                                      
+
+> TABLE VII ABLATION ON THE IMPACT OF DIFFICULTY -A WARE REFINEMENT . W ECOMPARE RFT ON THE CURATED REFINED DATASET AGAINST TRAINING ON THE FULL UNREFINED DATASET .RFT Training Data Reason. Consist. Visual. Overall Acc. w/o difficulty-aware refinement 67.8 81.7 91.6 36.7 w/ difficulty-aware refinement 68.4 84.4 92.1 40.0
+> TABLE VIII ZERO -SHOT TRANSFERABILITY TO OTHER EDITORS WITHOUT FURTHER TRAINING OUR DDA-T HINKER .Method Reason. Consist. Visual. Overall Acc. FLUX.1-Kontext-Dev 26.0 71.6 85.2 5.8
+> + DDA-Thinker-32B 52.8 77.1 86.9 18.9
+> LongCat-Image-Edit 38.5 76.2 88.7 12.8
+> + DDA-Thinker-32B 63.7 82.4 90.2 27.8
+
+trained on the entire unrefined dataset. Both models use the same dual-atomic RFT framework and differ only in the training data. The results in Table VII validate the effectiveness of this design. The model trained with difficulty-aware refinement data achieves an overall accuracy of 40.0%, a substantial gain over the 36.7% achieved on the unrefined data. This gain is observed across all dimensions, especially in appearance consistency. This improvement highlights the importance of data quality for RFT. The unrefined dataset that contains many trivial, overly difficult, or noisy samples may introduce conflicting gradients and hinder policy learning. By focusing training on a smaller yet more impactful set of moderately difficult samples, our refinement strategy provides a clearer and more concentrated learning signal. This result shows that our data curation pipeline is an important component of the DDA-Thinker rather than a negligible preprocessing detail. 
+
+Zero-shot Thinker Transferability. Table VIII highlights the zero-shot transferability of our DDA-Thinker, evaluating its effectiveness as a planning module for unseen editors. When paired with FLUX.1-Kontext-Dev [2], our DDA-Thinker improves the overall accuracy from 5.8% to 18.9%. Similarly, it improves LongCat-Image-Edit [3] from 12.8% to 27.8%. These substantial gains are achieved without any parameter updates or target-specific retraining. The significant improvements in instruction reasoning and appearance consistency metrics across different architectures suggest that our model has learned transferable planning patterns. This successful transfer supports the portability of our design and suggests that the learned Thinker can function as a reusable planning module for other editors. It also suggests that the planning patterns learned during training remain useful when transferred to other editors, offering a scalable pathway for enhancing existing generative models with stronger planning capabilities. 
+
+Comparison with Proprietary Foundation Planning Models. 
+
+Table IX compares DDA-Thinker-32B with proprietary founda-tion planning models when integrated with Qwen-Image-Edit-2511 [1]. DDA-Thinker-32B achieves an overall accuracy of                     
+
+> TABLE IX COMPARISON WITH PROPRIETARY FOUNDATION PLANNING MODELS .Method Reason. Consist. Visual. Overall Acc. Qwen-Image-Edit-2511 49.9 71.0 91.5 19.4
+> + Gemini-3-Pro 72.5 83.4 91.7 41.7
+> + Gemini-2.5-Pro 71.0 78.9 91.5 38.3
+> + DDA-Thinker-32B 68.4 84.4 92.1 40.0
+
+40.0%, outperforming Gemini-2.5-Pro (38.3%). While Gemini-3-Pro maintains a lead in the instruction reasoning metric (72.5%), DDA-Thinker-32B demonstrates superior appearance consistency (84.4%) and visual plausibility (92.1%). This performance profile is consistent with our dual-atomic rein-forcement learning strategy: the visual-atomic reward helps ground the executable plan in the Editor’s synthesis constraints, while the cognitive-atomic reward improves logical quality at the plan level. Together, these mechanisms help align the Thinker’s planning output with the Editor’s execution capacity, thereby effectively enabling stronger performance on consistency-sensitive tasks. 
+
+D. Qualitative Analysis 
+
+Figure 5 demonstrates the capabilities of the vanilla editor (Qwen-Image-Edit-2511) when augmented with DDA-Thinker. It presents both success cases that highlight the improved reasoning-driven image editing and failure cases that reveal the current boundaries of the system. 
+
+Success Demonstration. Figure 5(a) shows that DDA-Thinker elevates the vanilla editor from performing superficial edits to executing more complex reasoning-grounded transformations. This is evident in the dinosaur restoration task, where the vanilla editor fails by simply placing the fossil in a generic forest, while DDA-Thinker provides precise biological grounding to guide a holistic transition from skeleton to a fleshed-out organism within a plausible Jurassic habitat. The same pattern holds for physical reasoning. In the “oil-water” case, the vanilla editor incorrectly renders a physically implausible homogenous mixture. In contrast, DDA-Thinker’s cognitive plan captures the principles of immiscibility and density, directing the Editor to create a distinct floating oil layer that better adheres to physical common sense. In both scenarios, DDA-Thinker enables edits that the Editor alone does not reliably realize. 
+
+Failure Diagnosis. Figure 5(b) illuminates the system’s current boundaries, where our approach enables more precise failure attribution. In the “math puzzle” example, the failure is isolated to the Editor: while DDA-Thinker correctly solves the logic (8 + 5 − 4 = 9 ), the Editor fails to execute the second symbol replacement due to “multi-target neglect.” The “balloon” case, by contrast, reveals a limitation in the Thinker’s cognitive plan, which focuses on pre-bursting tension instead of the terminal state of rupture. These cases illustrate that, while DDA-Thinker improves planning quality, bottlenecks remain in both the Editor’s execution capabilities and the completeness of the generated executable plan. 11 Input Image + User Instruction Vanilla Editor DDA -Thinker + Vanilla Editor DDA -Thinker Output 
+
+(a) Success Demonstration 
+
+(b) Failure Diagnosis 
+
+[Diagnosis] The Thinker correctly solves the puzzle and provides precise logic. The failure stems from the Editor’s limited multi -target instruction following , leading to the incomplete replacement 
+
+of the second symbol. 
+
+<think> 
+
+[Step 1: Analysis ] Identify physical liquid transformation (simulating oil -water interaction). 
+
+[Step 2: Reasoning ] Oil is immiscible and less dense ; it must form a distinct floating layer .
+
+[Step 3: Strategy ] Direct editor to render distinct liquid interfaces while preserving background. 
+
+</think> 
+
+<answer> 
+
+Modify the image to show the glass after adding a small amount of oil and letting it sit . Replace the 
+
+current water surface with two distinct layers : a bottom layer of clear water and a top layer of 
+
+translucent, slightly iridescent oil floating on it . The oil layer should be thin and cover the entire 
+
+surface of the water, creating a visible interface line between the two liquids . Keep the glass shape, the 
+
+background, and the lighting consistent with the original image, including the shadow on the surface .
+
+</answer> 
+
+Draw what it looks like 
+
+after adding some oil 
+
+into the cup and letting 
+
+it sit for a while .
+
+Draw what it looked like 
+
+during the Jurassic period. 
+
+<think> 
+
+[Step 1: Analysis ] Identify math puzzle: solve 8? 5? 4 = 9 via operator replacement. 
+
+[Step 2: Reasoning ] Logical test: ' + ) − + = , is the unique solution; requires '+' and ' -'. 
+
+[Step 3: Strategy ] Instruct editor to replace the first '?' with '+' and the second with ' -'. 
+
+</think> 
+
+<answer> 
+
+Replace the first question mark with a plus sign "+" and the second question mark with a minus sign 
+
+"-" to display the equation "8 + 5 - 4 = 9". The plus and minus signs should be in the same yellow 
+
+color, font style, and size as the numbers, perfectly centered within their respective dark squares . Keep 
+
+the orange bar, the numbers 8, 5, 4, 9, and the dark background unchanged .
+
+</answer> 
+
+Please replace the 
+
+question mark with a
+
+plus sign or a minus sign 
+
+to satisfy the equation, 
+
+and draw the image after 
+
+the replacement .
+
+Draw what it will look 
+
+like after being inflated 
+
+beyond capacity. 
+
+<think> 
+
+[Step 1: Analysis ] Identify physical transformation: stable state to over -inflation threshold. 
+
+[Step 2: Reasoning ] Infer visual attributes: material thinning , translucency , and surface stress lines .
+
+[Step 3: Strategy ] Command precise modification of tension cues while preserving existing 
+
+surroundings. 
+
+</think> 
+
+<answer> 
+
+Modify the image to show the balloon inflated beyond capacity . The balloon should appear extremely 
+
+thin, translucent, and stretched tight , with a faded pale apricot color . Add visible stress lines and 
+
+strain marks across the surface to indicate extreme tension . The material should look fragile and ready to 
+
+burst, with intense, sharp highlights reflecting the tautness . The background and the string should remain 
+
+unchanged .
+
+</answer> 
+
+<think> 
+
+[Step 1: Analysis ] Identify transformation: fossil remains to living specimen .
+
+[Step 2: Reasoning ] Reconstruct anatomical features (scales, musculature) and synthesize Jurassic flora. 
+
+[Step 3: Strategy ] Holistic replacement of museum/skeleton with paleo -details. 
+
+</think> 
+
+<answer> 
+
+Replace the dinosaur skeleton with a living Tyrannosaurus Rex . The creature should have detailed, 
+
+rough scaly skin with patches of primitive feathers on its neck and arms, visible musculature, and intense, 
+
+alert eyes . Replace the museum background with a lush, dense prehistoric forest from the Jurassic 
+
+period, filled with giant ferns, cycads, and towering coniferous trees . The scene should be illuminated by 
+
+bright natural daylight with soft shadows and a slightly hazy atmosphere . The dinosaur should be standing 
+
+naturally on the forest floor, appearing alive and majestic .
+
+</answer> 
+
+[Diagnosis] The Thinker correctly identifies extreme physical tension but fails to infer the terminal state of catastrophic rupture (i.e., bursting into fragments). Instead, it provides instructions for 
+
+the pre -bursting phase by requesting “visible stress lines” , which are semantically misinterpreted by the Editor as physical wrinkles. 
+
+Fig. 5. Visual Comparison of Results Without and With DDA-Thinker. (a) Success demonstration of reasoning-driven image editing. (b) Failure diagnosis of system boundaries. Note : <think > blocks are condensed for readability; <answer > blocks are provided in full. 
+
+V. C ONCLUSION 
+
+We present DDA-Thinker, a Thinker-centric framework for reasoning-driven image editing that decouples planning from generation to explicitly optimize the planning module under a frozen Editor, thereby enabling a more controlled analysis of how improving the Thinker affects editing performance. In this setting, executable planning is the form through which the Thinker’s reasoning becomes directly usable by the Editor. To support this optimization, we introduce a dual-atomic reinforcement learning framework with a cognitive-atomic reward and a visual-atomic reward, both implemented through checklist-based verification. To further improve checklist qual-ity, their synthesis is further grounded in a rational reference description of the ideal post-edit scene. Together, these designs enable our approach to produce more accurate, executable, and logically consistent editing plans, ultimately leading to higher-quality edited images. Extensive experiments further show that explicitly optimizing the Thinker can substantially improve reasoning-driven image editing without modifying the underly-ing generator, offering a promising direction while remaining complementary to existing joint optimization paradigms rather than replacing them. 12 
+
+VI. L IMITATIONS AND FUTURE WORK 
+
+Our study deliberately focuses on a decoupled Thinker-centric paradigm to investigate the impact of an improved Thinker on a fixed Editor. While our results demonstrate the potential of this approach, we acknowledge two primary avenues for future improvement. First, our paradigm of optimizing only the Thinker, while methodologically well motivated, means that performance is ultimately bounded by the capabilities of the frozen Editor, which can become a bottleneck. This is most apparent in tasks that demand the generation of highly symbolic content, such as mathematical equations or logical notation. Here, a strong executable plan may still fail if the Editor lacks the ability for precise and structured rendering. A natural future direction is to explore hybrid optimization schemes that selectively fine-tune the Editor for such tasks. However, the primary challenge is to implement such a hybrid approach without compromising the core benefits of our framework: the clearer credit assignment enabled by decoupling and the precise feedback supported by dual-atomic rewards. Second, the reliability of our reward generation pipeline, from synthesizing dual-atomic checklists to final reward evalu-ation, is dependent on the capabilities of external proprietary foundation models. These models can introduce subtle noise or biases into the guidance signals, potentially creating a performance ceiling. This dependency motivates future research on more robust reward mechanisms that reduce reliance on external proprietary model calls for data generation and reward evaluation. Accordingly, the current results should be interpreted in the context of a Thinker-centric optimization pipeline that uses external foundation models as implementation tools, rather than a fully self-contained training pipeline. REFERENCES [1] C. Wu, J. Li, J. Zhou, J. Lin, K. Gao, K. Yan, S. ming Yin, S. Bai, X. Xu, Y. Chen, Y. Chen, Z. Tang, Z. Zhang, Z. Wang, A. Yang, B. Yu, C. Cheng, D. Liu, D. Li, H. Zhang, H. Meng, H. Wei, J. Ni, K. Chen, K. Cao, L. Peng, L. Qu, M. Wu, P. Wang, S. Yu, T. Wen, W. Feng, X. Xu, Y. Wang, Y. Zhang, Y. Zhu, Y. Wu, Y. Cai, and Z. Liu, “Qwen-image technical report,” 2025. [2] B. F. Labs, “Flux.1: Text-to-image synthesis via flow matching,” Technical Announcement , 2024. [3] M. L. Team, H. Ma, H. Tan, J. Huang, J. Wu, J.-Y. He, L. Gao, S. Xiao, X. Wei, X. Ma et al. , “Longcat-image technical report,” arXiv preprint arXiv:2512.07584 , 2025. [4] P. Dhariwal and A. Nichol, “Diffusion models beat gans on image synthesis,” arXiv preprint arXiv:2105.05233 , 2021. [5] B. Wallace, A. Gokul, and N. Naik, “Diffusion model alignment using direct preference optimization,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [6] Y. Huang, J. Huang, Y. Liu, M. Yan, J. Lv, J. Liu, W. Xiong, H. Zhang, L. Cao, and S. Chen, “Diffusion model-based image editing: A survey,” 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 6, pp. 4409–4437, 2025. [Online]. Available: https://doi.org/10.1109/TPAMI.2025.3541625 [7] R. He, K. Ma, L. Huang, S. Huang, J. Gao, X. Wei, J. Dai, J. Han, and S. Liu, “Freeedit: Mask-free reference-based image editing with multi-modal instruction,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 48, no. 3, pp. 3319–3334, 2026. [Online]. Available: https://doi.org/10.1109/TPAMI.2025.3636582 [8] T. Brooks, A. Holynski, and A. A. Efros, “Instructpix2pix: Learning to follow image editing instructions,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2023, pp. 18 392– 18 402. [9] S. Weng, X. Gong, H. Zheng, X. Wang, S. Li, and B. Shi, “Opencir: Conditional image repainting with open condition mixture,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 11, pp. 10 406–10 419, 2025. [Online]. Available: https://doi.org/10.1109/TPAMI.2025.3597936 [10] S. Liu, Y. Han, P. Xing, F. Yin, R. Wang, W. Cheng, J. Liao, Y. Wang, H. Fu, C. Han, G. Li, Y. Peng, Q. Sun, J. Wu, Y. Cai, Z. Ge, R. Ming, L. Xia, X. Zeng, Y. Zhu, B. Jiao, X. Zhang, G. Yu, and D. Jiang, “Step1x-edit: A practical framework for general image editing,” arXiv preprint arXiv:2504.17761 , 2025. [11] J. Liao, Z. Yang, L. Li, D. Li, K. Lin, Y. Cheng, and L. Wang, “Imagegen-cot: Enhancing text-to-image in-context learning with chain-of-thought reasoning,” arXiv preprint arXiv:2503.19312 , 2025. [12] K. Huang, C. Duan, K. Sun, E. Xie, Z. Li, and X. Liu, “T2i-compbench++: An enhanced and comprehensive benchmark for compositional text-to-image generation,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 5, pp. 3563–3579, 2025. [Online]. Available: https://doi.org/10.1109/TPAMI.2025.3531907 [13] L. Lian, B. Li, A. Yala, and T. Darrell, “Llm-grounded diffusion: Enhancing prompt understanding of text-to-image diffusion models with large language models,” 2024. [Online]. Available: https: //arxiv.org/abs/2305.13655 [14] H. Li, M. Zhang, D. Zheng, Z. Guo, Y. Jia, K. Feng, H. Yu, Y. Liu, Y. Feng, P. Pei, X. Cai, L. Huang, H. Li, and S. Liu, “Editthinker: Unlocking iterative reasoning for any image editor,” 2025. [15] S. Zhou, Q. Zhou, J. Ma, Y. Cao, R. Hu, Z. Zhang, X. Yang, Z. Wang, J. Song, C. Yu, B. Zheng, and Z. Zhao, “Spatialreward: Verifiable spatial reward modeling for fine-grained spatial consistency in text-to-image generation,” 2026. [Online]. Available: https://arxiv.org/abs/2603.22228 [16] Z. Wang et al. , “Evaluating compositional text-to-image generation: A benchmark and analysis,” in arXiv preprint arXiv:2401.0xxx , 2024. [17] X. Zhao, P. Zhang, K. Tang, H. Li, Z. Zhang, G. Zhai, J. Yan, H. Yang, X. Yang, and H. Duan, “Envisioning beyond the pixels: Benchmarking reasoning-informed visual editing,” arXiv preprint arXiv:2504.02826 ,2025. [18] S. Zhou, Q. Zhou, J. Hu, H. Yang, Y. Cao, J. Ma, Y. Ma, J. Song, T. Ge, C. Yu et al. , “Unified thinker: A general reasoning modular core for image generation,” arXiv preprint arXiv:2601.03127 , 2026. [19] H. Li, L. Jiang, Q. Yan, Y. Song, H. Kang, Z. Liu, X. Lu, B. Wu, and D. Cai, “Thinkrl-edit: Thinking in reinforcement learning for reasoning-centric image editing,” arXiv preprint arXiv:2601.03467 , 2026. [20] S. Jiao, Y. Lin, Y. Zhong, Q. She, W. Zhou, X. Lan, Z. Huang, F. Yu, Y. Yu, Y. Zhao et al. , “Thinkgen: Generalized thinking for visual generation,” 
+
+arXiv preprint arXiv:2512.23568 , 2025. [21] F. Yin, S. Liu, Y. Han, Z. Wang, P. Xing, R. Wang, W. Cheng, Y. Wang, A. Li, Z. Yin, P. Chen, X. Zhang, D. Jiang, X. Zeng, and G. Yu, “Reasonedit: Towards reasoning-enhanced image editing models,” 2025. [22] J. Liu, G. Liu, J. Liang, Y. Li, J. Liu, X. Wang, P. Wan, D. Zhang, and W. Ouyang, “Flow-grpo: Training flow matching models via online rl,” 
+
+arXiv preprint arXiv:2505.05470 , 2025. [23] Z. Xue, J. Wu, Y. Gao, F. Kong, L. Zhu, M. Chen, Z. Liu, W. Liu, Q. Guo, W. Huang et al. , “Dancegrpo: Unleashing grpo on visual generation,” 
+
+arXiv preprint arXiv:2505.07818 , 2025. [24] X. Xu, Y. Chen, X. Tao, and J. Jia, “Text-guided human image manipulation via image-text shared space,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 44, no. 10, pp. 6486–6500, 2022. [Online]. Available: https://doi.org/10.1109/TPAMI.2021.3085339 [25] T. Xia, Y. Zhang, T. Liu, and L. Zhang, “Consistent image layout editing with diffusion models,” IEEE Transactions on Image Processing , vol. 34, pp. 6978–6992, 2025. [26] Y. Feng, J. Li, and M. Zhou, “Instruction-driven multi-weather image translation based on a large-scale image editing model,” IEEE Transac-tions on Image Processing , vol. 34, pp. 7462–7472, 2025. [27] M. Xu, X. Sun, S. Li, L. Jiang, J. Xia, and X. Deng, “Spherical patch generative adversarial net for unconditional panoramic image generation,” 
+
+IEEE Transactions on Image Processing , vol. 34, pp. 3833–3848, 2025. [28] Y. Jiang, Z. Huang, T. Wu, X. Pan, C. C. Loy, and Z. Liu, “Talk-to-edit: Fine-grained 2d and 3d facial editing via dialog,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 46, no. 5, pp. 3692–3706, 2024. [Online]. Available: https://doi.org/10.1109/TPAMI.2023.3347299 [29] C. Kong, A. Luo, S. Wang, H. Li, A. Rocha, and A. C. Kot, “Pixel-inconsistency modeling for image manipulation localization,” 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 6, pp. 4455–4472, 2025. [Online]. Available: https://doi.org/10.1109/TPAMI.2025.3541028 [30] D. Wang, R. Li, F. Han, C. Ma, W. Song, S. Wang, Y. Wang, Y. Xin, H. Liu, Z. Zhang et al. , “Deepgen 1.0: A lightweight unified multimodal model for advancing image generation and editing,” arXiv preprint arXiv:2602.12205 , 2026. 13 
+
+[31] L. L. Chen, H. Ma, Z. Fan, Z. Huang, A. Sinha, X. Dai, J. Wang, Z. He, J. Yang, C. Li et al. , “Unit: Unified multimodal chain-of-thought test-time scaling,” arXiv preprint arXiv:2602.12279 , 2026. [32] X. Dai, Y. Zhou, L. Xing, J. Bu, X. Wei, Y. Liu, B. Zhang, K. Chen, and Y. Zang, “Endocot: Scaling endogenous chain-of-thought reasoning in diffusion models,” arXiv preprint arXiv:2603.12252 , 2026. [33] F.-Y. Wang, H. Zhang, M. Gharbi, H. Li, and T. Park, “Promptrl: Prompt matters in rl for flow-based image generation,” arXiv preprint arXiv:2602.01382 , 2026. [34] L. Lin, H. Liu, J. Liang, Z. Li, J. Feng, and H. Han, “Consensus-agent deep reinforcement learning for face aging,” IEEE Trans. Image Process. , vol. 33, pp. 1795–1809, 2024. [Online]. Available: https://doi.org/10.1109/TIP.2024.3364074 [35] T. Qu, L. Ke, X. Zhan, L. Tang, Y. Liu, B. Peng, B. Yu, D. Yu, and J. Jia, “Replan: Reasoning-guided region planning for complex instruction-based image editing,” arXiv preprint arXiv:2512.16864 , 2025. [36] D. Wang, C. Ma, F. Han, S. Wu, W. Song, Y. Wang, Z. Zhang, T. Wang, S. Wang, Z. Wei et al. , “Unireason 1.0: A unified reasoning framework for world knowledge aligned image generation and editing,” arXiv preprint arXiv:2602.02437 , 2026. [37] S. Kou, J. Jin, Z. Zhou, Y. Ma, Y. Wang, Q. Chen, P. Jiang, X. Yang, J. Zhu, K. Yu et al. , “Think-then-generate: Reasoning-aware text-to-image diffusion with llm encoders,” arXiv preprint arXiv:2601.10332 , 2026. [38] H. Guo, J. Wu, J. Liu, Y. Gao, Z. Ye, L. Yuan, X. Wang, Y. Yu, and W. Huang, “Edit-r1: Unleashing reasoning-based reinforcement learning for image editing.” [39] Y. Niu, M. Ning, M. Zheng, W. Jin, B. Lin, P. Jin, J. Liao, K. Ning, C. Feng, B. Zhu, and L. Yuan, “Wise: A world knowledge-informed semantic evaluation for text-to-image generation,” arXiv preprint arXiv:2503.07265 , 2025. [40] Z. Wang, S. Zhou, S. He, H. Huang, L. Yang, Z. Zhang, X. Cheng, S. Ji, T. Jin, H. Zhao, and Z. Zhao, “Spatialclip: Learning 3d-aware image representations from spatially discriminative language,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2025, pp. 29 656–29 666. [41] Y. Gong, X. Wang, J. Wu, S. Wang, Y. Wang, and X. Wu, “Onereward: Unified mask-guided image generation via multi-task human preference learning,” arXiv preprint arXiv:2508.21066 , 2025. [42] C. Lin and Y. F. Wang, “Describe, spot and explain: Interpretable representation learning for discriminative visual reasoning,” IEEE Trans. Image Process. , vol. 32, pp. 2481–2492, 2023. [Online]. Available: https://doi.org/10.1109/TIP.2023.3268001 [43] X. Luo, J. Wang, C. Wu, S. Xiao, X. Jiang, D. Lian, J. Zhang, D. Liu 
+
+et al. , “Editscore: Unlocking online rl for image editing via high-fidelity reward modeling,” arXiv preprint arXiv:2509.23909 , 2025. [44] K. Wu, S. Jiang, M. Ku, P. Nie, M. Liu, and W. Chen, “Editreward: A human-aligned reward model for instruction-guided image editing,” 
+
+arXiv preprint arXiv:2509.26346 , 2025. [45] Q. Yang, W. Yan, and A. Agrawal, “Decompose and compare consistency: Measuring vlms’ answer reliability via task-decomposition consistency comparison,” 2024. [46] W. Xiong, J. Yao, Y. Xu, B. Pang, L. Wang, D. Sahoo, J. Li, N. Jiang, T. Zhang, C. Xiong et al. , “A minimalist approach to llm reasoning: from rejection sampling to reinforce,” arXiv , 2025. [47] S. Wu, D. Li, W. Feng, H. Ye, J. Lou, and S.-K. Ng, “Star-ds: Step-level uncertainty-aware reasoning data selection in reinforcement learning for llm multi-step reasoning.” [48] Z. Shao, P. Wang, Q. Zhu, R. Xu, J. Song, M. Zhang, Y. K. Li, Y. Wu, and D. Guo, “Deepseekmath: Pushing the limits of mathematical reasoning in open language models,” 2024, the origin of GRPO algorithm. [49] Q. Sun, Y. Cui, X. Zhang, F. Zhang, Q. Yu, Z. Luo, Y. Wang, Y. Rao, J. Liu, T. Huang, and X. Wang, “Generative multimodal models are in-context learners,” 2024. [50] S. Xiao, Y. Wang, J. Zhou, H. Yuan, X. Xing, R. Yan, C. Li, S. Wang, T. Huang, and Z. Liu, “Omnigen: Unified image generation,” pp. 13 294– 13 304, 2025. [51] S. Lu, Y. Li, Q.-G. Chen, Z. Xu, W. Luo, K. Zhang, and H.-J. Ye, “Ovis: Structural embedding alignment for multimodal large language model,” 
+
+arXiv:2405.20797 , 2024. [52] C. Deng, D. Zhu, K. Li, C. Gou, F. Li, Z. Wang, S. Zhong, W. Yu, X. Nie, Z. Song, G. Shi, and H. Fan, “Emerging properties in unified multimodal pretraining,” arXiv preprint arXiv:2505.14683 , 2025. [53] L. Qin, J. Gong, Y. Sun, T. Li, M. Yang, X. Yang, C. Qu, Z. Tan, and H. Li, “Uni-cot: Towards unified chain-of-thought reasoning across text and vision,” arXiv preprint arXiv:2508.05606 , 2025. [54] K. Zhang, L. Mo, W. Yu, Y. Deng, Y. Xie, and D. Liu, “Magicbrush: A manually annotated dataset for instruction-guided image editing,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2024. [55] Q. Yu, W. Chow, Z. Yue, K. Pan, Y. Wu, X. Wan, J. Li, S. Tang, H. Zhang, and Y. Zhuang, “Anyedit: Mastering unified high-quality image editing for any idea,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 26 125–26 135. [56] Q. Cai, J. Chen, Y. Chen, Y. Li, F. Long, Y. Pan, Z. Qiu, Y. Zhang, F. Gao, P. Xu et al. , “Hidream-i1: A high-efficient image generative foundation model with sparse diffusion transformer,” arXiv preprint arXiv:2505.22705 , 2025. [57] D. Chang, M. Cao, Y. Shi, B. Liu, S. Cai, S. Zhou, W. Huang, G. Wetzstein, M. Soleymani, and P. Wang, “Bytemorph: Benchmarking instruction-guided image editing with non-rigid motions,” arXiv preprint arXiv:2506.03107 , 2025. [58] C. Wu, P. Zheng, R. Yan, S. Xiao, X. Luo, Y. Wang, W. Li, X. Jiang, Y. Liu, J. Zhou, Z. Liu, Z. Xia, C. Li, H. Deng, J. Wang, K. Luo, B. Zhang, D. Lian, X. Wang, Z. Wang, T. Huang, and Z. Liu, “Omnigen2: Exploration to advanced multimodal generation,” CoRR ,vol. abs/2506.18871, 2025. [59] B. Lin, Z. Li, X. Cheng, Y. Niu, Y. Ye, X. He, S. Yuan, W. Yu, S. Wang, Y. Ge, Y. Pang, and L. Yuan, “Uniworld-v1: High-resolution semantic encoders for unified visual understanding and generation,” CoRR , vol. abs/2506.03147, 2025. [60] S. Bai, Y. Cai, R. Chen, K. Chen, X. Chen, Z. Cheng, L. Deng, W. Ding, C. Gao, C. Ge, W. Ge, Z. Guo, Q. Huang, J. Huang, F. Huang, B. Hui, S. Jiang, Z. Li, M. Li, M. Li, K. Li, Z. Lin, J. Lin, X. Liu, J. Liu, C. Liu, Y. Liu, D. Liu, S. Liu, D. Lu, R. Luo, C. Lv, R. Men, L. Meng, X. Ren, X. Ren, S. Song, Y. Sun, J. Tang, J. Tu, J. Wan, P. Wang, P. Wang, Q. Wang, Y. Wang, T. Xie, Y. Xu, H. Xu, J. Xu, Z. Yang, M. Yang, J. Yang, A. Yang, B. Yu, F. Zhang, H. Zhang, X. Zhang, B. Zheng, H. Zhong, J. Zhou, F. Zhou, J. Zhou, Y. Zhu, and K. Zhu, “Qwen3-vl technical report,” 2025. [61] Y. Wu, Z. Li, X. Hu, X. Ye, X. Zeng, G. Yu, W. Zhu, B. Schiele, M.-H. Yang, and X. Yang, “Kris-bench: Benchmarking next-level intelligent image editing models,” arXiv preprint arXiv:2505.16707 , 2025.
