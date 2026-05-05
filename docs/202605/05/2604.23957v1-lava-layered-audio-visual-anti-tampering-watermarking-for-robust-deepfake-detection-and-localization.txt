@@ -1,0 +1,616 @@
+Title: LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization
+
+URL Source: https://arxiv.org/pdf/2604.23957v1
+
+Published Time: Tue, 28 Apr 2026 01:52:03 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization 
+
+# Bokang Zeng 
+
+bokang.zeng@student.unsw.edu.au School of Computer Science and Engineering UNSW Sydney Sydney, Australia 
+
+# Zheng Gao 
+
+zheng.gao1@unsw.edu.au School of Computer Science and Engineering UNSW Sydney Sydney, Australia 
+
+# Xiaoyu Li 
+
+xiaoyu.li2@student.unsw.edu.au School of Computer Science and Engineering UNSW Sydney Sydney, Australia 
+
+# Xiaoyan Feng 
+
+xiaoyan.feng@griffithuni.edu.au School of Information and Communication Technology Griffith University Brisbane, Australia 
+
+# Jiaojiao Jiang 
+
+jiaojiao.jiang@unsw.edu.au School of Computer Science and Engineering UNSW Sydney Sydney, Australia 
+
+## Abstract 
+
+Proactive watermarking offers a promising approach for deepfake tamper detection and localization in short-form videos. However, existing methods often decouple audio and visual evidence and assume that watermark signals remain reliable under real-world degradations, which makes tamper localization vulnerable to mul-timodal misalignment and compression distortions. Moreover, ex-isting semi-fragile visual watermarking methods often degrade significantly under codec compression because their embedding bands overlap with compression-sensitive frequency regions. To address these limitations, we propose Layered Audio-Visual Anti-tampering Watermarking ( LAVA ), a calibration-aware audio–visual watermark fusion framework for deepfake tamper detection and localization. LAVA leverages cross-modal watermark fusion and calibration-aware alignment to preserve consistent and reliable tamper evidence under compression and audio-visual asynchrony, thereby enabling robust tamper localization. Extensive experiments demonstrate that LAVA achieves near-perfect detection perfor-mance (AP = 0.999), remains robust to compression and multimodal misalignment, and significantly improves tamper localization relia-bility over existing audio-visual fusion baselines. 
+
+## CCS Concepts 
+
+• Computing methodologies → Computer vision .
+
+## Keywords 
+
+Deepfake detection, proactive watermarking, multimodal fusion, tamper localization, confidence calibration 
+
+## 1 Introduction 
+
+The rapid growth of short-form video platforms has dramatically lowered the barrier to creating and disseminating audio-visual deep-fakes. Modern face-swapping, lip-sync, and voice-cloning systems can now generate highly realistic forged videos within seconds, and such content often remains convincing even after platform-side compression, transcoding, and re-packaging [ 2 , 3 , 19 , 20 ]. As a result, the central challenge is no longer merely to determine whether a video has been manipulated, but also to localize when 
+
+and where the manipulation occurs. This capability is critical for platform moderation, media provenance, and forensic verification. Existing deepfake detection approaches can be broadly divided into passive forensics and proactive authentication. Passive meth-ods detect manipulations by mining statistical artifacts left by the generation process, such as facial boundary inconsistencies, fre-quency anomalies, temporal incoherence, or cross-modal mismatch [5 , 15 , 21 , 22 , 31 , 33 , 36 , 37 ]. Although these methods have achieved strong performance on standard benchmarks, they fundamentally rely on artifacts that become weaker as generative models improve, and are often fragile under post-processing such as compression and transcoding [ 10 , 19 ]. In contrast, proactive watermarking em-beds a verifiable signal before distribution and checks its integrity at retrieval time, offering a more controllable path toward deepfake detection and localization [16, 18]. However, existing watermark-based authentication schemes re-main insufficient for realistic short-video deployment. On the one hand, robust watermarks are designed to survive aggressive com-pression and common editing operations, making them suitable for copyright verification, but they are often not sufficiently sensitive to localized tampering. On the other hand, fragile or semi-fragile watermarks can react to content modification, yet may collapse under benign platform distortions [ 12 , 18 , 29 , 38 ]. For deepfake detection, these two requirements must be satisfied simultaneously: the integrity signal should remain verifiable under benign compres-sion, while still being sensitive to localized face manipulation, voice cloning, or joint audio-visual forgery. In other words, the goal is not merely to preserve a watermark, but to preserve interpretable , local-izable , and calibrated tamper evidence under realistic distribution pipelines. A more fundamental limitation is that existing proactive authen-tication methods are largely unimodal . Visual methods focus on recovering or localizing image/video watermarks, such as WAM, EditGuard, OmniGuard, and VideoSeal [ 8 , 24 , 34 , 35 ], while au-dio methods target waveform-level watermark detection, such as AudioSeal and WavMark [ 4, 23 ]. Although these approaches are effective within their respective modalities, they typically model 
+
+> arXiv:2604.23957v1 [cs.CV] 27 Apr 2026 Bokang Zeng, Zheng Gao, Xiaoyu Li, Xiaoyan Feng, and Jiaojiao Jiang
+
+audio and visual evidence independently, or combine them with simple score averaging, implicitly assuming that both modalities remain synchronized, stable, and equally reliable at inference time. This assumption is often violated in real short-video platforms. In practice, the audio and visual streams of an uploaded video undergo different forms of degradation. The video track may be re-encoded with lossy codecs such as H.264, while the audio track may be transcoded into AAC or MP3; container remuxing can further introduce sub-second audio-visual offsets, and some platforms may even apply slight tempo changes. Under such distortions, audio and visual watermarks exhibit markedly different failure modes: the visual watermark may collapse globally under strong compression while the audio watermark remains usable; conversely, the audio watermark may degrade under temporal stretching or asynchrony while the visual channel still carries valid evidence. Consequently, the real challenge is not simply how to combine two scores, but how to make reliable tamper decisions when modalities are misaligned, channel reliability is asymmetric, and failure patterns differ across modalities. In this paper, we argue that the root cause of this failure is an overlooked assumption implicitly made by existing audio-visual wa-termarking pipelines: a synchronous reliability assumption , namely, that all modalities provide stable and directly comparable integrity signals at the same time. Our key observation is that audio and vi-sual watermarks exhibit a complementary form of robustness asym-metry under deployment distortions: when one modality fails, the other often remains informative. Therefore, multimodal watermark-based deepfake detection should not be formulated as a simple average over two always-reliable channels, but as a layered infer-ence problem over heterogeneous integrity signals whose reliability varies with time and distortion type. Motivated by this observation, we propose LAVA (Layered Audio 
+
+Visual Anti-tampering Watermarking), a layered audio-visual wa-termark fusion framework for deepfake detection and spatio-tempo-ral tamper localization. LAVA embeds two independent semi-fragile watermarks into the visual and audio modalities, and organizes in-ference around a simple principle: restore alignment first, identify channel failure second, and perform local fusion and probability calibration last. Concretely, LAVA first corrects temporal stretch-ing to recover audio-visual alignment; it then applies a reliability gate to determine whether the visual channel has globally failed under compression; when both channels are usable, it performs frame-wise confidence-weighted fusion; finally, it calibrates the fused scores into interpretable tamper probabilities using tempera-ture scaling [ 1, 9, 11 ]. This design enables robust detection under compression and asynchrony, while producing spatial tamper maps only when the visual channel is sufficiently reliable. Extensive experiments on LAV-DF and multiple deployment distortion settings demonstrate that LAVA achieves consistently strong performance across clean, compressed, misaligned, and time-stretched conditions [ 3]. Beyond improving overall detection accu-racy, LAVA substantially improves temporal localization stability and calibration quality over unimodal baselines and naive fusion. These results show that the advantage of LAVA does not come merely from using an additional modality, but from explicitly mod-eling how multimodal watermark evidence fails in realistic deploy-ment environments. In summary, our main contributions are as follows: 
+
+• We identify a key limitation of existing audio-visual water-mark-based detection pipelines: they implicitly rely on a synchronous reliability assumption that often breaks un-der compression, transcoding, temporal offset, and time stretching. 
+
+• We propose LAVA, a layered audio-visual watermark fu-sion framework that systematically addresses three core challenges in realistic deployment: modality misalignment, channel failure, and score miscalibration. 
+
+• We reveal and exploit the robustness asymmetry between audio and visual watermarks under deployment distortions, turning it into a reliable cross-modal integrity inference mechanism that maintains detection capability when at least one modality remains informative. 
+
+• Experiments on LAV-DF under diverse compression, off-set, stretching, and platform-simulation settings show that LAVA consistently outperforms unimodal baselines and naive fusion in detection accuracy, temporal localization stability, and calibration quality. 
+
+## 2 Related Work 2.1 Passive Deepfake Detection and Localisation 
+
+Passive deepfake detection learns to identify synthesis artefacts from data, typically without modifying the original content. Early visual detectors focus on spatial cues: the FaceForensics++ bench-mark [ 22 ] standardised evaluation across four manipulation types; Face X-Ray [ 15 ] exploits blending boundaries shared by most face-swap pipelines; F3-Net [ 21 ] shifts detection to the frequency domain via DCT decomposition, improving robustness under compression. Generalisation remains the central challenge. Forgery-agnostic aug-mentation [ 25 ] and common-feature disentanglement [ 33 ] reduce overfitting to method-specific patterns, while temporal coherence modeling [ 36 ] and alternating spatial–temporal freezing [ 31 ] extend detection to the video setting. In the audio domain, ASVspoof [ 30 ]established standard benchmarks; countermeasures have since pro-gressed from end-to-end waveform models (RawNet2 [ 26 ]) through spectro-temporal graph attention (AASIST [ 13 ]) to self-supervised wav2vec fine-tuning [ 27 ]. Audio-visual methods exploit cross-mod-al inconsistency—modality dissonance scoring [ 5], joint stream clas-sification [ 37 ], lip-motion self-supervision [ 10 ]—and have recently scaled to temporal localisation on the LAV-DF benchmark [ 2, 3 ]. Across all three modality settings, these detectors remain fundamen-tally limited by their dependence on artefact patterns that improve with generator quality and degrade under platform recompression. LAVA circumvents this dependency by detecting the absence of a proactively embedded watermark (§4.6). 
+
+## 2.2 Proactive Watermark-Based Media Authentication 
+
+Proactive integrity verification embeds a signal into authentic con-tent before distribution and checks its survival at inspection time. Classical fragile watermarks [ 16 ] enable bit-exact authentication but cannot tolerate any benign processing; semi-fragile designs LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization 
+
+Figure 1: Overview of the LAVA pipeline. Independent visual and audio integrity watermarks are embedded before distribution. At inference, per-frame detector scores pass through a four-layer hierarchical process—temporal restoration, reliability gate, confidence-weighted fusion, and calibration—yielding a calibrated per-frame tamper probability 𝑝 𝑡 and, when the visual channel is reliable, a pixel-level tamper map M𝑡 .
+
+relax this constraint, as recently demonstrated by FaceSigns [ 18 ]with end-to-end neural watermarking for deepfake countering. Learned watermarking has substantially advanced the robust-ness–imperceptibility trade-off since the introduction of HiDD-eN [ 38 ], which pioneered encoder–decoder training with differen-tiable noise layers. Physical-world augmentation (StegaStamp [ 29 ]), mini-batch compression simulation (MBRS [ 12 ]), and diffusion-latent embedding (Stable Signature [ 7 ], Tree-Ring [ 32 ]) have pro-gressively widened the robustness envelope. For tamper localisation specifically, WAM [ 24 ] provides pixel-level maps via JND masking, while EditGuard [ 34 ] and OmniGuard [ 35 ] combine localisation with copyright protection through dual watermark layers. These image-level methods have been extended independently to other modalities: VideoSeal [ 8] adds temporal propagation for video; AudioSeal [ 23 ] and WavMark [ 4] embed localised water-marks in the audio waveform. Yet each line of work remains strictly unimodal—none addresses how to jointly interpret audio and vi-sual watermark evidence when deployment distortions selectively destroy one channel. 
+
+## 2.3 Cross-Modal Fusion and Confidence Calibration 
+
+Score-level fusion of heterogeneous detectors has been extensively studied in biometric verification, where normalisation and weighted combination of match scores from face, fingerprint, and iris modal-ities yield consistent accuracy gains [ 11 ]. The broader multimodal learning literature [ 1] categorises fusion strategies into early, late, and hybrid approaches, with late (score-level) fusion being the most modular and widely adopted when subsystems are independently trained. Post-hoc confidence calibration further improves the reli-ability of fused outputs, with approaches ranging from Bayesian binning [ 17 ] to temperature scaling [ 9], the latter being the simplest and most effective single-parameter method. A common assumption underlying these approaches is that all input channels carry discriminative information simultaneously. This assumption fails in the watermark fusion setting: aggressive H.264 compression can collapse the visual watermark globally while leaving the audio watermark intact, and conversely, tempo adjust-ment can destroy the audio watermark while the visual channel survives. LAVA addresses this selective channel failure with hier-archical reliability-aware inference—per-video gating, per-frame confidence weighting, and ECE-minimising calibration—and is, to our knowledge, the first framework to fuse audio and visual water-mark evidence for joint tamper detection and localisation. 
+
+## 3 Method 
+
+We present LAVA (Layered Audio-Visual Anti-tampering), a frame-work for video deepfake detection and temporal–spatial tamper localisation based on independent visual and audio semi-fragile watermarks. Figure 1 provides an overview (the optional VideoSeal copyright branch shown therein is an auxiliary provenance channel not used in the experiments). The key insight is that any localised tampering, including face swap, voice cloning, and joint manipu-lation, necessarily destroys the watermark in the affected modal-ity and time interval. LAVA exploits this through hierarchical reliability-aware inference : temporal alignment is restored be-fore cross-modal fusion, global channel failures are resolved before local ones, and raw scores are calibrated into tamper probabilities. We formalise the setup in §3.1. Bokang Zeng, Zheng Gao, Xiaoyu Li, Xiaoyan Feng, and Jiaojiao Jiang 
+
+## 3.1 Problem Formulation 
+
+Definition 3.1 (Watermarked Video and Integrity Scores). Let x𝑤 =
+
+(V, A) denote a watermarked video with visual track V = {I𝑡 }𝑇 𝑡 =1 at frame rate 𝑓 and audio track A ∈ R𝑁 . Prior to distribution, indepen-dent semi-fragile watermarks are embedded via a per-frame visual encoder E𝑣 and a waveform-level audio encoder E𝑎 . At inference, the associated detectors D𝑣 , D𝑎 extract per-frame integrity scores 
+
+under tamper polarity (high = watermark absent = likely tampered): 
+
+D𝑣 (I𝑡 ) = M𝑡 ∈ [ 0, 1]𝐻 ×𝑊 , 𝑠 (𝑣 ) 
+
+> 𝑡
+
+= 1
+
+> 𝐻𝑊
+
+∑︁ ℎ,𝑤 M𝑡 [ℎ, 𝑤 ], (1) 
+
+D𝑎 (A) = d(𝑎 ) ∈ [ 0, 1]𝑁 , 𝑠 (𝑎 ) 
+
+> 𝑡
+
+= 1 − 1 
+
+> | C 𝑡 |
+
+∑︁ 𝑛 ∈ C 𝑡 
+
+𝑑 (𝑎 ) 
+
+> 𝑛
+
+, (2) where M𝑡 is the pixel-level tamper map, d(𝑎 ) is the per-sample watermark-presence vector (high = watermark detected), and C𝑡 =
+
+{𝑛 : (𝑡 −1)/ 𝑓 ≤ 𝑛 /𝑓 𝑠 < 𝑡 /𝑓 } is the audio-sample index set aligned to frame 𝑡 at sampling rate 𝑓 𝑠 . The complement in Eq. (2) converts watermark presence into tamper polarity. We write s(𝑣 ) , s(𝑎 ) ∈[0, 1]𝑇 for the two score sequences. 
+
+Assumption 1 (Deployment Distortion Model) . During distribution, the watermarked video x𝑤 may undergo platform-induced distor-tions. We model their effect at the score-sequence level as follows (this is a first-order approximation; the actual impact on scores depends on the detector behaviour): (i) Temporal stretch. The audio track is resampled by factor 
+
+𝛼 ≠ 1 while the video frame rate is preserved: 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↦ → 𝑠 (𝑎 )⌊𝛼𝑡 ⌋ ,
+
+𝑠 (𝑣 ) 
+
+> 𝑡
+
+↦ → 𝑠 (𝑣 ) 
+
+> 𝑡
+
+;(ii) Lossy compression. Aggressive video codecs destroy the visual watermark globally while leaving the audio channel intact: 𝑠 (𝑣 ) 
+
+> 𝑡
+
+→ 1 ∀ 𝑡 , 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↦ → 𝑠 (𝑎 ) 
+
+> 𝑡
+
+;(iii) A/V offset. Container remuxing introduces a temporal shift 
+
+𝛿 s between the two tracks: 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↦ → 𝑠 (𝑎 )   
+
+> 𝑡 −⌊ 𝛿 𝑓 ⌉
+
+, 𝑠 (𝑣 ) 
+
+> 𝑡
+
+↦ → 𝑠 (𝑣 ) 
+
+> 𝑡
+
+.Each individual distortion typically affects one modality more se-verely than the other; in practice, multiple distortions may co-occur (§4.4). 
+
+Definition 3.2 (Detection Objective). Given a query video x𝑞 that has potentially undergone both tampering and the distortions in Assumption 1, the detector F produces per-frame calibrated tamper probabilities 𝑝 𝑡 and, when available, pixel-level tamper maps: 
+
+F ( x𝑞 ) =  (𝑝 𝑡 , (1 − 𝑔 ) · M𝑡 ) 𝑇 𝑡 =1, 𝑝 𝑡 ∈ [ 0, 1], 𝑔 ∈ { 0, 1}, (3) where 𝑝 𝑡 satisfies P(𝑦 𝑡 =1 | 𝑝 𝑡 =𝑝 ) ≈ 𝑝 with 𝑦 𝑡 ∈ { 0, 1} the ground-truth tamper label, and 𝑔 is a video-level visual-channel failure indicator: 𝑔 =1 signals that the visual watermark is globally com-promised, suppressing the spatial map M𝑡 ; 𝑔 =0 indicates the visual channel is reliable. The score sequences s(𝑣 ) , s(𝑎 ) ∈ [ 0, 1]𝑇 cannot be naively com-bined: under Assumption 1, one or both channels may produce uniformly elevated scores on authentic frames, and the failure patterns are modality-dependent and structurally distinct from gen-uine tampering. LAVA addresses this through the layered pipeline described in §3.2–3.4. 
+
+## 3.2 Cross-Modal Integrity Signals 
+
+The two detectors D𝑣 , D𝑎 defined in Definition 3.1 operate in com-plementary domains: D𝑣 in compression-sensitive frequency bands, 
+
+D𝑎 in the waveform time domain. LAVA makes no assumption on their internal architecture and requires only the interface specified by Eqs. (1)–(2). 
+
+Remark 1 (Cross-Modal Robustness Asymmetry) . Let D (𝑣 ) 
+
+> fail
+
+and 
+
+D (𝑎 ) 
+
+> fail
+
+denote the sets of distortion types that cause catastrophic failure of each channel. Under the distortions considered in As-sumption 1, D (𝑣 ) 
+
+> fail
+
+∩ D (𝑎 ) 
+
+> fail
+
+= ∅: lossy video compression collapses 
+
+s(𝑣 ) while preserving s(𝑎 ) , and temporal stretch degrades s(𝑎 ) while preserving s(𝑣 ) . This asymmetry ensures that at least one channel remains informative for each deployment distortion, motivating cross-modal fusion. A direct corollary is that the survival pattern reveals the attack type: face swap ( 𝑠 (𝑣 ) 
+
+> 𝑡
+
+↑, 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↓), voice cloning (𝑠 (𝑣 ) 
+
+> 𝑡
+
+↓, 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↑), or joint deepfake ( 𝑠 (𝑣 ) 
+
+> 𝑡
+
+↑, 𝑠 (𝑎 ) 
+
+> 𝑡
+
+↑), without any addi-tional classifier. 
+
+Temporal stretch correction. Before fusion, LAVA corrects the mis-alignment from Assumption 1 (i). The stretch factor ˆ𝛼 = 𝐿 audio /( 𝑇 /𝑓 )
+
+is directly observable; when | ˆ𝛼 − 1| > 0.01 , the audio is restored via 
+
+Acorr = R1/ ˆ𝛼 (A), where R𝛽 is the linear-interpolation resampling operator at rate ratio 𝛽 , chosen for its approximate self-inverse property R1/𝛼 ◦ R 𝛼 ≈ Id .
+
+## 3.3 Asynchrony-Aware Fusion 
+
+After temporal correction, the score sequences s(𝑣 ) , s(𝑎 ) ∈ [ 0, 1]𝑇 
+
+must be combined into a single fused signal. Two structurally distinct reliability failures arise in practice: catastrophic collapse (aggressive compression destroys the visual watermark globally) and local degradation (one modality becomes unstable at specific frames). LAVA handles them at two granularities: a per-video hard gate resolves global failure, and a per-frame soft weighting ad-dresses local instability, ensuring that global failure modes are resolved before local fusion is attempted. 
+
+Per-video reliability gate. Under strong compression, 𝑠 (𝑣 ) 
+
+> 𝑡
+
+col-lapses to uniformly high values across all frames, eliminating dis-criminative power. The key observation is that this failure mode is temporally uniform , whereas genuine tampering is temporally sparse (only the manipulated interval shows elevated scores). The global visual mean therefore serves as a reliable proxy for channel failure: 
+
+𝑔 = 1
+
+h
+
+¯𝑠 (𝑣 ) > 𝜏 
+
+i
+
+, ¯𝑠 (𝑣 ) = 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+𝑠 (𝑣 ) 
+
+> 𝑡
+
+, (4) where 𝜏 = 0.1 is selected via grid search. When 𝑔 = 1, the visual channel is suppressed for the entire video and M𝑡 is nulled. This gate targets the localised-tampering regime; if the majority of frames are tampered, the mean-based test may fail to distinguish tampering from compression (§4.3). 
+
+Temporal offset alignment. Let 𝑠 (𝑎 ) 
+
+> 𝛿,𝑡
+
+:= 𝑠 (𝑎 )   
+
+> 𝑡 −⌊ 𝛿 𝑓 ⌉
+
+denote the audio score shifted by 𝛿 s, and let O = {− 1.0, −0.75 , . . . , +1.0} s be the LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization 
+
+candidate offset set. Define the fused sequence under offset 𝛿 as 
+
+ˆs𝑔 (𝛿 ) =
+
+({𝑠 (𝑎 ) 
+
+> 𝛿,𝑡
+
+}𝑇 𝑡 =1, 𝑔 = 1,
+
+{ˆ𝑠 𝑡 (𝛿 )} 𝑇 𝑡 =1, 𝑔 = 0, (5) where ˆ𝑠 𝑡 (𝛿 ) is the confidence-weighted combination in Eq. (8) eval-uated at offset 𝛿 . The optimal offset is 
+
+𝛿 ∗ 
+
+> 𝑔
+
+∈ 𝛿 ∈ O : J  y, ˆs𝑔 (𝛿 ) = max   
+
+> 𝛿 ′∈ O
+
+J  y, ˆs𝑔 (𝛿 ′) , (6) where J is a frame-level detection performance measure (instan-tiated as average precision in experiments), with ties broken by smallest |𝛿 |. In the current evaluation this selection is oracle (i.e. uses test-set labels), establishing the performance ceiling of off-set alignment; at deployment it can be replaced by unsupervised cross-correlation (§4.4). 
+
+Per-frame confidence-weighted fusion ( 𝑔 =0). Watermark evidence is piecewise smooth within authentic or tampered segments; abrupt local fluctuations indicate detector instability rather than seman-tic evidence. Since 𝑠 (𝑚 ) 
+
+> 𝑡
+
+∈ [0, 1], the sample variance satisfies 
+
+𝜎 2 
+
+> 𝑊
+
+(𝑠 (𝑚 ) , 𝑡 ) ≤ 1/4. We therefore define per-frame confidence by normalising the local variance to [0, 1]:
+
+𝑐 (𝑚 ) 
+
+> 𝑡
+
+=  1 − 4 𝜎 2 
+
+> 𝑊
+
+(𝑠 (𝑚 ) , 𝑡 ) 
+
+> +
+
+, 𝑚 ∈ { 𝑎, 𝑣 }, (7) where 𝜎 2 
+
+> 𝑊
+
+(𝑠 (𝑚 ) , 𝑡 ) is the sample variance of {𝑠 (𝑚 ) 
+
+> 𝑘
+
+}𝑡 +𝑊 𝑘 =𝑡 −𝑊 with half-window 𝑊 =3. When 𝜎 2 
+
+> 𝑊
+
+= 1/4 (maximal instability), 𝑐 (𝑚 ) 
+
+> 𝑡
+
+= 0;when 𝜎 2 
+
+> 𝑊
+
+= 0 (perfect stability), 𝑐 (𝑚 ) 
+
+> 𝑡
+
+= 1. The fused score is 
+
+ˆ𝑠 𝑡 =
+
+
+
+𝑐 (𝑎 ) 
+
+> 𝑡
+
+𝑠 (𝑎 )  
+
+> 𝛿 ∗
+> 0, 𝑡
+
++ 𝑐 (𝑣 ) 
+
+> 𝑡
+
+𝑠 (𝑣 )
+
+> 𝑡
+
+𝑐 (𝑎 ) 
+
+> 𝑡
+
++ 𝑐 (𝑣 )
+
+> 𝑡
+
+, 𝑐 (𝑎 ) 
+
+> 𝑡
+
++ 𝑐 (𝑣 ) 
+
+> 𝑡
+
+> 0,
+
+> 12
+
+ 𝑠 (𝑎 )  
+
+> 𝛿 ∗
+> 0, 𝑡
+
++ 𝑠 (𝑣 )
+
+> 𝑡
+
+, 𝑐 (𝑎 ) 
+
+> 𝑡
+
++ 𝑐 (𝑣 ) 
+
+> 𝑡
+
+= 0.
+
+(8) The gate-unified output combines both branches: 
+
+˜𝑠 𝑡 =
+
+(𝑠 (𝑎 )  
+
+> 𝛿 ∗
+> 1, 𝑡
+
+, 𝑔 = 1,
+
+ˆ𝑠 𝑡 , 𝑔 = 0. (9) 
+
+## 3.4 Score Calibration 
+
+The fused scores ˜𝑠 𝑡 are not inherently calibrated: a score of 0.7
+
+does not correspond to a 70% tampering probability, because the upstream watermark detectors were not trained with a calibration objective. To satisfy the calibration requirement P(𝑦 𝑡 =1 | 𝑝 𝑡 =𝑝 ) ≈ 𝑝 
+
+in Definition 3.2, we apply temperature scaling [9]: a single scalar 
+
+𝑇 > 0 rescales the logits to minimise the expected calibration error (ECE): 
+
+𝑇 ∗ = arg min  
+
+> 𝑇 >0
+
+ECE  y, 𝜎 (ℓ/𝑇 ), (10) where ℓ𝑡 = logit ( ˜𝑠 𝑡 ), 𝜎 is the sigmoid function, and ECE uses 𝐵 =10 
+
+equal-width bins. In practice, 𝑇 ∗ is found by grid search over 300 log-spaced candidates in [10 −2, 10 ]. The calibrated tamper probability is 
+
+𝑝 𝑡 = 𝜎  ℓ𝑡 /𝑇 ∗ . (11) We minimise ECE rather than NLL because ECE directly measures the gap between predicted confidence and observed accuracy. Tem-perature scaling preserves score ranking (and hence AP) while substantially reducing calibration error (§4.3). 
+
+Inference summary. The four stages run sequentially: tempo-ral stretch correction, reliability gate (Eq. 4), offset alignment and confidence-weighted fusion (Eqs. 6–9), and temperature calibra-tion (Eqs. 10–11). The output is a per-frame calibrated tamper probability 𝑝 𝑡 and, when 𝑔 =0, a pixel-level map M𝑡 ; when 𝑔 =1,LAVA abstains from spatial localisation. All post-extraction stages are signal-processing operations with no learnable parameters be-yond 𝑇 ∗, adding < 55 ms combined overhead. 
+
+## 4 Experiments 
+
+We evaluate LAVA from three aspects: (i) whether it improves detection, localisation, and calibration over unimodal baselines and simple fusion; (ii) which components of the layered design are responsible for these gains; and (iii) how it performs under deployment distortions, including compression, temporal offset, tempo perturbation, and joint cross-modal degradation. 
+
+## 4.1 Experimental Setup 
+
+Datasets. We evaluate LAVA on three complementary benchmarks. 
+
+LAV-DF [3 ] contains 500 groups with frame-level temporal annota-tions covering face swap, voice conversion, and joint audio-visual manipulation. FakeAVCeleb [14 ] contains 2,000 videos from four manipulation categories with video-level labels. VoxCeleb2 [ 6] is used to construct a controlled benchmark of 200 real videos with synthetic 0.65 s asynchronous audio-visual tampering and five vi-sual attack types, including blur, black-box occlusion, mosaic, noise injection, and white-out. Unless otherwise specified, LAV-DF is used as the primary benchmark for temporal detection, localisation, and calibration, FakeAVCeleb for video-level generalisation, and VoxCeleb2 for controlled analysis of asynchronous tampering and watermark quality. 
+
+Distortion settings. All three datasets are evaluated under 
+
+Clean (no re-encoding) and JPEG 𝑞 =23 + MP3 128 k. For LAV-DF, we further consider H.264 CRF 23 and H.264 CRF 28 + MP3 128 k to simulate progressively stronger platform-style compression. 
+
+Compared methods. We compare LAVA with three internal baselines: Visual-only , which uses only the visual watermark branch; Audio-only , which uses only the audio watermark branch; and Naïve fusion , defined as ˆ𝑠 𝑡 = 0.5 𝑠 (𝑣 ) 
+
+> 𝑡
+
++ 0.5 𝑠 (𝑎 ) 
+
+> 𝑡
+
+without tempo-ral alignment, reliability gating, or calibration. We further include passive forensic references, including frame consistency, frequency analysis, and pixel statistics, as non-watermark baselines under the same evaluation protocol. 
+
+Evaluation metrics. We evaluate LAVA in terms of detection accuracy, localisation quality, calibration reliability, and watermark fidelity. Specifically, we use AP ( ↑) and AUC ( ↑) to measure tamper detection performance at the frame and video levels, respectively, and adopt temporal IoU ( ↑) to evaluate localisation quality. To assess the reliability of the predicted tamper probabilities, we further report ECE ( ↓). In addition, we use PSNR ( ↑), SSIM ( ↑), and FPR (↓) to evaluate the perceptual quality and false-alarm behaviour of the embedded watermark. The offset bank uses oracle selection (ground-truth labels) to establish the upper bound of alignment-aware fusion. 𝑇 ∗ is tuned on a held-out validation split disjoint from the test set. Bokang Zeng, Zheng Gao, Xiaoyu Li, Xiaoyan Feng, and Jiaojiao Jiang 
+
+Table 1: Detection performance across three datasets under clean and JPEG compression. LAV-DF and VoxCeleb2 report frame-level AP; FakeAVCeleb reports video-level AUC. VoxCeleb2 averaged over five attack types with async 0.65 s A/V tamper. Best in bold, second-best underlined.                                            
+
+> LAV-DF (AP) LAV-DF (IoU) FakeAVCeleb (AUC) VoxCeleb2 (AP) Method Clean JPEG Clean JPEG Clean JPEG Clean JPEG Visual-only 1.000 0.453 ——0.833 0.565 0.690 0.214 Audio-only 0.999 0.999 ——0.814 0.809 0.781 0.780
+> Naïve fusion 1.000 0.999 0.950 0.750 0.958 0.792 0.953 0.724 LAVA (ours) 1.000 0.999 0.952 0.955 1.000 0.810 0.991 0.773
+
+Table 2: Ablation on LAV-DF ( 𝑛 =500 ). Each row adds one pipeline layer. Offset bank alone can degrade AP under JPEG (row 2); the gate resolves this (row 3). Best in bold, second-best underlined.                                                                
+
+> Clean JPEG 𝑞 =23 H.264 CRF 23 H.264 CRF 28 AP IoU ECE AP IoU ECE AP IoU ECE AP IoU ECE Naïve fusion 1.000 0.950 0.006 0.999 0.924 0.441 1.000 0.873 0.419 1.000 0.800 0.420 w/ Offset Bank 1.000 0.950 0.006 0.895 0.801 0.443 ––––––w/ OB + Gate 1.000 0.944 0.003 0.999 0.924 0.002 1.000 0.981 0.004 1.000 0.981 0.004 LAVA (full) 1.000 0.952 0.001 0.999 0.955 0.002 1.000 0.981 0.003 1.000 0.981 0.003
+
+## 4.2 Overall Detection and Localisation Performance 
+
+Table 1 shows that LAVA delivers the most consistent overall per-formance across datasets and distortion conditions. Under clean settings, performance is already near saturation on LAV-DF, while LAVA still attains the best results on FakeAVCeleb and VoxCeleb2, reaching AUC = 1.000 and AP = 0.991, respectively. Under JPEG compression, its advantage becomes more pronounced: LAVA pre-serves AP = 0.999 on LAV-DF and AUC = 0.810 on FakeAVCeleb, and achieves the best localisation result on LAV-DF with IoU = 0.955. Rel-ative to naïve fusion, this corresponds to an improvement of 0.205 in JPEG IoU on LAV-DF and 0.018 in JPEG AUC on FakeAVCeleb. The main difference from the comparison variants is that LAVA remains effective when the visual branch becomes unreliable. This is clearest under JPEG compression, where the visual-only baseline drops sharply on all three datasets, from 1.000 to 0.453 AP on LAV-DF, from 0.833 to 0.565 AUC on FakeAVCeleb, and from 0.690 to 0.214 AP on VoxCeleb2. By contrast, LAVA retains strong perfor-mance by suppressing corrupted visual evidence and falling back on the surviving audio cue when necessary. This effect is particu-larly evident on FakeAVCeleb, where LAVA reaches AUC = 0.810, clearly outperforming visual-only (0.565) and naïve fusion (0.792). On VoxCeleb2 under JPEG compression, the audio-only variant is marginally stronger than LAVA in AP (0.780 vs. 0.773), suggesting that when discriminative evidence is already concentrated in the audio channel, the gain from cross-modal fusion becomes limited rather than uniformly positive. 
+
+## 4.3 Component Analysis 
+
+Table 2 shows that the benefit of LAVA does not come from offset alignment alone. In fact, adding the offset bank without any relia-bility control already exposes a clear failure mode: although clean performance remains unchanged, JPEG performance drops notice-ably, with AP decreasing from 0.999 to 0.895 and IoU from 0.924 to 0.801. This result suggests that, once the visual branch becomes unreliable, offset search can be misled by corrupted evidence rather than improving fusion. The reliability gate is the component that resolves this failure. Relative to the offset-only variant, adding the gate restores JPEG AP from 0.895 to 0.999 and IoU from 0.801 to 0.924. The same effect becomes even clearer under stronger compression: at H.264 CRF 23 and CRF 28, IoU increases from 0.873 and 0.800 to 0.981 and 0.981, while ECE drops from 0.419 and 0.420 to 0.004 and 0.004, respec-tively. This confirms that the main role of the gate is to prevent corrupted visual evidence from dominating the fused prediction. The remaining gain comes from completing the full pipeline. After confidence-weighted fusion and calibration are added, the model reaches the best clean IoU/ECE of 0.952/0.001 and the best JPEG IoU of 0.955, while keeping ECE at or below 0.003 across all four compression settings. The ablation therefore points to a clear division of labor: offset alignment restores temporal consistency, the gate handles modality failure, and the full pipeline is needed to obtain the final gains in localisation quality and calibration. 
+
+## 4.4 Robustness Analysis 
+
+To verify the robustness of LAVA under temporal misalignment, tempo perturbation, and joint cross-modal degradation, we report results on LAV-DF and VoxCeleb2 in Tables 3 and 4. The results show that LAVA remains highly robust to moderate temporal distortions and consistently outperforms naïve fusion under realistic multi-factor degradations. A closer examination reveals three main findings. First, LAVA ef-fectively handles temporal offsets within the predefined offset bank. Under offsets of +0.5 s and +1.0 s, naïve fusion drops to AP = 0.818 and 0.640, respectively, whereas LAVA fully recovers AP = 1.000 LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization 
+
+Table 3: Temporal robustness on LAV-DF ( 𝑛 =500 ). (a) LAVA recovers AP = 1.000 for all in-bank offsets. (b) Linear resam-pling recovers AP > 0.999.                                        
+
+> (a) A/V Offset Stress
+> Offset In bank Naïve LAVA Δ
+> +0.0 s ✓1.000 1.000 +0.000 +0.5 s ✓0.818 1.000 +0.182 +1.0 s ✓0.640 1.000 +0.360 +2.0 s ✗0.779 0.912 +0.133 +3.0 s ✗0.903 0.961 +0.058
+> (b) Audio Stretch Correction
+> Factor Raw Corrected Recovery 0.90 ×0.132 0.998 99.9% 0.95 ×0.131 0.999 100.0% 1.05 ×0.148 0.999 100.0% 1.10 ×0.903 0.999 99.4%
+
+in both cases. Even for out-of-bank offsets, LAVA still improves AP from 0.779 to 0.912 at +2.0 s and from 0.903 to 0.961 at +3.0 s, indicating that offset-aware fusion remains beneficial beyond the nominal search range. Second, audio stretch severely disrupts the raw audio water-mark signal, but the proposed correction largely restores perfor-mance. Specifically, the raw AP drops to 0.132, 0.131, and 0.148 under stretch factors of 0.90 ×, 0.95 ×, and 1.05 ×, respectively. Af-ter linear-resampling correction, the AP is restored to 0.998–0.999, corresponding to recovery rates of 99.9%–100.0%. Even at 1.10 ×,where the raw AP is already 0.903, correction further improves it to 0.999. Third, the advantage of LAVA becomes more pronounced under joint degradations. On LAV-DF with an injected +0.5 s offset, LAVA consistently outperforms naïve fusion across all visual/audio com-binations. The largest gain appears under JPEG + MP3 32 k, where AP increases from 0.398 to 0.982. Strong improvements are also observed under JPEG + Clean (0.456 →0.989) and Clean + MP3 32 k (0.842 →1.000), showing that the layered design remains effective when one modality is substantially degraded. The most challeng-ing case is JPEG + Stretch 0.95 ×, where LAVA still improves AP from 0.284 to 0.504, but simultaneous degradation of both channels leads to a clear performance drop. On VoxCeleb2, LAVA remains robust across diverse visual attack types, achieving fused APs of 0.962–1.000 under clean conditions and 0.760–0.788 under JPEG compression. Taken together, these results show that LAVA is ro-bust not only to isolated temporal distortions, but also to realistic joint cross-modal degradations. 
+
+## 4.5 Spatiotemporal Detection 
+
+Figure 2 makes the behavior of LAVA concrete on a representa-tive LAV-DF example. The temporal trace remains tightly aligned with the ground-truth tampered interval, with clear transitions at both boundaries, while the spatial response is concentrated around the manipulated mouth region rather than spreading over the full face. Authentic frames stay near the background level throughout, 
+
+Table 4: Joint A/V attacks. (a) LAV-DF with +0.5 s offset. (b) VoxCeleb2 async 0.65 s tamper. LAVA gains up to +0.584. AP values shown.                                         
+
+> (a) Joint Attacks (LAV-DF)
+> Visual Audio Naïve LAVA Δ
+> Clean Clean 0.818 1.000 +0.182 Clean MP3 32 k 0.842 1.000 +0.158 Clean Stretch 0.95 ×0.968 1.000 +0.032 JPEG Clean 0.456 0.989 +0.533 JPEG MP3 32 k 0.398 0.982 +0.584 JPEG Stretch 0.95 ×0.284 0.504 +0.220
+> (b) Visual Attacks (VoxCeleb2)
+> Attack Fused AP Clean JPEG Blur 0.962 0.777
+> Black-box 1.000 0.768
+> Mosaic 1.000 0.788
+> Noise 1.000 0.774
+> White-out 1.000 0.760
+
+whereas tampered frames trigger localized and temporally coherent activations. Table 5 quantifies this accuracy on raw visual maps before gate-based abstention. Under clean conditions, the visual detector reaches IoU = 0.963 and F1 = 0.981, indicating close agreement between the predicted tamper masks and the ground truth. JPEG compression makes this task markedly harder by enlarging the activated regions and reducing spatial precision. Even in this regime, a simple mor-phological closing step improves IoU from 0.132 to 0.187 and F1 from 0.233 to 0.315, suggesting that the degradation is partly geo-metric, i.e., fragmented or distorted masks, rather than a complete disappearance of spatial evidence. Spatial localization therefore remains meaningful when the visual watermark is preserved, and deteriorates mainly in the heavily compressed setting. 
+
+## 4.6 Attribution, Passive Comparison, and Watermark Quality 
+
+Table 5 extends the evaluation beyond binary tamper detection to three complementary aspects: manipulation-type attribution, com-parison with passive forensic cues, and watermark fidelity. Two patterns are immediately clear. The first is that the watermark re-sponses remain informative enough to support attribution without any additional classifier. The second is that this additional function-ality is obtained without sacrificing imperceptibility or increasing false alarms. For manipulation-type attribution, the rule-based scheme is highly accurate under clean conditions. It reaches 0.995 accuracy on LAV-DF and 1.000 on FakeAVCeleb, indicating that the joint audio-visual watermark responses are sufficiently structured to separate authentic content, face swap, voice cloning, and joint deepfake cases. This capability weakens under JPEG compression, where FakeAVCeleb accuracy drops to 0.500, consistent with the loss of discriminative visual evidence needed for fine-grained type inference. Bokang Zeng, Zheng Gao, Xiaoyu Li, Xiaoyan Feng, and Jiaojiao Jiang Overlay                      
+
+> t=0.2s t=4.0s t=4.3s t=4.9s t=5.6s t=5.9s t=6.1s t=6.3s
+> GT
+> 0123456
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Score
+> Visual Audio
+> 0123456
+> Time (s)
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Fused
+> Fused (LAVA) GT tampered
+
+Figure 2: Spatiotemporal detection on LAV-DF. Top: per-frame heatmap overlays across time (green = authentic, red = tampered). Bottom: visual, audio, and LAVA fused score traces with GT tampered intervals shaded. 
+
+The passive baselines remain far behind in the same setting. On LAV-DF, frame consistency, frequency analysis, and pixel statistics achieve APs of only 0.042, 0.090, and 0.152, respectively, whereas LAVA reaches AP = 0.999. This gap suggests that the manipulated videos are realistic enough to suppress conventional low-level foren-sic artifacts, while watermark absence remains a much more direct and reliable cue for tamper detection. The watermark itself also remains highly unobtrusive. On Vox-Celeb2, the visual branch achieves PSNR = 39.2 dB and SSIM = 0.999, while the audio branch reaches SNR = 25.3 dB. The false positive rate is 0.000 for both modalities, so authentic watermarked content is never mistakenly flagged as tampered. In other words, the same embedded signal that supports attribution and detection introduces almost no perceptual burden in practice. 
+
+## 4.7 Comparison with External Watermark Methods 
+
+To further contextualise LAVA’s performance, we compare it against two external active watermark methods evaluated under the same protocol on LAV-DF: EditGuard [ 34 ], a semi-fragile visual water-mark designed for image tamper localisation, and WavMark [4 ], a neural audio watermark that embeds a 32-bit payload into 16 kHz speech. Both methods follow LAVA’s evaluation pipeline: water-marks are first embedded into the original media, the composite is then constructed by replacing tampered segments with unwa-termarked deepfake content according to LAV-DF’s ground-truth intervals, and detection is performed on the resulting composite. We additionally include two learned passive detectors, Xception-Net [ 22 ] and EfficientNet-B4 [ 28 ], both pretrained on FaceForen-sics++ [ 22 ] (c23) and evaluated in a zero-shot cross-dataset setting. Table 6 reports frame-level AP under clean conditions. Among the external methods, EditGuard performs best with AP = 0.549, con-firming that proactive watermarking substantially outperforms pas-sive detection (XceptionNet AP = 0.039, EfficientNet-B4 AP = 0.050). 
+
+Table 5: Spatial localisation (LAV-DF), cross-modal attribu-tion (LAV-DF + FakeAVCeleb), passive baselines (LAV-DF), and watermark quality (VoxCeleb2). LAVA achieves 0.995– 1.000 attribution accuracy and zero false positives. 
+
+(a) Spatial Localisation (LAV-DF, 5 groups) 
+
+Condition Variant IoU Recall F1 Clean Baseline 0.963 0.978 0.981 
+
+Clean Refined 0.963 0.978 0.981 
+
+JPEG Baseline 0.132 0.995 0.233 JPEG Refined 0.187 0.972 0.315 
+
+(b) Cross-Modal Attribution 
+
+Dataset Condition Accuracy LAV-DF Clean 0.995 
+
+FakeAVCeleb Clean 1.000 
+
+FakeAVCeleb JPEG 0.500 
+
+(c) Passive Baselines (LAV-DF, 50 groups) 
+
+Method AP Frame consistency 0.042 Frequency analysis 0.090 Pixel statistics 0.152 
+
+LAVA (ours) 0.999 
+
+(d) Watermark Quality (VoxCeleb2, 200 videos) 
+
+Metric Visual Audio PSNR / SNR 39.2 dB 25.3 dB SSIM 0.999 —FPR 0.000 0.000 
+
+However, EditGuard’s performance is highly variable across videos (per-group AP = 0.602 ± 0.356), with some groups achieving perfect detection while others fall below 10%, suggesting that its semi-fragile design does not transfer reliably to mouth-region deepfakes. WavMark achieves AP = 0.354 on audio tampering, indicating that voice cloning largely destroys the embedded payload, limiting its utility as a standalone tamper detector. LAVA outperforms all external methods by a wide margin. The key advantage is cross-modal complementarity : EditGuard and Wav-Mark each operate on a single modality and fail when that modal-ity’s watermark is disrupted by the forgery process. By contrast, LAVA fuses visual and audio watermark evidence through reliability-aware gating and temporal alignment, achieving AP ≥ 0.999 under both clean and compressed conditions. This comparison highlights that the performance gap is not merely due to a stronger base wa-termark, but arises from LAVA’s layered multi-modal fusion design. 
+
+## 5 Conclusion 
+
+We presented LAVA, a layered audio-visual anti-tampering frame-work that fuses independent visual and audio semi-fragile wa-termarks through temporal stretch correction, reliability gating, confidence-weighted fusion, and calibration. Experiments on LAV-DF, FakeAVCeleb, and VoxCeleb2 demonstrate near-perfect detec-tion (AP ≥ 0.999), robust localisation (IoU = 0.955), well-calibrated outputs (ECE ≤ 0.002), and 99.5–100% attribution accuracy—all with imperceptible watermarks (PSNR = 39.2 dB, SSIM = 0.999) and zero LAVA: Layered Audio-Visual Anti-tampering Watermarking for Robust Deepfake Detection and Localization 
+
+Table 6: Comparison with external methods on LAV-DF (clean). Active watermark methods embed their respective watermark into original media before constructing the tam-pered composite. Passive detectors are applied zero-shot (trained on FF++ c23). AP = frame-level average precision. 
+
+Method Type Modality AP 
+
+Active watermark 
+
+EditGuard [34] Semi-fragile WM Visual 0.549 WavMark [4] Neural audio WM Audio 0.354 Visual-only (WAM) Semi-fragile WM Visual 1.000 Audio-only (AudioSeal) Semi-fragile WM Audio 0.999 
+
+Passive detector (zero-shot, FF++ → LAV-DF) 
+
+XceptionNet [22] Learned Visual 0.039 EfficientNet-B4 [28] Learned Visual 0.050 
+
+LAVA (ours) Multi-modal WM A + V 1.000 
+
+false positives. Under H.264 CRF 28 compression, the reliability gate preserves IoU = 0.981 ( +18 pp over naïve fusion). The current design assumes temporally sparse tampering and relies on oracle offset selection; future work includes learned alignment, adversarial robustness, and C2PA integration. 
+
+## References 
+
+[1] Tadas Baltrušaitis, Chaitanya Ahuja, and Louis-Philippe Morency. 2019. Multi-modal Machine Learning: A Survey and Taxonomy. IEEE Transactions on Pattern Analysis and Machine Intelligence 41, 2 (2019), 423–443. doi:10.1109/TPAMI.2018. 2798607 [2] Zhixi Cai, Shreya Ghosh, Aman Pankaj Adatia, Munawar Hayat, Abhinav Dhall, Tom Gedeon, and Kalin Stefanov. 2024. AV-Deepfake1M: A Large-Scale LLM-Driven Audio-Visual Deepfake Dataset. In Proceedings of the 32nd ACM International Conference on Multimedia (Melbourne VIC, Australia) (MM ’24) . Association for Computing Machinery, New York, NY, USA, 7414–7423. doi:10.1145/3664647.3680795 [3] Zhixi Cai, Shreya Ghosh, Abhinav Dhall, Tom Gedeon, Kalin Stefanov, and Munawar Hayat. 2023. Glitch in the matrix: A large scale benchmark for content driven audio–visual forgery detection and localization. Computer Vision and Image Understanding 236 (2023), 103818. doi:10.1016/j.cviu.2023.103818 [4] Guangyu Chen, Yu Wu, Shujie Liu, Tao Liu, Xiaoyong Du, and Furu Wei. 2024. WavMark: Watermarking for Audio Generation. arXiv:2308.12770 [cs.SD] https: //arxiv.org/abs/2308.12770 [5] Komal Chugh, Parul Gupta, Abhinav Dhall, and Ramanathan Subramanian. 2020. Not made for each other- Audio-Visual Dissonance-based Deepfake Detection and Localization. In Proceedings of the 28th ACM International Conference on Multimedia (Seattle, WA, USA) (MM ’20) . Association for Computing Machinery, New York, NY, USA, 439–447. doi:10.1145/3394171.3413700 [6] Joon Son Chung, Arsha Nagrani, and Andrew Zisserman. 2018. VoxCeleb2: Deep Speaker Recognition. In Interspeech 2018 (interspeech 2018) . ISCA, 1086–1090. doi:10.21437/interspeech.2018-1929 [7] Pierre Fernandez, Guillaume Couairon, Hervé Jégou, Matthijs Douze, and Teddy Furon. 2023. The Stable Signature: Rooting Watermarks in Latent Diffusion Models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . 22466–22477. [8] Pierre Fernandez, Hady Elsahar, I. Zeki Yalniz, and Alexandre Mourachko. 2024. Video Seal: Open and Efficient Video Watermarking. arXiv:2412.09492 [cs.MM] https://arxiv.org/abs/2412.09492 [9] Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. 2017. On Calibration of Modern Neural Networks. In Proceedings of the 34th International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 70) , Doina Precup and Yee Whye Teh (Eds.). PMLR, 1321–1330. https://proceedings.mlr. press/v70/guo17a.html [10] Alexandros Haliassos, Rodrigo Mira, Stavros Petridis, and Maja Pantic. 2022. Leveraging Real Talking Faces via Self-Supervision for Robust Forgery Detec-tion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 14950–14962. [11] Anil Jain, Karthik Nandakumar, and Arun Ross. 2005. Score normalization in multimodal biometric systems. Pattern Recognition 38, 12 (2005), 2270–2285. doi:10.1016/j.patcog.2005.01.012 [12] Zhaoyang Jia, Han Fang, and Weiming Zhang. 2021. MBRS: Enhancing Robust-ness of DNN-based Watermarking by Mini-Batch of Real and Simulated JPEG Compression. In Proceedings of the 29th ACM International Conference on Multi-media (Virtual Event, China) (MM ’21) . Association for Computing Machinery, New York, NY, USA, 41–49. doi:10.1145/3474085.3475324 [13] Jee-weon Jung, Hee-Soo Heo, Hemlata Tak, Hye-jin Shim, Joon Son Chung, Bong-Jin Lee, Ha-Jin Yu, and Nicholas Evans. 2022. AASIST: Audio Anti-Spoofing Using Integrated Spectro-Temporal Graph Attention Networks. In ICASSP 2022 - 2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . 6367–6371. doi:10.1109/ICASSP43922.2022.9747766 [14] Hasam Khalid, Shahroz Tariq, Minha Kim, and Simon S. Woo. 2022. FakeAVCeleb: A Novel Audio-Video Multimodal Deepfake Dataset. arXiv:2108.05080 [cs.CV] https://arxiv.org/abs/2108.05080 [15] Lingzhi Li, Jianmin Bao, Ting Zhang, Hao Yang, Dong Chen, Fang Wen, and Baining Guo. 2020. Face x-ray for more general face forgery detection. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .5001–5010. [16] Eugene T Lin and Edward J Delp. 1999. A review of fragile image watermarks. In Proceedings of the ACM Multimedia Security Workshop . 47–51. [17] Mahdi Pakdaman Naeini, Gregory Cooper, and Milos Hauskrecht. 2015. Obtain-ing well calibrated probabilities using bayesian binning. In Proceedings of the AAAI conference on artificial intelligence , Vol. 29. [18] Paarth Neekhara, Shehzeen Hussain, Xinqiao Zhang, Ke Huang, Julian McAuley, and Farinaz Koushanfar. 2024. FaceSigns: Semi-fragile watermarks for media authentication. ACM Transactions on Multimedia Computing, Communications and Applications 20, 11 (2024), 1–21. [19] Gan Pei, Jiangning Zhang, Menghan Hu, Zhenyu Zhang, Chengjie Wang, Yun-sheng Wu, Guangtao Zhai, Jian Yang, and Dacheng Tao. 2026. Deepfake Genera-tion and Detection: A Benchmark and Survey. ACM Comput. Surv. (March 2026). doi:10.1145/3801962 Just Accepted. [20] K R Prajwal, Rudrabha Mukhopadhyay, Vinay P. Namboodiri, and C.V. Jawahar. 2020. A Lip Sync Expert Is All You Need for Speech to Lip Generation In the Wild. In Proceedings of the 28th ACM International Conference on Multimedia 
+
+(Seattle, WA, USA) (MM ’20) . Association for Computing Machinery, New York, NY, USA, 484–492. doi:10.1145/3394171.3413532 [21] Yuyang Qian, Guojun Yin, Lu Sheng, Zixuan Chen, and Jing Shao. 2020. Thinking in Frequency: Face Forgery Detection by Mining Frequency-Aware Clues. In 
+
+Computer Vision – ECCV 2020 , Andrea Vedaldi, Horst Bischof, Thomas Brox, and Jan-Michael Frahm (Eds.). Springer International Publishing, Cham, 86–103. [22] Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. 2019. Faceforensics++: Learning to detect manipulated facial images. In Proceedings of the IEEE/CVF international conference on computer vision . 1–11. [23] Robin San Roman, Pierre Fernandez, Hady Elsahar, Alexandre Défossez, Teddy Furon, and Tuan Tran. 2024. Proactive Detection of Voice Cloning with Localized Watermarking. In International Conference on Machine Learning . PMLR, 43180– 43196. [24] Tom Sander, Pierre Fernandez, Alain Oliviero Durmus, Teddy Furon, and Matthijs Douze. 2025. Watermark Anything With Localized Messages. In The Thirteenth International Conference on Learning Representations . https://openreview.net/ forum?id=IkZVDzdC8M [25] Kaede Shiohara and Toshihiko Yamasaki. 2022. Detecting Deepfakes With Self-Blended Images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 18720–18729. [26] Hemlata Tak, Jose Patino, Massimiliano Todisco, Andreas Nautsch, Nicholas Evans, and Anthony Larcher. 2021. End-to-End anti-spoofing with RawNet2. In 
+
+ICASSP 2021 - 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . 6369–6373. doi:10.1109/ICASSP39728.2021.9414234 [27] Hemlata Tak, Massimiliano Todisco, Xin Wang, Jee weon Jung, Junichi Yamagishi, and Nicholas Evans. 2022. Automatic speaker verification spoofing and deepfake detection using wav2vec 2.0 and data augmentation. arXiv:2202.12233 [eess.AS] https://arxiv.org/abs/2202.12233 [28] Mingxing Tan and Quoc Le. 2019. Efficientnet: Rethinking model scaling for convolutional neural networks. In International conference on machine learning .PMLR, 6105–6114. [29] Matthew Tancik, Ben Mildenhall, and Ren Ng. 2020. Stegastamp: Invisible hyperlinks in physical photographs. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 2117–2126. [30] Xin Wang, Junichi Yamagishi, Massimiliano Todisco, Héctor Delgado, An-dreas Nautsch, Nicholas Evans, Md Sahidullah, Ville Vestman, Tomi Kinnunen, Kong Aik Lee, et al . 2020. ASVspoof 2019: A large-scale public database of syn-thesized, converted and replayed speech. Computer Speech & Language 64 (2020), 101114. [31] Zhendong Wang, Jianmin Bao, Wengang Zhou, Weilun Wang, and Houqiang Li. 2023. AltFreezing for More General Video Face Forgery Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .4129–4138. Bokang Zeng, Zheng Gao, Xiaoyu Li, Xiaoyan Feng, and Jiaojiao Jiang 
+
+[32] Yuxin Wen, John Kirchenbauer, Jonas Geiping, and Tom Goldstein. 2023. Tree-rings watermarks: Invisible fingerprints for diffusion images. Advances in Neural Information Processing Systems 36 (2023), 58047–58063. [33] Zhiyuan Yan, Yong Zhang, Yanbo Fan, and Baoyuan Wu. 2023. UCF: Uncovering Common Features for Generalizable Deepfake Detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . 22412–22423. [34] Xuanyu Zhang, Runyi Li, Jiwen Yu, Youmin Xu, Weiqi Li, and Jian Zhang. 2024. EditGuard: Versatile Image Watermarking for Tamper Localization and Copyright Protection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 11964–11974. [35] Xuanyu Zhang, Zecheng Tang, Zhipei Xu, Runyi Li, Youmin Xu, Bin Chen, Feng Gao, and Jian Zhang. 2025. OmniGuard: Hybrid Manipulation Localization via Augmented Versatile Deep Image Watermarking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 3008–3018. [36] Yinglin Zheng, Jianmin Bao, Dong Chen, Ming Zeng, and Fang Wen. 2021. Ex-ploring Temporal Coherence for More General Video Face Forgery Detection. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .15044–15054. [37] Yipin Zhou and Ser-Nam Lim. 2021. Joint audio-visual deepfake detection. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision . 14800– 14809. [38] Jiren Zhu, Russell Kaplan, Justin Johnson, and Li Fei-Fei. 2018. Hidden: Hiding data with deep networks. In Proceedings of the European conference on computer vision (ECCV) . 657–672.
