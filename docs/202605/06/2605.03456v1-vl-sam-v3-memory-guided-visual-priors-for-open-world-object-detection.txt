@@ -1,0 +1,439 @@
+Title: VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection
+
+URL Source: https://arxiv.org/pdf/2605.03456v1
+
+Published Time: Wed, 06 May 2026 00:37:09 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# VL-SAM-3: Memory-Guided Visual Priors for Open-World Object Detection 
+
+Chih-Chung Liu Zhiwei Lin Yongtao Wang ∗
+
+Wangxuan Institute of Computer Technology, Peking University, China 
+
+{zzliu25}@stu.pku.edu.cn {zwlin, wyt}@pku.edu.cn 
+
+## Abstract 
+
+Open-world object detection aims to localize and recognize objects beyond a fixed closed-set label space. It is commonly divided into two categories, i.e. ,open-vocabulary detection, which assumes a predefined category list at test time, and open-ended detection, which requires generating candidate categories during the inference. Existing methods rely primarily on coarse textual semantics and parametric knowledge, which often provide insufficient visual evidence for fine-grained appearance variation, rare categories, and cluttered scenes. In this paper, we propose VL-SAM-v3, a unified framework that augments open-world detection with retrieval-grounded external visual memory. Specifically, once candidate categories are available, VL-SAM-v3 retrieves relevant visual prototypes from a non-parametric memory bank and transforms them into two complementary visual priors, i.e. , sparse priors for instance-level spatial anchoring and dense priors for class-aware local context. These priors are integrated with the original detection prompts via Memory-Guided Prompt Refinement, enabling a shared retrieval-and-refinement mechanism that supports open-vocabulary and open-ended inference. Extensive zero-shot experiments on LVIS show that VL-SAM-v3 consistently improves detection performance under both open-vocabulary and open-ended inference, with particularly strong gains on rare categories. Moreover, experiments with a stronger open-vocabulary detector ( i.e. , SAM3) validate the generality of the proposed retrieval-and-refinement mechanism. 
+
+## 1 Introduction 
+
+Open-world object detection [ 18 , 14 ] aims to localize and recognize objects beyond a fixed set of predefined categories. Unlike conventional closed-set detectors [ 37 , 36 ], which rely on exhaustive instance-level supervision over a fixed label space, open-world detection offers a more scalable route toward visual understanding. In practice, it is commonly clustered into two types, i.e., open-vocabulary detection , which assumes a predefined category list at test time, and open-ended detection ,which requires candidate categories during the inference. Despite this difference in candidate acquisition, both settings ultimately depend on semantic descriptions to guide detection. Recent advances in vision-language learning have made both settings increasingly practical [ 35 ]. Open-vocabulary detectors [ 24 , 19 ] can generalize beyond training labels by conditioning on category text, while open-ended systems [ 26 , 29 ] further remove the need for a predefined category list. However, both paradigms remain constrained by coarse textual semantics and parametric knowledge. Language can specify what to detect, but often provides only limited clues about how the target may appear in the image. This limitation is particularly severe for long-tail categories, cluttered scenes, and objects with substantial intra-class variation [ 4, 39 ]. For example, a text prompt such as “dog” compresses large variations in breed, pose, viewpoint, and surrounding context into a single  
+
+> ∗Corresponding author Preprint.
+> arXiv:2605.03456v1 [cs.CV] 5 May 2026 Box Head
+> VL -SAM
+> VL -SAM -v2
+> Open -Vocabulary
+> Model
+> Attention -
+> derived Points
+> Prompts
+> Detector -native
+> Prompts
+> Coarse -grained Free Prompts
+> SAM
+> Fusion
+> Retrieval
+> Original Detector
+> Prompts
+> Visual
+> Prior
+> Sparse Prior
+> Prompts
+> Dense Prior
+> Prompts
+> Fine -grained Collaborative Prompts
+> Box Head
+> SAM
+> Bounding
+> Box
+> Memory -Guide
+> Prompt
+> Refinement
+> Vision -Language
+> Model
+> Open -Vocabulary
+> Model
+> New in VL -SAM -v2
+> Base Architectural
+> Vision -Language
+> Model
+> VL -SAM -v3
+> Segmentation
+> Mask caption / phrase
+> New In VL -SAM -v3
+> caption / phrase
+> Bounding
+> Box
+> Segmentation
+> Mask
+
+Figure 1: Comparison of VL-SAM/VL-SAM-v2 and VL-SAM-v3. VL-SAM-v3 extends previous variants with retrieval-grounded visual priors and Memory-Guided Prompt Refinement. concept, making it difficult for the detector to recover the fine-grained visual cues needed for accurate localization and discrimination. This observation suggests that open-world detectors need more than text alone. Extra visual evidence is required for more accurate detection. Recently, retrieval-augmented models have shown that non-parametric memory can complement parametric knowledge by recovering fine-grained evidence at inference time [ 21 ]. However, current research on how to retrieval essential visual evidence for open-world detection is limited. To address this challenge, we propose VL-SAM-v3, a unified open-world detection framework that augments detector prompting with external visual memory. Given an input image and candidate categories, VL-SAM-v3 retrieves relevant visual prototypes from a non-parametric memory bank and converts them into two complementary priors: sparse priors , which provide instance-level spatial anchors, and dense priors , which provide class-aware local visual context. These retrieval-grounded priors are then integrated with original detector prompts through a Memory-Guided Prompt Refinement 
+
+module. The resulting retrieval-and-refinement mechanism applies to both open-vocabulary and open-ended inference, yielding a unified architecture for the two settings. The main contributions of this work are summarized as follows: • We propose VL-SAM-v3, a unified framework for open-world detection that supports both open-vocabulary and open-ended inference by augmenting detector prompts with external visual memory. • We introduce a retrieval mechanism and Memory-Guided Prompt Refinement to transform non-parametric visual evidence into sparse and dense priors, and fuse with original prompts. • We demonstrate that VL-SAM-v3 consistently improves zero-shot open-vocabulary and open-ended detection on LVIS, especially for rare categories. 
+
+## 2 Related work 
+
+2.1 Open-world detection and prompt adaptation 
+
+Open-world detection extends object recognition beyond a fixed closed-set label space [ 18 , 14 ]. A common setting is open-vocabulary detection , in which a predefined category list is provided at 2inference time and the detector predicts from this list. Representative methods such as GLIP [ 24 ]and Grounding-DINO [ 30 ] strengthen vision-language fusion for phrase grounding and detection, while later works further improve vocabulary coverage, efficiency, and semantic reasoning [ 6 , 46 , 11 ]. Despite this progress, open-vocabulary detectors still require explicit category candidates at test time. More recent studies have explored open-ended detection , in which candidate semantics are generated online by a vision-language model rather than specified in advance [ 26 , 29 ]. This setting offers greater flexibility, but its performance depends more critically on the quality of the generated categories, which may be ambiguous, incomplete, or noisy. Furthermore, open-vocabulary and open-ended detection share a common limitation, i.e. , they rely heavily on coarse textual semantics and often struggle to capture fine-grained appearance variation, long-tail categories, and cluttered visual contexts [4]. Prompt adaptation has recently been introduced to better align pretrained vision-language represen-tations with downstream detection tasks [ 49 ]. Methods such as DetPro [ 9], PromptDet [ 10 ], and MQ-Det [ 43 ] show that improved prompt construction or visual exemplars can enhance category retrieval and detection. However, these methods mainly focus on open-vocabulary detection. In contrast, this paper proposes VL-SAM-v3, a unified framework that augments prompt-based detection with retrieval-grounded visual priors for open-vocabulary and open-ended detection. 
+
+2.2 Retrieval-augmented models and external memory 
+
+Retrieval-augmented models complement parametric knowledge with non-parametric memory [ 21 , 12 ]. By retrieving relevant evidence at inference time, these systems can improve factual-ity, robustness, and adaptability beyond what is stored in model parameters alone. In vision, external memory and retrieval have been explored for tasks such as classification and captioning [ 32 , 22 ], where retrieved examples provide category-specific or context-specific evidence. Extending retrieval to dense prediction is more challenging, because the retrieved evidence must support both semantic recognition and spatial grounding. Our method addresses this challenge by converting retrieved visual evidence into sparse and dense priors for open-world detection. 
+
+## 3 Method 
+
+Figure 2 provides an overview of VL-SAM-v3. Given an image I and a candidate category set C, we augment a prompt-based open-world detector with retrieval-grounded external visual memory. For each category, we retrieve relevant visual evidence from a scene-aware memory bank, convert it into sparse and dense visual priors on the current image, and inject these priors into the detector through Memory-Guided Prompt Refinement. 
+
+3.1 Problem setup 
+
+Given an image I, the goal is to localize and recognize objects from a candidate category set C.In open-vocabulary detection, C is provided at test time; in open-ended, it is generated during the inference. VL-SAM-v3 uses the same procedure in both settings and differs only in how C is obtained. 
+
+3.2 Scene-aware visual memory 
+
+We build a scene-aware visual memory from grounding-style data, where each entry stores a retrieval key ki and a region-level visual value vi for a grounded phrase-region pair. Specifically, given image 
+
+I, the ground-truth bounding box bi, and the corresponding category or phrase ti, we first use VLM to describe the scene s of image I. Then, we calculate ki and vi as: 
+
+ki = Norm  wpEtext (ti) + wsEtext (s) + wg Eimg (I),vi = Norm   Pool( F (I), b i),
+
+where wp, ws, and wg are weights for phrase content, scene context, and image-level visual context, respectively. Etext and Eimg denote the text and image encoders of the multimodal embedding model. 
+
+F (·) represents the DINOv3 feature encoder [ 40 ]. Norm( ·) is ℓ2 normalization, and Pool( F, b i)
+
+denotes mean pooling over the DINOv3 patch features inside box bi. In this equation, ki is optimized 3Grounding Data  
+
+> suburban yard
+> Scene Description
+> Embedding
+> Model
+> Crop DINOv3
+> Patch Feature
+> Image Embedding
+> Value
+> Key
+> Memory Bank
+
+(a) Scene -Aware Memory Bank Construction   
+
+> Man is riding a skateboard .
+> dog. car. frisbee.
+> skate park
+> Phrase Embedding
+> Scene Embedding
+> DINOv3
+> Open -Vocabulary
+> Model
+> Memory Bank
+> Aggregation
+> Predefined Category List
+> (Optional)
+> Heatmap
+> Original Detector
+> Prompts
+> Memory -Guide
+> Prompt
+> Refinement
+> Box
+> Head
+> SAM
+> (Optional)
+> Bounding
+> Box
+> Sparse Prior
+> Prompt
+> Dense Prior
+> Prompt Vision -Language
+> Model
+
+(b) Overall Pipeline of VL -SAM -v3 Figure 2: Overview of VL-SAM-v3. (a) Scene-aware visual memory construction from grounding-style data. (b) Retrieval-augmented open-world detection, where retrieved visual evidence is converted into sparse and dense visual priors and injected into the detector through Memory-Guided Prompt Refinement. for scene-aware retrieval, while vi preserves the appearance of a grounded region in the DINOv3 feature space. 
+
+3.3 Category-conditioned retrieval 
+
+For each candidate category c ∈ C , we form a query qc in the same space as the memory keys ki:
+
+qc = Norm  wpEtext (c) + wsEtext (s) + wg Eimg (I).
+
+This query combines category text with the scene and global visual context of the current image. Then, we calculate the similarity between qc and each ki in visual memory, and select the top-
+
+K retrieved entries and their indices Nc. Finally, the retrieved values are then aggregated into a category-specific visual prototype pc as the output: 
+
+pc = Norm X
+
+> i∈N c
+
+αi vi
+
+!
+
+,
+
+where αi is calculated as: 
+
+αi = exp( ⟨qc, k i⟩/τ p)
+
+P 
+
+> m∈N c
+
+exp( ⟨qc, k m⟩/τ p) .
+
+The prototype pc summarizes the retrieved evidence for category c in the DINOv3 feature space. 
+
+3.4 Retrieval-grounded visual priors 
+
+We next project pc onto the input image Iinput to derive two complementary visual priors: a dense prior for class-aware spatial support and a sparse prior for instance-level anchors. 4MLP W d
+
+…  
+
+> Original Detector
+> Prompts
+> Sparse Prior
+> Prompt
+> Dense Prior
+> Prompt
+> Multi -Scale
+> Feature
+> Weighted
+> Pooling
+> Sparse Feature
+> Dense Feature
+> MLP Ws
+> Prompt
+> Concatenation
+> Shared
+> Decoder
+> Box
+> Head
+
+…
+
+> Refined
+> Boxes
+> Label -constrained
+> decoding
+> Point
+> Sampling
+
+…
+
+> Memory -Guided
+> Prompt Embeddings
+> Add & Layer Norm
+> Refined Detector
+> Prompts
+
+Figure 3: Illustration of Memory-Guided Prompt Refinement. Sparse anchors and dense priors produce sparse and dense features, which are fused into memory-guided prompt embeddings and decoded together with the detector’s original prompts. 
+
+Dense prior. We compute a category-specific heatmap as: 
+
+Hc = MinMax 
+
+
+
+Smooth  ⟨Norm( F (Iinput )) , p c⟩
+
+,
+
+where Smooth( ·) denotes spatial smoothing and MinMax( ·) rescales the heatmap to [0 , 1] . Hc
+
+measures the compatibility between the input image feature and the retrieved prototype pc.
+
+Sparse prior. Because Hc provides dense support but not explicit instance centers, we extract sparse anchors from its local maxima. Specifically, we first sort candidate peaks by response and greedily retain spatially diverse ones using distance-based suppression, yielding Ac = {aj }. Then, 
+
+Hc and Ac form the retrieval-grounded visual priors. 
+
+3.5 Memory-Guided Prompt Refinement 
+
+Given the dense prior Hc and sparse anchors Ac, we construct memory-guided prompt embeddings for category c, as shown in Figure 3. Specifically, for the original detector’s multi-scale features, we perform the following refinement independently at each scale. Let M and e denote the detector’s features and the original learnable prompt prior. We first extract a sparse feature for each anchor 
+
+aj ∈ A c from the detector’s feature : 
+
+f sj = Sample( M, a j ),
+
+where Sample( ·, ·) denotes bilinear feature sampling at the anchor location. After that, to extract a dense feature from Ac, we construct local windows Ωj centered at each anchor 
+
+aj . Within Ωj , we utilize Hc as the weights to compute the dense feature from M as: 
+
+f dj = X
+
+> (x,y )∈Ωj
+
+Hx,y c M x,y .
+
+Finally, we fuse the sparse feature f sj , the dense feature f dj , and the detector’s original prompt prior e
+
+as: 
+
+zj = LN  e + Wsf sj + Wdf dj
+
+ ,
+
+where Ws and Wd are learnable projections and LN( ·) is layer normalization. Each refined prompt combines the detector’s original query prior with two memory-derived cues, i.e. , a sparse instance-level cue and a dense local-context cue. This procedure is applied to each feature scale in the detector, and the refined prompts from all scales are concatenated with the detector’s original prompts and decoded by the same transformer decoder. 53.6 Label-constrained decoding 
+
+After refinement across all encoder levels, we collect the resulting memory-guided prompts {zj }.Each memory-guided prompt zj is associated with its category tj in Section 3.2. To prevent cross-category drift, the memory-guided prompt is allowed to vote only for its source category. Let sj (c)
+
+denote the classification logit of prompt zj for input candidate category c ∈ C . We enforce the constraint by: 
+
+˜sj (c) = 
+
+sj (c), c = tj ,
+
+−∞ , c̸ = tj .
+
+That is, prompt zj contributes only to category tj , while the detector’s original prompts remain unconstrained for global open-world search. 
+
+Training and inference. During training, we avoid online retrieval by using ground-truth box centers as anchor approximations and precomputing class-specific dense priors offline with the same memory mechanism. We then optimize the detector with the same supervision as the base detector. During inference, retrieval is performed online for each candidate category to construct pc, Hc, Ac,and the corresponding memory-guided prompts. 
+
+## 4 Experiments 
+
+4.1 Experimental setup Benchmarks and protocols. We primarily evaluate VL-SAM-v3 on LVIS [ 13 ] under the zero-shot setting and report fixed AP together with AP on rare, common, and frequent categories, denoted as AP r , AP c, and AP f [ 7]. We evaluate both open-vocabulary and open-ended inference. For open-ended detection, Table 2 explicitly reports the base detector and candidate generator for each method. Rows with the same base detector and candidate generator provide controlled comparisons that isolate detector-side improvements, while rows with stronger candidate generators examine the complementarity between category generation and retrieval-grounded refinement. Following LLMDet [ 11 ], we also report COCO [ 27 ] results for reference; these are not zero-shot because GroundingCap-1M contains COCO images. 
+
+Implementation details. We instantiate VL-SAM-v3 with two base open-vocabulary detectors. Our main implementation builds on LLMDet [ 11 ], and initializes the Swin-T and Swin-L variants from the corresponding pretrained checkpoints. We follow LLMDet for the training strategy and loss functions, and fine-tune the detector on GroundingCap-1M [ 11 ] for 150k iterations with a total batch size of 16 on 8 NVIDIA A100 GPUs. To evaluate the generality of the proposed retrieval-and-refinement mechanism, we further apply VL-SAM-v3 to SAM3 [ 3], a state-of-the-art open-vocabulary detector. For a controlled comparison, all SAM3 experiments use the same fine-tuning data and evaluation protocols as our main setting, with fine-tuning on GroundingCap-1M for 2 epochs and evaluation on LVIS under open-vocabulary and open-ended protocols. The external memory bank is constructed offline from the grounding annotations of GroundingCap-1M. Scene descriptors are generated by Qwen3-VL-8B [ 1], and the retrieval keys are computed by Qwen3-VL-Embedding-2B [ 25 ]. Region-level visual prototypes are extracted from DINOv3 [ 40 ]. To avoid contamination, we exclude all images overlapping with the LVIS evaluation splits when building the memory bank, and during training we further exclude entries from the current image to prevent trivial self-matching. Unless otherwise specified, we retrieve the top-K entries with K = 12 ,and set wp = 1 .0, ws = 0 .3, and wg = 0 .01 . For aggregation, we set τp = 0 .07 . Additional implementation details are provided in Appendix A, and inference cost is deferred to Appendix D.2. 
+
+4.2 Main results Open-vocabulary detection on LVIS. Table 1 reports zero-shot open-vocabulary detection results on LVIS minival and val . For the LLMDet-based instantiations, VL-SAM-v3 consistently improves over the corresponding baselines with both backbones. With Swin-T, it reaches 47.7 AP on minival 
+
+6Table 1: Zero-shot open-vocabulary object detection results on LVIS minival and val .                                                                                                                                                                                                                                                    
+
+> Method Backbone LVIS minival LVIS val AP AP rAP cAP fAP AP rAP cAP f
+> GLIP [24] Swin-T 26.0 20.8 21.4 31.0 17.2 10.1 12.5 25.2 GLIPv2 [47] Swin-T 29.0 –––––––CapDet [33] Swin-T 33.8 29.6 32.8 35.5 ––––Grounding-DINO [30] Swin-T 27.4 18.1 23.3 32.7 20.1 10.1 15.3 29.9 OWL-ST [34] CLIP B/16 34.4 38.3 ––28.6 30.3 ––Desco-GLIP [23] Swin-T 34.6 30.8 30.5 39.0 26.2 19.6 22.0 33.6 DetCLIP [44] Swin-T 35.9 33.2 35.7 36.4 28.4 25.0 27.0 28.4 DetCLIPv2 [45] Swin-T 40.4 36.0 41.7 40.4 32.8 31.0 31.7 34.8 YOLO-World-L [6] YOLOv8-L 35.4 27.6 34.1 38.0 ––––T-Rex2 [17] Swin-T 42.8 37.4 39.7 46.5 34.8 29.0 31.5 41.2 OV-DINO [41] Swin-T 40.1 34.5 39.5 41.5 32.9 29.1 30.4 37.4 LLMDet [11] Swin-T 44.7 37.3 39.5 50.7 34.9 26.0 30.1 44.3 VL-SAM-v2 [28] Swin-T 45.7 41.2 41.1 50.7 35.5 29.3 31.8 44.3
+> VL-SAM-v3 (Ours) Swin-T 47.7 44.9 44.9 50.7 38.1 35.2 33.7 44.3
+> GLIP [24] Swin-L 37.3 28.2 34.3 41.5 26.9 17.1 23.3 36.4 GLIPv2 [47] Swin-H 50.1 –––––––Grounding-DINO [30] Swin-L 33.9 22.2 30.7 38.8 ––––OWL-ST [34] CLIP L/14 40.9 41.5 ––35.2 36.2 ––DetCLIP [44] Swin-L 38.6 36.0 38.3 39.3 28.4 25.0 27.0 31.6 DetCLIPv2 [45] Swin-L 44.7 43.1 46.3 43.7 36.6 33.3 36.2 38.5 DetCLIPv3 [46] Swin-L 48.8 49.9 49.7 47.8 41.4 41.4 40.5 42.3 LLMDet [11] Swin-L 51.1 45.1 46.1 56.6 42.0 31.6 38.8 50.2 VL-SAM-v2 [28] Swin-L 51.7 47.2 46.7 56.6 42.5 33.2 39.7 50.2
+> VL-SAM-v3 (Ours) Swin-L 53.4 50.9 50.8 56.6 43.5 39.7 38.3 50.2
+> SAM3 [3] PE-L+ 59.1 61.9 59.0 58.8 53.6 54.9 51.1 55.1
+> VL-SAM-v3 + SAM3 PE-L+ 60.2 63.4 59.9 58.8 54.1 55.8 51.7 55.1
+
+and 38.1 AP on val ; with Swin-L, it further reaches 53.4 AP and 43.5 AP on minival and val ,respectively. Furthermore, the gains are concentrated on rare and common categories. On minival ,VL-SAM-v3 improves AP r /AP c from 37.3/39.5 to 44.9/44.9 with Swin-T, and from 45.1/46.1 to 50.9/50.8 with Swin-L. Similar trends hold on val , while AP f remains largely unchanged under the same inference protocol as VL-SAM-v2 [ 28 ]. These results are consistent with our motivation: retrieval-grounded visual evidence is most useful when coarse text semantics and parametric detector knowledge are insufficient, especially for long-tail and visually diverse categories. The SAM3 results in Table 1 show the same trend: VL-SAM-v3 further improves over the strong SAM3 baseline on both minival and val , indicating that the proposed retrieval-and-refinement mechanism is not tied to LLMDet. 
+
+Open-ended detection on LVIS. Table 2 reports zero-shot open-ended detection results on LVIS 
+
+minival , where candidate categories must be generated during inference rather than provided in advance. This setting is more challenging because errors in category generation directly affect downstream grounding. Controlled comparisons under the same candidate generator isolate the detector-side contribution of VL-SAM-v3. Using the same InternVL-2.5 (8B) candidate generator as VL-SAM-v2, VL-SAM-v3 improves AP from 29.5 to 40.6 with Swin-T and from 31.8 to 41.7 with Swin-L. The corresponding AP r gains are from 29.8 to 37.9 and from 30.5 to 38.7. These results show that retrieval-grounded prompt refinement substantially improves grounding quality even when the category candidates are held fixed. Furthermore, replacing InternVL-2.5 with the stronger Qwen3-VL (8B) generator improves VL-SAM-v3 to 41.4 AP with Swin-T and 44.8 AP with Swin-L. This suggests that stronger category generation and retrieval-grounded refinement are complementary: better candidate categories help, while the controlled comparisons show that a substantial part of the improvement comes from the detector-side retrieval-and-refinement mechanism itself. 7Table 2: Zero-shot open-ended object detection results on LVIS minival .                                       
+
+> Method Base detector / backbone Candidate generator AP / AP r
+> GenerateU [26] Swin-T FlanT5-base 26.8 / 20.0 GenerateU [26] Swin-L FlanT5-base 27.9 / 22.3 Open-Det [2] Swin-L FlanT5-base 33.1 / 31.2 VL-SAM [29] ViT-H CogVLM (17B) 25.3 / 23.4 VL-SAM-v2 [28] LLMDet / Swin-T InternVL-2.5 (8B) 29.5 / 29.8 VL-SAM-v3 LLMDet / Swin-T InternVL-2.5 (8B) 40.6 / 37.9 VL-SAM-v3 LLMDet / Swin-T Qwen3-VL (8B) 41.4 / 39.4 VL-SAM-v2 [28] LLMDet / Swin-L InternVL-2.5 (8B) 31.8 / 30.5 VL-SAM-v3 LLMDet / Swin-L InternVL-2.5 (8B) 41.7 / 38.7 VL-SAM-v3 LLMDet / Swin-L Qwen3-VL (8B) 44.8 / 41.9 SAM3 [3] SAM3 / PE-L+ Qwen3-VL (8B) 49.9 / 52.6
+> VL-SAM-v3 + SAM3 SAM3 / PE-L+ Qwen3-VL (8B) 51.7 / 54.0
+
+Table 3: Open-vocabulary object detection results on COCO. Gray AP values indicate that COCO images are included in the training dataset.                 
+
+> Method Backbone COCO AP GLIP [24] Swin-T 46.1 DetCLIPv3 [46] Swin-T 47.2 Grounding-DINO [30] Swin-T 48.4 MM-GDINO [48] Swin-T 50.4 LLMDet [11] Swin-T 55.6 VL-SAM-v2 [28] Swin-T 56.0
+> VL-SAM-v3 (Ours) Swin-T 56.8
+
+The SAM3-based comparison further supports this conclusion: under the same Qwen3-VL generator, VL-SAM-v3 + SAM3 improves over SAM3 from 49.9/52.6 to 51.7/54.0 AP/AP r .Additional transfer results to open-ended instance segmentation are reported in Appendix C.1. 
+
+Reference results on COCO. Table 3 reports COCO AP following LLMDet [ 11 ]. Because GroundingCap-1M includes COCO images, these results do not constitute a zero-shot evaluation and are reported only for reference. Under this setting, VL-SAM-v3 achieves higher AP than both LLMDet and VL-SAM-v2. 
+
+4.3 Ablation and analysis 
+
+We next analyze the key design choices of VL-SAM-v3 on LVIS minival with the Swin-T backbone. More ablations on the external visual memory are provided in Appendix B. Table 4: Ablation of sparse and dense priors.            
+
+> Sparse prior Dense prior AP AP r
+> 44.7 37.3
+> ✓46.8 42.1
+> ✓46.7 41.6
+> ✓✓47.7 44.9
+
+Effect of retrieval-grounded priors. Table 4 ablates the sparse and dense priors derived from external memory. Starting from the no-memory baseline (44.7 AP, 37.3 AP r ), adding the sparse prior improves performance to 46.8 AP and 42.1 AP r , while adding the dense prior yields 46.7 AP and 41.6 AP r . Combining them gives the best result, reaching 47.7 AP and 44.9 AP r . These results indicate that the sparse and dense priors are complementary: the sparse prior provides instance-level spatial anchoring, while the dense prior provides class-aware local support. 8Effect of scene descriptors and label-constrained decoding. Table 5 evaluates two lightweight components. Adding scene descriptors improves AP/AP r from 47.1/43.1 to 47.7/44.9, showing that scene context helps retrieve more relevant visual evidence than category phrases alone. Applying label-constrained decoding improves AP/AP r from 46.9/42.7 to 47.7/44.9, indicating that binding each memory-guided prompt to its source category reduces cross-category drift during decoding. Table 5: Ablation of scene descriptors and label-constrained decoding.           
+
+> Scene descriptor AP AP r
+> 47.1 43.1
+> ✓47.7 44.9
+> Label-constrained decoding AP AP r
+> 46.9 42.7
+> ✓47.7 44.9
+
+Robustness to auxiliary vision-language models. Table 6 evaluates VL-SAM-v3 with different auxiliary vision-language models, including GLM4.6V-Flash [ 15 ], InternVL-2.5 [ 5], InternVL-3.5 [ 42 ], and Qwen3-VL [ 1 ], under the same open-vocabulary protocol with all other settings fixed. VL-SAM-v3 performs consistently well across all tested models, while stronger models generally lead to slightly better results. These results indicate that the proposed retrieval-and-refinement mechanism does not depend on a particular auxiliary vision-language model. Table 6: Ablation of auxiliary vision-language models.               
+
+> Method Auxiliary model AP AP r
+> LLMDet [11] –44.7 37.3 VL-SAM-v3 GLM4.6V-Flash (9B) 47.0 41.3 InternVL-2.5 (8B) 46.8 41.0 InternVL-3.5 (8B) 47.1 43.8 Qwen3-VL (8B) 47.7 44.9
+
+## 5 Conclusion 
+
+We presented VL-SAM-v3, an open-world object detection framework that augments prompt-based detection with retrieval-grounded external visual memory. By retrieving fine-grained visual prototypes and converting them into sparse and dense priors, VL-SAM-v3 injects detector-compatible visual evidence beyond coarse textual semantics. Through Memory-Guided Prompt Refinement, the framework provides a shared retrieval-and-refinement mechanism for both open-vocabulary and open-ended inference. Extensive experiments on LVIS show consistent gains in both settings, with particularly significant improvements in open-ended settings. These results highlight the value of retrieval-grounded visual memory for open-world detection. 
+
+Broader Impacts Statement. This paper investigates retrieval-guided visual memory for open-world object detection, which may benefit automatic labeling systems and open-world visual perception systems. We do not identify major privacy-related risks, but future deployment should consider potential biases from external visual memory and vision-language models. 9References 
+
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. [2] Guiping Cao, Tao Wang, Wenjian Huang, Xiangyuan Lan, Jianguo Zhang, and Dongmei Jiang. Open-det: An efficient learning framework for open-ended detection. arXiv preprint arXiv:2505.20639 , 2025. [3] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, et al. Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 , 2025. [4] Xuweiyi Chen, Ziqiao Ma, Xuejun Zhang, Sihan Xu, Jianing Yang, David F Fouhey, Joyce Chai, and Shengyi Qian. Multi-object hallucination in vision language models. Advances in Neural Information Processing Systems , 37:44393–44418, 2024. [5] Zhe Chen, Weiyun Wang, Yue Cao, Yangzhou Liu, Zhangwei Gao, Erfei Cui, Jinguo Zhu, Shen-glong Ye, Hao Tian, Zhaoyang Liu, et al. Expanding performance boundaries of open-source multimodal models with model, data, and test-time scaling. arXiv preprint arXiv:2412.05271 ,2024. [6] Tianheng Cheng, Lin Song, Yixiao Ge, Wenyu Liu, Xinggang Wang, and Ying Shan. YOLO-World: Real-time open-vocabulary object detection. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , pages 16901–16911, 2024. [7] Achal Dave, Piotr Dollár, Deva Ramanan, Alexander Kirillov, and Ross Girshick. Evaluating large-vocabulary object detectors: The devil is in the details. arXiv preprint arXiv:2102.01066 ,2021. [8] Matthijs Douze, Alexandr Guzhva, Chengqi Deng, Jeff Johnson, Gergely Szilvasy, Pierre-Emmanuel Mazaré, Maria Lomeli, Lucas Hosseini, and Hervé Jégou. The faiss library. IEEE Transactions on Big Data , 2025. [9] Yu Du, Fangyun Wei, Zihe Zhang, Miaojing Shi, Yue Gao, and Guoqi Li. Learning to prompt for open-vocabulary object detection with vision-language model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14084–14093, 2022. [10] Chengjian Feng, Yujie Zhong, Zequn Jie, Xiangxiang Chu, Haibing Ren, Xiaolin Wei, Weidi Xie, and Lin Ma. PromptDet: Towards open-vocabulary detection using uncurated images. In 
+
+European Conference on Computer Vision , pages 701–717. Springer, 2022. [11] Shenghao Fu, Qize Yang, Qijie Mo, Junkai Yan, Xihan Wei, Jingke Meng, Xiaohua Xie, and Wei-Shi Zheng. LLMDet: Learning strong open-vocabulary object detectors under the supervision of large language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14987–14997, 2025. [12] Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jinliu Pan, Yuxi Bi, Yixin Dai, Jiawei Sun, Haofen Wang, Haofen Wang, et al. Retrieval-augmented generation for large language models: A survey. arXiv preprint arXiv:2312.10997 , 2(1):32, 2023. [13] Agrim Gupta, Piotr Dollar, and Ross Girshick. Lvis: A dataset for large vocabulary instance segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5356–5364, 2019. [14] Akshita Gupta, Sanath Narayan, KJ Joseph, Salman Khan, Fahad Shahbaz Khan, and Mubarak Shah. OW-DETR: Open-world detection transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9235–9244, 2022. [15] Wenyi Hong, Wenmeng Yu, Xiaotao Gu, Guo Wang, Guobing Gan, Haomiao Tang, Jiale Cheng, Ji Qi, Junhui Ji, Lihang Pan, et al. Glm-4.5v and glm-4.1v-thinking: Towards versatile multimodal reasoning with scalable reinforcement learning. arXiv preprint arXiv:2507.01006 ,2025. 10 [16] Herve Jegou, Matthijs Douze, and Cordelia Schmid. Product quantization for nearest neighbor search. IEEE transactions on pattern analysis and machine intelligence , 33(1):117–128, 2010. [17] Qing Jiang, Feng Li, Zhaoyang Zeng, Tianhe Ren, Shilong Liu, and Lei Zhang. T-rex2: Towards generic object detection via text-visual prompt synergy. In European Conference on Computer Vision , pages 38–57. Springer, 2024. [18] KJ Joseph, Salman Khan, Fahad Shahbaz Khan, and Vineeth N Balasubramanian. Towards open world object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5830–5840, 2021. [19] Jooyeon Kim, Eulrang Cho, Sehyung Kim, and Hyunwoo J Kim. Retrieval-augmented open-vocabulary object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 17427–17436, 2024. [20] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4015–4026, 2023. [21] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, et al. Retrieval-augmented generation for knowledge-intensive NLP tasks. Advances in Neural Information Processing Systems , 33:9459–9474, 2020. [22] Jiaxuan Li, Duc Minh Vo, Akihiro Sugimoto, and Hideki Nakayama. EVCAP: Retrieval-augmented image captioning with external visual-name memory for open-world comprehension. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 13733–13742, 2024. [23] Liunian Li, Zi-Yi Dou, Nanyun Peng, and Kai-Wei Chang. Desco: Learning object recognition with rich language descriptions. Advances in Neural Information Processing Systems , 36: 37511–37526, 2023. [24] Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jianwei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, et al. Grounded language-image pre-training. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10965–10975, 2022. [25] Mingxin Li, Yanzhao Zhang, Dingkun Long, Keqin Chen, Sibo Song, Shuai Bai, Zhibo Yang, Pengjun Xie, An Yang, Dayiheng Liu, et al. Qwen3-vl-embedding and qwen3-vl-reranker: A unified framework for state-of-the-art multimodal retrieval and ranking. arXiv preprint arXiv:2601.04720 , 2026. [26] Chuang Lin, Yi Jiang, Lizhen Qu, Zehuan Yuan, and Jianfei Cai. Generative region-language pretraining for open-ended object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13958–13968, 2024. [27] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European conference on computer vision , pages 740–755. Springer, 2014. [28] Zhiwei Lin and Yongtao Wang. VL-SAM-v2: Open-world object detection with general and specific query fusion. arXiv preprint arXiv:2505.18986 , 2025. [29] Zhiwei Lin, Yongtao Wang, and Zhi Tang. Training-free open-ended object detection and segmentation via attention as prompts. Advances in Neural Information Processing Systems , 37: 69588–69606, 2024. [30] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection. In European Conference on Computer Vision , pages 38–55. Springer, 2024. 11 [31] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. In Proceedings of the IEEE/CVF international conference on computer vision , pages 10012–10022, 2021. [32] Alexander Long, Wei Yin, Thalaiyasingam Ajanthan, Vu Nguyen, Pulak Purkait, Ravi Garg, Alan Blair, Chunhua Shen, and Anton Van den Hengel. Retrieval augmented classification for long-tail visual recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6959–6969, 2022. [33] Yanxin Long, Youpeng Wen, Jianhua Han, Hang Xu, Pengzhen Ren, Wei Zhang, Shen Zhao, and Xiaodan Liang. Capdet: Unifying dense captioning and open-world detection pretraining. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 15233–15243, 2023. [34] Matthias Minderer, Alexey Gritsenko, and Neil Houlsby. Scaling open-vocabulary object detection. Advances in Neural Information Processing Systems , 36:72983–73007, 2023. [35] Songyou Peng, Kyle Genova, Chiyu Jiang, Andrea Tagliasacchi, Marc Pollefeys, Thomas Funkhouser, et al. OpenScene: 3d scene understanding with open vocabularies. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 815–824, 2023. [36] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Unified, real-time object detection. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 779–788, 2016. [37] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster R-CNN: Towards real-time object detection with region proposal networks. Advances in Neural Information Processing Systems , 28, 2015. [38] Tianhe Ren, Shilong Liu, Ailing Zeng, Jing Lin, Kunchang Li, He Cao, Jiayu Chen, Xinyu Huang, Yukang Chen, Feng Yan, et al. Grounded sam: Assembling open-world models for diverse visual tasks. arXiv preprint arXiv:2401.14159 , 2024. [39] Simon Schrodi, David T Hoffmann, Max Argus, Volker Fischer, and Thomas Brox. Two effects, one trigger: On the modality gap, object bias, and information imbalance in contrastive vision-language models. arXiv preprint arXiv:2404.07983 , 2024. [40] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. 
+
+arXiv preprint arXiv:2508.10104 , 2025. [41] Hao Wang, Pengzhen Ren, Zequn Jie, Xiao Dong, Chengjian Feng, Yinlong Qian, Lin Ma, Dongmei Jiang, Yaowei Wang, Xiangyuan Lan, et al. Ov-dino: Unified open-vocabulary detection with language-aware selective fusion. arXiv preprint arXiv:2407.07844 , 2024. [42] Weiyun Wang, Zhangwei Gao, Lixin Gu, Hengjun Pu, Long Cui, Xingguang Wei, Zhaoyang Liu, Linglin Jing, Shenglong Ye, Jie Shao, et al. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 , 2025. [43] Yifan Xu, Mengdan Zhang, Chaoyou Fu, Peixian Chen, Xiaoshan Yang, Ke Li, and Changsheng Xu. Multi-modal queried object detection in the wild. Advances in Neural Information Processing Systems , 36:4452–4469, 2023. [44] Lewei Yao, Jianhua Han, Youpeng Wen, Xiaodan Liang, Dan Xu, Wei Zhang, Zhenguo Li, Chunjing Xu, and Hang Xu. Detclip: Dictionary-enriched visual-concept paralleled pre-training for open-world detection. Advances in Neural Information Processing Systems , 35:9125–9138, 2022. [45] Lewei Yao, Jianhua Han, Xiaodan Liang, Dan Xu, Wei Zhang, Zhenguo Li, and Hang Xu. Detclipv2: Scalable open-vocabulary object detection pre-training via word-region alignment. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 23497–23506, 2023. 12 [46] Lewei Yao, Renjie Pi, Jianhua Han, Xiaodan Liang, Hang Xu, Wei Zhang, Zhenguo Li, and Dan Xu. DetCLIPv3: Towards versatile generative open-vocabulary object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 27391–27401, 2024. [47] Haotian Zhang, Pengchuan Zhang, Xiaowei Hu, Yen-Chun Chen, Liunian Li, Xiyang Dai, Lijuan Wang, Lu Yuan, Jenq-Neng Hwang, and Jianfeng Gao. Glipv2: Unifying localization and vision-language understanding. Advances in Neural Information Processing Systems , 35: 36067–36080, 2022. [48] Xiangyu Zhao, Yicheng Chen, Shilin Xu, Xiangtai Li, Xinjiang Wang, Yining Li, and Haian Huang. An open and comprehensive pipeline for unified object grounding and detection. arXiv preprint arXiv:2401.02361 , 2024. [49] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. International Journal of Computer Vision , 130(9):2337–2348, 2022. 13 A Additional implementation details 
+
+This section provides additional implementation details for the external visual memory in VL-SAM-v3. We first describe how scene descriptors are generated, and then summarize the lightweight filtering strategy used during memory construction and retrieval. 
+
+A.1 Scene descriptor generation 
+
+For each image, we generate a single coarse scene descriptor using Qwen3-VL-8B [ 1]. The goal is to capture the dominant environmental context of the image rather than object-level semantics. The descriptor is obtained with the following prompt:  
+
+> Prompt. Identify the single scene category that best describes the overall environment of this image. Focus on the global setting or location type (e.g., “kitchen”, “forest”, “beach”, “restaurant dining area”, “subway station”) rather than individual objects, people, attributes, or actions. Output exactly one concise scene label and nothing else.
+
+We set the decoding parameters to max_new_tokens=128 , do_sample=true , temperature=0.7 ,
+
+top_p=0.8 , top_k=20 , and repetition_penalty=1.0 . Restricting the model to output a single scene label helps prevent the descriptor from drifting toward object-level descriptions, which would otherwise partially overlap with the category query itself. 
+
+A.2 Filtering during memory construction and retrieval 
+
+We apply lightweight filtering both when building the memory bank and when retrieving entries at inference time. 
+
+Construction-time filtering. During memory construction, we first remove extremely small boxes, since such regions are often too limited to provide reliable visual features. We then apply a blur-based quality filter. Specifically, duplicated boxes are merged, and the remaining unique regions are scored using the variance of the Laplacian. We discard the lowest-quality 10% of regions according to this score, which helps suppress visually ambiguous or severely degraded memory entries. 
+
+Retrieval-time filtering. At inference time, FAISS [ 8] first recalls 200 candidate entries for each query. When exact rescoring is enabled, these candidates are re-ranked using exact similarity scores before selecting the final top-K results. This two-stage procedure preserves the efficiency of approximate nearest-neighbor search while reducing retrieval errors caused by coarse ANN ranking. 
+
+## B Additional ablations on external visual memory 
+
+This section provides additional ablations for the design choices of the external visual memory. We analyze both the representation used for memory values and the number of retrieved entries used to construct the category-specific prototype. 
+
+B.1 Value representation of memory entries 
+
+Each memory entry stores a semantic key together with a region-level visual value. For the value representation, we compare two alternatives: the CLS token extracted from the cropped region and the mean-pooled patch embeddings of the region. Table 7 reports the results on LVIS minival [ 13 ]using the Swin-T backbone [31]. Table 7: Effect of the value representation used in the memory bank on LVIS minival .      
+
+> Value representation AP AP r
+> CLS token 46.4 42.7 Patch-embedding mean 47.7 44.9
+
+14 Mean-pooled patch embeddings outperform the CLS-token representation by 1.3 AP and 2.2 AP r .We attribute this gain to the stronger locality of patch features, which better preserve region-level appearance details and are therefore more helpful for rare or fine-grained categories. Based on this result, we use mean-pooled patch embeddings as the default memory value throughout the paper. 
+
+B.2 Effect of retrieval top-K
+
+Table 8 studies the number of retrieved memory entries used to construct the category-specific visual prototype. All experiments are conducted on LVIS minival with the Swin-T backbone. Table 8: Effect of retrieval top-K on LVIS minival .          
+
+> Top-KAP AP r
+> 447.0 43.3 847.4 44.2 12 47.7 44.9
+> 16 47.3 44.4
+
+Performance improves as K increases from 4 to 12, suggesting that multiple retrieved prototypes provide more stable and diverse visual evidence than only a few nearest neighbors. Increasing 
+
+K further to 16 leads to a slight performance drop, likely because lower-ranked retrieved entries introduce additional noise. We therefore adopt K = 12 as the default setting. 
+
+## C Additional experimental results 
+
+C.1 Transfer to open-ended instance segmentation 
+
+Following Grounded-SAM [ 38 ], we further combine VL-SAM-v3 with SAM [ 20 ] for open-ended instance segmentation. SAM is used only as an optional post-processing module that converts refined detection boxes into masks, without changing detector training. As shown in Table 9, VL-SAM-v3 reaches 39.9 mask AP and 36.4 mask AP r on LVIS minival . Although the compared methods use different candidate generators and are therefore not directly matched, the large gain suggests that the detector-side improvements of VL-SAM-v3 transfer favorably to mask prediction. Table 9: Zero-shot open-ended instance segmentation results on LVIS minival . We report mask AP and mask AP r .            
+
+> Method Candidate generator mask AP mask AP r
+> VL-SAM [29] CogVLM (17B) 23.9 22.7 VL-SAM-v2 [28] InternVL-2.5 (8B) 28.7 27.7
+> VL-SAM-v3 Qwen3-VL (8B) 39.9 36.4
+
+## D Efficiency and scalability 
+
+This section summarizes the storage, retrieval, and runtime cost of VL-SAM-v3. We first report the scale and retrieval efficiency of the memory bank, and then present the end-to-end inference cost in the open-ended setting. 
+
+D.1 Memory bank scale and retrieval cost 
+
+Table 10 summarizes the size of the memory bank and the corresponding retrieval cost. For efficient approximate search, we use a FAISS IndexIVFPQ index [16] with inner-product similarity. The reported retrieval speed measures only the FAISS search stage and does not include query encoding or the detector forward pass. These statistics show that the proposed memory bank remains practical at multi-million-entry scale while preserving sufficiently fast approximate retrieval. 15 Table 10: Memory bank scale and retrieval cost.        
+
+> Item Value Number of entries 10.83M FAISS index type IndexIVFPQ Similarity metric Inner product Total storage 63.97 GiB Storage per entry 6.20 KiB FAISS retrieval speed ∼400 queries/s
+
+D.2 Inference cost 
+
+Table 11 reports the inference cost of VL-SAM-v3 in the open-ended setting on a single NVIDIA A100 GPU with 80G memory using Swin-T and Qwen3-VL (8B). The detector-side overhead of memory-guided refinement is lightweight: sparse and dense prompt generation takes 80 ms per image, while the refinement head adds only 5 ms. The dominant cost comes from vision-language generation rather than the retrieval-and-refinement module itself. Table 11: Inference cost of VL-SAM-v3 in the open-ended setting.           
+
+> Component Time / image (ms) GPU memory (G) Scene descriptor generation (optional) 500 ∼20 Category generation 700 ∼22 Sparse & dense prompt generation 80 ∼7Refinement & head 5∼2
+
+16
