@@ -1,0 +1,618 @@
+Title: FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection
+
+URL Source: https://arxiv.org/pdf/2605.03294v1
+
+Published Time: Wed, 06 May 2026 00:32:02 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+Kaixiang Zhao 1 Mao Ye 1 Lihua Zhou 1 Hu Wang 1
+
+Luping Ji 1 Song Tang 2 Xiatian Zhu 3
+
+## Abstract 
+
+Open-vocabulary object detection often fails un-der distribution shifts, as it can be misled by spurious correlations between non-causal visual attributes (e.g., brightness, texture) and object categories. Existing test-time adaptation (TTA) methods either depend on costly online opti-mization or perform global calibration, overlook-ing the attribute-specific nature of these failures. To address this, we propose FACTOR (coun-terFACtual training-free Test-time adaptation for Open-vocabulaRy object detection), a lightweight framework grounded in counterfactual reasoning. By perturbing test images along non-causal at-tributes and comparing region-level predictions between original and counterfactual views, FAC-TOR quantifies attribute sensitivity, semantic rele-vance, and prediction variation to selectively sup-press attribute-dependent predictions—without parameter updates. Experiments on PASCAL-C, COCO-C, and FoggyCityscapes show that FAC-TOR consistently outperforms prior TTA meth-ods, demonstrating that explicit counterfactual reasoning effectively improves robustness under distribution shifts. Code will be released upon acceptance .
+
+## 1. Introduction 
+
+Open-vocabulary object detectors (OVOD) based on vision–language models (VLMs), such as Grounding DINO (Liu et al., 2024), have demonstrated strong general-ization ability by leveraging language-level semantic priors. 
+
+> 1
+
+School of Computer Science and Engineering, University of Electronic Science and Technology of China, Chengdu, China 
+
+> 2
+
+Institute of Machine Intelligence (IMI), University of Shang-hai for Science and Technology, Shanghai, China 3Surrey In-stitute for People-Centred Artificial Intelligence, CVSSP, Uni-versity of Surrey, Guildford, UK. Correspondence to: Mao Ye 
+
+<cvlab.uestc@gmail.com >.
+
+Preprint. May 6, 2026. 
+
+Figure 1. Comparison between current TTA approaches and FAC-TOR. (a) Previous methods either rely on costly on-line optimiza-tion or global calibration, overlooking fine-grained non-causal attribute interference. (b) FACTOR identifies and suppresses spu-rious attribute correlations by constructing counterfactual sample, efficiently refining predictions without parameter updating. 
+
+However, when deployed in real-world environments, these detectors still suffer from significant performance degra-dation under distribution shifts caused by adverse weather, sensor noise, or synthetic corruptions. In many practical scenarios, collecting target-domain annotations or retrain-ing the model is infeasible, making test-time adaptation (TTA) a particularly appealing solution for robust deploy-ment. Recent TTA methods can be broadly categorized into training-based (Zhang et al., 2024b; Gao et al., 2025) and training-free paradigms (Karmanov et al., 2024; Zhou et al., 2025b). Training-based approaches adapt model parameters online via self-supervision or entropy minimization, often requiring backpropagation and careful hyper-parameter tun-ing. In contrast, training-free TTA methods aim to adjust model predictions directly at inference time, offering better invariance and efficiency. Despite recent advances in test-time adaptation (TTA), most methods operate at a global level, relying on aggregated confidence scores or image-wide statistics to calibrate pre-dictions, as shown in Fig. 1(a). Such coarse-grained strate-gies cannot diagnose whether errors originate from spurious correlations with non-causal visual attributes—such as tex-ture, illumination, or sensor noise—which are often the underlying cause of failure under domain shifts. We ar-1
+
+> arXiv:2605.03294v1 [cs.CV] 5 May 2026 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection
+
+gue that domain shifts can be effectively characterized as shifts in specific compositions of category-independent vi-sual attributes, a perspective supported by language-based domain adaptation modeling (Zeng et al., 2025). However, such adaptation techniques typically require offline attribute dictionary construction—often using large language mod-els—followed by detector retraining. Counterfactual reason-ing (Sauer & Geiger, 2021; Goyal et al., 2019; Niu et al., 2021; Kusner et al., 2018; Verma et al., 2022; Goyal et al., 2019) offers a mechanism to explicitly identify and suppress misleading attribute dependencies by perturbing non-causal attributes in a controlled manner and constructing corre-sponding counterfactual samples. As shown in Fig. 1(b), we propose directly observing how each region’s prediction responds to attribute-level changes. This allows us to quan-tify region-specific sensitivity to spurious visual cues and selectively suppress attribute-driven biases during inference. Thus, our approach extends causal adaptation principles into a practical, training-free TTA framework, enabling fine-grained and interpretable robustness to domain shifts. Motivated by the above analysis, we propose a new and lightweight framework FACTOR, a counterFACtual TTA ap-proach for Open-vocabulaRy object detection. Specifically, there are two steps: counterfactual probing and invariance-guided calibration. In the first step, a perturbed counterpart of the test image is created by applying controlled trans-formations to predefined non-causal visual attributes (e.g., brightness, contrast, noise), preserving object semantics while altering appearance. Both original and counterfactual images are processed by the frozen detector, with their re-gion proposals aligned spatially to form prediction pairs. In the next step, for each aligned region, we compute three signals: a counterfactual sensitivity score measuring pre-diction discrepancy, an attribute sensitivity score identify-ing specific attribute, and an attribute–category relevance score associates attribute with the corresponding category. These are fused into a region- and category-aware correction term, which is used to suppress spurious attribute-dependent predictions. In this way, FACTOR achieves fine-grained, attribute-aware adaptation without parameter updates, en-abling interpretable and consistent performance gains across diverse corruption scenarios. Our main contributions can be summarized as follows: (1) We propose FACTOR, a novel framework that improves ro-bustness under domain shifts through explicit counterfactual reasoning. Unlike costly optimization or global calibration, FACTOR achieves efficient, region-aware TTA via attribute-level intervention and prediction invariance, filling a critical gap in fine-grained OVOD adaptation. (2) A counterfactual calibration mechanism is proposed that integrates region-level counterfactual sensitivity (CSS), attribute sensitivity (ASS) and attribute-category relevance (ACR) indicators. We use one multi-perturbed counterfactual sample, yet still disentangle region instability, attribute triggers, and category impact for targeted calibration. (3) Extensive experiments on PASCAL-C, COCO-C, and FoggyCityscapes demon-strate that compared to existing TTA methods, FACTOR is state-of-the-art and generally achieves significant perfor-mance improvements. 
+
+## 2. Related Work 
+
+Open-Vocabulary Object Detection (OVOD) breaks the limitation of closed-set detection by enabling zero-shot generalization to novel categories, powered by vision-language pre-training that aligns visual and textual seman-tics. OVOD can be categorized into architectural align-ment and adaptation strategies . Architecture-driven se-mantic alignment establishes the field by integrating pre-trained VLMs into detection pipelines through cross-modal grounding and dual-path Transformer architectures. For ex-ample, OWL-ViT (Minderer et al., 2022) adapts CLIP with object proposal generation for open-vocabulary detection, and GLIP (Li et al., 2022) introduces a text-image ground-ing framework to enhance cross-modal alignment. Ground-ing DINO (Devlin et al., 2019) further advances the field with a Transformer-based architecture integrating dual-path cross-attention, achieving state-of-the-art in-distribution per-formance. While these milestones achieve impressive zero-shot generalization, their performance is often anchored to the source distribution. To enhance robustness, adapta-tion strategies have emerged. Representative works like CoOp (Zhou et al., 2022a) and CoCoOp (Zhou et al., 2022b) introduce prompt learning to optimize textual templates via learnable tokens for better task-specific alignment. But they are limited to offline optimization and lack flexibility for dynamic domain shifts during inference. 
+
+Test-time adaptation for OVOD. TTA mitigates domain shift by dynamically adjusting model predictions to unla-beled OOD test samples, without retraining or target do-main annotations. Existing TTA methods for OVOD fall into two main categories: Optimization-based TTA aims to align OOD visual features with text embeddings through inference-time refinement, such as prompt tuning (Belal et al., 2025; Gao et al., 2025; Zhang et al., 2024b), en-tropy minimization (Belal et al., 2025), or mean-teacher frameworks with instance memory banks (Gao et al., 2025). While effective in cross-domain scenarios, these methods inherently suffer from high computational latency and mem-ory overhead due to the necessity of backpropagation and parameter maintenance during inference. Training-free TTA prioritizes efficiency by employing lightweight cali-bration or feature fusion without parameter updates. Recent works (Zhou et al., 2025b;a; Karmanov et al., 2024) utilize Bayesian inference or cache-based mechanisms to dynam-ically update category priors and class embeddings. How-2FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection    
+
+> Figure 2. Overview of FACTOR. (a) Counterfactual Probing (CP) : A frozen Grounding DINO first processes the test image and its attribute-perturbed counterfactual image. The region predictions of the two views are then spatially aligned and paired with text-embedded attribute-category tokens. (b) Invariance-Guided Calibration (IGC) : Counterfactual Sensitivity Score (CSS), Attribute Sensitivity Score (ASS), and Attribute-Category Relevance score (ACR) are fused to calculate category-specific correction terms to calibrate detection logits, thereby suppressing spurious feature dependencies and outputting refined detections.
+
+ever, as these methods primarily operate on global statistics or confidence scores, they lack a principled mechanism to diagnose and suppress failures driven by spurious correla-tions with non-causal visual attributes—a gap that motivates our fine-grained, counterfactual intervention strategy. 
+
+## 3. Methodology 
+
+3.1. Problem Analysis Task definition. Let DS and DT denote the source (pre-training) and target (test) data distributions, where DT̸ =
+
+DS . Suppose that C is the comprehensive set of text em-beddings representing all potential object categories. In the test-time adaptation setting, the model must adapt online using only a stream of unlabeled test samples {xi}∞ 
+
+> i=1
+
+from 
+
+DT , without access to DS , source labels, or gradient-based optimization. The objective of this work is to maintain ro-bust open-vocabulary detection performance of Grounding DINO (Devlin et al., 2019) under distribution shift while preserving the model’s generalization to unseen categories. 
+
+Counterfactual invariance as a robustness criterion. Dis-tribution shifts in open-vocabulary detection primarily stem from spurious correlations learned during source-domain training. We conceptualize an image x as being generated from two latent factors: causal visual features zc (e.g., ob-ject geometry, part composition) that are semantically es-sential for category recognition, and non-causal (spurious) features zs (e.g., background context, global illumination, texture patterns, scale distribution) that are statistically asso-ciated with certain categories in the source domain DS but lack a causal link. A detector fθ (e.g., Grounding DINO) pre-trained on DS learns a mapping from image regions to category predictions. This often results in a decision func-tion that inadvertently depends on both feature types. The dependency on zs creates a vulnerability: when the correla-tion between zs and category labels changes or disappears in the target domain DT , detection performance degrades sharply. A robust open-vocabulary detector should base its predictions primarily on zc. This ideal can be formalized through the principle of counterfactual invariance: the de-tector’s output for a given region should remain stable under interventions that modify only non-causal image attributes while preserving semantic content. Let do (zs = z′
+
+> s
+
+) denote such an intervention, and let x′ = T (x) be the resulting counterfactual image obtained via a transformation T that primarily affects zs. An invariant detector f ∗ satisfies: 
+
+Pf ∗ (y | x) = Pf ∗ (y | x′) ∀y, 
+
+or equivalently, 
+
+DKL (Pf ∗ (y | x) ∥ Pf ∗ (y | x′)) = 0 .
+
+In practice, the frozen pre-trained detector fθ violates this invariance because it relies on zs. Our core insight is that the magnitude of this violation—measurable as the predic-tion discrepancy between x and x′—directly indicates the extent of spurious feature reliance for each region proposal. Consequently, test-time adaptation can be reformulated as promoting approximate counterfactual invariance through output calibration, without gradient updates or source data. By perturbing x in ways that predominantly affect suspected 3FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+zs (e.g., via noise, gamma, scaling), we obtain an invari-ance signal that guides the suppression of unreliable, shift-sensitive predictions. 
+
+Overview of our method. Based on the above analysis, the proposed method FACTOR is illustrated in Fig 3, which consists of two steps. First, a counterfactual version of the test image through controlled attribute perturbations is gen-erated in the step of counterfactual probing (Sec. 3.2). Then, in the step of invariance-guided calibration (Sec.3.3), by comparing the region-level predictions between the original and its counterfactual counterpart, we quantify prediction discrepancy and region-wise attribute sensitivity and seman-tic relevance to compute calibration signals. These signals are then fused into a correction term that directly adjusts the detector’s category logits. This suppresses attribute-driven false predictions while preserving reliable semantic cues. The entire process requires no backpropagation or parameter updates, relied only on a single counterfactual forward pass, thereby achieving efficient, interpretable, and region-aware adaptation. 
+
+3.2. Counterfactual Probing 
+
+This step aims to expose the model’s dependence on spuri-ous features by contrasting its predictions under controlled attribute perturbations. We probe its decision behavior by comparing region-level predictions between the original im-age and a minimally perturbed counterfactual counterpart. This allows us to directly identify prediction variations trig-gered by non-causal attributes while preserving efficiency and requiring no parameter updates. It consists of two key steps: counterfactual image construction and paired predic-tion alignment, which together provide a lightweight yet effective mechanism to assess and address instability during inference. 3.2.1. C OUNTERFACTUAL IMAGE CONSTRUCTION 
+
+Given a test image x, our goal is to construct a counter-factual image xcf that preserves semantic content while selectively perturbing non-causal visual attributes. We in-tervene on a predefined set of interpretable attributes A that commonly induce spurious correlations in open-vocabulary object detection, including brightness, contrast, blur, noise, texture, and weather conditions. Each attribute a ∈ A is as-sociated with a deterministic transformation operator Ta(·).Specifically, we define Tbrit (x), Tcont (x), Tblur (x), Tnoise (x),
+
+Ttext (x) and Tweath (x) as corresponding to different coun-terfactual operations; the specific formulas can be found in the Appendix. This design guarantees that any predic-tion discrepancy between x and xcf can be attributed to the model’s sensitivity to attribute-level shifts rather than to con-tent corruption. We compose all attribute transformations sequentially to generate a single counterfactual image: 
+
+xcf = T (x) = ⃝a∈A Ta(x), (1) where ⃝ denotes sequential application. Applying all at-tributes to the same image enables a comprehensive probe of multi-factor distribution shifts while requiring only a single additional forward pass through the frozen detector, leading to a significant reduction in inference time. By pre-serving spatial structure and object identity and perturbing only attribute-level appearance, any prediction discrepancy between x and xcf can be directly attributed to sensitivity to non-causal visual attributes, providing a principled basis for counterfactual probing and test-time calibration. 3.2.2. P AIRED PREDICTION ALIGNMENT 
+
+For subsequent invariance comparison and logit-level cal-ibration, we need to construct spatially and semantically grounded prediction pairs. We forward both the origi-nal image x and the counterfactual image xcf through the frozen open-vocabulary detector, obtaining region proposals 
+
+R = {ri}Ni=1 and ˜R = {˜rj } ˜Nj=1 , respectively. To enforce spatial invariance under attribute perturbations, each region 
+
+ri ∈ R is matched to the counterfactual region with the highest Intersection-over-Union (IoU), and matches with IoU below 0.3 are discarded. For each aligned region pair 
+
+(ri, ˜ri), we get the corresponding category-level paired pre-dictions that differ only in attribute-level appearance. This alignment removes geometric variability and isolates pre-diction changes caused by non-causal attribute shifts. To support semantically meaningful calibration under dis-tribution shifts, we embed both attribute tokens and cate-gory names into a shared semantic space using Grounding DINO’s BERT encoder (Devlin et al., 2019), producing attribute embeddings Tattr ∈ R|A|× D and category embed-dings Tcls ∈ R|C|× D . Together, spatially aligned prediction pairs and shared semantic representations provide a clean and interpretable foundation for subsequent invariance esti-mation and attribute-aware logit calibration. 
+
+3.3. Invariance-Guided Calibration 
+
+Building on the paired predictions obtained through coun-terfactual probing, we introduce an invariance-guided cal-ibration mechanism that adjusts the detector’s outputs by quantifying their sensitivity to attribute perturbations. This stage comprises three complementary metrics, which are then fused into a correction term and applied via logit ad-justment to achieve robust prediction calibration. 3.3.1. I NVARIANCE -A WARE SENSITIVITY METRICS 
+
+To diagnose a detector’s sensitivity to spurious correla-tions—without ground-truth supervision—we introduce a tri-level metric framework that progressively disentangles 4FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+prediction discrepancy. First, the Counterfactual Sensitiv-ity Score (CSS) quantifies whether a region’s prediction is invariant under counterfactual perturbations. Second, the Attribute Sensitivity Score (ASS) identifies which visual attribute contributes to that discrepancy by measuring re-gion–attribute alignment. Third, the Attribute–Category Relevance (ACR) provides a semantic prior on how strongly each attribute influences each category. 
+
+Counterfactual Sensitivity Score (CSS). For each aligned region pair (ri, ˜ri), we get the category probability distri-butions pi ∈ RC (from the original image x) and ˜pi ∈ RC
+
+(from the counterfactual image xcf ) from the detector out-puts. To quantify the raw prediction discrepancy induced by attribute perturbations, we compute the Kullback–Leibler (KL) divergence (Shlens, 2014) between these distributions: 
+
+KL i =
+
+> C
+
+X
+
+> c=1
+
+pi(c) log pi(c)˜pi(c) , (2) where KL i ≥ 0 with equality if and only if the predictions are invariant to counterfactual perturbations. By using the forward form (weighted by pi), we prioritize discrepancy in categories where the detector initially had high confi-dence—ensuring we focus on meaningful prediction shifts rather than low-probability noise. A non-zero KL i indicates sensitivity to attribute perturbations, while larger values re-flect increasing prediction discrepancy. The KL divergence is computed once per region and shared across all attributes, making it computationally efficient. However, raw KL i values are overly sensitive to trivial prediction variations. To suppress calibration for minor fluc-tuations while retaining it for pronounced discrepancy, we gate the KL divergence with an adaptive, smooth threshold. Let μ = 1
+
+> N
+
+PNj=1 KL j be the average KL, which serves as a baseline for “normal” variation. Here, N represents the total number of paired regions in the test image. We then define Counterfactual Sensitivity Score (CSS) as 
+
+CSS i = σ KL i − μ, (3) where σ is the sigmoid function. This design yields a soft 0–1 weight: CSS i ≈ 1 when KL i is well above the batch average (severe discrepancy), and CSS i ≈ 0 when it is close to or below the average (benign variation). Consequently, calibration is applied predominantly to regions that exhibit substantial sensitivity to the counterfactual perturbation. 
+
+Attribute Sensitivity Score (ASS). While CSS quantifies perdition discrepancy in a region, it does not reveal which attributes are likely responsible. To model region-wise sen-sitivity to individual attributes, we introduce ASS. Given the visual feature fi ∈ RD of region ri and the a-th attribute embedding Tattr  
+
+> a
+
+∈ RD , ASS is defined as: 
+
+ASS i,a = σ f ⊤ 
+
+> i
+
+Tattr 
+
+> a
+
+ , (4) where σ(·) denotes the sigmoid function, which maps its input to the interval [0 , 1] . ASS measures the alignment between region appearance and an attribute’s semantic di-rection in the shared vision-language space supported by Grounding DINO text encoder. A higher ASS i,a indicates that region ri exhibits visual characteristics strongly associ-ated with attribute a, suggesting that its predictions are more likely to be affected by perturbations along that attribute dimension. 
+
+Attribute-Category Relevance (ACR) score. Even when a region is sensitive to a particular attribute, not all categories are equally affected by that attribute. To quantify category-dependent relevance, we define ACR as a purely semantic measure based on text embeddings as 
+
+ACR a,c = σ (Tattr  
+
+> a
+
+)⊤Tcls 
+
+> c
+
+ , (5) where Tcls  
+
+> c
+
+∈ RD denotes the text embedding of category 
+
+c. ACR quantifies the semantic affinity between attribute a
+
+and category c in the language embedding space. A high 
+
+ACR a,c implies that attribute a is conceptually relevant to category c, providing a principled prior for category-aware calibration. Notably, ACR is independent of image content and is shared across all regions, reflecting stable linguistic structure rather than instance-level appearance. 3.3.2. L OGIT ADJUSTMENT AND INFERENCE 
+
+Correction term. Three metrics capture distinct yet com-plementary aspects of distribution shift. Their combination enables fine-grained and invariance-aware calibration, while keeping metric computation disentangled from correction and optimization. Combining CSS i, ASS i,a , and ACR a,c ,the category-wise correction for ri and c is: 
+
+∆i(c) = 1
+
+|A| 
+
+X
+
+> a∈A
+
+ASS i,a · ACR a,c · CSS i. (6) Averaging over A balances correction across shift factors. These three components form a joint diagnostic chain for precise adaptation: CSS i acts as a gate to detect whether the prediction in a region is inherently unstable, while the synergy between ASS i,a and ACR a,c provides the neces-sary directionality by determining which attribute caused the error and which category should be suppressed. This structured intervention allows FACTOR to mitigate spuri-ous attribute-dependent predictions while preserving robust, semantically-grounded cues. 
+
+Detection calibration. We calibrate the detector’s logits for 
+
+ri as: 
+
+logits ′ 
+
+> i
+
+= logits i − λ · ∆i, (7) where λ > 0 is a hyperparameter that controls adapta-tion strength. The subtraction penalizes categories unsta-ble under counterfactual perturbations. Updated probabil-ities are p′ 
+
+> i
+
+= σ(logits ′
+
+> i
+
+). To further account for region 5FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+Table 1. Object detection performance comparison with the state-of-the-art methods on FoggyCityscapes. Metric: Average Preci-sion@50(%) - the best numbers are denoted in bold ; Bp-free: backpropagation-free at test time. 
+
+Methods Venue Framework Bp-free Pson Rder Car Tuck Bus Train Mcle Bcle mAP 50 
+
+Visual Backbone: ResNet-50 
+
+SHOT (Liang et al., 2020) ICML20 Faster RCNN × 26.7 30.3 36.9 16.8 28.9 6.4 14.3 23.3 23.0 T3A (Iwasawa & Matsuo, 2021) NIPS21 Faster RCNN × 22.6 23.0 31.9 7.7 14.8 1.0 7.9 19.7 16.6 Self-Training (Xu et al., 2021) CVPR21 Faster RCNN × 27.7 30.8 41.4 12.8 27.4 4.2 14.8 26.1 23.1 TTAC (Su et al., 2022) NIPS22 Faster RCNN × 24.5 27.3 33.4 14.6 26.1 5.8 14.1 21.5 20.9 STFAR(Chen et al., 2023b) ARXIV23 Faster RCNN × 28.8 32.0 42.4 15.1 30.1 11.2 15.5 26.2 25.1 Visual Backbone: Swin-T 
+
+GDINO (Liu et al., 2024) ECCV24 Grounding DINO ✓ 30.10 3.42 46.26 22.41 31.98 0.08 27.96 28.87 23.88 TDA (Karmanov et al., 2024) CVPR24 Grounding DINO ✓ 35.27 4.87 46.43 22.82 32.30 0.38 28.68 29.86 25.08 HisTPT (Zhang et al., 2024b) NIPS24 Grounding DINO × 32.50 5.09 47.45 23.13 34.63 0.85 28.82 31.98 25.55 BCA (Zhou et al., 2025b) CVPR25 Grounding DINO ✓ 41.01 5.61 47.85 21.86 33.40 0.91 28.47 29.82 26.12 BCA+ (Zhou et al., 2025a) ARXIV25 Grounding DINO ✓ 39.03 3.61 46.98 22.26 35.26 0.87 29.37 35.87 26.65 FACTOR Ours Grounding DINO ✓ 43.39 8.18 56.38 26.98 39.02 0.52 30.70 46.36 31.44 Visual Backbone: Swin-B 
+
+GDINO (Liu et al., 2024) ECCV24 Grounding DINO ✓ 34.95 20.35 51.56 30.01 45.72 0.87 35.21 32.06 31.34 TDA (Karmanov et al., 2024) CVPR24 Grounding DINO ✓ 38.29 25.53 50.09 30.49 45.92 11.98 33.12 39.06 34.31 HisTPT (Zhang et al., 2024b) NIPS24 Grounding DINO × 37.95 22.46 54.00 29.98 44.11 12.50 37.27 42.33 35.07 BCA (Zhou et al., 2025b) CVPR25 GroundingDINO ✓ 36.53 24.42 50.77 30.83 45.25 20.29 33.20 42.49 35.47 BCA+ (Zhou et al., 2025a) ARXIV25 Grounding DINO ✓ 38.15 26.30 52.30 30.77 45.66 20.29 33.89 42.41 36.22 FACTOR Ours Grounding DINO ✓ 42.55 22.36 60.64 32.97 49.03 17.05 38.19 50.67 39.18 
+
+Table 2. Object detection performance comparison with the state-of-the-art methods on PASCAL-C. Metric: mean Average Preci-sion@50(%) - the best numbers are denoted in bold .
+
+Methods Brit Contr Defoc Elast Fog Frost Gauss Glass Impul Jpeg Motn Pixel Shot Snow Zoom Average 
+
+Visual Backbone: ResNet-50 
+
+SHOT (Liang et al., 2020) 72.0 31.7 18.9 46.6 67.5 45.8 12.0 11.6 16.4 41.8 19.7 33.1 19.9 42.5 27.6 33.8 T3A (Iwasawa & Matsuo, 2021) 36.9 12.5 11.0 19.7 32.7 20.6 6.1 6.4 6.5 14.8 10.1 13.2 8.4 16.8 13.8 15.3 Self-Training (Xu et al., 2021) 67.9 39.3 2.6 52.5 65.7 47.2 11.9 20.2 12.1 29.3 4.1 6.9 17.4 44.9 9.5 28.8 TTAC (Su et al., 2022) 72.2 40.4 29.3 58.1 68.7 50.4 29.8 28.7 33.6 46.4 29.2 46.1 35.1 48.0 34.9 43.4 STFAR (Chen et al., 2023b) 67.3 51.8 34.8 55.7 65.2 50.7 32.4 34.6 36.3 49.4 34.6 55.7 37.8 50.9 34.8 46.1 Visual Backbone: Swin-T 
+
+GDINO (Liu et al., 2024) 63.04 45.66 35.58 31.33 60.92 50.52 25.82 18.84 27.99 39.34 26.99 13.39 30.49 45.89 23.38 35.95 TDA (Karmanov et al., 2024) 64.61 47.71 37.33 32.41 61.77 52.19 27.05 20.48 29.35 41.45 28.50 14.15 31.85 48.07 24.35 37.42 HisTPT (Zhang et al., 2024b) 66.27 48.10 38.71 34.32 64.24 53.46 28.68 21.75 30.68 41.56 30.20 15.90 33.47 48.46 25.52 38.76 BCA (Zhou et al., 2025b) 68.11 49.42 38.46 34.42 64.27 53.21 28.37 22.24 31.90 42.81 30.39 14.81 33.68 49.37 24.97 39.10 BCA+ (Zhou et al., 2025a) 70.25 50.72 40.79 37.08 67.83 56.38 28.59 22.48 31.74 47.40 30.75 14.87 33.66 51.87 25.65 40.67 FACTOR (Ours) 74.46 55.42 45.33 41.78 72.63 61.39 33.97 26.54 37.02 49.45 36.09 19.42 38.99 56.77 28.60 45.19 Visual Backbone: Swin-B 
+
+GDINO (Liu et al., 2024) 85.16 70.69 56.12 55.56 84.56 73.75 54.94 41.17 57.72 71.44 56.08 66.17 60.54 76.48 36.94 63.15 TDA (Karmanov et al., 2024) 86.28 74.33 57.98 58.45 85.98 76.41 57.82 43.84 60.80 74.31 57.91 69.45 63.79 78.36 38.84 65.64 HisTPT (Zhang et al., 2024b) 89.33 74.89 60.21 59.53 88.14 78.22 58.32 45.48 61.00 75.93 60.13 69.69 64.69 79.79 40.80 67.07 BCA (Zhou et al., 2025b) 88.66 75.73 59.84 61.00 88.02 77.69 60.21 45.98 62.46 76.32 60.55 71.22 64.89 80.67 40.66 67.59 BCA+ (Zhou et al., 2025a) 89.39 77.85 62.04 62.71 88.87 79.94 61.81 47.67 64.87 78.12 61.81 73.51 67.28 82.42 41.42 69.31 FACTOR (Ours) 92.86 84.20 69.35 70.70 92.80 85.68 71.40 57.87 74.28 83.22 69.71 81.23 75.68 87.45 48.11 76.30 
+
+robustness, we compute an ROI-level confidence score: 
+
+¯∆i = P
+
+c p′
+
+i(c) ∆ i(c), and refine the detection confidence as: 
+
+s′
+
+i = si · exp  − ¯∆i
+
+ , (8) this step down-weights counterfactually discrepancy regions while preserving consistent detections. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup Datasets. Consistent with existing TTA methods (Zhou et al., 2025b), we evaluate FACTOR on three established OVOD test-time adaptation benchmarks that simulate real-world distribution shifts through image corruption. FoggyC-ityscapes (Sakaridis et al., 2018) is a synthetic foggy variant of Cityscapes (Cordts et al., 2016), evaluated at the most challenging fog density ( β=0.02) causing severe visibility degradation. PASCAL-C (Michaelis et al., 2019) applies 15 common corruptions to the PASCAL VOC 2007 test set (Everingham et al., 2015), evaluated at severity level 5. COCO-C (Michaelis et al., 2019) introduces the same 15 corruptions to 5,000 images from MS-COCO 2017 valida-tion set (Lin et al., 2014). The 15 corruptions are: bright-ness, contrast, defocus, elastic, fog, frost, gaussian, glass, impulse, jpeg, motion, pixelate, shot, snow, zoom. The following text uses abbreviations, such as brightness abbre-viated as Brit. Together, these benchmarks cover adverse weather (FoggyCityscapes) and diverse synthetic corrup-tions (PASCAL-C, COCO-C), providing a comprehensive testbed for robustness evaluation. 6FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+Table 3. Object detection performance comparison with the state-of-the-art methods on COCO-C. Metric: mean Average Precision@50(%) - the best numbers are denoted in bold .                                                                                                                                                                                                                                                                                                                
+
+> Methods Brit Contr Defoc Elast Fog Frost Gauss Glass Impul Jpeg Motn Pixel Shot Snow Zoom Average
+> Visual Backbone: ResNet-50
+> SHOT (Liang et al., 2020) 40.9 26.6 14.7 19.7 41.5 26.7 11.0 7.2 12.1 16.4 11.0 9.7 13.0 22.0 6.4 18.6 T3A (Iwasawa & Matsuo, 2021) 28.8 15.9 8.3 11.3 28.9 17.2 4.6 3.1 5.2 9.0 5.8 4.1 5.8 13.8 3.5 11.0 Self-Training (Xu et al., 2021) 38.1 28.4 14.7 25.5 38.5 27.9 16.7 11.4 18.8 23.8 16.0 24.5 18.6 27.6 7.8 22.6 TTAC (Su et al., 2022) 38.3 29.5 15.1 28.2 39.0 28.5 16.8 14.3 18.0 23.2 14.3 24.8 19.3 26.7 8.7 23.0 STFAR (Chen et al., 2023b) 39.1 31.1 16.8 29.0 39.0 29.2 19.2 15.4 20.1 26.1 17.2 28.3 21.0 29.5 10.2 24.7
+> W3TTAOD (Yoo et al., 2024) 36.4 27.2 14.0 27.2 37.4 27.2 13.6 13.6 16.1 22.3 14.2 22.2 16.6 23.7 8.3 21.3
+> Visual Backbone: Swin-T
+> GDINO (Liu et al., 2024) 42.91 23.83 19.45 23.76 43.26 30.36 15.03 10.22 15.87 23.77 16.56 7.31 16.99 25.51 9.35 21.61 TDA (Karmanov et al., 2024) 45.53 24.43 20.33 27.08 45.91 32.31 15.77 9.93 16.72 26.25 16.85 8.99 17.10 28.22 9.62 23.00 HisTPT (Zhang et al., 2024b) 45.55 26.07 21.25 26.02 45.09 32.82 17.55 12.45 18.21 26.16 19.12 8.62 17.88 28.19 9.93 23.66 BCA (Zhou et al., 2025b) 46.34 25.18 21.03 27.45 46.74 33.92 15.97 10.91 17.33 26.19 16.05 8.89 17.97 29.02 9.87 23.52 BCA+ (Zhou et al., 2025a) 49.62 26.56 22.20 28.65 49.79 35.65 17.97 11.47 18.67 28.38 19.10 7.83 19.86 30.10 10.08 25.06 FACTOR (Ours) 54.71 32.15 25.99 32.69 55.09 41.04 21.76 14.76 23.33 31.84 22.22 12.87 23.98 34.98 12.05 29.30 Visual Backbone: Swin-B
+> GDINO (Liu et al., 2024) 55.36 40.40 29.11 36.51 56.26 44.39 30.27 21.38 31.30 40.26 28.78 36.68 32.67 42.71 13.44 35.97 TDA (Karmanov et al., 2024) 56.86 42.26 30.35 38.15 58.21 46.72 32.28 22.64 32.84 42.12 29.94 38.97 34.17 44.14 14.89 37.64 HisTPT (Zhang et al., 2024b) 58.02 43.28 31.37 38.51 59.09 46.96 32.85 23.53 33.92 42.23 31.28 39.45 35.06 44.72 15.57 38.39 BCA (Zhou et al., 2025b) 57.21 42.32 31.00 38.90 58.84 46.43 32.17 23.37 33.53 42.49 31.15 39.56 35.76 45.42 14.92 38.20 BCA+ (Zhou et al., 2025a) 60.34 44.99 32.25 40.85 60.92 49.06 34.04 24.42 35.33 44.91 31.72 41.17 36.59 47.85 15.24 39.98 FACTOR (Ours) 65.89 51.57 37.17 46.07 66.98 55.77 40.57 30.31 42.13 49.79 36.86 48.06 43.16 53.72 18.66 45.78
+
+Implementation details. All experiments are conducted with PyTorch (batch size = 1) under the TTA protocol, us-ing Grounding DINO as the base detector (Swin-T and Swin-B(Liu et al., 2021) visual backbones, BERT text en-coder). Following BCA+ (Zhou et al., 2025a), we adopt the AP50 as our primary metric. Category names are en-coded via the prompt template “ (class 1). (class 2). · · · 
+
+(class C). ”(Zhou et al., 2025a), and six interpretable visual attributes (brightness, contrast, blur, noise, texture, weather) are encoded with the same BERT encoder and prompt for-mat. Attribute/category names are embedded into a shared semantic space using the pretrained text encoder, with no source data/annotations/supervision used at test time. For each test image, we run FACTOR one forward pass on the original image and one on the composed counterfactual image to estimate attribute-induced prediction divergence efficiently. The hyperparameters are fixed across all datasets: 
+
+λ = 0 .5, and a fixed attribute set for counterfactual compo-sition. 
+
+4.2. Comparisons with State-of-the-Arts 
+
+We compare FACTOR with state-of-the-art test-time adap-tation methods. Traditional approaches built upon closed-vocabulary detectors, such as Faster R-CNN with ResNet-50 backbones, include SHOT (Liang et al., 2020), T3A (Iwa-sawa & Matsuo, 2021), Self-Training (Xu et al., 2021), TTAC (Su et al., 2022), STFAR (Chen et al., 2023b), and W3TTAOD (Yoo et al., 2024) (on COCO-C only). More recent methods leverage VLMs, particularly Grounding DINO, including GDINO (Liu et al., 2024), TDA (Kar-manov et al., 2024), HisTPT (Zhang et al., 2024b), BCA (Zhou et al., 2025b), and BCA+ (Zhou et al., 2025a). 
+
+Quantitative comparison. Tables 1-4 demonstrate that FACTOR consistently achieves state-of-the-art performance across all three benchmarks—FoggyCityscapes, PASCAL-C, and COCO-C—under both Swin-T and Swin-B back-bones. We have the following observations: (1) Broad improvements with particular gains on visually sensi-tive objects. Across datasets with fundamentally different corruption characteristics, FACTOR delivers stable and sub-stantial improvements over prior methods, indicating strong robustness to diverse and severe domain shifts. Instead of concentrating gains on a small subset of easy classes, FACTOR also exhibits broad improvements, particularly for objects whose appearance is highly susceptible to visibil-ity degradation, texture distortion, or noise. For example, while Grounding DINO suffers significant drops in ”Pixel” and ”Glass”, FACTOR consistently recovers performance across these varied categories, outperforming the baseline by 6.03% and 7.7% AP50 on PASCAL-C (SwinT, Table 2), respectively. This suggests that the proposed counterfactual calibration effectively suppresses spurious attribute cues that are amplified under domain shifts, rather than merely boosting confidence for already reliable predictions. (2) Satisfactory results on hard categories. FACTOR shows suboptimal results for ”Train” and ”Rider” in Table 1. We attribute this to FACTOR’s instance-based nature: it pri-oritizes local counterfactual invariance per image, whereas BCA+ benefits from accumulating historical statistics and spatial priors across the test sequence. Nevertheless, FAC-TOR still achieves satisfactory performance on these chal-lenging classes. Enhancing region-aware calibration with target-domain knowledge accumulation remains a promis-ing research direction. (3) Balance between computational cost and perfor-mance. As shown in Table 4, FACTOR achieves a favorable balance between performance gains and computational cost at test time. Compared with existing methods, FACTOR introduces only a modest inference overhead while deliv-7FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection                      
+
+> Table 4. Efficiency and performance comparison on COCO-C Brit. Backbone: Swin-T. GPU: NVIDIA A100. Time: average inference time (ms) for 5,000 images. Mem: GPU memory (MB). Method mAP 50 Time(ms) Mem(MB) GDINO(Liu et al., 2024) 42.91 147.6 3025 TDA(Karmanov et al., 2024) 45.53 411.6 4586 HisTPT(Zhang et al., 2024b) 45.55 1240.8 12850 BCA+(Zhou et al., 2025a) 49.62 190.8 3862 FACTOR 54.71 286.3 3097
+> Figure 3. Visualization comparison among the baseline Ground-ingDINO, BCA+ and FACTOR. Zoom in for best view.
+
+ering consistently stronger improvements under domain shifts. Notably, methods with higher computational com-plexity do not exhibit proportional performance benefits, whereas FACTOR attains superior robustness with substan-tially lower cost. These results indicate that the proposed calibration strategy is not only effective but also computa-tionally efficient for practical test-time deployment. Overall, the above mentioned findings confirm that counterfactual, attribute-guided calibration constitutes a principled and ro-bust solution for test-time adaptation in open-vocabulary object detection. 
+
+Qualitative comparison. We selected two representative images to demonstrate the visual comparison results. The second best method BCA+ is compared. These images are from the COCO-C Brit(Brightness) dataset, and the back-bone is SwinT. The first image denotes a scene with dense objects, including small objects with blurred features. FAC-TOR successfully identified most of the objects; while the second image represents a scene with strong lighting inter-ference. The sunlight severely damaged the features of the target person and skis. Although BCA+ is able to identify the skis compared to GroundingDINO, it could not iden-tify the targets under strong lighting interference as well as FACTOR. This demonstrates that FACTOR has strong gen-eralization capabilities and can identify interference from non-causal attributes. More visual comparison results are provided in Appendix. 
+
+4.3. Further Analysis Ablation study. Table 5 presents an ablation study to ana-lyze the contribution of each component in FACTOR. Acti-vating any single factor already leads to substantial improve-ments over the baseline, confirming that each component                                       
+
+> Table 5. Ablation study on key components of FACTOR. Results are averaged over COCO-C. Backbone: Swin-T. Method ASS ACR CSS mAP 50
+> baseline ×××21.61 (1) ××✓25.55 (2) ×✓×27.79 (3) ✓××27.60 (4) ✓✓×27.72 (5) ✓×✓27.91 (6) ×✓✓26.18 FACTOR ✓✓✓29.30
+> Figure 4. Hyperparameter sensitivity analysis on COCO-C (Swin-T backbone). FACTOR exhibits stable performance across a broad range.
+
+provides meaningful calibration signals. Among single-factor variants, ASS achieves the largest gain, indicating that region-level attribute sensitivity plays a dominant role in identifying shift-affected regions, while ACR and CSS also provide consistent but weaker improvements. Combin-ing two factors further improves performance in most cases, with configurations involving ASS ((4) and (5)) approaching the full model, whereas the absence of ASS ((6)) leads to clear degradation. The full FACTOR model achieves the best performance, demonstrating that jointly modeling re-gion sensitivity, attribute–category relevance, and prediction discrepancy yields the most effective calibration. 
+
+Hyperparameter sensitivity analysis. The propose FAC-TOR has only one parameter λ in Eq.(7). We conduct a sensitivity analysis on the COCO-C Brit dataset, using the Grounding DINO-SwinT model. The value of λ varies across a reasonable range [0 .1, 1.1] . As shown in Fig 4, FACTOR achieves consistently strong performance across the tested range. In our method, λ = 0 .5. The stable perfor-mance across settings highlights the practicality of FACTOR under diverse test-time conditions. 
+
+## 5. Conclusion 
+
+We proposed FACTOR, a lightweight training-free TTA method for OVOD to address spurious correlation-induced performance degradation under domain shifts. By gener-ating counterfactual images via attribute perturbations and fusing three complementary metrics—CSS, ASS and ACR. FACTOR explicitly models visual attributes and their causal links to predictions. Experiments confirm the effectiveness 8FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+of our method. FACTOR not only enhances performance under diverse distribution shifts, but also opens a path-way toward more interpretable, efficient, and semantically grounded adaptation. Future work may extend FACTOR by integrating temporal memory for historical knowledge accu-mulation and introducing structured causal models to handle more complex environmental confounders in open-world deployment. 
+
+## Impact Statement 
+
+This work advances robust open-vocabulary object detec-tion by providing an efficient test-time adaptation solution, enhancing VLM-based detector reliability in real-world sce-narios, and supporting broader adoption in critical applica-tions. 
+
+## References 
+
+Belal, A., Medeiros, H. R., Pedersoli, M., and Granger, E. Vlod-tta: Test-time adaptation of vision-language object detectors, 2025. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., and Zagoruyko, S. End-to-end object detection with transformers. In ECCV , pp. 213–229. Springer, 2020. Chen, X., Wang, X., Changpinyo, S., Piergiovanni, A., Padlewski, P., Salz, D., Goodman, S., Grycner, A., Mustafa, B., Beyer, L., et al. Pali: A jointly-scaled multi-lingual language-image model. In ICLR , 2023a. Chen, Y., Xu, X., Su, Y., and Jia, K. Stfar: Improving object detection robustness at test-time by self-training with feature alignment regularization, 2023b. Cheng, T., Song, L., Ge, Y., Liu, W., Wang, X., and Shan, Y. Yolo-world: Real-time open-vocabulary object detection. In CVPR , pp. 16901–16911, 2024. Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., and Schiele, B. The cityscapes dataset for semantic urban scene under-standing. In CVPR , pp. 3213–3223, 2016. Cui, Q., Zhou, B., Guo, Y., Yin, W., Wu, H., Yoshie, O., and Chen, Y. Contrastive vision-language pre-training with limited resources. In ECCV , pp. 236–253. Springer, 2022. Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. Bert: Pre-training of deep bidirectional transformers for lan-guage understanding. In Proceedings of the 2019 confer-ence of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers) , pp. 4171–4186, 2019. Everingham, M., Eslami, S. A., Van Gool, L., Williams, C. K., Winn, J., and Zisserman, A. The pascal visual object classes challenge: A retrospective. IJCV , 111(1): 98–136, 2015. Feng, C.-M., Yu, K., Liu, Y., Khan, S., and Zuo, W. Diverse data augmentation with diffusions for effective test-time prompt tuning. In ICCV , pp. 2704–2714, 2023. Gao, Y., Zhang, Y., Cai, Z., and Huang, D. Test-time adap-tive object detection with foundation model, 2025. URL 
+
+https://arxiv.org/abs/2510.25175 .Goyal, Y., Wu, Z., Ernst, J., Batra, D., Parikh, D., and Lee, S. Counterfactual visual explanations, 2019. URL 
+
+https://arxiv.org/abs/1904.07451 .Gu, X., Lin, T.-Y., Kuo, W., and Cui, Y. Open-vocabulary object detection via vision and language knowledge dis-tillation. In ICLR , 2022. Hansen, N. The cma evolution strategy: A tutorial, 2016. He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In CVPR , pp. 770–778, 2016. Iwasawa, Y. and Matsuo, Y. Test-time classifier adjustment module for model-agnostic domain generalization. In 
+
+NeurIPS , volume 34, pp. 2427–2440, 2021. Jaderberg, M., Dalibard, V., Osindero, S., Czarnecki, W. M., Donahue, J., Razavi, A., Vinyals, O., Green, T., Dunning, I., Simonyan, K., et al. Population based training of neural networks, 2017. Jia, C., Yang, Y., Xia, Y., Chen, Y.-T., Parekh, Z., Pham, H., Le, Q., Sung, Y.-H., Li, Z., and Duerig, T. Scaling up visual and vision-language representation learning with noisy text supervision. In International conference on machine learning , pp. 4904–4916. PMLR, 2021. Karmanov, A., Guan, D., Lu, S., El Saddik, A., and Xing, E. Efficient test-time adaptation of vision-language models. In CVPR , pp. 14162–14171, 2024. Kusner, M. J., Loftus, J. R., Russell, C., and Silva, R. Counterfactual fairness, 2018. URL https://arxiv. org/abs/1703.06856 .Li, L. H., Zhang, P., Zhang, H., Yang, J., Li, C., Zhong, Y., Wang, L., Yuan, L., Zhang, L., Hwang, J.-N., et al. Grounded language-image pre-training. In CVPR , pp. 10965–10975, 2022. Li, X., Li, J., Li, F., Zhu, L., Yang, Y., and Shen, H. T. Generalizing vision-language models to novel domains: A comprehensive survey, 2025. 9FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+Liang, J., Hu, D., and Feng, J. Do we really need to access the source data? source hypothesis transfer for unsuper-vised domain adaptation. In International conference on machine learning , pp. 6028–6039. PMLR, 2020. Liang, J., He, R., and Tan, T. A comprehensive survey on test-time adaptation under distribution shifts. IJCV , 133 (1):31–64, 2025. Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Doll ´ar, P., and Zitnick, C. L. Microsoft coco: Common objects in context. In ECCV , pp. 740–755. Springer, 2014. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., et al. Grounding dino: Marry-ing dino with grounded pre-training for open-set object detection. In ECCV , pp. 38–55. Springer, 2024. Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., and Guo, B. Swin transformer: Hierarchical vision transformer using shifted windows. In ICCV , pp. 10012– 10022, 2021. Michaelis, C., Mitzkus, B., Geirhos, R., Rusak, E., Bring-mann, O., Ecker, A. S., Bethge, M., and Brendel, W. Benchmarking robustness in object detection: Au-tonomous driving when winter is coming, 2019. Minderer, M., Gritsenko, A., Stone, A., Neumann, M., Weis-senborn, D., Dosovitskiy, A., Mahendran, A., Arnab, A., Dehghani, M., Shen, Z., Wang, X., Zhai, X., Kipf, T., and Houlsby, N. Simple open-vocabulary object de-tection with vision transformers, 2022. URL https: //arxiv.org/abs/2205.06230 .Niu, Y., Tang, K., Zhang, H., Lu, Z., Hua, X.-S., and Wen, J.-R. Counterfactual vqa: A cause-effect look at language bias, 2021. URL https://arxiv.org/abs/2006. 04315 .Pan, S. J. and Yang, Q. A survey on transfer learning. IEEE Transactions on knowledge and data engineering , 22(10): 1345–1359, 2009. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PMLR, 2021. Real, E., Moore, S., Selle, A., Saxena, S., Suematsu, Y. L., Tan, J., Le, Q. V., and Kurakin, A. Large-scale evolu-tion of image classifiers. In International conference on machine learning , pp. 2902–2911. PMLR, 2017. Real, E., Aggarwal, A., Huang, Y., and Le, Q. V. Regular-ized evolution for image classifier architecture search. In 
+
+AAAI , volume 33, pp. 4780–4789, 2019. Ren, S., He, K., Girshick, R., and Sun, J. Faster r-cnn: Towards real-time object detection with region proposal networks. IEEE TPAMI , 39(6):1137–1149, 2016. Sakaridis, C., Dai, D., and Van Gool, L. Semantic foggy scene understanding with synthetic data. IJCV , 126(9): 973–992, 2018. Sauer, A. and Geiger, A. Counterfactual generative net-works, 2021. URL https://arxiv.org/abs/ 2101.06046 .Sharifdeen, A., Munir, M. A., Baliah, S., Khan, S., and Khan, M. H. O-tpt: Orthogonality constraints for calibrat-ing test-time prompt tuning in vision-language models. In CVPR , pp. 19942–19951, 2025. Sheng, L., Liang, J., Wang, Z., and He, R. R-tpt: Improving adversarial robustness of vision-language models through test-time prompt tuning. In CVPR , pp. 29958–29967, 2025. Shlens, J. Notes on kullback-leibler divergence and like-lihood, 2014. URL https://arxiv.org/abs/ 1404.2000 .Shu, M., Nie, W., Huang, D.-A., Yu, Z., Goldstein, T., Anandkumar, A., and Xiao, C. Test-time prompt tuning for zero-shot generalization in vision-language models. In NeurIPS , pp. 14274–14289, 2022. Su, Y., Xu, X., and Jia, K. Revisiting realistic test-time training: Sequential inference and adaptation by anchored clustering. In NeurIPS , volume 35, pp. 17543–17555, 2022. Verma, S., Boonsanong, V., Hoang, M., Hines, K. E., Dickerson, J. P., and Shah, C. Counterfactual expla-nations and algorithmic recourses for machine learning: A review, 2022. URL https://arxiv.org/abs/ 2010.10596 .VS, V., Oza, P., and Patel, V. M. Towards online domain adaptive object detection. In IEEE/CVF Winter Confer-ence on Applications of Computer Vision , pp. 478–488, 2023. Wang, D., Shelhamer, E., Liu, S., Olshausen, B., and Darrell, T. Tent: Fully test-time adaptation by entropy minimiza-tion. In ICLR , 2021. Wang, K., Fu, X., Lu, X., Ge, C., Cao, C., Zhai, W., and Zha, Z.-J. Efficient test-time adaptive object detection via sensitivity-guided pruning. In CVPR , pp. 10577–10586, 2025. Xu, M., Zhang, Z., Hu, H., Wang, J., Wang, L., Wei, F., Bai, X., and Liu, Z. End-to-end semi-supervised object 10 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+detection with soft teacher. In ICCV , pp. 3060–3069, 2021. Xue, B., Zhang, M., Browne, W. N., and Yao, X. A survey on evolutionary computation approaches to feature selec-tion. IEEE Transactions on evolutionary computation , 20 (4):606–626, 2015. Yao, L., Han, J., Wen, Y., Liang, X., Xu, D., Zhang, W., Li, Z., Xu, C., and Xu, H. Detclip: dictionary-enriched visual-concept paralleled pre-training for open-world de-tection. In NeurIPS , pp. 9125–9138, 2022a. Yao, L., Huang, R., Hou, L., Lu, G., Niu, M., Xu, H., Liang, X., Li, Z., Jiang, X., and Xu, C. Filip: Fine-grained interactive language-image pre-training. In ICLR , 2022b. Yoo, J., Lee, D., Chung, I., Kim, D., and Kwak, N. What how and when should object detectors update in continu-ally changing test domains? In CVPR , pp. 23354–23363, 2024. Zareian, A., Rosa, K. D., Hu, D. H., and Chang, S.-F. Open-vocabulary object detection using captions. In CVPR , pp. 14393–14402, 2021. Zeng, Z., Su, Y., Sun, J., Wen, T., Zhang, H., Wang, Z., Chen, B., Liu, H., and Ma, J. Explaining domain shifts in language: Concept erasing for interpretable image clas-sification, 2025. URL https://arxiv.org/abs/ 2503.18483 .Zhai, X., Wang, X., Mustafa, B., Steiner, A., Keysers, D., Kolesnikov, A., and Beyer, L. Lit: Zero-shot transfer with locked-image text tuning. In CVPR , pp. 18123–18133, 2022. Zhang, C., Stepputtis, S., Sycara, K., and Xie, Y. Dual prototype evolving for test-time generalization of vision-language models. In NeurIPS , volume 37, pp. 32111– 32136, 2024a. Zhang, H., Li, F., Liu, S., Zhang, L., Su, H., Zhu, J., Ni, L., and Shum, H.-Y. Dino: Detr with improved denoising anchor boxes for end-to-end object detection. In ICLR ,2022. Zhang, J., Huang, J., Zhang, X., Shao, L., and Lu, S. Histor-ical test-time prompt tuning for vision foundation models. In NeurIPS , pp. 12872–12896, 2024b. Zhou, K., Yang, J., Loy, C. C., and Liu, Z. Learn-ing to prompt for vision-language models. IJCV , 130 (9):2337–2348, July 2022a. ISSN 1573-1405. doi: 10.1007/s11263-022-01653-1. URL http://dx.doi. org/10.1007/s11263-022-01653-1 .Zhou, K., Yang, J., Loy, C. C., and Liu, Z. Conditional prompt learning for vision-language models, 2022b. URL 
+
+https://arxiv.org/abs/2203.05557 .Zhou, L., Ye, M., Li, S., Li, N., Wu, J., Zhu, X., Deng, L., Liu, H., Luo, J., and Lei, Z. Bayesian test-time adaptation for object recognition and detection with vision-language models, 2025a. Zhou, L., Ye, M., Li, S., Li, N., Zhu, X., Deng, L., Liu, H., and Lei, Z. Bayesian test-time adaptation for vision-language models. In CVPR , 2025b. 11 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+## Appendix 
+
+This appendix presents a detailed description of the counter-factual image generation process, including attribute model-ing, intervention construction, and practical implementation choices used during test-time inference. Furthermore, the appendix contains further analyses that deepen the under-standing of FACTOR beyond the main text. These analyses include additional ablation results, factor interaction studies, and diagnostic evaluations that help explain the observed performance gains under diverse corruption settings. Fi-nally, qualitative visual comparisons of detection results are provided to illustrate how counterfactual-guided calibration affects region-level predictions, highlighting its ability to suppress spurious attribute reliance while preserving seman-tically robust detections under domain shifts. 
+
+## A. More Related Work 
+
+A.1. Grounding DINO 
+
+We adopt Grounding DINO as the base vision–language de-tector for open-vocabulary object detection. Given an input image x and a set of category names C = {c1, . . . , c C }, all category names are concatenated into a single text prompt, which is encoded by the text encoder of Grounding DINO. The detector then performs cross-modal reasoning between image features and text tokens to generate a fixed set of query-based region proposals. For each proposal ri, Grounding DINO outputs a normal-ized bounding box bi ∈ [0 , 1] 4 and a category score vector 
+
+pi ∈ RC . Category scores are obtained by matching query-level predictions with category-specific token spans in the text prompt, followed by a sigmoid activation. Proposals whose maximum score is below a confidence threshold are filtered out. Since the resulting category scores are not normalized, a log-softmax operation is applied to obtain a valid probability distribution over categories. Each re-maining proposal is assigned a label li = arg max c pi(c)
+
+with confidence score max c pi(c). The final detection set is denoted as R = {(fi, b i, pi, l i)}Mi=1 . All parameters of Grounding DINO are frozen during inference, and the detec-tor is used purely as a black-box vision–language model to produce region-level predictions. Under distribution shifts, performance degradation mainly arises from semantic mis-alignment between the fixed text representations and shifted visual features, which motivates our test-time adaptation method. 
+
+## B. More Implementation Details. 
+
+B.1. Algorithm 
+
+Algorithm 1 summarizes FACTOR, a training-free test-time adaptation framework for open-vocabulary object detection. 
+
+Algorithm 1 FACTOR: Counterfactual Training-Free Test-Time Adaptation  
+
+> 1:
+
+Input: Test image x; attribute set A; category set C;pretrained detector M; bert encoder B; hyperparameter 
+
+λ 
+
+> 2:
+
+Output: Adapted detections {(ri, ˆyi, s ′
+
+> i
+
+)}Ni=1  
+
+> 3:
+
+Stage I: Counterfactual Probing  
+
+> 4:
+
+{ri, fi, zi, pi}Ni=1 ← M (x) 
+
+> 5:
+
+xcf ← COMPOSE ATTRIBUTES (x, A) 
+
+> 6:
+
+{˜pi}Ni=1 ← MATCH AND PREDICT (M(xcf ), {ri}) 
+
+> 7:
+
+Tattr ← B (A) 
+
+> 8:
+
+Tcls ← B (C) 
+
+> 9:
+
+Stage II: Invariance-Guided Calibration  
+
+> 10:
+
+μ ← 1
+
+> N
+
+P
+
+> i
+
+P 
+
+> c
+
+pi(c) log pi(c)˜pi(c) 
+
+> 11:
+
+for each region ri do  
+
+> 12:
+
+ASS i,a ← σ  f ⊤ 
+
+> i
+
+Tattr 
+
+> a
+
+ 
+
+> 13:
+
+ACR a,c ← σ (Tattr  
+
+> a
+
+)⊤Tcls 
+
+> c
+
+ 
+
+> 14:
+
+KL i ← P 
+
+> c
+
+pi(c) log pi(c)˜pi(c) 
+
+> 15:
+
+CSS i ← σ(KL i − μ) 
+
+> 16:
+
+∆i(c) ← 1
+
+> |A|
+
+P 
+
+> a∈A
+
+ACR a,c ASS i,a CSS i 
+
+> 17:
+
+logits ′ 
+
+> i
+
+← logits i − λ∆i 
+
+> 18:
+
+p′ 
+
+> i
+
+← σ(logits ′
+
+> i
+
+) 
+
+> 19:
+
+ˆyi ← arg max c p′
+
+> i
+
+(c) 
+
+> 20:
+
+¯∆i ← P 
+
+> c
+
+p′
+
+> i
+
+(c)∆ i(c) 
+
+> 21:
+
+s′ 
+
+> i
+
+← si · exp( − ¯∆i) 
+
+> 22:
+
+end for  
+
+> 23:
+
+return {(ri, ˆyi, s ′
+
+> i
+
+)}Ni=1 
+
+Given a test image, FACTOR first estimates counterfactual prediction shifts by comparing the detector outputs on the original image and a composed attribute-level counterfac-tual. It then performs attribute-guided logit calibration and ROI-level score refinement to suppress categories and re-gions that are unstable under counterfactual perturbations. The entire procedure requires only a single additional for-ward pass and introduces no training-time overhead. 
+
+B.2. Counterfactual Operations 
+
+This subsection details the concrete attribute-level trans-formations used to construct counterfactual images. Each operation intervenes on a specific non-causal appearance factor while preserving object identity, spatial structure, and high-level semantics. All transformations are deterministic, applied channel-wise, and parameterized with fixed intensi-ties to ensure reproducibility and semantic consistency. 
+
+Illumination (Brightness). We simulate brightness varia-tion via monotonic gamma correction: 
+
+Tbrit (x) = xγ′
+
+, γ′ > 1, (9) which uniformly darkens the image and suppresses over-12 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+exposed regions. This operation perturbs global luminance statistics without altering color relationships or geometric content. In practice, the effective exponent γ′ is imple-mented through an inverse parameterization, ensuring a consistent darkening effect rather than artificial enhance-ment. 
+
+Contrast. Global contrast variation is modeled by linear intensity scaling: 
+
+Tcont (x) = αx, α ∈ (0 , 1) , (10) which reduces the dynamic range of pixel intensities. This operation degrades edge sharpness and local discriminabil-ity while preserving object boundaries and relative color composition. 
+
+Blur. We apply Gaussian blurring to suppress high-frequency visual cues: 
+
+Tblur (x) = Gk ∗ x, (11) where Gk denotes a Gaussian kernel of size k. Blurring selectively removes fine-grained texture and edge details while retaining coarse object shape and spatial layout. 
+
+Noise. Additive Gaussian noise is injected to perturb pixel-level statistics: 
+
+Tnoise (x) = x + ε, ε ∼ N (0 , σ 2). (12) This operation simulates sensor noise and compression arti-facts commonly encountered in real-world data acquisition, without introducing structured distortions. 
+
+Texture. Texture degradation is simulated via resolution perturbation: 
+
+Ttext (x) = Resize ↑(Resize ↓(x, θ )) . (13) where θ denotes the sampling density. Downsampling fol-lowed by upsampling disrupts fine-grained texture patterns while preserving global object shape and spatial alignment, effectively reducing reliance on local texture cues. 
+
+Weather. Weather-related appearance shifts (e.g., fog or haze) are approximated through linear blending with a uni-form intensity field: 
+
+Tweath (x) = (1 − β)x + β1. (14) This operation attenuates contrast and visibility in a spatially uniform manner, mimicking atmospheric scattering effects without occluding objects or altering scene geometry. All parameters (γ′ = 0 .3, α = 0 .9, k = 3 , σ = 2 , β = 0 .1) 
+
+are fixed across all images and datasets to induce percepti-ble yet semantically invariant perturbations. Crucially, none of the above operations modify object identity, spatial ar-rangement, or category-level semantics. As a result, any  
+
+> Figure 5. Counterfactual image hyperparameter sensitivity anal-ysis on COCO-C (Swin-T backbone). FACTOR exhibits stable performance across a broad range of shift scenarios.
+
+prediction discrepancy between the original image x and its counterfactual counterpart xcf can be attributed to the detec-tor’s sensitivity to attribute-level appearance shifts, rather than to content corruption or semantic alteration. 
+
+Parameter analysis. To verify the impact of the above mentioned parameters, we conduct five comparative ex-periments on COCO-C Brit (SwinT). The specific ex-perimental settings are as follows (γ′, α, k, σ, θ, β ): (1) (0.9,0.98,1,0.5,0.98,0.03); (2) 0.3, 0.90, 3, 2, 0.95, 0.10; (3) (0.15, 0.75, 5, 5, 0.85, 0.25); (4) (1.0, 1.0, 5, 4, 0.85, 0.0); (5) (0.25, 0.85, 3, 1, 1.0, 0.20). The parameters have the following specific meanings: (1) extremely weak pertur-bation strength; (2) balanced strength; (3) strong attribute interference; (4) isolation of low-level visual attributes such as texture and blur; (5) simulation of real-world distribution shift scenarios. As shown in Fig. 5, the model can obtain robust results in various simulated scenarios, demonstrat-ing its ability to adjust the correction intensity according to different scenarios. 
+
+## C. More Experimental Results. 
+
+Full results on ablation study. In Table 6 , we report the contribution of each component across all 15 corruption types on COCO-C, as well as the average AP50. Backbone is Swin-T. Activating any single factor already leads to sub-stantial improvements over the baseline. The full FACTOR model achieves the best performance, demonstrating that jointly modeling region sensitivity, attribute–category rele-vance, and prediction variance yields the most effective and stable calibration. 
+
+Number of Attributes. To assess how the size of the at-tribute set in counterfactual processing influences model per-formance, we conduct a sensitivity analysis on the COCO-C Brit dataset using the Grounding DINO-SwinT model. We construct incremental attribute subsets: starting with 1 attribute (brightness), expanding to 2 attributes (adding contrast), then 4 attributes (including noise and blur), and 13 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+Table 6. Object detection performance comparison with the state-of-the-art methods on COCO-C. Metric: mean Average Precision@50(%)                                                                                                                                                                            
+
+> Methods ASS ACR CSS Brit Contr Defoc Elast Fog Frost Gauss Glass Impul Jpeg Motn Pixel Shot Snow Zoom Average GDINO ×××42.91 23.83 19.45 23.76 43.26 30.36 15.03 10.22 15.87 23.77 16.56 7.31 16.99 25.51 9.35 21.61 (1) ××✓47.54 29.27 23.67 26.54 49.94 34.98 19.33 12.97 20.51 26.79 19.90 11.01 20.78 29.05 10.95 25.55 (2) ×✓×52.36 30.90 24.91 30.44 52.95 38.78 20.42 13.92 21.85 30.11 21.17 11.85 22.72 32.81 11.65 27.79 (3) ✓××50.84 30.76 25.00 31.03 51.80 38.82 20.53 14.10 21.95 29.62 21.11 12.05 22.54 32.58 11.28 27.60 (4) ✓✓×51.13 30.88 25.08 31.13 52.05 39.00 20.61 14.15 22.04 29.81 21.17 12.12 22.64 32.74 11.32 27.72 (5) ✓×✓51.47 31.21 25.12 31.24 52.69 39.22 20.90 14.19 22.27 29.85 21.24 12.22 22.82 32.86 11.41 27.91 (6) ×✓✓48.83 29.75 24.13 27.33 50.97 36.04 19.68 13.21 20.94 27.69 20.29 11.24 21.34 30.08 11.13 26.18 FACTOR ✓✓✓54.71 32.15 25.99 32.69 55.09 41.04 21.76 14.76 23.33 31.84 22.22 12.87 23.98 34.98 12.05 29.30
+
+Table 7. FACTOR performance with varying numbers of counterfactual attributes on COCO-C Brit. 
+
+Number of Attribute brightness contrast noise blur texture weather mAP 50 
+
+1 ✓ × × × × × 48.10 2 ✓ ✓ × × × × 52.01 4 ✓ ✓ ✓ ✓ × × 53.71 6 ✓ ✓ ✓ ✓ ✓ ✓ 54.71 
+
+Table 8. Statistical significance (p-values) of performance differ-ences between FACTOR and BCA+ on the COCO-C dataset with Swin-T.       
+
+> Metric FACTOR (Mean±Std) BCA+ (Mean±Std) p-value AP50 29.29±0 25.06±0 6.533246e-20
+
+finally using all 6 attributes (the full set in our method).From Table 7, we observe a monotonic improvement in mAP 50 as more attributes are incorporated. This trend demonstrates that a richer attribute set enables the model to capture more diverse attribute-induced distribution shifts, thereby enhanc-ing robustness to corruptions on COCO-C Brit. Notably, the marginal performance gain diminishes with larger attribute sets (e.g., only 1.00 point from 4 to 6 attributes), indicating that the 6-attribute set already covers the key shift factors relevant to this dataset. This result validates the design of our full attribute set while highlighting that even partial subsets can yield meaningful performance improvements. Although more attributes may bring performance improve-ments, considering the computational complexity, our work chooses a number of attributes of 6. 
+
+Statistical verification. To further validate the performance advantage of the proposed FACTOR framework, we con-ducted a statistical significance analysis against BCA+ us-ing the Wilcoxon signed-rank test, as summarized in Table 8. We select BCA+ for comparison because it represents the state-of-the-art in training-free test-time adaptation for open-vocabulary object detection, providing a strong and fair baseline. Since FACTOR incorporates stochastic ele-ments in its counterfactual generation process (e.g., attribute perturbations with random parameters) while BCA+ is de-terministic, we designed the statistical analysis as follows: We executed FACTOR with 10 different random seeds on the COCO-C dataset with Swin-T backbone, collecting per-formance metrics for average of the 15 corruption types. For BCA+, we report its deterministic results with zero vari-ance. The Wilcoxon signed-rank test is a non-parametric method suitable for paired comparisons without assuming data normality, making it appropriate for evaluating detec-tion performance across multiple experimental runs. In our case, we employed a one-sample Wilcoxon test com-paring FACTOR’s multi-seed distribution against BCA+’s fixed value for average AP50. As shown in Table 8, FAC-TOR demonstrates statistically significant improvements over BCA+ across average AP50. The corresponding p-values are all well below the 0.05 significance threshold, indicating that the performance improvement of FACTOR compared to BCA+ is statistically significant and not due to random fluctuations. 
+
+Effects after counterfactual processing. To illustrate the visual and quantitative impacts of our counterfactual at-tribute transformations, we present both a qualitative visual-ization (Fig.6) and quantitative metrics (Table 9) for each transformation. To quantify the discrepancy between the original image xorig and the counterfactual image xcf , we introduce three core metrics to measure pixel-level pertur-bations. First, the average pixel difference ∆μ is defined as the mean of absolute pixel-wise differences across all spatial locations and RGB channels: 
+
+∆μ = 1
+
+N
+
+X
+
+> i,j,c
+
+|Iorig (i, j, c ) − Icf (i, j, c )| , (15) where N = H × W × 3 denotes the total number of pixels (height H, width W , and three RGB channels c), and the ±
+
+notation in subsequent results represents the standard devia-tion of pixel differences. Second, we compute the maximum pixel difference ∆max to capture the extreme perturbation on individual pixels: 
+
+∆max = max  
+
+> i,j,c
+
+|Iorig (i, j, c ) − Icf (i, j, c )| , (16) which reflects the largest deviation between the original and counterfactual images at any pixel location. Finally, to normalize the perturbation strength to an interpretable scale, we calculate the relative change (RC) as: RC (%) = ∆μ
+
+255 × 100 , (17) 14 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection   
+
+> Figure 6. The effect of counterfactual processing on a sample image. All effects are based on the original image. Zoom in for best view.
+
+where 255 is the maximum value of an 8-bit pixel, ensuring the relative change is expressed as a percentage to facilitate cross-transformation comparison.                                          
+
+> Table 9. Quantitative metrics for counterfactual transformations. All values are computed against the original image. The “Com-bined” transformation exhibits the strongest overall perturbation (highest ∆μand relative change).
+> Attribute ∆μ∆max RC (%) Original Brightness 18 .67 ±14 .39 37 .00 7.32
+> Contrast 17 .97 ±6.08 25 .00 7.05
+> Blur 3.02 ±5.53 111 .00 1.18
+> Noise 1.54 ±1.31 10 .00 0.60
+> Texture 4.07 ±8.74 180 .00 1.59
+> Weather 7.07 ±6.09 25 .00 2.77
+> Combined 22 .55 ±11 .99 142 .00 8.84
+
+Comparison of detection results. In order to more in-tuitively understand the superiority of FACTOR, we con-ducted a visual comparison experiment between FACTOR, Grounding DINO, and BCA+, on the COCO-C Brit dataset using the Grounding DINO-SwinT model, and selected some images for intuitive analysis. From Fig. 7a-7e, we can observe that FACTOR demonstrates a clear advantage in both anchor box scores and the number of detected anchor boxes. This proves the effectiveness of FACTOR. From Fig. 7a and 7b, we can see that FACTOR exhibits extremely high performance in detecting dense objects and relatively small targets. In Fig. 7c, FACTOR successfully identifies a side-facing phone that neither Grounding DINO nor BCA+ could detect. In Figs. 7a and 7e, FACTOR identifies objects of other categories that are missed by other models. 
+
+## D. Limitations and Future Works 
+
+While FACTOR demonstrates consistent improvements for test-time adaptation in open-vocabulary object detec-tion, several limitations remain. First, the effectiveness of counterfactual-guided calibration depends on the quality of the constructed counterfactual views. Although attribute perturbations are designed to target spurious correlations, imperfect attribute modeling or incomplete coverage of nui-sance factors may limit the ability to fully expose prediction instability, especially under complex real-world corruptions. Future work could explore more expressive attribute rep-resentations or adaptive intervention strategies that better capture diverse domain-specific biases. Second, FACTOR performs calibration based on region-level sensitivity signals derived from paired predictions. While this design avoids model updates and preserves effi-ciency, it does not explicitly reason about temporal or cross-image consistency. Extending the framework to leverage multi-image or video-level context at test time may further improve accuracy, particularly in scenarios with strong tem-poral coherence. Finally, although FACTOR is training-free, it still incurs ad-ditional computation due to counterfactual forward passes. Future research may investigate lightweight approximation strategies or selective intervention mechanisms that reduce overhead while maintaining calibration effectiveness. Be-yond object detection, we believe the counterfactual-guided sensitivity calibration paradigm can be generalized to other vision–language tasks, offering a promising direction for robust test-time adaptation under distribution shifts. 15 FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection 
+
+(a) Dense detection scenarios involving small objects. 
+
+(b) Dense detection scenarios involving small objects. 
+
+(c) Single-category detection scenarios with diverse features. 
+
+(d) Detection scenarios across multiple categories. 
+
+(e) Detection scenarios across multiple categories. 
+
+Figure 7. Visual comparison results on COCO-C and SwinT across various challenging scenarios. Zoom in for best view. 
+
+16

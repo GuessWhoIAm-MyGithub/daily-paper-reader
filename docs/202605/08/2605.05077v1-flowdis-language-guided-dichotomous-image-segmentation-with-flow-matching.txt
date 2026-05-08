@@ -1,0 +1,603 @@
+Title: FlowDIS: Language-Guided Dichotomous Image Segmentation with Flow Matching
+
+URL Source: https://arxiv.org/pdf/2605.05077v1
+
+Published Time: Thu, 07 May 2026 01:23:51 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# FlowDIS: Language-Guided Dichotomous Image Segmentation with Flow Matching 
+
+## Andranik Sargsyan Shant Navasardyan 
+
+Picsart AI Research (PAIR) 
+
+https://flowdis.github.io text prompts:  "plant" , "chair"    
+
+> text prompts: "bicycle" ,"tree" ,"white ladder"
+
+Figure 1. FlowDIS enables highly accurate foreground segmentation, optionally guided by a text prompt (the first example does not use text prompt). When ambiguity prevents the model from producing the desired result, the user can specify which elements to retain in the foreground. For example, in the upper-right image, if the user wants the bicycle to be segmented, they can provide the prompt “bicycle” to FlowDIS and obtain a binary mask containing only the pixels shown in cyan. Alternatively, if the user wants all three main objects to be segmented, they can prompt with “bicycle, tree, and white ladder”, and FlowDIS will return a combined binary mask including all the pixels shown in cyan, green, and red. 
+
+## Abstract 
+
+Accurate image segmentation is essential for modern com-puter vision applications such as image editing, au-tonomous driving, and medical image analysis. In recent years, Dichotomous Image Segmentation (DIS) has become a standard task for training and evaluating highly accu-rate segmentation models. Existing DIS approaches often fail to preserve fine-grained details or fully capture the se-mantic structure of the foreground. To address these chal-lenges, we present FlowDIS , a novel dichotomous image segmentation method built on the flow matching framework, which learns a time-dependent vector field to transport the image distribution to the corresponding mask distribu-tion, optionally conditioned on a text prompt. Moreover, with our Position-Aware Instance Pairing (PAIP) train-ing strategy, FlowDIS offers strong controllability through text prompts, enabling precise, pixel-level object segmenta-tion. Extensive experiments demonstrate that our method significantly outperforms state-of-the-art approaches both with and without language guidance. Compared with the best prior DIS method, FlowDIS achieves a 5.5% higher 
+
+F ωβ measure and 43% lower MAE ( M) on the DIS-TE test set. The code is available at: https://github.com/Picsart-AI-Research/FlowDIS. 
+
+## 1. Introduction 
+
+Highly accurate image segmentation is crucial for modern computer vision applications, where even small errors can significantly impact downstream tasks such as image edit-ing [21, 24], autonomous driving [18], and medical im-age analysis [12]. Dichotomous Image Segmentation (DIS) 1
+
+> arXiv:2605.05077v1 [cs.CV] 6 May 2026
+
+[31], which involves segmenting high-precision, category-agnostic masks, has become an increasingly popular direc-tion in the research community for developing and evaluat-ing high-accuracy segmentation models. Many DIS methods [13, 31, 42, 45, 46] treat segmen-tation as a per-pixel binary classification task and rely on pre-trained classification networks such as ResNet [9], Res2Net [7], or Swin Transformer [23] as backbones. How-ever, since these backbones are optimized for predicting the overall class of an image, they often lack the fine-grained semantic representations required for accurate foreground segmentation, resulting in suboptimal performance on im-ages with intricate details. Moreover, in real-world scenes containing multiple objects, classification backbones often struggle to identify and segment the correct foreground re-gions due to their limited ability to capture object-level se-mantics. Recent progress in generative modeling [30, 34] has mo-tivated the formulation of image segmentation within the DDPM framework [10], allowing DIS models to leverage pre-trained text-to-image (T2I) diffusion priors rather than conventional classification backbones. T2I generative mod-els, trained on large-scale and semantically diverse datasets, provide rich representations that have proven beneficial for the downstream segmentation task. In particular, DiffDIS [43] and LawDIS [40] frame image segmentation as image-conditioned mask generation from standard Gaussian noise, building upon pre-trained Stable Diffusion [34]. However, as also noted by prior work [15, 27, 38], stochastic generative formulations are misaligned with de-terministic dense prediction tasks, such as image segmenta-tion, that require precise matches to the ground truth. This discrepancy often results in slower training convergence, re-quiring tens of thousands of optimization steps. Further-more, the stochastic nature of the denoising process can blur or misplace fine boundaries, degrading the segmentation of intricate foreground structures. To address these issues, we observe that image segmen-tation can be more naturally framed within the flow match-ing framework, enabling fully deterministic training and sampling. Flow matching offers a general framework for learning mappings between arbitrary distributions. Based on this, we propose FlowDIS , which directly learns the mapping from the image distribution to the correspond-ing mask distribution, in contrast to the image-conditioned mask denoising (generation) paradigm of existing diffusion-based DIS methods. Another notable property of generative models such as diffusion or flow matching models is their strong adapt-ability to text prompts. When adapted for the DIS task, this capability can be leveraged, as demonstrated by [40], to mitigate the ambiguity caused by multiple foreground objects within a single image. However, due to the com-plex multi-object nature of real-world scenes and the lim-ited presence of multi-foreground examples in standard DIS training datasets, straightforward prompt-guided training still fails to achieve reliable language controllability, even with extensive prompting. Therefore, to further improve the language controllability, we propose the Position-Aware Instance Pairing (PAIP) strategy, which constructs mixed training examples from pairs of (image, mask, prompt) 
+
+triplets within each training batch to provide the model with more diverse samples. Fig. 1 demonstrates the capabilities of FlowDIS for different use cases, including background removal and language-guided segmentation. To summarize, our main contributions are the following: • We introduce FlowDIS , a highly accurate dichotomous image segmentation model leveraging the power of flow-based generative modeling. • To enhance the language controllability of the model, we introduce a Position-Aware Instance Pairing (PAIP) 
+
+strategy that selectively combines pairs of (image, mask, prompt) triplets within each training batch. • FlowDIS establishes a new state-of-the-art across all test sets of DIS5K, outperforming previous methods by a sig-nificant margin. In particular, it achieves a 5.5% higher 
+
+F ωβ score and a 43% lower MAE ( M) on the DIS-TE test set compared to the best prior method. 
+
+## 2. Related Work 
+
+Research in image segmentation has evolved into several specialized subfields, each focusing on distinct types of foreground detection—such as salient [16, 35, 37, 44], cam-ouflaged [4, 8, 26], and fine-grained [19, 41] object segmen-tation. To bridge these data-specific segmentation tasks, Qin et al. [31] introduced the Dichotomous Image Seg-mentation (DIS) task and the DIS5K dataset, which aim to provide a unified formulation and benchmark for highly ac-curate general foreground detection. In recent years, DIS has attracted growing interest and motivated the development of several improved ar-chitectures. InSPyReNet [13] constructs a saliency map in an image-pyramid structure, enabling the blending of low-resolution and high-resolution scale outputs via pyramid-based image blending. FP-DIS [46] uses fre-quency priors to help the model capture more detailed in-formation. Pei et al. [28] propose a dual-input network to disentangle the trunk and structure segmentation. BiRefNet [45] incorporates a bilateral reference module that draws attention to detail-rich areas during training. MVANet [42] unifies distant-view and close-up feature fusion into a sin-gle encoder–decoder architecture. PDFNet [22] introduces the depth-integrity prior to reduce false positive detections. Recent advances in diffusion-based generative model-ing [10, 34] have motivated the development of diffusion-based DIS methods [39, 40, 43]. GenPercept [39] fine-2...    
+
+> Training batch
+> yellow
+> swing
+> white bag
+> bicycle
+> fan
+> PAIP
+> bicycle
+> ...
+> Text encoder
+> VAE
+> VAE MMDiT
+> Trainable Frozen
+> VAE
+> MMDiT
+> bicycle Text encoder
+
+Inference pipeline 
+
+> VAE
+> Channel concatenation
+
+Figure 2. Overall framework of FlowDIS. During training, a batch of samples is passed to PAIP, which selectively combines pairs of 
+
+(image, mask, prompt) triplets to produce a mixed batch. The mixed images and masks are encoded into the VAE latent space. For timesteps 
+
+t ∼ p(t), intermediate latents zt are obtained as a linear interpolation between the image and mask latents. Text prompts are encoded by the text encoder, and the resulting tokens cτ , together with zt, zI and the sampled timesteps t, are fed into the MMDiT velocity prediction model. The training loss is computed as the MSE between the predicted and ground-truth velocities. During inference, the probability flow ODE is iteratively solved for ˆz0 with the initial condition ˆz1 = zI , where zI denotes the VAE encoding of the input image. The resulting latent ˆz0 is then decoded by the VAE decoder to obtain the final mask prediction. 
+
+tunes Stable Diffusion [34] for a number of dense prediction tasks, including DIS. DiffDIS [43] uses an auxiliary edge generation task and introduces a detail-balancing attention mechanism to improve the precision of the mask predic-tion. LawDIS [40] integrates user controls through lan-guage guidance and window refinement. Unlike diffusion-based DIS methods, our flow matching formulation offers a more intuitive framework for image segmentation and demonstrates superior empirical performance. 
+
+## 3. Method 
+
+The overview of our method is shown in Fig. 2, which builds on the flow matching [20] framework. We first out-line the general formulation of flow matching (Sec. 3.1), then introduce our method FlowDIS in Sec. 3.2. Finally, in Sec. 3.3 we present a Position-Aware Instance Pairing (PAIP) strategy that enhances language controllability when training data are limited. 
+
+3.1. Overview of Flow Matching 
+
+Flow matching [20] is a generative modeling approach that learns a time-dependent vector field vθ (x, t ) whose trajec-tories transport samples from an easy-to-sample reference distribution p1(x) to a target distribution p0(x).Since directly learning global trajectories is intractable, flow matching instead defines a conditional flow between sample pairs (x0, x 1) and trains vθ to match the induced ve-locity field along the resulting path {xt}t∈[0 ,1] . A common choice for this conditional flow is the linear interpolation 
+
+between the samples x0 ∼ p0 and x1 ∼ p1:
+
+xt = (1 − t)x0 + tx 1, t ∈ [0 , 1] . (1) The corresponding target velocity along this path is 
+
+v(x0, x 1) = dx t
+
+dt = x1 − x0. (2) The model vθ (x, t ) is trained to approximate this condi-tional vector field in expectation over p0, p1, and t, by min-imizing the flow matching loss :
+
+L(θ) = E x0∼p0,x 1∼p1,t 
+
+h
+
+∥vθ (xt, t ) − v(x0, x 1)∥22
+
+i
+
+(3) where t ∼ p(t) is the timestep sampling distribution during training. Once trained, vθ defines a continuous flow that can be in-tegrated backward in time from t = 1 to t = 0 to transform samples from p1 into realistic samples from p0:
+
+x0 = x1 +
+
+Z 01
+
+vθ (xt, t ) dt.  (4) In practice, this integration is performed numerically using a discretized solver such as the Euler method. Starting from a sample x1 ∼ p1, the sampling process iteratively updates 
+
+xt−∆t = xt − ∆t v θ (xt, t ), (5) until t = 0 , yielding a generated sample x0 from the target distribution. Notably, flow matching provides a unified formulation of generative modeling in which the reference distribution 
+
+p1 can be any chosen distribution, not limited to a Gaussian prior. Diffusion models can be viewed as a special case of flow matching, where the reference dynamics are stochastic and p1 is a standard normal distribution [20]. 33.2. FlowDIS 
+
+FlowDIS leverages the power of flow matching by consid-ering p1 as the distribution of RGB images and p0 as the distribution of the binary masks. Within this formulation, the velocity network is trained to transport an image I ∼ p1
+
+toward its segmentation mask M ∼ p0, thereby learning to perform the segmentation task through deterministic flow-based generation. An overview of FlowDIS is illustrated in Fig. 2. More precisely, given an input image I ∈ RH×W ×3
+
+and its corresponding ground-truth mask M ∈ { 0, 1}H×W ,both are encoded into a shared latent space using the en-coder E(·) of a variational autoencoder (VAE), producing the corresponding latent representations zI = E(I) and 
+
+zM = E(M ).Following the standard optimal transport formulation of flow matching, we define the latent trajectory zt as: 
+
+zt = (1 − t)zM + tz I , t ∈ [0 , 1] . (6) In addition, to ensure that the velocity network always has access to the clean image signal, we condition it on the im-age latent zI by concatenating it to the input 1, so the flow matching loss in Eq. (3) becomes: 
+
+L(θ) = EzI ,z M ,t 
+
+∥vθ (zt, z I , t ) − (zI − zM )∥22
+
+ (7) Moreover, FlowDIS extends this formulation with language-based conditioning, where the velocity network 
+
+vθ additionally takes the text embeddings cτ of the corre-sponding text prompt τ as input, enabling language-guided segmentation and resulting in the final loss function: 
+
+L(θ) = EzI ,z M ,t 
+
+∥vθ (zt, z I , t, c τ ) − (zI − zM )∥22
+
+ (8) 
+
+Inference of FlowDIS: Now let I be an image with one or more objects, and τ be a text prompt indicating the object the user wants to segment from I. Then FlowDIS allows segmentation by solving the probability flow ODE: 
+
+dz t
+
+dt = vθ (zt, z I , t, c τ ), z1 = zI , (9) where zI = E(I) is the latent representation of the infer-ence image and cτ is the encoding of the given language prompt τ . To solve Eq. (9), we use the Euler integration method, which requires a time discretization 0 = t0 < t 1 <. . . < t N = 1 , yielding the following Euler integration step: 
+
+zti = zti+1 + vθ (zti+1 , z I , t i+1 , c τ ) ( ti − ti+1 ) (10) for i = N − 1, . . . , 1, 0. After completing all steps, the final latent z0 is decoded with the VAE decoder D(·) to produce the predicted mask. 
+
+> 1An ablation study for this setting is included in the appendix.
+
+3.3. Position-Aware Instance Pairing 
+
+Although FlowDIS inherently supports text-conditioned segmentation, we introduce a Position-Aware Instance Pair-ing (PAIP) strategy to further enhance its language control-lability by selectively pairing (image, mask, prompt) triplets within each training mini-batch. This pairing encourages the model to learn from more diverse, multi-object scenes during training. The overview of PAIP is illustrated in Fig. 3. More precisely, given a batch of triplet instances 
+
+{(Ij , M j , τ j )}nj=1 of size n, for each triplet (Ij , M j , τ j ) we randomly select another triplet (Ik, M k, τ k) with k̸ = j.We refer to the former as the reference sample and the lat-ter as the pairing sample. We then combine the foreground of the pairing sample with the reference image Ij to create a new image Imix , which is then paired with a foreground mask Mmix and prompt τmix to form the final training triplet 
+
+(Imix , M mix , τ mix ).To construct the combined image Imix , we first compute the minimal bounding box Bj that spans the main object in-dicated by the reference mask Mj . We then find the largest rectangle in the image that is adjacent to Bj —i.e., it touches 
+
+Bj along one side but does not overlap (see Fig. 3 (b))—and denote it as Rmax  
+
+> j
+
+. This region defines the space where we will place the pairing foreground object from Ik. In prac-tice, Rmax  
+
+> j
+
+is typically smaller than the bounding box Bj of the reference foreground. To compensate for this, we en-large the available background region by padding Ij (and the corresponding mask Mj ) along the side it shares with 
+
+Rmax  
+
+> j
+
+. The padding amount is set equal to the length of the opposite (non-shared) side of the rectangle Rmax  
+
+> j
+
+(see Fig. 3 (c)). Reflection padding is applied to preserve visual con-tinuity and maintain a natural appearance. This operation effectively doubles the size of the initially selected place-ment region Rmax j of Ij . We denote the padded reference image as Ipad  
+
+> j
+
+.To combine the object of the pairing image Ik with 
+
+Ipad  
+
+> j
+
+, we first crop its foreground region and resize it to fit within the placement area of the padded reference image 
+
+Ipad  
+
+> j
+
+, while preserving the original aspect ratio of the fore-ground. The resized pairing foreground is then randomly placed within this area with minimal overlap with the fore-ground object of Ij . Alpha blending is used to ensure seam-less integration with Ipad  
+
+> j
+
+. As a result, we get the combined image Imix (see Fig. 3 (d)). In Imix , two primary objects from the reference and pairing images are present, each associated with its cor-responding binary mask. Due to the padding, shifting, and resizing operations, these masks differ from the orig-inal masks Mj and Mk, and we denote the resulting ones as ˆMj and ˆMk. Finally, the mask Mmix is ran-domly selected from the following generated set of options: 4An orange plastic seat on a 
+
+> metal frame with four wheels.
+> A black metal gate with two
+> warning signs.
+
+(b) 
+
+(a)  (c) 
+
+> Reflection Padding
+
+(d) 
+
+An orange plastic seat on a 
+
+metal frame with four wheels. 
+
+A black metal gate with 
+
+two warning signs. 
+
+An orange plastic seat on a metal 
+
+frame with four wheels  and  a black 
+
+metal gate with two warning signs. 
+
+(e) Figure 3. Illustration of the Position-Aware Instance Pairing (PAIP) strategy. (a) A reference sample (top triplet) is paired with another sample from the same batch (bottom triplet). (b) Candidate rectangular regions (in green) adjacent to the minimal bounding box (outlined in red) of the reference foreground are computed, and the one with the maximum area is selected as Rmax  
+
+> j
+
+. (c) The reference image is padded along the side adjacent to Rmax  
+
+> j
+
+by an amount equal to the length of its opposite side. (d) The pairing foreground is cropped, resized, and placed within the designated placement area. (e) Mask and prompt options are then constructed, from which PAIP randomly selects one for training. 
+
+{ ˆMj AND ( ˆMk)c, ˆMk, ˆMj OR ˆMk}, where ( ˆMk)c de-notes the complement of ˆMk, i.e. ( ˆMk)c = 1 − ˆMk, AND denotes the pixel-wise multiplication, and OR denotes the pixel-wise maximum. We then select the corresponding tex-tual description τmix from {τj , τ k, “τj and τk”} according to the chosen Mmix as shown in Fig. 3 (e). 
+
+## 4. Experiments 
+
+4.1. Implementation Details 
+
+As the base flow matching MMDiT model, we adopt FLUX.1-Schnell [14], initialized with its pre-trained weights. To incorporate an additional image latent condi-tion, we extend the input channels of the first linear layer in the transformer, initializing the new weights to zeros. For text guidance, CLIP [32] and T5 [33] are used as text en-coders to obtain the token sequence cτ . During training, the timestep distribution p(t) is a Beta(2 .5, 1) distribution, which biases the training toward larger t values, where pre-diction is more challenging. The models are trained with a batch size of 32 for 10,000 iterations ( ≈ 1.8 days) on 8 × NVIDIA A100 GPUs. For optimization, we use the AdamW optimizer with an initial learning rate of 5 × 10 −5,which is halved at steps 512, 2048, 4096, and 8192. For inference, we adopt a non-uniform schedule de-
+
+Algorithm 1 FlowDIS Inference 
+
+Require: v-pred. model vθ , VAE (E, D), image I, text condition cτ , steps N ∈ N, α, β ∈ R+ 
+
+> 1:
+
+q ← linspace (0 , 1, N + 1)  
+
+> 2:
+
+ti ← F −1
+
+> Beta
+
+(qi; α, β ), i = 0 , . . . , N # Beta schedule  
+
+> 3:
+
+ˆztN = zI ← E (I) # Encode image into latent space  
+
+> 4:
+
+for n = N − 1, . . . , 0 do  
+
+> 5:
+
+ˆztn ← ˆztn+1 + vθ (ˆ ztn+1 , z I , t n+1 , c τ )( tn − tn+1 ) 
+
+> 6:
+
+end for  
+
+> 7:
+
+ˆMrgb ← D (ˆ z0) # Decode latent to RGB mask  
+
+> 8:
+
+ˆMi,j ← 13
+
+P3
+
+> k=1
+
+( ˆMrgb )i,j,k # Convert to grayscale  
+
+> 9:
+
+ˆM ← clip( ˆM , 0, 1)  
+
+> 10:
+
+return ˆM # Final predicted mask rived from the Beta cumulative distribution function (CDF). Given N total timesteps, we first define an equidistant grid 
+
+q ∈ [0 , 1] of length N + 1 , which is then mapped using the inverse Beta CDF: 
+
+ti = F −1
+
+> Beta
+
+(qi; α, β ), i = 0 , . . . , N,  (11) where F −1
+
+> Beta
+
+(·; α, β ) denotes the inverse CDF with shape pa-rameters α, β ∈ R+. This schedule enables denser sam-pling near the start or end of the flow trajectory depending 5DIS-TE1 (500 images) DIS-TE2 (500 images) DIS-TE3 (500 images) Methods F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑ F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑ F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑
+
+IS-Net 22 [31] 0.662 0.740 0.074 0.787 0.820 0.728 0.799 0.070 0.823 0.858 0.758 0.830 0.064 0.836 0.883 InSPyReNet 22 [13] 0.788 0.845 0.043 0.873 0.894 0.846 0.894 0.036 0.905 0.928 0.871 0.919 0.034 0.918 0.943 FP-DIS 23 [46] 0.713 0.784 0.060 0.821 0.860 0.767 0.827 0.059 0.845 0.893 0.811 0.868 0.049 0.871 0.922 UDUN 23 [28] 0.720 0.784 0.059 0.817 0.864 0.768 0.829 0.058 0.843 0.886 0.809 0.865 0.050 0.865 0.917 BiRefNet 24 [45] 0.820 0.860 0.037 0.885 0.912 0.858 0.893 0.036 0.900 0.931 0.894 0.925 0.028 0.919 0.957 GenPercept 24 [39] 0.794 0.844 0.038 0.871 0.909 0.827 0.875 0.040 0.887 0.925 0.840 0.890 0.039 0.893 0.939 MVANet 24 [42] 0.825 0.873 0.037 0.887 0.916 0.879 0.916 0.030 0.918 0.943 0.891 0.929 0.030 0.923 0.952 DiffDIS 25 [43] 0.820 0.895 0.035 0.900 0.905 0.859 0.923 0.032 0.922 0.927 0.877 0.940 0.032 0.929 0.936 PDFNet 25 [22] 0.845 0.888 0.031 0.887 0.916 0.884 0.919 0.029 0.921 0.946 0.888 0.929 0.029 0.923 0.953 LawDIS 25 [40] 0.866 0.899 0.029 0.906 0.934 0.888 0.921 0.030 0.920 0.947 0.899 0.929 0.028 0.924 0.955 
+
+Ours (1-step) 0.939 0.961 0.012 0.953 0.975 0.944 0.965 0.013 0.958 0.976 0.939 0.962 0.016 0.954 0.973 
+
+Ours (2-step) 0.942 0.961 0.012 0.953 0.976 0.947 0.965 0.012 0.958 0.978 0.942 0.963 0.015 0.954 0.975 
+
+DIS-TE4 (500 images) DIS-TE (1-4) (2,000 images) DIS-VD (470 images) Methods F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑ F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑ F ωβ ↑ F mx β ↑ M ↓ Sα ↑ Emn ϕ ↑
+
+IS-Net 22 [31] 0.753 0.827 0.072 0.830 0.870 0.726 0.799 0.070 0.819 0.858 0.717 0.791 0.074 0.813 0.856 InSPyReNet 22 [13] 0.848 0.905 0.042 0.905 0.928 0.838 0.891 0.039 0.900 0.923 0.834 0.889 0.042 0.900 0.922 FP-DIS 23 [46] 0.788 0.846 0.061 0.852 0.906 0.770 0.830 0.057 0.847 0.895 0.763 0.823 0.062 0.843 0.891 UDUN 23 [28] 0.792 0.846 0.059 0.849 0.901 0.772 0.831 0.057 0.844 0.892 0.763 0.823 0.059 0.838 0.892 BiRefNet 24 [45] 0.865 0.904 0.039 0.900 0.941 0.858 0.896 0.035 0.901 0.934 0.855 0.891 0.038 0.898 0.932 GenPercept 24 [39] 0.801 0.861 0.055 0.869 0.918 0.816 0.868 0.043 0.880 0.923 0.815 0.865 0.043 0.881 0.922 MVANet 24 [42] 0.865 0.912 0.038 0.908 0.939 0.862 0.907 0.034 0.909 0.938 0.863 0.904 0.034 0.908 0.936 DiffDIS 25 [43] 0.835 0.915 0.045 0.911 0.910 0.848 0.918 0.036 0.916 0.919 0.844 0.915 0.037 0.917 0.917 PDFNet 25 [22] 0.867 0.910 0.038 0.909 0.941 0.874 0.913 0.031 0.913 0.943 0.873 0.913 0.030 0.915 0.944 LawDIS 25 [40] 0.884 0.922 0.034 0.915 0.952 0.884 0.918 0.030 0.916 0.947 0.884 0.917 0.030 0.917 0.949 
+
+Ours (1-step) 0.912 0.945 0.026 0.938 0.961 0.933 0.958 0.017 0.951 0.971 0.933 0.957 0.015 0.952 0.972 
+
+Ours (2-step) 0.919 0.946 0.024 0.939 0.964 0.938 0.959 0.016 0.951 0.973 0.938 0.958 0.014 0.953 0.974 
+
+Table 1. Quantitative comparison with 10 representative methods on the DIS5K dataset. All results are evaluated at 1024 × 1024 px input resolution. ↓ indicates lower is better, while ↑ means higher is better. The best and second-best results are highlighted in bold and underlined, respectively. 
+
+Figure 4. Metrics evaluated at different training iteration checkpoints for our method vs the baseline (image-conditioned mask generation from noise). Dashed lines show the metric levels of fully trained LawDIS [40]. Our FlowDIS converges faster than the baseline denoising approach and surpasses state-of-the-art LawDIS after only 1K training iterations, whereas LawDIS was trained for 36K iterations. 
+
+on (α, β ), providing finer control over integration dynam-ics. We use α = 2 .5 and β = 1 .0, consistent with training. Our full inference pipeline is summarized in Algorithm 1. 
+
+4.2. Experimental Setup 
+
+Dataset: We conduct our experiments on the DIS5K [31] dataset, which consists of 5,470 high-resolution image-mask pairs across 225 categories. It is further divided into DIS-TR (3,000 images), DIS-VD (470 images), and DIS-TE (2,000 images). All training experiments are conducted on DIS-TR, while DIS-VD and DIS-TE are exclusively used for testing. For language guidance, we generate cap-tions τ using a vision-language model. We discuss this pro-cess in detail in the appendix. DIS-TE is further divided into DIS-TE1, DIS-TE2, DIS-TE3, and DIS-TE4 subsets, each containing 500 images, where the numbers 1–4 denote increasing levels of fore-ground complexity. We test our approach on all subsets sep-arately, as well as on the combined test set DIS-TE (1-4), to compare FlowDIS across all complexity levels. 
+
+Evaluation metrics: We use widely adopted metrics: the weighted F-measure ( F ωβ ↑) [25], max F-measure ( F mx β ↑)[29], mean absolute error ( M ↓ ) [29], Structure-measure (Sα ↑) [5] and E-measure ( Emn ϕ ↑) [6]. 
+
+4.3. Quantitative and Qualitative Analysis 
+
+Quantitative comparison. We compare our FlowDIS with the following state-of-the-art DIS methods: IS-Net [31], In-6Image  Ground Truth  FlowDIS (ours)  LawDIS  DiffDIS  GenPercept  PDFNet  MVANet Figure 5. Qualitative comparison with state-of-the-art DIS methods. Our approach generates more detailed and more semantically accurate masks. 
+
+SPyReNet [13], FP-DIS [46], UDUN [28], BiRefNet [45], GenPercept [39], MVANet [42], DiffDIS [43], PDFNet [22] and LawDIS [40]. For a fair comparison, all methods are evaluated at an input resolution of 1024 × 1024 px. As shown in Tab. 1, our method already achieves state-of-the-art results across all test sets with 1-step inference, while using 2-step inference yields even better performance. For example, on the full DIS test set, 1-step FlowDIS yields an 
+
+≈ 5.5% improvement in F ωβ and an ≈ 43 % reduction in M
+
+over the runner-up language-guided model LawDIS [40]. 
+
+Qualitative comparison. Fig. 5 presents a qualitative com-parison between FlowDIS and other state-of-the-art meth-ods. As shown in rows 1, 4, and 7, our method captures fine-grained visual details more effectively, while in rows 2, 3, and 5, it demonstrates superior semantic understand-ing of the scene. In Fig. 6, we compare the language controllability of our method with the state-of-the-art language-guided approach, LawDIS [40]. As shown, our method exhibits stronger con-trollability while simultaneously producing more accurate results. For instance, in the second row, our method cor-rectly isolates the black sedan from a background contain-ing two other cars, whereas LawDIS produces nearly iden-tical outputs regardless of the input prompt. Notably, as can be seen from our qualitative results, while the intro-duced PAIP strategy constructs samples with a pair of fore-grounds, FlowDIS generalizes to more complex scenes by successfully selecting the requested object. More qualita-tive results can be found in the appendix. 
+
+4.4. Ablation Studies 
+
+We conduct ablation studies on the DIS-VD subset using fixed 2-step inference unless specified otherwise. 
+
+Effectiveness of our deterministic flow matching formu-lation: We evaluate the effectiveness of the flow matching setup described in Sec. 3.2. Specifically, we compare our approach (deterministic FM), which uses the image latent as z1, against a variant where z1 is sampled from standard 7A silver spoon.            
+
+> A silver spoon and
+> a coffee cup.
+> Silver spoon and
+> coffee cup on a black
+> and white cloth. A silver spoon.
+> A silver spoon
+> and a coffee cup.
+> Silver spoon and
+> coffee cup on a black
+> and white cloth.
+> A black electric scooter. Steel barricades. A black sedan. A black electric scooter. Steel barricades. A black sedan.
+> Wooden sword. Three cans. Sword and three cans. Wooden sword. Three cans. Sword and three cans.
+
+Ours  LawDIS Image Figure 6. Comparison of language controllability between our method and LawDIS [40]. Each output is generated using the corresponding text prompt shown above. 
+
+Gaussian noise 2 during training and inference (denoising FM). As can be seen from Tab. 2, our deterministic formula-tion significantly outperforms the denoising-based variant.                      
+
+> Ablation settings Fωβ↑Fmx β↑M ↓ Sα↑Emn ϕ↑
+> denoising FM 0.883 0.916 0.025 0.920 0.957 deterministic FM 0.938 0.958 0.014 0.953 0.974
+
+Table 2. Ablation study on flow matching (FM) settings. 
+
+We also compare the training convergence of the base-line denoising-based flow matching approach with our FlowDIS formulation by evaluating the models at different training iterations and plotting their performance. As shown in Fig. 4, our formulation converges significantly faster than the baseline. Moreover, our method requires only 1K training iterations to surpass the second-best model, LawDIS [40], while LawDIS was trained for 36K iterations. 
+
+Effectiveness of language guidance: We train and evalu-ate FlowDIS with and without language prompts. As shown in Tab. 3, incorporating language guidance significantly im-proves performance by providing semantic cues that help the model resolve ambiguous inputs.                        
+
+> Ablation settings Fωβ↑Fmx β↑M ↓ Sα↑Emn ϕ↑
+> w/o language guidance 0.901 0.926 0.027 0.929 0.951
+> w/ language guidance 0.937 0.956 0.015 0.952 0.975
+
+Table 3. Ablation study on language guidance. 
+
+Effectiveness of PAIP: Since PAIP is intended to improve language controllability and the DIS-VD validation set con-tains mainly single objects, we construct a new benchmark 
+
+> 2
+
+We still provide zI to the MMDiT vθ via concatenation to the input. 
+
+by applying PAIP to the DIS-VD subset. The resulting test set, DIS-VD-Complex, maintains the same number of sam-ples as DIS-VD but introduces more complex visual com-positions, which can be challenging for models with weaker language-following capabilities. As shown in Tab. 4, PAIP significantly improves the results on the complex-scene test set DIS-VD-Complex, while preserving performance on the simple-scene set DIS-VD.                              
+
+> DIS-VD-Complex DIS-VD Ablation settings Fmx β↑M ↓ Sα↑Fmx β↑M ↓ Sα↑
+> FlowDIS w/o PAIP 0.783 0.063 0.831 0.956 0.015 0.952 FlowDIS w/ PAIP 0.960 0.014 0.955 0.958 0.014 0.953
+
+Table 4. Ablation study on PAIP. 
+
+Additional quantitative and qualitative ablation results on PAIP are provided in the appendix. 
+
+## 5. Conclusion 
+
+We presented a novel, language-guided dichotomous im-age segmentation approach, FlowDIS , which reformulates the segmentation task within the flow matching framework. Our formulation connects the predictive image segmenta-tion task with generative modeling, while preserving the de-terministic nature of segmentation. To further improve lan-guage controllability, we introduced a Position-Aware In-stance Pairing (PAIP) strategy, which constructs pairwise foreground compositions within each training batch while selecting the guidance prompt and the target mask. Exten-sive quantitative and qualitative experiments show that our approach surpasses existing state-of-the-art methods. 8References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 11 [2] Holger Caesar, Jasper Uijlings, and Vittorio Ferrari. COCO-Stuff: Thing and stuff classes in context. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 1209–1218, 2018. 11 [3] Qi Chen, Lingxiao Yang, Yun Chen, Nailong Zhao, Jian-huang Lai, Jie Shao, and Xiaohua Xie. Training-free class purification for open-vocabulary semantic segmentation. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 23124–23134, 2025. 11 [4] Zhongxi Chen, Ke Sun, and Xianming Lin. Camodiffusion: Camouflaged object detection via conditional diffusion mod-els. In Proceedings of the AAAI Conference on Artificial In-telligence , pages 1272–1280, 2024. 2 [5] Ming-Ming Cheng and Deng-Ping Fan. Structure-measure: A new way to evaluate foreground maps. International Jour-nal of Computer Vision (IJCV) , 129(9):2622–2638, 2021. 6 [6] Deng-Ping Fan, Cheng Gong, Yang Cao, Bo Ren, Ming-Ming Cheng, and Ali Borji. Enhanced-alignment measure for binary foreground map evaluation. In International Joint Conferences on Artificial Intelligence , 2018. 6 [7] Shang-Hua Gao, Ming-Ming Cheng, Kai Zhao, Xin-Yu Zhang, Ming-Hsuan Yang, and Philip Torr. Res2Net: A new multi-scale backbone architecture. IEEE Transactions on Pattern Analysis and Machine Intelligence , 43(2):652–662, 2019. 2 [8] Chunming He, Kai Li, Yachao Zhang, Longxiang Tang, Yu-lun Zhang, Zhenhua Guo, and Xiu Li. Camouflaged object detection with feature decomposition and edge reconstruc-tion. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 22046–22055, 2023. 2 [9] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceed-ings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 770–778, 2016. 2 [10] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. In Advances in Neural Informa-tion Processing Systems , 2020. 2 [11] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perel-man, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Weli-hinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. 
+
+arXiv preprint arXiv:2410.21276 , 2024. 11 [12] Ge-Peng Ji, Jingyi Liu, Peng Xu, Nick Barnes, Fahad Shah-baz Khan, Salman Khan, and Deng-Ping Fan. Frontiers in intelligent colonoscopy. Machine Intelligence Research , 23 (1):70–114, 2026. 1 [13] Taehun Kim, Kunhee Kim, Joonyeong Lee, Dongmin Cha, Jiho Lee, and Daijin Kim. Revisiting image pyramid struc-ture for high resolution salient object detection. In Pro-ceedings of the Asian Conference on Computer Vision , pages 108–124, 2022. 2, 6, 7 [14] Black Forest Labs. Flux. https://github.com/ black-forest-labs/flux , 2024. 5 [15] Hsin-Ying Lee, Hung-Yu Tseng, Hsin-Ying Lee, and Ming-Hsuan Yang. Exploiting diffusion prior for generalizable dense prediction. In 2024 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 7861– 7871, Los Alamitos, CA, USA, 2024. IEEE Computer Soci-ety. 2 [16] Guanbin Li and Yizhou Yu. Deep contrast learning for salient object detection. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 478–487, 2016. 2 [17] Jiahao Li, Yang Lu, Yachao Zhang, Yong Xie, Fangyong Wang, Yuan Xie, and Yanyun Qu. Target refocusing via attention redistribution for open-vocabulary semantic seg-mentation: An explainability perspective. arXiv preprint arXiv:2511.16170 , 2025. 11 [18] Ruibo Li, Hanyu Shi, Zhe Wang, and Guosheng Lin. Weakly and self-supervised class-agnostic motion prediction for au-tonomous driving. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. 1 [19] Jun Hao Liew, Scott Cohen, Brian Price, Long Mai, and Ji-ashi Feng. Deep interactive thin object selection. In Proceed-ings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pages 305–314, 2021. 2 [20] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maxim-ilian Nickel, and Matthew Le. Flow matching for genera-tive modeling. In The Eleventh International Conference on Learning Representations , 2023. 3 [21] Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chun-rui Han, et al. Step1x-edit: A practical framework for general image editing. arXiv preprint arXiv:2504.17761 , 2025. 1 [22] Xianjie Liu, Keren Fu, and Qijun Zhao. High-precision dichotomous image segmentation via depth integrity-prior and fine-grained patch strategy. arXiv preprint arXiv:2503.06100 , 2025. 2, 6, 7 [23] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 10012–10022, 2021. 2 [24] Guangben Lu, Yuzhen Du, Yizhe Tang, Zhimin Sun, Ran Yi, Yifan Qi, Tianyi Wang, Lizhuang Ma, and Fangyuan Zou. Pinco: Position-induced consistent adapter for diffu-sion transformer in foreground-conditioned inpainting. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15266–15276, 2025. 1 [25] Ran Margolin, Lihi Zelnik-Manor, and Ayellet Tal. How to Evaluate Foreground Maps. In 2014 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 248–255, Los Alamitos, CA, USA, 2014. IEEE Computer Society. 6 [26] Haiyang Mei, Ge-Peng Ji, Ziqi Wei, Xin Yang, Xiaopeng Wei, and Deng-Ping Fan. Camouflaged object segmentation with distraction mining. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8772–8781, 2021. 2 
+
+9[27] Ziqi Pang, Xin Xu, and Yu-Xiong Wang. Aligning genera-tive denoising with discriminative objectives unleashes diffu-sion for visual perception. arXiv preprint arXiv:2504.11457 ,2025. 2 [28] Jialun Pei, Zhangjun Zhou, Yueming Jin, He Tang, and Pheng-Ann Heng. Unite-divide-unite: Joint boosting trunk and structure for high-accuracy dichotomous image segmen-tation. In Proceedings of the 31st ACM International Confer-ence on Multimedia , page 2139–2147, New York, NY, USA, 2023. Association for Computing Machinery. 2, 6, 7 [29] Federico Perazzi, Philipp Kr¨ ahenb¨ uhl, Yael Pritch, and Alexander Hornung. Saliency filters: Contrast based filter-ing for salient region detection. In 2012 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 733–740, Los Alamitos, CA, USA, 2012. IEEE Computer Society. 6 [30] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. SDXL: Improving latent diffusion models for high-resolution image synthesis. In The Twelfth Interna-tional Conference on Learning Representations , 2024. 2 [31] Xuebin Qin, Hang Dai, Xiaobin Hu, Deng-Ping Fan, Ling Shao, and Luc Van Gool. Highly accurate dichotomous im-age segmentation. In European Conference on Computer Vi-sion , 2022. 2, 6, 11 [32] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learn-ing transferable visual models from natural language super-vision. In International Conference on Machine Learning ,pages 8748–8763. PMLR, 2021. 5 [33] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of Machine Learn-ing Research , 21(140):1–67, 2020. 5 [34] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10674–10685, Los Alamitos, CA, USA, 2022. IEEE Computer Society. 2, 3 [35] Lv Tang, Bo Li, Yijie Zhong, Shouhong Ding, and Mofei Song. Disentangled high quality salient object detection. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 3580–3590, 2021. 2 [36] Feng Wang, Jieru Mei, and Alan Yuille. SCLIP: Rethink-ing self-attention for dense vision-language inference. In 
+
+European Conference on Computer Vision , pages 315–332. Springer, 2024. 11 [37] Wenguan Wang, Shuyang Zhao, Jianbing Shen, Steven CH Hoi, and Ali Borji. Salient object detection with pyramid at-tention and salient edges. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 1448–1457, 2019. 2 [38] Changliang Xia, Chengyou Jia, Minnan Luo, Zhuohang Dang, Xin Shen, and Bowen Ping.  D3-predictor: Noise-free deterministic diffusion for dense prediction. arXiv preprint arXiv:2512.07062 , 2025. 2 [39] Guangkai Xu, Yongtao Ge, Mingyu Liu, Chengxiang Fan, Kangyang Xie, Zhiyue Zhao, Hao Chen, and Chunhua Shen. What matters when repurposing diffusion models for gen-eral dense perception tasks? In The Thirteenth International Conference on Learning Representations , 2025. 2, 6, 7 [40] Xinyu Yan, Meijun Sun, Ge-Peng Ji, Fahad Shahbaz Khan, Salman Khan, and Deng-Ping Fan. LawDIS: Language-window-based controllable dichotomous image segmenta-tion. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 23902–23911, 2025. 2, 3, 6, 7, 8, 11, 19 [41] Chenglin Yang, Yilin Wang, Jianming Zhang, He Zhang, Zhe Lin, and Alan Yuille. Meticulous object segmentation. arXiv preprint arXiv:2012.07181 , 2020. 2 [42] Qian Yu, Xiaoqi Zhao, Youwei Pang, Lihe Zhang, and Huchuan Lu. Multi-view aggregation network for dichoto-mous image segmentation. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3921–3930, Los Alamitos, CA, USA, 2024. IEEE Computer Society. 2, 6, 7 [43] Qian Yu, Peng-Tao Jiang, Hao Zhang, Jinwei Chen, Bo Li, Lihe Zhang, and Huchuan Lu. High-precision dichotomous image segmentation via probing diffusion capacity. In The Thirteenth International Conference on Learning Represen-tations , 2025. 2, 3, 6, 7 [44] Yi Zeng, Pingping Zhang, Jianming Zhang, Zhe Lin, and Huchuan Lu. Towards high-resolution salient object detec-tion. In Proceedings of the IEEE/CVF International Confer-ence on Computer Vision , pages 7234–7243, 2019. 2 [45] Peng Zheng, Dehong Gao, Deng-Ping Fan, Li Liu, Jorma Laaksonen, Wanli Ouyang, and Nicu Sebe. Bilateral refer-ence for high-resolution dichotomous image segmentation. 
+
+CAAI Artificial Intelligence Research , 3:9150038, 2024. 2, 6, 7 [46] Yan Zhou, Bo Dong, Yuanfeng Wu, Wentao Zhu, Geng Chen, and Yanning Zhang. Dichotomous image segmenta-tion with frequency priors. In International Joint Confer-ences on Artificial Intelligence , 2023. 2, 6, 7 
+
+10 Appendix 
+
+## A. Language-Prompt Generation Details 
+
+For language-prompt generation, we follow LawDIS [40] while further simplifying and enhancing their pipeline. Fig. 8 illustrates the overall process. Specifically, we use the multi-modal language model GPT-4V [1] to generate two prompt types from the blacked-out background: a relatively detailed prompt (Prompt 1) and a shorter prompt (Prompt 2). We then employ GPT-4o-mini [11] to produce two addi-tional paraphrased variants of the detailed prompt, denoted as Prompt 3 and Prompt 4. During training, we uniformly sample one of these four prompts to increase linguistic di-versity. For quantitative comparisons at test time, we al-ways use Prompt 1 to ensure determinism. Through man-ual inspection, we found that our language-prompt gener-ation method achieves better alignment between the fore-ground and the corresponding language description. There-fore, in all quantitative comparisons with LawDIS, we used our prompts to ensure a fair evaluation. 
+
+## B. Ablation for zI Conditioning 
+
+We condition the velocity prediction model by concatenat-ing zI to its input, enabling access to the input image at in-termediate denoising steps. This design improves fine seg-mentation details during multi-step inference. To validate its effect, we perform an ablation study on DIS-TE (1–4) with 2-step inference. As shown in Tab. 5, this conditioning consistently improves all evaluation metrics.                             
+
+> Method Fωβ↑Fmx β↑M ↓ Sα↑Emn ϕ↑
+> Ours w/o additional zIcondition 0.933 0.954 0.017 0.948 0.972 Ours (i.e. w/ zIchannel-wise concat) 0.938 0.959 0.016 0.951 0.973
+
+Table 5. Ablation for zI conditioning on DIS-TE (1-4). 
+
+## C. Further Ablation on PAIP 
+
+To further evaluate the effect of PAIP, we build a test set from the COCO [2] validation set, excluding stuff cate-gories. We convert the instance annotations into semantic masks, resulting in 4,952 images with 14,246 binary masks, each corresponding to a semantic class. For each mask, we generate a text prompt using the pipeline described in Sec. A. The ablation results on this dataset are shown in Tab. 6. As shown in the table, PAIP consistently improves all metrics, indicating better language controllability.                          
+
+> Method Fωβ↑Fmx β↑M ↓ Sα↑Emn ϕ↑
+> FlowDIS w/o PAIP 0.327 0.351 0.191 0.561 0.542 FlowDIS w/ PAIP 0.511 0.545 0.075 0.700 0.719
+
+Table 6. Zero-shot ablation of PAIP on COCO-Object. 
+
+These quantitative improvements are also reflected in the qualitative examples shown in Fig. 9. While FlowDIS with-out PAIP can struggle to follow the text prompt, the version with PAIP produces masks that better match the text de-scription. 
+
+## D. Comparison with Open-Vocabulary Seman-tic Segmentation Methods 
+
+Using the test set constructed in Sec. C, we compare FlowDIS with several state-of-the-art open-vocabulary se-mantic segmentation methods. In the zero-shot setting, FlowDIS achieves the best performance among the com-pared methods (see Tab. 7).          
+
+> Method FlowDIS (Ours) RF-CLIP [17] SCLIP [36] FreeCP [3] mIoU ↑47.7% 31.8% 28.3% 21.6%
+
+Table 7. Comparison with open-vocabulary semantic segmenta-tion methods. 
+
+## E. More Qualitative Comparisons 
+
+For a more comprehensive qualitative comparison, we com-pare our single-step results with other state-of-the-art meth-ods on additional samples from the DIS5K test sets: DIS-TE1 (see Fig. 10), DIS-TE2 (see Fig. 11), DIS-TE3 (see Fig. 12), DIS-TE4 (see Fig. 13), and DIS-VD (see Fig. 14). All results are generated with 1-step inference at 1024 ×
+
+1024 px resolution for a fair comparison. Fig. 15 shows additional samples demonstrating the lan-guage controllability of FlowDIS compared with the state-of-the-art method LawDIS [40]. 
+
+## F. Resolution Scaling                                               
+
+> Inference res. Fωβ↑Fmx β↑M ↓ Sα↑Emn ϕ↑
+> 1024 ×1024 px 0.919 0.946 0.024 0.939 0.964 1280 ×1280 px 0.925 0.952 0.023 0.944 0.965 1536 ×1536 px 0.928 0.953 0.022 0.945 0.966 1792 ×1792 px 0.931 0.955 0.022 0.946 0.966 2048 ×2048 px 0.932 0.956 0.021 0.947 0.967
+
+Table 8. Performance metrics of FlowDIS at different input reso-lutions on DIS-TE4. 
+
+We increase the inference resolution of FlowDIS beyond 
+
+1024 ×1024 px on DIS-TE4, the most challenging subset of DIS5K [31], which contains numerous objects with highly detailed structures. As shown in Tab. 8, although FlowDIS was trained only at 1024 × 1024 px, its performance im-proves consistently with higher-resolution inference. Fig. 7 shows qualitative results obtained with 2048 × 2048 px in-ference on samples with very high levels of detail. 11 Figure 7. FlowDIS results at 2048 × 2048 px resolution on highly detailed samples from DIS-TE4. 
+
+12 GPT-4V 
+
+GPT-4V 
+
+GPT-4o-mini 
+
+Describe all visible objects in the image, excluding the black background. Keep the description concise, within 75 characters. 
+
+If the objects are too complex or too numerous for one phrase, use two short sentences, but ensure the total length stays within 
+
+75 characters. For example: 'a red floral sculpture with green grass' or 'A white truck with aluminum ramps extending outward 
+
+in a V-shape'. 
+
+Generate a comma separated list of main objects in this image. Keep the description short. For example: 'red chair, wooden 
+
+table', 'white car', 'tree', 'laptop, headphones', etc. Ignore the black background. 
+
+You are provided with a prompt: ‘[  ]’. Please perform the following tasks: 
+
+1. Generate a synonymous prompt based on the given one as  .
+
+2. Simplify the given prompt while retaining all nouns, and generate it as  .
+
+Choose one randomly 
+
+during training with 
+
+equal probabilities. Figure 8. Illustration of our language-prompt generation pipeline. GPT-4V generates two prompts from the blacked-out background: a detailed prompt (Prompt 1) and a shorter prompt (Prompt 2). GPT-4o-mini then produces two paraphrased variants of the detailed prompt (Prompt 3 and Prompt 4). During training, one of the four prompts is uniformly sampled; at test time, Prompt 1 is used for determinism. A person  in dark clothing standing                        
+
+> with arms slightly extended forward.
+> Aperson in dark clothing standing
+> with arms slightly extended forward.
+> A thin, white surfboard with a
+> subtle upward curve on one end.
+> A thin, white surfboard with a
+> subtle upward curve on one end.
+> A white and brown tabby cat , shown
+> from the side, looking downward.
+> Alaptop displaying the Twitter login
+> page. Keyboard and screen are visible.
+> A white and brown tabby cat , shown
+> from the side, looking downward.
+> Alaptop displaying the Twitter login
+> page. Keyboard and screen are visible.
+> Two Dragon Stout bottles and one
+> Guinness Foreign Extra bottle. Two ripe bananas with brown spots. Two Dragon Stout bottles and one
+> Guinness Foreign Extra bottle. Two ripe bananas with brown spots.
+
+with PAIP  without PAIP 
+
+Image 
+
+Figure 9. Qualitative ablation study of PAIP on samples from the COCO dataset. 
+
+13 Input Ground Truth Ours (1-step) LawDIS DiffDIS GenPercept PDFNet MVANet Figure 10. Qualitative comparison with state-of-the-art DIS methods on DIS-TE1. Please zoom in to compare finer details. 
+
+14 Input Ground Truth Ours (1-step) LawDIS DiffDIS GenPercept PDFNet MVANet Figure 11. Qualitative comparison with state-of-the-art DIS methods on DIS-TE2. Please zoom in to compare finer details. 
+
+15 Input Ground Truth Ours (1-step) LawDIS DiffDIS GenPercept PDFNet MVANet Figure 12. Qualitative comparison with state-of-the-art DIS methods on DIS-TE3. Please zoom in to compare finer details. 
+
+16 Input Ground Truth Ours (1-step) LawDIS DiffDIS GenPercept PDFNet MVANet Figure 13. Qualitative comparison with state-of-the-art DIS methods on DIS-TE4. Please zoom in to compare finer details. 
+
+17 Input Ground Truth Ours (1-step) LawDIS DiffDIS GenPercept PDFNet MVANet Figure 14. Qualitative comparison with state-of-the-art DIS methods on DIS-VD. Please zoom in to compare finer details. 
+
+18 Red pens.  A white cup.  Green bottle. 
+
+A lamp.  Blue chair. 
+
+A shiny wooden desk with 
+
+a lamp, a laptop, a white 
+
+box and a blue chair. 
+
+A vaccuum cleaner.  Brownish objects.  A chair. 
+
+A boy with t-shirt and 
+
+black shorts.  Bicycle stand. 
+
+A boy in black shorts 
+
+leaning on the bicycle stand. 
+
+Two cups.  Two armchairs.  Table. 
+
+A person holding 
+
+yellow tapeline.  A person.  A ladder. 
+
+A metallic dragon 
+
+sculpture within stones.  A girl with flip-flops.  Stones. 
+
+Steering wheel.  Brown car seats.  Leg. 
+
+Bicycle stand.  Red truck.  Yellow car. 
+
+A lamp.  Blue chair. 
+
+A shiny wooden desk with 
+
+a lamp, a laptop, a white 
+
+box and a blue chair. 
+
+Red pens.  A white cup.  Green bottle. 
+
+A vaccuum cleaner.  Brownish objects.  A chair. 
+
+A boy with t-shirt and 
+
+black shorts.  Bicycle stand. 
+
+A boy in black shorts 
+
+leaning on the bicycle stand. 
+
+Two cups.  Two armchairs.  Table. 
+
+A person holding 
+
+yellow tapeline.  A person.  A ladder. 
+
+A metallic dragon 
+
+sculpture within stones.  A girl with flip-flops.  Stones. 
+
+Bicycle stand.  Red truck.  Yellow car. 
+
+FlowDIS (ours)  LawDIS Image 
+
+Steering wheel.  Brown car seats.  Leg. Figure 15. Comparison of language controllability between our FlowDIS and LawDIS [40]. Each output is generated using the corre-sponding text prompt shown above. 
+
+19

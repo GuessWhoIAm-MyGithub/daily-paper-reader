@@ -1,0 +1,548 @@
+Title: LLM-ADAM: A Generalizable LLM Agent Framework for Pre-Print Anomaly Detection in Additive Manufacturing
+
+URL Source: https://arxiv.org/pdf/2605.03328v1
+
+Published Time: Wed, 06 May 2026 00:35:02 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# LLM-ADAM: A Generalizable LLM Agent Framework for Pre-Print Anomaly Detection in Additive Manufacturing 
+
+Ahmadreza Eslaminia a,b , Chuhan Cai d, Cameron Smith d, Ruo-Syuan Mei d,Shichen Li a, Rajiv Malhotra c, Klara Nahrstedt b, Chenhui Shao d,a, ∗
+
+> aDepartment of Mechanical Science and Engineering, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
+> bCoordinated Science Laboratory, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
+> cDepartment of Mechanical and Aerospace Engineering, Rutgers University, Piscataway, NJ 08854, USA
+> dDepartment of Mechanical Engineering, University of Michigan, Ann Arbor, MI 48109, USA
+
+Abstract 
+
+Additive manufacturing (AM) continues to transform modern manufacturing by enabling flexible, on-demand production of complex geometries across diverse industries, from aerospace to healthcare. Fused filament fabrication (FFF) has extended AM to laboratories, classrooms, and small production environments, but this accessibility shifts process-planning responsibility to users who may lack manufacturing expertise. A syntactically valid slicer profile can still en-code thermally or geometrically harmful settings, and subtle G-code edits can alter extrusion, cooling, or adhesion before a print begins. Pre-print screening from G-code can therefore catch accidental or adversarial machine-program er-rors before material or machine time is wasted, or part integrity is compromised. This paper proposes LLM-ADAM, where LLM stands for large language model and ADAM for anomaly detection in additive manufacturing, as a generaliz-able LLM agent framework for pre-print anomaly detection. The framework decomposes the task into three roles: Extractor–LLM maps a G-code file to a structured process-parameter schema; Reference–LLM converts printer and ma-terial documentation into aligned operating ranges; and Judge–LLM interprets a deterministic deviation table and selected G-code evidence to decide whether a part is non-defective or belongs to an anomaly class. The decomposition is intended to be model- and machine-agnostic, with specific printers, materi-als, and proprietary LLM backbones treated as interchangeable test conditions rather than assumptions of the method. We evaluate the framework on an FFF G-code corpus spanning two desktop printer families, two materials, and five classes including non-defective, under-extrusion, over-extrusion, warping, and stringing. A 3 × 3 Reference–LLM ×Judge–LLM screening study is first used   
+
+> ∗Corresponding author
+> Email address: chshao@umich.edu (Chenhui Shao)
+> arXiv:2605.03328v1 [cs.LG] 5 May 2026
+
+for model selection. The selected configurations are then evaluated on the full 
+
+N = 200 corpus, where the best framework configuration reaches 87 .5% accu-racy, compared with 59 .5% for the strongest engineered single-LLM baseline. The results show that structured decomposition, rather than backbone strength alone, is the dominant source of improvement, with defect classes identified at or near ceiling for leading configurations while residual errors concentrate on conservative false alarms for non-defective samples. 
+
+Keywords: Large language model, LLM agent, Fused filament fabrication, Additive manufacturing, Anomaly detection, G-code analysis, Quality control 
+
+1. Introduction 
+
+Additive manufacturing (AM) increasingly supports distributed, flexible, and on-demand production [1, 2]. It has found broad application across aerospace [3, 4], biomedical [5–7], automotive [8, 9], and consumer product sectors [10– 12], where its ability to produce complex geometries on demand reduces tooling cost and lead time. Within AM, fused filament fabrication (FFF) has extended this capability to laboratories, makerspaces, and small manufacturers, but the same accessibility that makes FFF tractable for non-expert users also intro-duces process-planning risk [13, 14]. A slicer profile that appears syntactically valid can encode thermally or geometrically harmful settings; a subtle edit to the resulting G-code can alter extrusion, cooling, or adhesion without chang-ing the visible geometry of the part. Pre-print anomaly detection from G-code addresses this gap directly: it screens the machine program before fabrication begins, catching accidental misconfiguration and adversarial perturbations be-fore a print consumes material, time, or machine capacity. FFF quality is governed by interacting process variables including extrusion flow, line width, layer height, nozzle and bed temperature, retraction, travel speed, cooling policy, and bed-adhesion strategy, whose effects are not indepen-dent [15–18]. A parameter that is within tolerance in one material or printer profile can become defect-inducing under a different thermal envelope or fan policy. Conventional quality monitoring approaches operate during or after fab-rication using images, sensors, or operator feedback, and do not address whether a machine program is safe before it reaches the printer. G-code is a textual repre-sentation of toolpath and process instructions [19, 20], and is therefore a natural substrate for language-model reasoning, provided that reasoning is grounded in the numerical and procedural structure of the manufacturing task rather than treated as free-form text. Large language models (LLMs) have been explored for AM troubleshooting, process planning, G-code manipulation, and contextual question answering [21– 25]. These studies demonstrated that current models carry useful technical and code-understanding priors. However, a monolithic prompt that asks one model to read a long G-code file and produce a defect label places several heterogeneous tasks inside one inference step. The model must extract process parameters from 2repetitive machine code, identify the correct reference envelope for the printer and material, perform numerical comparisons, and decide whether deviations are benign or defect-inducing. A single LLM is unlikely to be equally strong at all of these subtasks, so the solution should be viewed not only as a prompt-engineering issue but also as a systems-design challenge. This paper proposes LLM-ADAM, where ADAM stands for anomaly de-tection in additive manufacturing. The framework addresses pre-print G-code screening in FFF through a central hypothesis: LLMs are more reliable when assigned role-specific, schema-constrained subtasks and when numerical compar-isons are externalized into deterministic intermediate artifacts rather than dele-gated to token-level arithmetic. The framework decomposes inference into three stages: Extractor–LLM maps G-code into a fixed process-parameter schema; Reference–LLM maps printer and material documentation into aligned operat-ing ranges; and Judge–LLM evaluates extracted parameters, reference ranges, deviation magnitudes, and selected G-code evidence to produce an anomaly label. The method is not tied to a particular printer, material, anomaly set, or LLM provider. Prusa MK4S (MK4S) and Bambu Lab P1S (BMP1) print-ers, PLA and ABS materials, and three closed-source LLM providers serve as a controlled testbed for studying the decomposition. The paper makes three contributions. First, it formulates FFF pre-print anomaly detection as automated reasoning over G-code, documentation-derived reference ranges, and deterministic deviation tables. Second, it introduces a stage-separable LLM agent architecture that allows different model backbones to be assigned to extraction, reference construction, and judgment. Third, it provides an empirical evaluation on a stratified multi-printer, multi-material dataset. A screening study is used to select the strongest framework configura-tions, and the selected configurations are then evaluated on the full N = 200 
+
+corpus, where the best framework configuration reaches 87 .5% accuracy against a 59.5% single-LLM baseline. The remainder of this paper is organized as follows. Section 2 reviews related work. Section 3 describes the task and dataset. Section 4 presents the LLM-ADAM framework. Section 5 describes the experimental protocol. Section 6 reports the screening and full-corpus results. Section 7 discusses interpretation and limitations, and Section 8 concludes the paper. 
+
+2. Related Work 
+
+2.1. LLMs in additive manufacturing 
+
+LLMs are increasingly studied as interfaces to technical manufacturing knowl-edge because they can operate over natural language, code, documentation, and process descriptions. In AM, early work has examined whether general-purpose LLMs can answer user questions, support troubleshooting, and assist parameter selection for 3D printing [21, 22, 24]. Other studies have evaluated LLMs on G-code transformation and comprehension tasks, including translation, rotation, debugging, and toolpath manipulation [23]. LLMs have also been studied as 3components of monitoring and control loops [25]. These studies demonstrate that LLMs can access useful AM knowledge and reason over manufacturing text, but most treat the model as a single black-box decision maker. For safety-relevant G-code screening, such an interface is insufficient because the model must parse a long machine program, identify process variables, know the valid operating envelope, compare numbers, and decide whether deviations are mean-ingful. The present work addresses this limitation by separating those functions into role-specific stages and by introducing deterministic intermediate represen-tations [26]. 
+
+2.2. LLM agents 
+
+LLM research has moved from single-prompt answering toward agentic and tool-augmented systems in which a language model interacts with retrieval modules, external tools, structured schemas, and intermediate reasoning ar-tifacts [27–29]. This shift is especially relevant for engineering applications. En-gineering decisions often require traceable evidence and numerical consistency rather than only plausible prose. Structured-output prompting can improve reli-ability when the desired answer is a machine-readable object, while deterministic computation can handle comparisons and transformations that should not be delegated to token-level arithmetic [30]. The proposed LLM-ADAM framework follows this automated-agent principle where LLMs perform flexible interpre-tation of text programs and manuals, while deterministic code constructs the comparison object that the final judge consumes. In manufacturing, agentic LLM systems remain comparatively underdevel-oped. Retrieval-augmented systems can support contextual AM queries, and closed-loop systems can use LLMs as high-level controllers, but pre-print G-code anomaly detection requires a different design [31, 32]. The system must produce a decision that can be traced to extracted process parameters, refer-ence bands, and the original machine program. This motivates a decomposition in which each stage has a narrow contract and the intermediate artifacts are inspectable. The contribution of this paper is an inference architecture that makes existing backbones more usable and comparable at each step of an au-ditable manufacturing-screening task. 
+
+2.3. Anomaly detection via G-code inspection 
+
+Quality monitoring and anomaly detection approaches in manufacturing most commonly operate on physical signals collected during or after fabrica-tion (e.g., images, thermal data, acoustic emissions, vibration, 3D point clouds), across domains including AM [33–36], machining [37–40], and welding [41–46]. These approaches are essential for process monitoring, but they are comple-mentary to pre-print screening. A G-code-level method examines the instruc-tion sequence before the machine executes it, which is useful when the goal is to prevent avoidable failures, reduce waste for novice users, or detect sus-picious program edits. Prior work has shown that subtle malicious G-code modifications can be difficult to identify with conventional tools [47]. LLMs 4offer a promising interface because they can read both code-like programs and documentation; however, the evidence must be organized so that the model rea-sons over manufacturing-relevant structure rather than over an undifferentiated token stream. LLM-ADAM provides this organization through a three-stage decomposition and a deterministic deviation representation. 
+
+3. Problem Formulation and Dataset 
+
+3.1. Task definition 
+
+This paper studies pre-print anomaly detection from the G-code program that will be sent to an FFF printer. Because the goal is to detect potential defects before fabrication, the inference setting intentionally excludes images, sensor traces, and operator annotations. Given a G-code file g, a printer iden-tifier p, and a material identifier m, the system predicts a label ˆy from five mutually exclusive classes, 
+
+Y = {ND , UE , OE , WP , ST },
+
+corresponding to non-defective (ND), under-extrusion (UE), over-extrusion (OE), warping (WP), and stringing (ST). The system may also return a confidence score, a rationale, and citations to evidence in the G-code, but the primary quantitative target is the class label. The presence of p and m does not make the task printer-specific; rather, it reflects the fact that a physically meaningful judgment requires comparing the program against the operating envelope of the intended machine and material. A general screening method should therefore support different printer and material combinations through interchangeable reference knowledge. 
+
+3.2. Dataset 
+
+The experimental corpus is a multi-printer, multi-material FFF dataset pro-fessionally designed to separate defect mechanisms while retaining realistic slicer and machine-program structure. Table 1 summarizes the factorial design. The full corpus contains 200 printed parts, spanning two commercial desktop print-ers, two materials, five anomaly classes, and ten calibrated parameter variations per cell. Class induction was controlled by perturbing parameter families associated with each defect mechanism. UE and OE samples emphasize deposition-volume changes, ST samples emphasize thermal, retraction, and travel behavior, and WP samples emphasize adhesion, bed temperature, and cooling behavior. The corpus was intentionally designed to include multiple parameter combinations that can lead to the same visible anomaly rather than only scaling one parame-ter by different amounts. It also includes edge cases in which a normally strong indicator, such as elevated extrusion flow for OE, is combined with other param-eters in a way that can produce UE or an ND part. Similarly, some ND samples include combinations of settings outside nominal ranges that nevertheless pro-duced acceptable parts. These cases make the benchmark more challenging 5Table 1: Factorial structure of the printed corpus and the extraction benchmark subset. The full corpus size follows from multiplying the levels of printers, materials, anomaly classes, and parameter-variation replicates. The extraction benchmark holds one G-code per    
+
+> (printer ,material ,class )cell.
+
+Controlled factor Specification Levels Printers Prusa MK4S; Bambu Lab P1S 2Materials PLA; ABS 2Anomaly classes ND , UE , OE , WP , ST 5Parameter variations Ten settings per (printer , material , class )
+
+cell 10 Total printed parts Full factorial corpus (stratified) 2×2×5×10 = 200 
+
+for LLMs because a classifier must reason over interacting parameters rather than rely on a single cue. Each printed part was visually inspected against its corresponding baseline and assigned exactly one label, so the benchmark re-mains suitable for supervised single-label classification rather than multi-label diagnosis. Two subsets are used before the final full-corpus experiment. The N = 20 
+
+extraction benchmark contains one G-code per printer–material–class cell and is used to evaluate parameter extraction against manually recorded ground truth. The N = 40 end-to-end screening set contains two G-codes per cell and is used to compare Reference–LLM and Judge–LLM combinations. The full N = 200 
+
+corpus is the final evaluation set for the selected multi-stage candidates and the selected single-LLM baseline, as described in Section 6.5. 
+
+4. Methodology 
+
+This section describes the proposed automated LLM agent framework. The design goal is to transform a long machine program, such as G-code, and the relevant reference documents into a sequence of auditable intermediate represen-tations before making a final defect judgment. Rather than relying on one model to perform parameter extraction, reference retrieval, numerical comparison, and classification simultaneously, the framework assigns these responsibilities to sep-arate roles connected by deterministic computation. 
+
+4.1. Framework overview 
+
+The framework is organized as three LLM-driven stages with a deterministic computational layer between them, as shown in Figure 1. Extractor–LLM con-verts the G-code into a structured JSON object under a fixed process-parameter schema. Reference–LLM converts documentation for the intended printer and material into a compatible JSON object of recommended operating ranges. A deterministic comparison layer then aligns these two objects and constructs a de-viation table. Judge–LLM receives the extracted parameters, reference ranges, 6Figure 1: Overview of the proposed LLM agent framework. Extractor–LLM maps G-code into structured process parameters. Reference–LLM maps printer and material documentation into aligned operating ranges. A deterministic comparison layer constructs a deviation table. Judge–LLM consumes these artifacts together with selected G-code evidence and produces the final anomaly label. 
+
+deviation table, categorical flags, and the G-code itself; it returns the final class label together with an auditable rationale. The decomposition has three methodological advantages. First, each stage has a narrow and testable interface: extraction and reference construction pro-duce schema-constrained objects, while the comparison layer produces a numer-ical table. Second, role separation reduces the burden on the final judge; it no longer has to discover relevant parameters, infer reference ranges from mem-ory, and perform all comparisons inside a single free-form response. Third, the intermediate artifacts are auditable. A user can inspect whether an error origi-nated from parameter extraction, reference construction, numerical comparison, or final judgment, which is essential for manufacturing decision support. 
+
+4.2. Extractor–LLM: structured parameter extraction 
+
+Extractor–LLM reads a single G-code file and emits a JSON object con-taining process parameters relevant to material-extrusion quality. The schema covers thermal settings, extrusion-related quantities, layer heights, line-width channels, filament and nozzle geometry, retraction, travel behavior, fan pol-icy, build-adhesion settings, and inferred printer/material identifiers. Explicit schema fields are used so that missing information appears as null values rather than as ambiguous narrative. In addition to predefined parameters, the model is prompted to report any additional parameter evidence or unusual G-code patterns as notes. Because G-code files can be very large and can exceed the 7context limits or practical cost limits of LLM calls, a deterministic shortening preprocessor preserves configuration blocks, initialization sequences, commands from the first three printed layers, and commands from the final printed layer. After extraction, a normalization stage checks parameter units against the expected schema and converts them when needed. This step makes parame-ters extracted from different slicers and printers comparable with the reference ranges and reduces the risk that a downstream judgment is degraded by unit mismatches. 
+
+4.3. Reference–LLM: manual-grounded reference extraction 
+
+Reference–LLM addresses a different source of knowledge, the operating en-velope implied by printer and material documentation. Preliminary tests showed that recommended ranges inferred directly by general LLM backbones can dif-fer from the ranges reported in the manuals for each printer–material combi-nation. Manuals therefore provide an important grounding source for anomaly detection. Reference–LLM reads the documentation associated with a printer– material pair and provides recommended ranges under a schema aligned with the extractor output. Fields that are absent from the manuals remain null. In addition to prespecified parameters, Reference–LLM is prompted to report additional parameters, defect-related tips, warnings, factors, and parameter-interaction notes that can be extracted from the manuals. This stage makes the framework extensible because changing the printer, material, or AM process requires changing the documentation source rather than redesigning the judge. 
+
+4.4. Judge–LLM: evidence-based anomaly judgment 
+
+Judge–LLM performs the final evidence integration. It consumes the ex-tractor JSON, the reference JSON, the deterministic deviation table, categori-cal flags, and the shortened version of the G-code. Its role is not to rediscover all parameter values or reference ranges; its role is to interpret whether the structured evidence supports ND , UE , OE , WP , or ST .The deviation table is one of the central structural artifacts of the framework. For each comparable parameter k, let vk denote the extracted value and [ℓk, u k]
+
+the recommended range from Reference–LLM. The deviation table stores, for every k that has both a numeric vk and a finite range: 
+
+∆k =
+
+
+
+ℓk − vk, vk < ℓ k
+
+0, vk ∈ [ℓk, u k]
+
+vk − uk, vk > u k,
+
+˜∆k = ∆k
+
+uk − ℓk
+
+when uk > ℓ k,
+
+together with the raw vk, ℓk, uk, the band width uk − ℓk, and a direction tag from {below, in range, above}. The table contains measurements and margins rather than preassigned defect labels. This design keeps quantitative comparison deterministic while leaving contextual interpretation to the final judge. The Judge–LLM prompt uses a fixed output schema for the predicted label, confidence, support summary, deviations used, rationale, and evidence citations. 8This schema makes the final decision inspectable and allows downstream evalu-ation to distinguish a wrong class label from an incomplete rationale or missing evidence citation. 
+
+5. Experimental Setup 
+
+5.1. Model slate 
+
+The screening study uses three representative closed-source frontier back-bones: GPT-5.4-mini (OpenAI) [48], Claude-Sonnet-4.6 (Anthropic) [49], and Gemini-2.5-Flash (Google) [50]. These models were selected because they sup-port long-context inputs and structured outputs, two requirements for G-code and documentation reasoning, while remaining in a comparable and affordable cost range. The sampling temperature is set to zero for all stages. The purpose of the model slate is not to rank vendors in general, but to test whether the pro-posed decomposition remains useful when the backbone assigned to each stage changes and to identify the strongest model for each framework role. 
+
+5.2. Evaluation metrics 
+
+All prompts, schemas, preprocessing rules, and evaluation samples are held fixed across provider configurations. Extractor–LLM is first evaluated indepen-dently on the N = 20 extraction benchmark using tolerance-based accuracy and mean absolute percentage error (MAPE) over manually recorded ground-truth fields. The reference stage is evaluated through the downstream detection task because preliminary inspection showed that all candidate LLMs can extract nu-meric manual ranges reasonably well, whereas the usefulness of extracted notes and interaction guidance is best assessed through final anomaly-detection per-formance. Therefore, the strongest extraction configuration is used for the end-to-end screening study, while Reference–LLM and Judge–LLM are varied in a 
+
+3×3 grid. This design isolates the effect of reference construction and final judg-ment, which are the two stages most directly tied to end-to-end classification. The end-to-end metrics include accuracy, macro-F1, confusion matrices, per-class recall, and stratified accuracy by printer, material, and printer–material combination. 
+
+5.3. Baselines and full-corpus experiment 
+
+The primary baseline is a single-LLM classifier that receives only the short-ened G-code and directly predicts the anomaly class without the extractor, reference, or deviation-table stages. Two prompt families are evaluated for this baseline on the N = 40 screening set. The first follows the direct G-code clas-sification style used in FDM-Bench [26]. The second uses a stronger engineered prompt that asks the model to extract runtime-relevant G-code signals, compare support across all five classes, and select the best-supported label. The screening study is used to select configurations, and the full-corpus N = 200 experiment is the final performance evaluation reported in this paper. This staged protocol separates model selection from final performance estimation and avoids using the full corpus for repeated configuration search, which can be expensive. 96. Results 
+
+This section details the screening evaluation used to identify the optimal configuration and compares it with baseline models. Section 6.1 evaluates the extraction role, Section 6.2 reports the Reference–LLM ×Judge–LLM configu-ration grid, Section 6.3 analyzes class- and domain-level behavior, Section 6.4 compares against single-LLM baselines, and Section 6.5 reports the final full-corpus evaluation. 
+
+6.1. Extractor–LLM: parameter-extraction benchmark 
+
+Table 2 reports tolerance-based accuracy and MAPE for the three candidate extractors on the N = 20 extraction benchmark subset. Tolerance-based ac-curacy counts a numeric extraction as correct when it falls within a predefined engineering tolerance around the manually recorded value; MAPE measures the magnitude of the remaining numerical deviation. The purpose of this exper-iment is to test whether current LLMs can reliably convert G-code into the structured representation required by the downstream framework. In addition to the full schema, a critical-parameter subset is reported because errors in ex-trusion, thermal, geometric, retraction, cooling, and adhesion fields have the greatest impact on the subsequent judgment.                 
+
+> Table 2: Parameter-extraction benchmark for Extractor–LLM ( N=20 G-codes, 18 parameters per sample). All three backbones return a numeric prediction for every cell.
+> Backbone Overall acc. Critical acc. Overall MAPE Critical MAPE GPT-5.4-mini (OpenAI) 0.944 0.939 3.50% 4.85% Claude Sonnet 4.6 (Anthropic) 0.933 0.923 4.61% 6.39% Gemini 2.5 Flash (Google) 0.911 0.900 6.05% 8.17%
+
+All three backbones exceed 90% tolerance-based accuracy, indicating that structured parameter extraction is feasible with current frontier LLMs when the output schema is explicit. The accuracy differences are moderate, but the MAPE values show a clearer separation. GPT-5.4-mini has the lowest over-all MAPE ( 3.50% ) and the lowest critical-parameter MAPE ( 4.85% ) compared with Claude Sonnet 4.6 and Gemini 2.5 Flash. For this reason, GPT-5.4-mini is selected as the Extractor–LLM backbone for the downstream Reference– LLM ×Judge–LLM screening study. 
+
+6.2. End-to-end grid study (Reference–LLM and Judge–LLM) 
+
+Table 3 reports end-to-end classification accuracy on the N = 40 screen-ing set across all nine Reference–LLM and Judge–LLM combinations. This grid treats model assignment as an experimental factor: the data, prompts, schemas, 10 Overall     
+
+> parameters
+> Critical
+> parameters
+> 85.0
+> 87.5
+> 90.0
+> 92.5
+> 95.0
+> 97.5
+> 100.0
+> Accuracy (%)  94.4 93.9
+> 93.3 92.3
+> 91.1
+> 90.0
+> (a) Tolerance-based accuracy
+> Overall
+> parameters
+> Critical
+> parameters
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> MAPE (%)
+> 3.50
+> 4.85 4.61
+> 6.39 6.05
+> 8.17
+> (b) Mean absolute percentage error
+> OpenAI (GPT-5.4-mini) Anthropic (Claude Sonnet 4.6) Google (Gemini 2.5 Flash)
+
+Figure 2: Extractor–LLM benchmark with grouped comparisons at each position: (a) tolerance-based accuracy and (b) mean absolute percentage error for overall vs. critical param-eter subsets. Within each group, bars correspond to the three provider backbones (legend), which isolates backbone differences at fixed subset definitions. 
+
+and deterministic comparison layer remain fixed, while only the backbones as-signed to the reference and judgment roles vary. 
+
+Table 3: End-to-end classification accuracy (%) on the N = 40 evaluation set across the 3 × 3
+
+Reference–LLM ×Judge–LLM grid, augmented with row-wise and column-wise averages. The best configuration pairs Gemini on both stages ( 87 .5% ). Rows index Reference–LLM; columns index Judge–LLM. 
+
+Reference–LLM ↓ / Judge–LLM → OpenAI Claude Gemini Row avg. OpenAI 75.0 80.0 85.0 80.0 Claude 77.5 82.5 85.0 81.7 Gemini 65.0 85.0 87.5 79.2 Column avg. 72.5 82.5 85.8 80.3 The grid supports two conclusions. First, the judge role dominates the end-to-end outcome. The Gemini judge has the highest column average ( 85 .8% ), followed by Claude ( 82 .5% ), while OpenAI as judge has the lowest column av-erage ( 72 .5% ). This pattern is consistent with the architecture: the judge is the only stage that must integrate extracted parameters, reference ranges, devia-tion magnitudes, and raw G-code evidence into a class-level decision. Second, reference construction is less variable than judgment once the reference output is mapped into the common schema. The row averages span a narrow range (79 .2–81 .7% ), indicating that the documentation-to-schema step is important but not the main source of performance differences in this screening set. 
+
+6.3. Confusion matrices of leading configurations 
+
+Figure 3 reports confusion matrices for the six leading configurations (all configurations with Judge–LLM ∈ { Claude , Gemini }). Figure 4 summarizes per-class recall across these configurations. 11 ND UE OE WP ST                                                                                                                                             
+
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 00044
+> 08000
+> 00800
+> 00080
+> 00008
+> Ref.=OpenAI, Judge=Claude
+> (80.0% acc.)
+> ND UE OE WP ST
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 40004
+> 07001
+> 10700
+> 00080
+> 00008
+> Ref.=OpenAI, Judge=Gemini
+> (85.0% acc.)
+> ND UE OE WP ST
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 10034
+> 08000
+> 00800
+> 00080
+> 00008
+> Ref.=Claude, Judge=Claude
+> (82.5% acc.)
+> ND UE OE WP ST
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 20024
+> 08000
+> 00800
+> 00080
+> 00008
+> Ref.=Claude, Judge=Gemini
+> (85.0% acc.)
+> ND UE OE WP ST
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 30023
+> 07010
+> 00800
+> 00080
+> 00008
+> Ref.=Gemini, Judge=Claude
+> (85.0% acc.)
+> ND UE OE WP ST
+> Predicted
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 40013
+> 08000
+> 00710
+> 00080
+> 00008
+> Ref.=Gemini, Judge=Gemini
+> (87.5% acc.)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Row-normalized rate
+
+Figure 3: Confusion matrices ( 5 × 5) for the six leading Reference–LLM ×Judge–LLM config-urations on the N = 40 end-to-end set. Cell values denote raw sample counts; color encodes row-normalized rate. Each row corresponds to a true class with 8 samples by construction. 
+
+The figures support three findings. First, defect recognition is strong across the leading configurations. Recall on UE , OE , WP , and ST is at or near ceiling for most configurations, showing that the structured evidence produced by the framework is sufficient for the judge to identify the main defect mechanisms on this screening set. Second, the non-defective class is the dominant source of residual error. The main failure mode is not confusion among defect types; it is conservative over-detection, where true ND samples are classified as WP or ST . This is visible in both the first row of Figure 3 and the ND group in Figure 4. The best ND recall is 50% 
+
+(4/8), achieved by (Gemini, Gemini) and (OpenAI, Gemini), while the worst is 
+
+0% for (OpenAI, Claude). The framework is more likely to flag a benign file for review than to miss a defect, which is often preferable in pre-print screening but still leaves room for improving benign-case calibration. Third, performance differences are structured by printer and material, not randomly distributed. Figure 5 reports printer, material, and overall accuracy in a single grouped chart. BMP1 tends to be easier than MK4S, and ABS tends to be equal to or easier than PLA. The best configuration (Gemini, Gemini) reaches 95% on BMP1 and 80% on MK4S, with 90% on ABS and 85% on PLA. These differences suggest that slicer conventions and material-specific parameter envelopes affect the clarity of the evidence available to the framework. 12 ND UE OE WP ST 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Recall (%)
+> Reference / Judge
+> OpenAI/Claude
+> OpenAI/Gemini
+> Claude/Claude
+> Claude/Gemini
+> Gemini/Claude
+> Gemini/Gemini Figure 4: Per-class recall across the six leading Reference–LLM ×Judge–LLM configurations. Recall on UE, OE, WP, and ST is at or near ceiling for all configurations; the differentiator is the ND class.
+
+Figure 6 further resolves this interaction by reporting all four printer–material combinations. The dominant pattern is that BMP1-ABS remains the easiest slice, reaching 100% in several configurations. In contrast, MK4S-PLA is more variable and often limits overall performance. This stratified view is important because an aggregate score can hide whether a configuration is robust across operating regimes or only strong on a favorable subset. 
+
+6.4. Comparison with single-model baselines 
+
+To quantify the value of decomposition, we evaluated each backbone as a single-model classifier that receives only the shortened G-code and directly pre-dicts the final class label, without the extractor, reference, or deterministic comparison stages. Two prompt families are considered. The first follows the direct G-code classification style used in FDM-Bench [26]. The second is an engineered single-model prompt that asks the LLM to extract runtime-relevant G-code signals, compare all five classes, and choose the most appropriate label. Figure 7 shows that direct prompting is a weak baseline for this task. With the FDM-Bench-style prompt, GPT-5.4-mini, Claude-Sonnet-4.6, and Gemini-2.5-Flash obtain 20 .0% , 35 .0% , and 42 .5% accuracy, respectively, on the N = 40 
+
+screening set. Prompt engineering improves the single-model results to 27 .5% ,
+
+47 .5% , and 57 .5% , with Gemini again the strongest baseline. However, the framework remains substantially higher: averaging over the three Reference– LLM choices gives 72 .5% for OpenAI as Judge–LLM, 82 .5% for Claude, and 
+
+85 .8% for Gemini. The comparison shows that the performance gain is not merely a result of writing a stronger direct prompt; it comes from decompos-ing extraction, reference grounding, numerical comparison, and judgment into separate auditable steps. 13 OpenAI/Claude OpenAI/Gemini Claude/Claude Claude/Gemini Gemini/Claude Gemini/Gemini                   
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)  80
+> 75
+> 80 80
+> 85
+> 80 80
+> 95
+> 85
+> 90
+> 85
+> 95
+> 80
+> 85 82 85 85 88
+> 80 80 80 80 80
+> 85
+> 80
+> 90
+> 85
+> 90 90 90
+> Prusa MK4S Bambu Lab P1S Overall PLA ABS Figure 5: Integrated accuracy splits across the six leading Reference–LLM ×Judge–LLM con-figurations on the N= 40 end-to-end set. For each configuration, bars report MK4S, BMP1, overall, PLA, and ABS. BMP1 is generally easier than MK4S, and ABS is generally easier than PLA across the leading runs.
+
+6.5. Full-corpus evaluation 
+
+The N = 40 study is used for model selection and error analysis, and the selected configurations are then evaluated on the full N = 200 corpus. Three framework configurations are included in this final comparison. Gemini–Gemini is selected because it has the highest screening accuracy and the strongest Judge–LLM column average. Claude–Gemini is selected because it is the second-best Gemini-judge configuration and maintains stable performance across printer– material combinations. Claude–Claude is included as a third framework con-figuration due to its high performance with no printer–material combination accuracy below 80% in the screening set. Gemini–Claude is not selected despite its competitive screening accuracy because one printer–material combination shows substantially lower accuracy, which is less desirable for deployment. For the single-LLM baseline, the engineered Gemini prompt is selected because it is the best direct classifier in the N = 40 baseline screen. The full-corpus results confirm the ranking suggested by the screening study. Gemini–Gemini achieves the highest overall accuracy at 87 .5% , followed by Claude–Gemini at 83 .0% and Claude–Claude at 79 .0% . The selected engineered Gemini single-LLM baseline reaches 59 .5% accuracy on the same N = 200 cor-pus. The best framework therefore improves overall accuracy by 28 .0 percent-age points over the strongest direct baseline while using the same shortened G-code evidence plus the agent’s structured extraction, reference, and compar-ison artifacts. Figure 10 illustrates that the improvement is visible across all printer–material combinations. Gemini–Gemini reaches 80% , 88% , 90% , and 
+
+92% on MK4S-PLA, MK4S-ABS, BMP1-PLA, and BMP1-ABS, respectively, compared with 68% , 52% , 56% , and 62% for the engineered Gemini baseline. The main remaining framework challenge is ND recall, as shown in Figure 9; nevertheless, Gemini–Gemini improves ND detection relative to the two Claude-reference candidates and the single Gemini model, while preserving near-ceiling 14 OpenAI/Claude OpenAI/Gemini Claude/Claude Claude/Gemini Gemini/Claude Gemini/Gemini             
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 80
+> 70
+> 80 80
+> 90
+> 80 80 80 80 80 80 80 80
+> 90
+> 80 80
+> 70
+> 90
+> 80
+> 100
+> 90
+> 100 100 100
+> MK4S-PLA MK4S-ABS BMP1-PLA BMP1-ABS
+
+Figure 6: Accuracy by printer–material combination across the six leading Reference– LLM ×Judge–LLM configurations: MK4S-PLA, MK4S-ABS, BMP1-PLA, and BMP1-ABS. The largest variability appears on MK4S-PLA, while BMP1-ABS is near-ceiling for multiple configurations. 
+
+recall for defect classes. 
+
+7. Discussion 
+
+7.1. Interpreting the screening results 
+
+The screening and full-corpus results show that the proposed decomposition is most effective when the anomaly evidence is directional and class-specific. UE, OE, WP, and ST are detected reliably across the leading configurations be-cause their parameter deviations form coherent patterns in the deviation table and supporting G-code evidence. The remaining difficulty is the ND class. A benign file may contain small deviations from nominal settings, and the judge must decide whether those deviations are harmless or early evidence of a defect. The leading configurations are conservative, preferring to flag some borderline-benign samples as WP or ST rather than incorrectly accept them as ND. For pre-print screening, this is a defensible operating point because a false alarm leads to review, while a missed defect can waste material and machine time. Nevertheless, improving benign-case calibration is the most important method-ological target before deployment. 
+
+7.2. Why decomposition matters 
+
+The large gap between the multi-stage framework and the single-model base-lines should be interpreted as evidence for task decomposition rather than as evidence for a particular vendor model or prompt template. Even after prompt engineering, the single-model baseline must infer parameters, estimate reference ranges, compare values, and classify the file in one step using only shortened G-code. The proposed framework externalizes these operations. Parameters are extracted into a schema, documentation is translated into aligned reference 15 OpenAI      
+
+> GPT-5.4-mini Anthropic
+> Claude Sonnet 4.6 Google
+> Gemini 2.5 Flash
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 20.0
+> 35.0
+> 42.5
+> 27.5
+> 47.5
+> 57.5
+> 72.5
+> 82.5 85.8
+> Single LLM: FDM-Bench-style prompt Single LLM: engineered prompt LLM agent: same Judge--LLM average
+
+Figure 7: Comparison on the N = 40 screening set between two single-LLM prompt families and the average framework accuracy obtained when the same provider is used as Judge–LLM across the three Reference–LLM choices. The single-LLM baselines receive only shortened G-code; the framework also uses extracted parameters, manual-grounded references, and de-terministic deviation tables. 
+
+ranges, and numerical margins are computed deterministically before judgment. This turns the final LLM call into an evidence-integration task rather than an unconstrained code-reading task. The result is not only higher accuracy, but also a more inspectable failure mode because errors can be traced to extraction, reference interpretation, comparison, or final classification. 
+
+7.3. Generalization and deployment 
+
+Although the experiments use two printers and two materials, the method is not restricted to these machines. The core requirement is that the manufac-turing process have a textual program or recipe, process parameters that can be extracted into a schema, and reference knowledge that can be converted into operating ranges. FFF is a suitable first domain because G-code is explicit and because desktop FFF has a large non-expert user base. The same design logic could extend to other AM settings where textual build files and reference en-velopes are available, but the extraction schema and reference documents would need to be adapted and validated. The staged architecture also has practical advantages. Reference construc-tion is performed per printer–material pair rather than per file, and extraction artifacts can be retained for audit and reproducibility. At scale, the final judg-ment call is the dominant per-file cost. 
+
+7.4. Limitations and future work 
+
+The first limitation is that the framework depends on access to relevant printer and material documentation. This manual-grounded design improves the reliability of reference ranges, but it reduces the autonomy of the system because 16 Claude/Claude Claude/Gemini Gemini/Gemini Single Gemini      
+
+> (engineered)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 79.0% 83.0% 87.5%
+> 59.5% Figure 8: Full-corpus overall accuracy for the selected framework configurations and the se-lected engineered Gemini single-LLM baseline on N= 200 G-codes.
+
+the appropriate manuals must be identified and provided before inference. Anatural extension is to automate the documentation-search step so that the system can search, retrieve, verify, and version the relevant reference sources with minimal operator input. The second limitation is that the current framework detects and explains likely G-code anomalies but does not yet repair them. After the system assigns a defect class, an operator still needs to modify the slicer settings or G-code to correct the issue. A direct future extension is an automated correction stage that proposes safe parameter changes or edited G-code after the anomaly type and supporting evidence have been identified. 
+
+8. Conclusion 
+
+This paper presented a generalizable LLM agent framework for pre-print anomaly detection in AM. The framework treats machine program screening as a structured reasoning problem rather than a single text-classification prompt. Extractor–LLM maps the machine program to a process-parameter schema, Reference–LLM maps documentation to aligned operating ranges, and Judge– LLM interprets deterministic deviation evidence to assign an anomaly label. This decomposition is intended to be general across printer and material set-tings because the task-specific knowledge is carried through schemas, reference documents, and intermediate comparison artifacts rather than embedded in one monolithic prompt. Evaluation on the N = 200 FFF G-code corpus shows that Gemini–Gemini is the strongest framework configuration with 87 .5% accuracy, followed by Claude– Gemini at 83 .0% and Claude–Claude at 79 .0% , while the selected engineered Gemini single-LLM baseline reaches 59 .5% . Thus, the best framework improves 17 ND UE OE WP ST                                                 
+
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 52019 14
+> 040 000
+> 0039 10
+> 11038 0
+> 200236
+> Claude/Claude
+> (79.0% acc.)
+> ND UE OE WP ST
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 13 1012 14
+> 039 010
+> 1039 00
+> 11038 0
+> 100237
+> Claude/Gemini
+> (83.0% acc.)
+> ND UE OE WP ST
+
+Predicted                         
+
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 19 10614
+> 040 000
+> 0040 00
+> 11038 0
+> 001138
+> Gemini/Gemini
+> (87.5% acc.)
+> ND UE OE WP ST
+
+Predicted                     
+
+> ND
+> UE
+> OE
+> WP
+> ST
+> True
+> 585418
+> 132 232
+> 1730 20
+> 09126 4
+> 155326
+> Single Gemini
+> (engineered)
+> (59.5% acc.)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Row-normalized rate
+
+Figure 9: Full-corpus confusion matrices for the selected framework configurations and the engineered Gemini single-LLM baseline. Gemini–Gemini has the highest overall accuracy and the strongest ND recall among the framework candidates, while the single-LLM baseline shows broader confusion across defect classes. 
+
+the final full-corpus accuracy by 28 .0 percentage points over the strongest direct-prompt baseline. The results indicate that the judgment role is the most influ-ential stage, that defect classes are detected reliably in leading configurations, and that remaining errors are concentrated in conservative false alarms on ND samples. Beyond FFF, the central idea – combining LLM-based interpretation of text programs and documentation with deterministic intermediate represen-tations – is applicable to other AM processes where machine instructions can be screened before execution. 
+
+Acknowledgments 
+
+Ahmadreza Eslaminia and Klara Nahrstedt acknowledge support from the U.S. National Science Foundation under Grants CNS-2106592, OAC-2126246 (MAINTLET), and CNS-2437204, and from subaward UCDavis A21-0845-S003. 18 MK4S-PLA MK4S-ABS BMP1-PLA BMP1-ABS            
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 80 80 76 80 80 82 82
+> 88
+> 80
+> 88 90 92
+> 68
+> 52 56
+> 62
+> Claude/Claude Claude/Gemini Gemini/Gemini Single Gemini (engineered)
+
+Figure 10: Full-corpus accuracy by printer–material combination for the selected frame-work configurations and the engineered Gemini single-LLM baseline. Gemini–Gemini is the strongest configuration on BMP1-PLA and BMP1-ABS and improves MK4S-ABS relative to the other candidates. 
+
+Chenhui Shao acknowledges support from the U.S. National Science Foundation under Award No. 2434383. 
+
+References 
+
+[1] O. Abdulhameed, A. Al-Ahmari, W. Ameen, S. H. Mian, Additive man-ufacturing: Challenges, trends, and applications, Advances in Mechanical Engineering 11 (2) (2019) 1687814018822880. [2] M. Mehta, C. Shao, Federated learning-based semantic segmentation for pixel-wise defect detection in additive manufacturing, Journal of Manufac-turing Systems 64 (2022) 197–210. [3] B. Blakey-Milner, P. Gradl, G. Snedden, M. Brooks, J. Pitot, E. Lopez, M. Leary, F. Berto, A. Du Plessis, Metal additive manufacturing in aerospace: A review, Materials & Design 209 (2021) 110008. [4] H. Pant, A. Arora, G. S. Gopakumar, U. Chadha, A. Saeidi, A. E. Patter-son, Applications of wire arc additive manufacturing (waam) for aerospace component manufacturing, The International Journal of Advanced Manu-facturing Technology 127 (11) (2023) 4995–5011. [5] R. Kumar, M. Kumar, J. S. Chohan, The role of additive manufacturing for biomedical applications: A critical review, Journal of Manufacturing Processes 64 (2021) 828–850. 19 [6] C. H. Conway, D. J. McGregor, T. Antonsen, C. Wood, C. Shao, W. P. King, Geometry repeatability and prediction for personalized medical de-vices made using multi-jet fusion additive manufacturing, Additive Manu-facturing Letters 9 (2024) 100200. [7] J. Sun, S. Jia, C. Shao, M. R. Dawson, K. C. Toussaint Jr, Emerging tech-nologies for multiphoton writing and reading of polymeric architectures for biomedical applications, Annual Review of Biomedical Engineering 27 (1) (2025) 129–155. [8] R. Leal, F. Barreiros, L. Alves, F. Romeiro, J. Vasco, M. Santos, C. Marto, Additive manufacturing tooling for the automotive industry, The Interna-tional Journal of Advanced Manufacturing Technology 92 (5) (2017) 1671– 1676. [9] S. Salifu, D. Desai, O. Ogunbiyi, K. Mwale, Recent development in the additive manufacturing of polymer-based composites for automotive struc-tures—a review, The International Journal of Advanced Manufacturing Technology 119 (11) (2022) 6877–6891. [10] D. J. McGregor, M. V. Bimrose, C. Shao, S. Tawfick, W. P. King, Using machine learning to predict dimensions and qualify diverse part designs across multiple additive machines and materials, Additive Manufacturing 55 (2022) 102848. [11] M. A. Islam, M. H. Mobarak, M. I. H. Rimon, M. Z. Al Mahmud, J. Ghosh, M. M. S. Ahmed, N. Hossain, Additive manufacturing in polymer research: Advances, synthesis, and applications, Polymer Testing 132 (2024) 108364. [12] M. Mehta, M. V. Bimrose, D. J. Mcgregor, W. P. King, C. Shao, Federated learning enables privacy-preserving and data-efficient dimension prediction and part qualification across additive manufacturing factories, Journal of Manufacturing Systems 74 (2024) 752–761. [13] S. Singh, G. Singh, C. Prakash, S. Ramakrishna, Current status and future directions of fused filament fabrication, Journal of Manufacturing Processes 55 (2020) 288–306. [14] J. Cleeman, A. Jackson, S. Esola, C. Shao, H. Xu, R. Malhotra, Scalable control of extraneously induced defects in in-field additive manufacturing, Journal of Manufacturing Processes 141 (2025) 919–933. [15] A. Dey, N. Yodo, A systematic survey of FDM process parameter optimiza-tion and their influence on part characteristics, Journal of Manufacturing and Materials Processing 3 (3) (2019) 64. [16] M. Baechle-Clayton, E. Loos, M. Taheri, H. Taheri, Failures and flaws in fused deposition modeling (FDM) additively manufactured polymers and composites, Journal of Composites Science 6 (7) (2022) 202. 20 [17] A. Kantaros, D. Piromalis, Employing a low-cost desktop 3D printer: Chal-lenges, and how to overcome them by tuning key process parameters, In-ternational Journal of Mechanics and Applications 10 (1) (2021) 11–19. [18] J. Cleeman, A. Jackson, A. Patel, Z. Wang, T. Feldhausen, C. Shao, H. Xu, R. Malhotra, Operational resilience of additively manufactured parts to stealthy cyberphysical attacks using geometric and process digital twins, Journal of Manufacturing Systems 83 (2025) 626–651. [19] I. Rivet, N. Dialami, M. Cervera, M. Chiumenti, Q. Valverde, Mechanical analysis and optimized performance of G-Code driven material extrusion components, Additive Manufacturing 61 (2023) 103348. [20] S. Ochoa, S. Ferrándiz, L. Garzón, C. Cobos, Digital twin of fused filament fabrication prints for finite element analysis via g-code reverse engineering, 3D Printing and Additive Manufacturing 12 (6) (2025) 611–620. [21] A. Sriwastwa, P. Ravi, A. Emmert, S. Chokshi, S. Kondor, K. Dhal, P. Pa-tel, L. L. Chepelev, F. J. Rybicki, R. Gupta, Generative AI for medical 3D printing: a comparison of ChatGPT outputs to reference standard educa-tion, 3D Printing in Medicine 9 (1) (2023) 21. [22] S. Badini, S. Regondi, E. Frontoni, R. Pugliese, Assessing the capabilities of ChatGPT to improve additive manufacturing troubleshooting, Advanced Industrial and Engineering Polymer Research 6 (3) (2023) 278–287. [23] A. Jignasu, K. Marshall, B. Ganapathysubramanian, A. Balu, C. Hegde, A. Krishnamurthy, Towards foundational AI models for additive manufac-turing: Language models for G-code debugging, manipulation, and com-prehension, arXiv preprint arXiv:2309.02465. [24] A. Chandrasekhar, J. Chan, F. Ogoke, O. Ajenifujah, A. B. Farimani, AMGPT: A large language model for contextual querying in additive man-ufacturing, arXiv preprint arXiv:2406.00031. [25] Y. Jadhav, P. Pak, A. B. Farimani, LLM-3D Print: Large language models to monitor and control 3D printing, arXiv preprint arXiv:2408.14307. [26] A. Eslaminia, A. Jackson, B. Tian, A. Stern, H. Gordon, R. Malhotra, K. Nahrstedt, C. Shao, FDM-Bench: A domain-specific benchmark for evaluating large language models in additive manufacturing, Manufactur-ing LettersProceedings of the 53rd SME North American Manufacturing Research Conference (NAMRC 53). [27] P. Lewis, E. Perez, A. Piktus, F. Petroni, V. Karpukhin, N. Goyal, H. Küt-tler, M. Lewis, W.-t. Yih, T. Rocktäschel, S. Riedel, Retrieval-augmented generation for knowledge-intensive NLP tasks, Advances in Neural Infor-mation Processing Systems 33 (2020) 9459–9474. 21 [28] Y. Yu, M. Wu, A. Eslaminia, L. Zhao, K. Yan, K. Nahrstedt, QoS-QoE translation with large language model, arXiv preprint arXiv:2604.08703. [29] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, Y. Cao, ReAct: Synergizing reasoning and acting in language models, in: International Conference on Learning Representations, 2023. [30] A. Ni, P. Yin, Y. Zhao, M. Riddell, T. Feng, R. Shen, S. Yin, Y. Liu, S. Yavuz, C. Xiong, S. Joty, Y. Zhou, D. Radev, A. Cohan, L2CEval: Eval-uating language-to-code generation capabilities of large language models, Transactions of the Association for Computational Linguistics 12 (2024) 1311–1329. [31] K. N. Khanghah, Z. Chen, L. Romeo, Q. Yang, R. Malhotra, F. Imani, H. Xu, Multimodal RAG-driven anomaly detection and classification in laser powder bed fusion using large language models, in: International Design Engineering Technical Conferences and Computers and Information in Engineering Conference, Vol. 89220, American Society of Mechanical Engineers, 2025, p. V03AT03A041. [32] K. N. Khanghah, Z. Chen, L. Romeo, Q. Yang, R. Malhotra, F. Imani, H. Xu, Zero-shot anomaly detection in laser powder bed fusion using mul-timodal retrieval-augmented generation and large language models, Journal of Mechanical Design 148 (7) (2026) 072001. [33] D. J. McGregor, S. Rylowicz, A. Brenzel, D. Baker, C. Wood, D. Pick, H. Deutchman, C. Shao, S. Tawfick, W. P. King, Analyzing part accuracy and sources of variability for additively manufactured lattice parts made on multiple printers, Additive Manufacturing 40 (2021) 101924. [34] Y. Yang, D. J. McGregor, S. Tawfick, W. P. King, C. Shao, Hierarchical data models improve the accuracy of feature level predictions for additively manufactured parts, Additive Manufacturing 51 (2022) 102621. [35] Y. Cai, J. Xiong, H. Chen, G. Zhang, A review of in-situ monitoring and process control system in metal-based laser additive manufacturing, Journal of Manufacturing Systems 70 (2023) 309–326. [36] L. Chen, G. Bi, X. Yao, J. Su, C. Tan, W. Feng, M. Benakis, Y. Chew, S. K. Moon, In-situ process monitoring and adaptive quality enhancement in laser additive manufacturing: a critical review, Journal of Manufacturing Systems 74 (2024) 527–574. [37] C. Shao, J. Ren, H. Wang, J. Jin, S. J. Hu, Improving machined surface shape prediction by integrating multi-task learning with cutting force vari-ation modeling, Journal of Manufacturing Science and Engineering 139 (1) (2017) 011014. 22 [38] W. Li, J. Ren, K. Shi, Y. Lu, H. Zheng, A method for monitoring ma-chining errors of complex thin-walled parts based on the fusion of physical information and cnn, Journal of Manufacturing Systems 81 (2025) 208–221. [39] Y. Xu, J. Ji, Y. Sun, S. Huang, Z. Zhao, G. Q. Huang, Self-supervised time–frequency feature alignment for process monitoring of cyber–physical cnc machines, Journal of Manufacturing Systems 82 (2025) 1145–1157. [40] H. Li, B. Wang, Z. Liu, J. Zhao, P. Wang, Smart ultra-precision machining system integrated with online monitoring of machined surface profile accu-racy and real-time error compensation, Journal of Manufacturing Systems 86 (2026) 600–611. [41] B. Tian, A. Eslaminia, K.-C. Lu, Y. Wang, C. Shao, K. Nahrstedt, Weld-mon: A cost-effective ultrasonic welding machine condition monitoring sys-tem, in: 2023 IEEE 14th Annual Ubiquitous Computing, Electronics & Mo-bile Communication Conference (UEMCON), IEEE, 2023, pp. 0310–0319. [42] C. Shao, K. Paynabar, T. H. Kim, J. J. Jin, S. J. Hu, J. P. Spicer, H. Wang, J. A. Abell, Feature selection for manufacturing process monitoring using cross-validation, Journal of Manufacturing Systems 32 (4) (2013) 550–555. [43] A. Eslaminia, Y. Meng, K. Nahrstedt, C. Shao, Federated domain gener-alization for condition monitoring in ultrasonic metal welding, Journal of Manufacturing Systems 77 (2024) 1–12. [44] P. Geng, Y. Xia, Z. Dong, B. Men, B. Pan, C. Shao, Y. Li, J. Li, Machine learning applications in welding processes: progresses and opportunities, International Journal of Machine Tools and Manufacture (2025) 104344. [45] A. Eslaminia, K.-C. Lu, K. Nahrstedt, C. Shao, Adaptive unknown fault detection and few-shot continual learning for condition monitoring in ul-trasonic metal welding, arXiv preprint arXiv:2604.13465. [46] B. Tian, Y. Wang, A. Eslaminia, R. Gupta, R. B. Kaufman, L. Espenhahn, G. Pezzarossi, M. Sardela, J. Dallesasse, K. Nahrstedt, Machinestetho-scope: A smart and cost-effective machine health monitoring system, in: 2025 IEEE 8th International Conference on Multimedia Information Pro-cessing and Retrieval (MIPR), IEEE, 2025, pp. 323–329. [47] C. Beckwith, H. S. Naicker, S. Mehta, V. R. Udupa, N. T. Nim, V. Gadre, H. Pearce, G. Mac, N. Gupta, Needle in a haystack: Detecting subtle malicious edits to additive manufacturing g-code files, IEEE Embedded Systems Letters 14 (3) (2021) 111–114. [48] OpenAI, Introducing GPT-5.4 mini and nano, https://openai.com/ index/introducing-gpt-5-4-mini-and-nano , accessed 3 May 2026 (2026). 23 [49] Anthropic, Introducing Claude Sonnet 4.6, https://www.anthropic.com/ news/claude-sonnet-4-6 , accessed 3 May 2026 (2026). [50] Google DeepMind, Gemini 2.5 Flash model card, https: //storage.googleapis.com/deepmind-media/Model-Cards/ Gemini-2-5-Flash-Model-Card.pdf , accessed 3 May 2026 (2025). 24

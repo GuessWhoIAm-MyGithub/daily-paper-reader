@@ -1,0 +1,260 @@
+Title: Global-Local Feature Decoding with Adapter-Guided SAMv2 for Salient Object Detection
+
+URL Source: https://arxiv.org/pdf/2605.02616v1
+
+Published Time: Tue, 05 May 2026 02:06:00 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Global–Local Feature Decoding with Adapter-Guided SAMv2 for Salient Object Detection 
+
+Morteza Moradi 1, Mohammad Moradi 1, Simone Palazzo 1, Ali Borji 2, and Concetto Spampinato 1 
+
+> 1
+
+University of Catania, Catania, Italy 
+
+mohammad.moradi@phd.unict.it {morteza.moradi, simone.palazzo, concetto.spampinato}@unict.it  
+
+> 2
+
+Quintic AI, San Francisco, CA, USA 
+
+aliborji@gmail.com 
+
+Abstract. Salient Object Detection (SOD) remains an essential yet un-derexplored task in the era of large-scale vision models. Although foun-dation models like SAM exhibit strong generalization, their potential for SOD is not fully realized, and training or fully fine-tuning them is compu-tationally expensive and prone to overfitting under limited data. To over-come these challenges, we introduce GLASSNet, a Global–Local feature decoding framework that uses SAMv2 as a frozen encoder paired with a lightweight, spatially aware convolutional adapter—reducing learnable encoder parameters by over 97%. To enhance saliency quality, GLASS-Net employs a dual-decoder architecture: one decoder captures global, long-range semantics with an expanded receptive field, while the other captures fine local details such as edges and textures. Fusing these com-plementary cues yields saliency maps that combine global coherence with local precision, producing accurate final masks. Extensive experiments on standard SOD and camouflaged object detection benchmarks show that GLASSNet surpasses state-of-the-art methods, demonstrating the power of frozen foundation models combined with targeted adaptation and global–local decoding. 
+
+Keywords: Salient Object Detection · Segment Anything Model · Dual-stream Decoder · Adapter Network · Camouflaged Object Detection 
+
+1 Introduction 
+
+Salient Object Detection (SOD) [2]—the task of segmenting visually dominant objects—has progressed from handcrafted features [26] to Transformer-based models [46], greatly improving accuracy and robustness. These advances have expanded SOD applications in various areas such as medical imaging and au-tonomous navigation. Despite this progress, many SOD methods still struggle to generalize, showing degraded performance in diverse or domain-specific scenarios.       
+
+> arXiv:2605.02616v1 [cs.CV] 4 May 2026 2Moradi et al. (a) (b) (c) (d) (e) (f)
+
+Fig. 1: Intermediate outputs of GLASSNet. Columns (a)–(f) show the input im-ages, ground truth, model output, and outputs of the local, global, and mid-level decoders, illustrating each component’s contribution to the final saliency map. Recent large-scale vision foundation models have reshaped saliency modeling [59,34] and broader visual understanding [18], offering far stronger generalization and addressing key limitations of CNNs and early transformers. These capabili-ties enable more reliable and adaptable SOD systems. Among recent image foundation models, the Segment Anything Model (SAM) [20] stands out as a strong backbone for salient object detection. Its object-centric pretraining, ability to generate sharp segmentation masks, and robust generalization across domains [20] align well with the core objectives of SOD. Unlike conventional models—which often require extensive task-specific annota-tions or struggle to generalize—SAM provides zero-shot, instance-level masks, streamlining the initial mask generation process in saliency workflows. Building on this capability, several recent studies have explored the use of SAM for SOD tasks [3,27]. However, SAM is not a plug-and-play solution. As a general-purpose model, it requires careful adaptation to meet the specific demands of SOD, and per-formance depends on how well downstream components interpret and refine its outputs. While SAM lowers the entry barrier, its effectiveness in saliency detec-tion still hinges on proper integration and architectural tuning. Specifically, SAM can produce fragmented or imprecise masks in scenes with subtle boundaries [15], low contrast [14], fine and intricate structures [57] (e.g., branches or veins), or transparent and reflective surfaces [10]. Relying solely on its raw outputs can propagate these limitations, making SAM a strong starting point but not a complete solution for SOD. To address these issues, and based on the hypothesis that with more cali-brated modulation and targeted network design SAM can be even more effec-tive for salient object detection, we propose Global– Local feature decoding with 
+
+Adapter-guided SAM v2 for Salient object detection (GLASSNet), a novel SOD model that employs SAMv2 [36] as a frozen encoder backbone. In our framework, the SAMv2 encoder generates high-resolution, object-aware feature maps that serve as a rich initial representation of the input image. Instead of fine-tuning the large and computationally expensive SAM backbone, we keep it entirely frozen and introduce a lightweight, spatially-aware convolutional adapter to modulate Global-Local Decoding with SAM2 for SOD 3
+
+and adapt its features for the task. This adapter is designed to preserve spatial continuity and object boundaries while aligning the SAM-derived features with the saliency task. Its convolutional nature allows it to better capture local tex-ture and edge information compared to MLP-based alternatives, while keeping the model efficient. The adapted feature maps are processed by a dual-decoder architecture. The global decoder captures high-level semantic dependencies using context-aggregation attention, dilated convolutions, and multi-scale reasoning, while the local decoder focuses on fine-grained cues—boundaries, textures, and small struc-tures—via locality-aware attention and shallow feature fusion. A feature aggre-gation module then combines their outputs into a unified saliency map. Fig 1 illustrates the outputs of each component within our model, highlight-ing their individual contributions to the final saliency detection. To summarize, our key contributions are: 
+
+– We guide the frozen SAMv2 encoder using a lightweight, spatially-aware adapter network to adapt its general-purpose representations to the SOD task effectively. 
+
+– We design a dual-stream decoder that integrates global semantic context and local structural cues to enhance saliency detection. 
+
+– Our model not only surpasses state-of-the-art SOD methods but also outper-forms recent task-specific models in camouflaged object detection, demon-strating strong generalization across domains. 
+
+2 Related Works 
+
+From a broad perspective, our proposed SOD model builds upon two key design choices: leveraging a vision foundation model as the encoder backbone, and em-ploying a two-stream local-global decoder architecture. In this section, we briefly review prior works that adopt similar strategies and highlight the conceptual and architectural distinctions of our approach. 
+
+Vision Foundation Model-Driven Saliency Modeling Recent advances in vision foundation models [42], pretrained on massive datasets, have greatly improved model generalizability in visual understanding. These models have advanced saliency modeling for images [58] and videos [34,59]. In this context, foundation models—particularly SAM, with its object-centric and instance-level masks—have become promising for SOD, though existing SAM-based methods mainly depend on prompt-based usage or task-specific adapters. Early work such as SSOM [3] fine-tunes SAM using AdaLoRA while keeping parameter updates lightweight. Liu and Huang [27] integrate SAM into a two-stage weakly supervised SOD pipeline using box prompts, where SAM-generated masks create pseudo-labels that are progressively refined. SSFam [29] adapts SAM for scribble-supervised SOD across multiple modalities (RGB, RGB-D, RGB-T, V-D-T), introducing modality-aware modulators and using scribbles as prompts during training, with a siamese decoder enabling prompt-free inference. 4 Moradi et al. 
+
+Incorporating local and global contexts Integrating local and global information has long been a central strategy in SOD, though these concepts are modeled differently across works. In [40], global cues come from bottom-up saliency maps, while local cues are derived from top-down maps. The context-aware attention network in [37] captures semantic relationships between each pixel and both its local and global surroundings. Other methods learn local-to-global features to exploit fine-grained structure for global saliency inference [7,16]. While many models fuse local and global cues within a single architec-ture, some explicitly adopt two-stream designs to separately model each type of context [54]. In this work, we use a dual-stream decoding network, with each branch re-sponsible for a different type of contextual information. One decoding branch captures global, long-range semantic and conceptual dependencies inherent in the image (and among pixels of salient objects) by expanding the receptive field, while the other focuses on fine-grained local structural features—including edges, textures, and boundaries—to distinguish the object(s) from the surroundings. 
+
+3 Methodology 
+
+3.1 Overview 
+
+The architecture of the proposed SOD model, GLASSNet , is shown in Fig. 2. We adopt the image encoder of SAMv2 —excluding its prompt encoder and mask decoder—as a frozen backbone to reduce computation and avoid overfitting on limited SOD data. To adapt SAMv2’s features to the saliency task, we introduce lightweight convolutional adapters at the input of each encoding layer. These adapters mod-ulate features in a task-specific manner without modifying the original backbone. Unlike common MLP-based adapters, our convolution-based design better pre-serves spatial detail, which is crucial for dense prediction. The encoder–decoder structure follows a U-shaped architecture, with decoder modules progressively fusing multi-scale features from the encoder. To capture different contextual cues, we design two decoders: one for fine-grained local de-tails and another for long-range global dependencies. Additionally, a sub-branch derived from the global decoder captures mid-level context. The outputs from all three branches are fused to generate the final saliency map. 
+
+3.2 Encoder Structure 
+
+In our network, we employ only the image encoder of SAMv2 [36] as the fea-ture extractor, omitting its prompt encoders and mask decoder. This decision is driven by the strong generalization capability of SAMv2’s vision backbone, which performs effectively across diverse vision tasks. At the core of the image encoder lies HiERA (Hierarchical Encoder with Relative Attention) [38], a transformer-based architecture designed for efficient, scalable segmentation. Unlike the single-scale ViT encoder in SAM v1, HiERA Global-Local Decoding with SAM2 for SOD 5C  
+
+> C
+> Upsampling
+> Upsampling
+> C
+> Upsampling
+> Upsampling
+> Upsampling
+> Upsampling
+> C
+> Upsampling
+> C
+> Upsampling
+> Upsampling
+> C
+> Upsampling
+> Upsampling
+> C
+> C
+> Upsampling
+> Upsampling
+> Upsampling
+> C
+> Final Map
+> Encoder Block
+> Encoder Block
+> Encoder Block
+> Encoder Block
+> Conv 2D AMFM
+> Upsampling
+> Spatial Upsampling Swin Transformer
+> Module
+> CConcatenation
+> Map Local Map Global Map Midium-Level
+> Loss
+> Ground Truth
+
+Fig. 2: Schematic overview of GLASSNet for saliency detection. A frozen SAMv2 encoder is adapted with a lightweight convolutional adapter and a multi-branch decoder: local for fine details, global for contextual features, and medium-scale for balance. Their fused outputs produce accurate multi-scale saliency maps. introduces a hierarchical design that extracts multi-scale features, making it naturally compatible with encoder–decoder frameworks like U-Net. We adopt the pretrained HiERA-L variant, which outputs four levels of hier-archical feature maps given an input image R3×H×W . These features are denoted as Xi ∈ RCi× H 
+
+> 2i+1
+
+× W 
+
+> 2i+1
+
+, where i ∈ { 1, 2, 3, 4} and Ci ∈ { 144 , 288 , 576 , 1152 }.To adapt the frozen SAMv2 encoder to the saliency detection task, we in-troduce a lightweight convolutional adapter at the input of each encoding stage. Unlike typical MLP-based adapters, our design employs five densely connected convolutional layers (kernel size 3) combining standard and depthwise convo-lutions. This structure enhances spatial sensitivity and promotes feature reuse and gradient flow—critical for adapting frozen representations to dense predic-tion tasks. The adapter architecture is illustrated in Fig. 3. 
+
+3.3 Decoding Structure and Workflow 
+
+We design a dual decoder structure comprising to capture features across local, global, and intermediate (medium-scale) contexts. 
+
+Local Decoder. The local decoder focuses on fine-grained spatial details essential for precise saliency detection, such as boundary sharpness and fore-6 Moradi et al. C C
+
+> Adapter
+> +
+> x N
+> Conv 2D Depth-wise Conv 2D
+> Hiera Encoding
+> Block
+> Encoder Block
+
+Fig. 3: A lightweight adapter is embedded into the SAMv2 image encoder. It uses point-wise and depthwise convolutions to capture multi-scale local features, fuses them via concatenation and residual connections, and enhances representations with minimal added parameters for efficient fine-tuning. ground–background separation. It processes features from the deepest encoder layer alongside intermediate encoder outputs using a combination of Swin Trans-former [28] blocks (depth 2, window size 1) and 2D convolutions. Swin Trans-former blocks are used early for local refinement and channel recalibration, while later stages rely on 2D convolutions to maintain computational efficiency at higher resolutions. The decoder follows a progressive fusion scheme: features are upsampled and merged with shallower encoder outputs at each stage, with spa-tial resolution gradually doubled and channel dimensions reduced. This structure enables the network to reconstruct a high-resolution saliency map with strong local accuracy. 
+
+Global Decoder. To capture long-range dependencies and high-level seman-tics, we introduce a global decoder that progressively enlarges the receptive field. Its core component is the Attentional Multi-Scale Feature Fusion Module (AMFM) (Fig. 4), which begins with a Criss-Cross Attention [13] mechanism to model global relationships across horizontal and vertical dimensions. This is followed by three parallel convolutional branches: one standard and two dilated (with rates of 2 and 3), enabling multi-scale context aggregation. Outputs are fused via pixel-wise summation. Additionally, a depthwise separable convolution applied to a residual connection enhances channel-wise feature weighting. The feature decoding procedure in this branch is gradually started from deepest to shallowest encoder layers, integrating intermediate features while maintaining spatial abstraction. As illustrated in the network’s architecture, the consecu-tive utilization of AMFM progressively enlarges the receptive field, allowing the model to capture broader contextual information. Additionally, upsampling lay-ers at certain stages help restore the spatial resolution of the final saliency map. The final stages of this branch use convolutional layers to refine and generate the saliency map. Global-Local Decoding with SAM2 for SOD 7+ +Criss-Cross Attention  
+
+> Depth-wise Separable
+> Convolution Conv 2D Dilation rate:2
+> Dilation rate:1 Conv 2D
+> Conv 2D Dilation rate:3
+> +Pixel-wise Summation
+> AMFM
+
+Fig. 4: The AMFM captures global context using Criss-Cross Attention and fuses multi-scale features via parallel convolutions. Outputs are summed pixel-wise, with a depthwise separable residual convolution refining channel features. 
+
+Medium-Scale Decoder. To bridge the gap between local and global fea-tures, we add a lightweight sub-branch derived from the global decoder. This 
+
+medium-scale decoder uses a single AMFM modul and applies sharper channel reduction for efficiency. It also employs intermediate outputs from the global decoder and focuses on medium-range contextual reasoning. Though shallow, it benefits from globally refined features and complements both decoders by enhancing mid-level feature representation. Finally, each decoder produces an individual saliency map, and these are fused to form the final output. In the decoder branches, all Conv2D layers use a kernel size of 3. A ReLU activation function and a Batch Normalization layer are applied after each convolutional layer, except for the final one. The parallel multi-scale decoding design enables the model to specialize in different contextual scopes, leading to more stable learning and accurate saliency detection across spatial scales. 
+
+3.4 Training Objectives 
+
+Given an input image I ∈ RH×W ×3 and its ground-truth saliency map G ∈
+
+RH×W , the model aims to predict an estimated saliency map S ∈ RH×W . Fol-lowing [47], the loss is defined as L = LwIoU (S, G ) + LwBCE (S, G ), where LwIoU 
+
+is the weighted IoU loss and LwBCE is the weighted binary cross-entropy loss, guiding the model to align predictions with the ground truth. To avoid overfitting to local or global features, outputs from the local and global decoders are excluded from the loss. Instead, an auxiliary supervision term 
+
+Lmid , computed from a complementary branch of the global decoder, encourages learning representations that balance local detail and global context. The final objective is Ltotal = L(Sfinal , G ) + L(Smid , G ), where Sfinal is the final saliency map and Smid is the output of the complementary global branch. 
+
+4 Experiments 
+
+4.1 Experimental Setup 
+
+To ensure fair and consistent evaluation, we train our model on the training set of the DUTS-TE dataset [43], which contains 10,533 images. The trained model 8 Moradi et al. 
+
+Fig. 5: Qualitative comparisons show our model effectively reconstructs local and global features, producing saliency maps closely matching the ground truth. is then evaluated on five widely used salient object detection (SOD) bench-mark datasets: the test set of DUTS-TE [43] (5,019 images), HKU-IS [22] (4,447 images), DUT-OMRON [52] (5,168 images), ECSSD [51] (1,000 images), and PASCAL-S [24] (850 images). Training was performed on an NVIDIA H100 GPU. The image encoder weights were initialized from the SAMv2-L model, while the remaining parameters of our network were randomly initialized. In-put images were resized to 352 × 352 pixels, and a batch size of 16 was used. The model was optimized using AdamW with a weight decay of 1 × 10 −4 and a learning rate of 5 × 10 −4. During training, the SAMv2 encoder parameters were frozen, and only the appended adapter layers were updated. The model was trained for up to 60 epochs. 
+
+4.2 Evaluation Metrics 
+
+Following prior works [33,1,19], we evaluate SOD performance using four stan-dard metrics: Mean Absolute Error (MAE), structural similarity ( Sm), mean Enhanced-alignment Measure ( Emean ), and maximum F-measure ( F β
+
+> max
+
+). MAE measures pixel-wise differences between a predicted saliency map S and ground truth GT , computed as MAE = 1 
+
+> W×H
+
+PWx=1 
+
+PHy=1 |S(x, y ) − GT (x, y )|,where W and H are the image width and height; lower MAE indicates better agreement. The structural similarity score Sm evaluates global and local consis-tency, defined as Sm = αS o + (1 − α)Sr , with α = 0 .5, combining object-aware (So) and region-aware ( Sr ) similarity; higher Sm is better. The Enhanced-alignment Measure incorporates pixel- and image-level infor-mation: Eξ = 1 
+
+> W×H
+
+PHx=1 
+
+PWy=1 θ(ξ), where ξ is the alignment matrix and θ(·)
+
+its enhanced form; we report Emean , with higher values indicating stronger align-ment. Finally, the F-measure computes the weighted harmonic mean of precision Global-Local Decoding with SAM2 for SOD 9
+
+Table 1: Quantitative comparison of our model and state-of-the-art SOD mod-els on three widely used benchmark datasets (HKU-IS, DUST-TE, and DUT-OMRON). ↑ indicates higher is better, ↓ indicates lower is better. Best results are shown in bold . “–”: Not available.                                                                                                                                                                                                                                                  
+
+> Model HKU-IS DUST-TE DUT-OMRON
+> M↓Fmax
+> β↑Emean ↑S↑M↓Fmax
+> β↑Emean ↑S↑M↓Fmax
+> β↑Emean ↑S↑
+> SSOM 0.027 0.945 ––0.034 0.907 ––0.048 0.850 ––SSFam 0.022 0.942 –0.934 0.030 0.898 –0.904 0.044 0.838 –0.873 Liu and Huang [27] 0.031 0.932 ––0.036 0.889 ––0.055 0.793 ––
+> F3Net 0.028 –0.953 0.917 0.035 –0.902 0.888 0.053 –0.870 0.838 CANet 0.027 0.939 –0.920 0.033 0.898 –0.895 0.047 0.828 –0.847 EDN 0.029 0.938 ––0.041 0.881 ––0.057 0.805 ––GPONet 0.023 -0.967 0.911 0.027 -0.936 0.919 0.045 -0.899 0.893 ISNet 0.027 0.941 –0.922 0.034 0.899 –0.896 0.051 0.827 –0.847 ELSA-Net 0.025 0.935 0.964 –0.034 0.882 0.934 –0.050 0.794 0.891 –SwinSOD 0.020 0.933 -0.938 0.025 0.888 -0.917 0.041 0.801 -0.868 ECF-DT 0.028 -0.955 0.929 0.036 -0.899 0.909 0.060 -0.868 0.854 PIFRNet 0.023 0.944 0.965 0.933 0.029 0.901 0.944 0.903 0.048 0.831 0.904 0.859 DASOD 0.024 0.911 0.961 0.923 0.033 0.848 0.932 0.893 0.052 0.767 0.884 0.849 BBRF 0.020 0.958 0.965 0.935 0.025 0.916 0.927 0.908 0.042 0.843 0.887 0.855 MENet 0.023 0.948 0.967 0.927 0.028 0.912 0.936 0.904 0.045 0.833 0.891 0.849 IFA 0.027 –0.958 –0.034 –0.935 –0.047 –0.894 —GLASSNet(w 1) 0.019 0.955 0.970 0.943 0.019 0.935 0.960 0.936 0.037 0.860 0.915 0.889
+> GLASSNet(w 6) 0.018 0.955 0.971 0.943 0.020 0.930 0.957 0.934 0.039 0.850 0.909 0.883
+
+and recall: Fβ = (1+ β2)·Precision ·Recall 
+
+β2·Precision +Recall , with β2 = 0 .3; we report F max 
+
+β , where higher values indicate more accurate salient object detection. 
+
+4.3 Performance comparison with state-of-the-art models 
+
+Before analyzing performance, it is important to emphasize that freezing the encoder and inserting lightweight adapters reduces the learnable parameters from 212.15M to just 4.37M—a 97.94% decrease. This demonstrates the efficiency of our SAMv2 adaptation strategy and sets the stage for the quantitative results that follow. We evaluate GLASSNet on five standard SOD benchmarks against leading models, including recent SAM-based frameworks such as SSOM [3], SSFam [29] and Liu and Huang [27], as well as several state-of-the-art models: F 3Net [47], CANet[62], EDN [49], ELSA-Net [56], MENet [45], DASOD [1], PIFRNet [19], SwinSOD [48], GPONet [53], ISNet [61], ECF-DT [41] , BBRF [33] and IFA [23]. To highlight architectural effects, we compare both the window 1 (w1) and window 6 (w6) variants of GLASSNet, reflecting different Swin Transformer attention window sizes (Table 1 and 2). GLASSNet consistently outperforms these baselines across all datasets, demon-strating strong accuracy and robustness. This is primarily due to its adapter-guided frozen backbone and specialized dual-decoder design. On datasets with cluttered scenes and fine structures, such as DUT-OMRON and PASCAL, GLASS-Net w1 achieves the lowest MAE and improves the maximum F-measure by over 5 points compared to the strongest CNN and Transformer-based competitors. These gains underscore the local decoder’s ability to preserve sharp boundaries and recover small-scale details. In contrast, on datasets like ECSSD and HKU-IS, where salient objects tend to occupy larger regions or exhibit diverse shapes, GLASSNet w6 yields the 10 Moradi et al. 
+
+Table 2: Quantitative comparison of our model and state-of-the-art SOD models on two widely used benchmark datasets (ECSSD and PASCAL-S). ↑ indicates higher is better, ↓ indicates lower is better. Best results are shown in bold . “–”: Not available.                                                                                                                                                                 
+
+> Model ECSSD PASCAL
+> M↓Fmax
+> β↑Emean ↑S↑M↓Fmax
+> β↑Emean ↑S↑
+> SSOM 0.029 0.960 ––0.062 0.884 ––SSFam 0.023 0.954 –0.942 0.055 0.875 –0.876 Liu and Huang [27] 0.035 0.945 ––––––
+> F3Net 0.033 –0.927 0.924 0.062 –0.859 0.855 CANet 0.032 0.951 –0.928 0.061 0.888 –0.859 EDN 0.034 0.948 ––0.066 0.875 ––GPONet 0.021 –0.964 0.942 0.055 –0.908 0.871 ISNet 0.032 0.950 –0.929 0.062 0.882 –0.859 ELSA-Net 0.030 0.943 0.961 –0.059 0.862 0.912 –SwinSOD 0.023 0.940 –0.865 ––––ECF-DT 0.031 –0.922 0.936 0.056 –0.867 0.876 PIFRNet 0.026 0.957 0.966 0.942 0.058 0.895 0.917 0.887 DASOD 0.027 0.926 0.960 0.931 0.059 0.823 0.908 0.865 BBRF 0.022 0.963 0.934 0.939 0.049 0.891 0.867 0.871 MENet 0.030 0.954 0.954 0.927 0.053 0.889 0.913 0.872 IFA 0.029 –0.959 –0.072 –0.881 –GLASSNet (w 1) 0.019 0.966 0.971 0.953 0.044 0.904 0.931 0.893
+> GLASSNet (w 6) 0.019 0.964 0.969 0.952 0.045 0.897 0.927 0.892
+
+highest S-measure and remains competitive in F-measure. The larger attention window, combined with the global decoder’s Criss-Cross and dilated convolu-tion modules, enables more effective modeling of mid- to long-range dependen-cies—something local operators typically overlook. Notably, these gains are achieved without fine-tuning the SAMv2 encoder. By freezing the backbone and training only lightweight convolutional adapters and decoders, GLASSNet reduces trainable parameters and shortens training time while outperforming full fine-tuning approaches. Overall, GLASSNet sets a new SOD performance baseline by unifying local precision and global context in an efficient adapter-based design, offering a scalable, energy-efficient solution for real-world use. Qualitative comparisons with recent models are shown in Figure 5 To further demonstrate the generalization capability of GLASSNet (w 1), we evaluate it against state-of-the-art camouflaged object detection (COD) mod-els including UEDG [32], FEDER [11], LSR+ [31], DaCOD [44], PFRNet [4], SegMaR [17], OCENet [25], BGNet [39], CRI-Net [8], HitNet [12], LFNet [9], SARNet [50], CODdiff [55] and USCNet [60] on three challenging COD datasets: CAMO [21], which contains 1,000 training and 250 testing images; COD10K [6], comprising 3,040 training and 2,026 testing images out of 5,066 total; and NC4K [30], which includes 4,121 images used for evaluation with weights pretrained on COD10K. As shown in Table 3, GLASSNet consistently outperforms recent state-of-the-art COD models, achieving the lowest MAE and the highest weighted F-measure, mean E-measure, and S-measure across all datasets (e.g., 0.866/0.925/0.868 on NC4K and 0.854/0.938/0.887 on CAMO). These strong results on inher-ently difficult scenes—characterized by low contrast and misleading textures and patterns—highlight GLASSNet’s robust generalization. Specifically, the frozen SAMv2 encoder provides stable high-level representations, while the dual-stream Global-Local Decoding with SAM2 for SOD 11 
+
+Table 3: Quantitative comparison of our model and other state-of-the-art COD models on three widely used benchmark datasets (NC4K, COD10K, and CAMO). ↑ indicates higher is better, ↓ indicates lower is better. Best results are shown in bold . “–”: Not available.                                                                                                                                                                                                              
+
+> Model NC4K COD10K CAMO
+> M↓Fωβ↑Emean ↑S↑M↓Fωβ↑Emean ↑S↑M↓Fωβ↑Emean ↑S↑
+> UEDG 0.035 0.829 0.928 0.881 0.025 0.766 0.924 0.858 0.048 0.819 0.922 0.868 LSR+ 0.048 –0.896 0.840 0.037 –0.880 0.805 0.079 –0.840 0.789 FEDER-R50 0.045 –0.905 0.846 0.032 –0.900 0.823 0.069 –0.873 0.807 PFRNet 0.045 0.785 0.902 0.859 0.033 0.710 0.888 0.833 0.069 0.754 0.877 0.827 BGNet 0.045 0.785 0.903 0.849 0.033 0.719 0.898 0.829 0.072 0.742 0.861 0.807 OCENet 0.044 –0.899 0.857 0.032 –0.890 0.832 0.075 –0.866 0.807 DaCOD 0.035 0.814 –0.874 0.028 0.729 –0.840 0.051 0.796 –0.855 CRI-Net 0.046 ––0.848 0.035 ––0.819 0.072 ––0.810 SegMaR 0.046 0.781 –0.841 0.034 0.724 –0.833 0.071 0.753 –0.815 HitNet ––––0.023 0.804 0.936 0.869 0.056 0.806 0.904 0.844 LFNet 0.031 0.848 0.938 0.877 0.022 0.801 0.935 0.869 0.045 0.847 0.936 0.871
+> SARNet 0.032 0.842 0.937 0.886 0.024 0.777 0.931 0.864 0.047 0.828 0.927 0.868 USCNet 0.039 0.768 0.877 0.839 0.030 0.700 0.869 0.821 0.049 0.790 0.886 0.845 CODdiff 0.036 0.827 0.926 0.865 0.026 0.759 0.919 0.837 0.054 0.802 0.911 0.839 GLASSNet (w 1) 0.029 0.855 0.938 0.901 0.020 0.809 0.938 0.887 0.044 0.825 0.925 0.868
+
+decoder effectively integrates fine-grained edge localization and global semantic reasoning to recover camouflaged objects with high fidelity ( Qualitative com-parisons between our model and other methods are provided in the supplementary material ). 
+
+4.4 Ablation Studies 
+
+To investigate the impact of individual components in our model, we conduct a series of ablation studies. All experiments are performed by training each model variant on the DUST-TR training set, followed by evaluation on the ECSSD dataset using the corresponding trained model. In all experiments, the Swin Transformer attention window size is fixed to 1. The results are summarized in Tables 4 and 5 ( Ablation results on other SOD datasets are included in the supplementary material ). According to the evaluated performance met-rics, removing the medium-scale sub-branch consistently degrades both bound-ary precision and structural coherence, as reflected in the MAE and F-measure values. This branch serves as a bridge between the local and global decoders, capturing mid-level contextual information that is missed when relying solely on either fine-grained details or high-level semantics. Without it, the transitions between fine-grained details and broader object regions become less seamless. The global decoder—comprising Criss-Cross Attention and multi-dilated con-volutions—is essential for capturing coherent, object-level saliency. While dis-abling this branch still preserves reasonable boundary performance, it severely deteriorates threshold-invariant metrics and overall structural consistency, as ev-ident in all of its scores. Further analysis reveals that Criss-Cross Attention and dilated convolutions serve complementary roles: the former captures long-range dependencies, while the latter aggregates multi-scale context. Removing either leads to a drop in both structural fidelity and contrast-aware performance. 12 Moradi et al. 
+
+Table 4: Ablation study investigating the impact of encoder choices on the EC-SSD dataset.                           
+
+> Model Variant M↓Fmax
+> β↑Emean ↑S↑
+> CLIP ViT-L/14 Encoder 0.0392 0.8947 0.9411 0.9102 SAM ViT-L Encoder 0.0755 0.7824 0.8841 0.8359 ViT-L Encoder 0.0281 0.9173 0.9607 0.9297 w/o Adapter (SAMv2 Frozen Encoder) 0.0225 0.9311 0.9646 0.9470 w/o Adapter (SAMv2 Tuned Encoder) 0.0547 0.8613 0.9100 0.8917 GLASSNet (w 1) 0.019 0.966 0.971 0.953
+
+Table 5: Ablation study investigating the impact of different decoder components on the ECSSD dataset.                                  
+
+> Model Variant M↓Fmax
+> β↑Emean ↑S↑
+> w/o Medium Decoder (w1) 0.0192 0.9468 0.9708 0.9508 w/o Global Decoder (w1) 0.0200 0.9457 0.9675 0.9479 w/o Local Decoder 0.0193 0.9473 0.9700 0.9522 w/o Swin in Local Decoder 0.0194 0.9458 0.9698 0.9515 AFMF w/o Triple Conv Branch 0.0205 0.9400 0.9682 0.9512 AFMF w/o Criss-Cross 0.0222 0.9401 0.9644 0.9478 w MLP Adapter 0.0201 0.9386 0.9696 0.9529
+> GLASSNet (w 1) 0.019 0.966 0.971 0.953
+
+Ablating the local decoder or replacing its Swin Transformer blocks with standard convolutions impairs fine-detail recovery, underscoring the importance of local self-attention. Without this component, the model tends to over-smooth boundaries, and conventional convolutions fail to replicate the spatial precision achieved by Swin blocks—an effect observable across all evaluation metrics. Replacing our convolutional adapter with an MLP-based alternative further highlights the importance of spatially-aware adaptation. While MLPs are ef-fective at channel recalibration, they lack spatial sensitivity. In contrast, our adapter preserves local geometry and promotes feature reuse—both of which are critical for dense prediction tasks. Finally, removing the adapter entirely (i.e., feeding frozen SAMv2 features directly into the decoder) or replacing SAMv2 with SAM-ViT-L, ViT-L [5], or CLIP-ViT-L/14 [35] results in substantial perfor-mance degradation across all metrics. These results indicate that integrating the spatially-aware adapter with the frozen SAMv2 image encoder leads to improved performance and generalizability over the referenced foundation models. More-over, its Hiera backbone generates hierarchical feature representations, making it better suited for U-Net-style architectures than the ViT-based backbones used in CLIP-ViT, SAM-ViT, and ViT. These findings validate our core design philos-ophy: a frozen, hierarchical attention backbone guided by lightweight, spatially-aware adapter provides a compelling balance between generalization, efficiency, and task-specific adaptability. Global-Local Decoding with SAM2 for SOD 13 
+
+5 conclusion 
+
+In this work, we introduce GLASSNet, a novel salient object detection (SOD) framework that employs SAMv2 as a frozen encoder to harness its strong gen-eralization capabilities without incurring the cost of full fine-tuning. To capture both global semantics and local details, we design a dual-stream decoder: one branch models long-range dependencies, while the other targets fine-grained fea-tures like edges and textures. Their outputs are fused to produce saliency maps that balance semantic accuracy with spatial precision. By reducing the number of learnable parameters in the encoder by over 97% through parameter freezing and lightweight adaptation, our method offers a highly efficient yet effective solution for adapting SAMv2 to SOD tasks. Experiments on standard and challenging SOD datasets, including camouflage benchmarks, confirm the effectiveness and generalizability of our approach. This work highlights a promising direction for energy-efficient, task-adaptive SOD models. 
+
+Acknowledgements 
+
+The work was partially supported by the Italian Ministerial grants PRIN 2022 “B-Fair: Bias-Free Artificial Intelligence methods for automated visual Recogni-tion”, CUPE53D23008030006. 
+
+References 
+
+1. Asheghi, B., et al.: Dasod: Detail-aware salient object detection. Image Vis. Com-put. 148 , 105154 (2024) 2. Borji, A., et al.: Salient object detection: A survey. Computational visual media 
+
+5(2), 117–150 (2019) 3. Cui, R., He, S., Qiu, S.: Adaptive low rank adaptation of segment anything to salient object detection. arXiv preprint arXiv:2308.05426 (2023) 4. Dong, Y., et al.: You do not need additional priors in camouflage object detection. arXiv preprint arXiv:2310.00702 (2023) 5. Dosovitskiy, A., et al.: An image is worth 16x16 words: Transformers for image recognition at scale. In: ICLR (2021) 6. Fan, D.P., et al.: Camouflaged object detection. In: CVPR. pp. 2777–2787 (2020) 7. Feng, X., et al.: Local to global feature learning for salient object detection. Pattern Recognition Letters 162 , 81–88 (2022) 8. Ge, Y., et al.: Camouflaged object detection via cross-level refinement and inter-action network. Image Vis. Comput. 144 , 104973 (2024) 9. Ge, Y., et al.: Camouflaged object detection via location-awareness and feature fusion. Image Vis. Comput. 152 , 105339 (2024) 10. Han, D., et al.: Segment anything model (sam) meets glass: Mirror and transparent objects cannot be easily detected. arXiv preprint arXiv:2305.00278 (2023) 11. He, C., et al.: Camouflaged object detection with feature decomposition and edge reconstruction. In: CVPR. pp. 22046–22055 (2023) 12. Hu, X., et al.: High-resolution iterative feedback network for camouflaged object detection. In: AAAI. vol. 37, pp. 881–889 (2023) 13. Huang, Z., et al.: Ccnet: Criss-cross attention for semantic segmentation. In: ICCV. pp. 603–612 (2019) 14 Moradi et al. 14. Ji, G.P., et al.: Sam struggles in concealed scenes–empirical study on segment anything. arXiv preprint arXiv:2304.06022 (2023) 15. Ji, W., et al.: Segment anything is not always perfect: An investigation of sam on different real-world applications (2024) 16. Ji, Y., et al.: Lgcnet: A local-to-global context-aware feature augmentation network for salient object detection. Information Sciences 584 , 399–416 (2022) 17. Jia, Q., et al.: Segment, magnify and reiterate: Detecting camouflaged objects the hard way. In: CVPR. pp. 4713–4722 (2022) 18. Kazmierczak, R., Berthier, E., Frehse, G., Franchi, G.: Explainability and vision foundation models: A survey. Information Fusion 122 , 103184 (2025) 19. Khan, R., et al.: Pyramidal attention with progressive multi-stage iterative feature refinement for salient object segmentation. Image Vis. Comput. p. 105670 (2025) 20. Kirillov, A., et al.: Segment anything. In: ICCV. pp. 4015–4026 (2023) 21. Le, T.N., et al.: Anabranch network for camouflaged object segmentation. CVIU 
+
+184 , 45–56 (2019) 22. Li, G., Yu, Y.: Visual saliency based on multiscale deep features. In: CVPR. pp. 5455–5463 (2015) 23. Li, M., et al.: Ifa: Illumination-aware feature aggregation model for salient object detection. Pattern Recognition p. 112118 (2025) 24. Li, Y., et al.: The secrets of salient object segmentation. In: CVPR. pp. 280–287 (2014) 25. Liu, J., Zhang, J., Barnes, N.: Modeling aleatoric uncertainty for camouflaged object detection. In: WACV. pp. 1445–1454 (2022) 26. Liu, T., et al.: Learning to detect a salient object. IEEE PAMI 33 (2), 353–367 (2010) 27. Liu, X., Huang, X.: Weakly supervised salient object detection via bounding-box annotation and sam model. Electronic Research Archive 31 (3) (2024) 28. Liu, Z., et al.: Swin transformer: Hierarchical vision transformer using shifted win-dows. In: ICCV. pp. 10012–10022 (2021) 29. Liu, Z., et al.: Ssfam: Scribble supervised salient object detection family. IEEE Trans. Multimed. (2025) 30. Lv, Y., et al.: Simultaneously localize, segment and rank the camouflaged objects. In: CVPR. pp. 11591–11601 (2021) 31. Lv, Y., et al.: Toward deeper understanding of camouflaged object detection. IEEE TCSVT 33 (7), 3462–3476 (2023) 32. Lyu, Y., et al.: Uedg: Uncertainty-edge dual guided camouflage object detection. IEEE Trans. Multimed. 26 , 4050–4060 (2023) 33. Ma, M., et al.: Boosting broader receptive fields for salient object detection. IEEE Trans. Image Process 32 , 1026–1038 (2023) 34. Moradi, M., Moradi, M., Rundo, F., Spampinato, C., Borji, A., Palazzo, S.: Salfom: Dynamic saliency prediction with video foundation models. In: ICPR. pp. 33–48. Springer (2024) 35. Radford, A., et al.: Learning transferable visual models from natural language supervision. In: ICML. pp. 8748–8763. PmLR (2021) 36. Ravi, N., et al.: Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) 37. Ren, Q., et al.: Salient object detection by fusing local and global contexts. IEEE Trans. Multimed. 23 , 1442–1453 (2020) 38. Ryali, C., et al.: Hiera: A hierarchical vision transformer without the bells-and-whistles. In: ICML. pp. 29441–29454. PMLR (2023) Global-Local Decoding with SAM2 for SOD 15 39. Sun, Y., et al.: Boundary-guided camouflaged object detection. arXiv preprint arXiv:2207.00794 (2022) 40. Tong, N., Lu, H., Zhang, Y., Ruan, X.: Salient object detection via global and local cues. Pattern Recognition 48 (10), 3258–3267 (2015) 41. Wang, B., et al.: A novel embedded cross framework for high-resolution salient object detection. Applied Intelligence 55 (4), 277 (2025) 42. Wang, J., et al.: Omnivl: One foundation model for image-language and video-language tasks. NeurIPS 35 , 5696–5710 (2022) 43. Wang, L., et al.: Learning to detect salient objects with image-level supervision. In: CVPR. pp. 136–145 (2017) 44. Wang, Q., et al.: Depth-aided camouflaged object detection. In: ACM-MM. pp. 3297–3306 (2023) 45. Wang, Y., et al.: Pixels, regions, and objects: Multiple enhancement for salient object detection. In: CVPR. pp. 10031–10040 (2023) 46. Wang, Z., et al.: Tf-sod: A novel transformer framework for salient object detection. Neural Comput Appl. 34 (14), 11789–11806 (2022) 47. Wei, J., Wang, S., Huang, Q.: F 3net: fusion, feedback and focus for salient object detection. In: AAAI. vol. 34, pp. 12321–12328 (2020) 48. Wu, S., Zhang, G., Liu, X.: Swinsod: Salient object detection using swin-transformer. Image Vis. Comput. 146 , 105039 (2024) 49. Wu, Y.H., et al.: Edn: Salient object detection via extremely-downsampled net-work. IEEE Trans. Image Process 31 , 3125–3136 (2022) 50. Xing, H., et al.: Go closer to see better: Camouflaged object detection via object area amplification and figure-ground conversion. IEEE TCSVT 33 (10), 5444–5457 (2023) 51. Yan, Q., Xu, L., Shi, J., Jia, J.: Hierarchical saliency detection. In: CVPR. pp. 1155–1162 (2013) 52. Yang, C., et al.: Saliency detection via graph-based manifold ranking. In: CVPR. pp. 3166–3173 (2013) 53. Yi, Y., et al.: Gponet: A two-stream gated progressive optimization network for salient object detection. Pattern Recognition 150 , 110330 (2024) 54. Yun, Y.K., Lin, W.: Selfreformer: Self-refined network with transformer for salient object detection. arXiv preprint arXiv:2205.11283 (2022) 55. Zhang, H., et al.: Coddiff: Prior leading diffusion model for camouflage object detection. Knowledge-Based Systems p. 113381 (2025) 56. Zhang, L., Zhang, Q.: Salient object detection with edge-guided learning and spe-cific aggregation. IEEE TCSVT 34 (1), 534–548 (2023) 57. Zhang, Y., et al.: Quantifying the limits of segmentation foundation models: Mod-eling challenges in segmenting tree-like and low-contrast objects. arXiv preprint arXiv:2412.04243 (2024) 58. Zhang, Y., Zhang, Z., Liu, T., Kong, J.: Category-aware saliency enhance learning based on clip for weakly supervised salient object detection. Neural Process. Lett. 
+
+56 (2), 49 (2024) 59. Zhou, F., Huang, B., Qiu, G.: Vision-language knowledge exploration for video saliency prediction. In: PRCV. pp. 191–205. Springer (2024) 60. Zhou, Z., et al.: Unconstrained salient and camouflaged object detection. arXiv preprint arXiv:2412.10943 (2024) 61. Zhu, G., Li, J., Guo, Y.: Separate first, then segment: An integrity segmentation network for salient object detection. Pattern Recognition 150 , 110328 (2024) 62. Zhu, G., Wang, L., Tang, J.: Learning discriminative context for salient object detection. Engineering Applications of Artificial Intelligence 131 , 107820 (2024)

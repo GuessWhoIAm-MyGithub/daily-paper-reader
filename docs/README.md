@@ -6,62 +6,68 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-06
-- 运行时间：2026-05-06 21:57:39 UTC
+- 最新运行日期：2026-05-08
+- 运行时间：2026-05-08 21:20:33 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：3
-- 速读区：10
+- 本次总论文数：15
+- 精读区：8
+- 速读区：7
 
 ### 今日简报（AI）
-- 今日共生成 13 篇推荐（精读 3 篇，速读 10 篇）
-- 精读：《CMTA: Leveraging Cross-Modal Temporal Artifacts for Generalizable AI-Generated Video Detection》（9.0/10）, 《ScribbleEdit: Synthetic Data for Image Editing with Scribbles and Text》（9.0/10）
-- 速读：《Featurising Pixels from Dynamic 3D Scenes with Linear In-Context Learners》（7.0/10）, 《Toward Fine-Grained Speech Inpainting Forensics:A Dataset, Method, and Metric for Multi-Region Tampering Localization》（7.0/10）, 《VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection》（7.0/10）
+- 今日共生成 15 篇推荐（精读 8 篇，速读 7 篇）
+- 精读：《EMOVIS: Emotion-Optimized Image Processing》（9.0/10）, 《Awaking Spatial Intelligence in Unified Multimodal Understanding and Generation》（9.0/10）
+- 速读：《Open-Source Image Editing Models Are Zero-Shot Vision Learners》（8.0/10）, 《Global-Local Feature Decoding with Adapter-Guided SAMv2 for Salient Object Detection》（7.0/10）, 《LLM-ADAM: A Generalizable LLM Agent Framework for Pre-Print Anomaly Detection in Additive Manufacturing》（7.0/10）
 - 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202605/06/README](/202605/06/README)
+- 详情：[/202605/08/README](/202605/08/README)
 
 ### 精读区论文标签
-1. [CMTA: Leveraging Cross-Modal Temporal Artifacts for Generalizable AI-Generated Video Detection](/202605/06/2605.00630v1-cmta-leveraging-cross-modal-temporal-artifacts-for-generalizable-ai-generated-video-detection)  
+1. [EMOVIS: Emotion-Optimized Image Processing](/202605/08/2605.03131v1-emovis-emotion-optimized-image-processing)  
    标签：评分：9.0/10、query:imgfor
-   evidence：利用跨模态时间伪影检测AI生成的视频，用于数字取证。
-2. [ScribbleEdit: Synthetic Data for Image Editing with Scribbles and Text](/202605/06/2605.01135v2-scribbleedit-synthetic-data-for-image-editing-with-scribbles-and-text)  
+   evidence：电影摄影中基于情感的图像编辑技术
+2. [Awaking Spatial Intelligence in Unified Multimodal Understanding and Generation](/202605/08/2605.04128v1-awaking-spatial-intelligence-in-unified-multimodal-understanding-and-generation)  
    标签：评分：9.0/10、query:imgfor
-   evidence：ScribbleEdit利用涂鸦和文本实现精确图像编辑。
-3. [Enhancing Self-Supervised Talking Head Forgery Detection via a Training-Free Dual-System Framework](/202605/06/2605.03390v1-enhancing-self-supervised-talking-head-forgery-detection-via-a-training-free-dual-system-framework)  
+   evidence：统一多模态模型用于指令引导的图像编辑
+3. [Intermediate Representations are Strong AI-Generated Image Detectors](/202605/08/2605.04358v1-intermediate-representations-are-strong-ai-generated-image-detectors)  
    标签：评分：9.0/10、query:imgfor
-   evidence：专注于说话头视频的伪造检测。
+   evidence：利用中间表示检测AI生成的图像。
+4. [Detecting Deepfakes via Hamiltonian Dynamics](/202605/08/2605.04405v1-detecting-deepfakes-via-hamiltonian-dynamics)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：使用物理启发的哈密顿动力学分析检测深度伪造。
+5. [LEGO: LoRA-Enabled Generator-Oriented Framework for Synthetic Image Detection](/202605/08/2605.04445v1-lego-lora-enabled-generator-oriented-framework-for-synthetic-image-detection)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：提出使用LoRA检测合成图像的框架。
+6. [StableI2I: Spotting Unintended Changes in Image-to-Image Transition](/202605/08/2605.04453v1-stablei2i-spotting-unintended-changes-in-image-to-image-transition)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：评估图像到图像转换中的内容保真度
+7. [DiffCap-Bench: A Comprehensive, Challenging, Robust Benchmark for Image Difference Captioning](/202605/08/2605.04503v1-diffcap-bench-a-comprehensive-challenging-robust-benchmark-for-image-difference-captioning)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：用于检测图像间差异的图像差异描述基准
+8. [AI-Generated Images: What Humans and Machines See When They Look at the Same Image](/202605/08/2605.06143v1-ai-generated-images-what-humans-and-machines-see-when-they-look-at-the-same-image)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：使用可解释AI方法检测AI生成图像
 
 ### 速读区论文标签
-1. [Featurising Pixels from Dynamic 3D Scenes with Linear In-Context Learners](/202605/06/2604.26488v1-featurising-pixels-from-dynamic-3d-scenes-with-linear-in-context-learners)  
+1. [Open-Source Image Editing Models Are Zero-Shot Vision Learners](/202605/08/2605.04566v1-open-source-image-editing-models-are-zero-shot-vision-learners)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：开源图像编辑模型在视觉任务中的评估
+2. [Global-Local Feature Decoding with Adapter-Guided SAMv2 for Salient Object Detection](/202605/08/2605.02616v1-global-local-feature-decoding-with-adapter-guided-samv2-for-salient-object-detection)  
    标签：评分：7.0/10、query:imgfor
-   evidence：动态场景中像素级特征学习用于空间定位
-2. [Toward Fine-Grained Speech Inpainting Forensics:A Dataset, Method, and Metric for Multi-Region Tampering Localization](/202605/06/2605.02223v1-toward-fine-grained-speech-inpainting-forensicsa-dataset-method-and-metric-for-multi-region-tampering-localization)  
-   标签：评分：7.0/10、query:img-f
-   evidence：语音取证中的多区域篡改定位
-3. [VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection](/202605/06/2605.03456v1-vl-sam-v3-memory-guided-visual-priors-for-open-world-object-detection)  
+   evidence：使用SAMv2定位图像中显著对象的框架
+3. [LLM-ADAM: A Generalizable LLM Agent Framework for Pre-Print Anomaly Detection in Additive Manufacturing](/202605/08/2605.03328v1-llm-adam-a-generalizable-llm-agent-framework-for-pre-print-anomaly-detection-in-additive-manufacturing)  
    标签：评分：7.0/10、query:imgfor
-   evidence：提供图像中物体定位技术，适用于区域定位。
-4. [CenSegNet: a generalist high-throughput deep learning framework for centrosome phenotyping at spatial and single-cell resolution in heterogeneous tissues](/202605/06/biorxiv-10-1101-2025-09-15-676250-v3-censegnet-a-generalist-high-throughput-deep-learning-framework-for-centrosome-phenotyping-at-spatial-and-single-cell-resolution-in-heterogeneous-tissues)  
+   evidence：使用LLM进行异常检测，可迁移至图像编辑检测方法
+4. [FlowDIS: Language-Guided Dichotomous Image Segmentation with Flow Matching](/202605/08/2605.05077v1-flowdis-language-guided-dichotomous-image-segmentation-with-flow-matching)  
    标签：评分：7.0/10、query:imgfor
-   evidence：用于图像分割和区域定位的深度学习框架
-5. [GPT-Image-2 in the Wild: A Twitter Dataset of Self-Reported AI-Generated Images from the First Week of Deployment](/202605/06/2604.25370v1-gpt-image-2-in-the-wild-a-twitter-dataset-of-self-reported-ai-generated-images-from-the-first-week-of-deployment)  
+   evidence：用于图像区域定位的图像分割方法
+5. [Stego Battlefield: Evaluating Image Steganography Attacks and Steganalysis Defenses](/202605/08/2605.05789v1-stego-battlefield-evaluating-image-steganography-attacks-and-steganalysis-defenses)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：评估隐写术和隐写分析用于图像安全和取证。
+6. [Contrastive Privacy: A Semantic Approach to Measuring Privacy of AI-based Sanitization](/202605/08/2605.02977v1-contrastive-privacy-a-semantic-approach-to-measuring-privacy-of-ai-based-sanitization)  
    标签：评分：6.0/10、query:imgfor
-   evidence：用于研究AI生成图像检测的数据集
-6. [COMPASS: COmpact Multi-channel Prior-map And Scene Signature for Floor-Plan-Based Visual Localization](/202605/06/2604.25388v1-compass-compact-multi-channel-prior-map-and-scene-signature-for-floor-plan-based-visual-localization)  
+   evidence：基于AI的图像概念去除净化技术
+7. [FACTOR: Counterfactual Training-Free Test-Time Adaptation for Open-Vocabulary Object Detection](/202605/08/2605.03294v1-factor-counterfactual-training-free-test-time-adaptation-for-open-vocabulary-object-detection)  
    标签：评分：6.0/10、query:imgfor
-   evidence：使用平面图的几何和语义先验进行视觉定位
-7. [Object-Level Explanations for Image Geolocation Models: a GeoGuessr use-case](/202605/06/2605.00912v1-object-level-explanations-for-image-geolocation-models-a-geoguessr-use-case)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于图像分析的对象级区域定位
-8. [Towards Visual Query Localization in the 3D World](/202605/06/2605.01498v1-towards-visual-query-localization-in-the-3d-world)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：3D序列中的视觉查询定位
-9. [SwiftPie: Lightning-fast Subject-driven Image Personalization via One step Diffusion](/202605/06/2605.01510v1-swiftpie-lightning-fast-subject-driven-image-personalization-via-one-step-diffusion)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：通过单步扩散实现快速图像个性化。
-10. [A Hybrid Approach for Closing the Sim2real Appearance Gap in Game Engine Synthetic Datasets](/202605/06/2605.02291v1-a-hybrid-approach-for-closing-the-sim2real-appearance-gap-in-game-engine-synthetic-datasets)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于合成数据的图像编辑扩散模型
+   evidence：反事实推理用于区域级预测
 
 
 <div class="dpr-home-promo-card">
