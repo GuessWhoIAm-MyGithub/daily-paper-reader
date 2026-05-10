@@ -1,0 +1,1144 @@
+Title: LIME: a fully automated pipeline for high-throughput quantification of leaf lesions
+
+URL Source: https://www.biorxiv.org/content/10.64898/2026.05.07.723432v1.full.pdf
+
+Number of Pages: 35
+
+Markdown Content:
+# LIME: a fully automated pipeline for high-throughput quantification of leaf lesions 
+
+Xavier Schneider 2Y, Da Tan 2* , Lara Carroll 1, Rhey Caners 1, Mark Belmonte 1Y, Steve Whyard 1Y, Christopher J. Henry 2Y
+
+1 Department of Biological Sciences, University of Manitoba, Winnipeg, Manitoba, Canada 
+
+2 Department of Computer Science, University of Manitoba, Winnipeg, Manitoba, Canada 
+
+YThese authors contributed equally to this work. * tand2@myumanitoba.ca 
+
+# Abstract 
+
+Accurate quantification of leaf lesion severity is essential for plant disease research and phenotyping but is often limited by subjective visual scoring and time-intensive manual image analysis. We present LIME, a fully automated, open-source image analysis pipeline for high-throughput quantification of leaf lesions from disease assay images. LIME integrates zero-shot leaf segmentation using the Segment Anything Model with a convolutional neural network for lesion area estimation. Applied to Arabidopsis thaliana leaves infected with Sclerotinia sclerotiorum , the proposed approach achieved a mean absolute percentage error of 12.9%, comparable to observed intrarater variability in manual scoring. Stratified evaluation across lesion-size groups demonstrated consistent prediction accuracy for small, intermediate, and large lesions, and comparative analysis showed that the deep learning–based model substantially outperformed color-based baseline methods. Under GPU-accelerated execution, LIME processed complete assays containing approximately 200 leaves in 15 minutes, representing an approximate 13-fold reduction in processing time relative to manual annotation. April 29, 2026 1/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Together, these results indicate that LIME enables objective, reproducible, and scalable quantification of leaf lesion severity in standardized plant pathology assays. The pipeline is released as an open-source tool to support quantitative phenotyping studies. April 29, 2026 2/26 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint Introduction 1
+
+Plants are frequently attacked by pathogenic microorganisms in both natural and agricultural systems, 2
+
+leading to observable disease symptoms such as chlorotic or necrotic leaf lesions. Accurate quantification of 3
+
+disease severity is essential for several reasons: i) it enables the linkage between disease progression and yield 4
+
+loss; ii) it supports the evaluation of germplasm and cultivars in plant breeding programs; iii) it informs 5
+
+disease management strategies such as targeted pesticide application during epidemics [1]. In addition, 6
+
+quantitative disease assessment contributes to a deeper understanding of fundamental biological processes, 7
+
+including host–pathogen coevolution and plant disease epidemiology [1]. 8
+
+Disease severity and host resistance can be assessed using a variety of approaches, including 9
+
+measurements of bacterial load [2] and fungal load [3], detection of reactive oxygen species (ROS) [4], 10 
+
+quantification of marker gene expression [5], and visual assessment of leaf symptoms [6]. Among these 11 
+
+methods, visual assessment of leaf symptoms remains particularly attractive due to its conceptual simplicity, 12 
+
+minimal training requirements, and relatively high throughput [6]. Depending on the pathogen and host, 13 
+
+symptoms may manifest as chlorosis, as observed in Arabidopsis thaliana infected with Pseudomonas 14 
+
+syringae pv. tomato DC3000, or as necrotic lesions, such as those caused by necrotrophic fungi including 15 
+
+Sclerotinia sclerotiorum and Botrytis cinerea . 16 
+
+Historically, macroscopic disease symptoms have often been evaluated using ordinal rating scales, or 17 
+
+disease indices, which categorize symptom severity from minimal to severe [1]. While widely adopted, these 18 
+
+assessments rely heavily on human judgment and are therefore subject to observer bias, interrater and 19 
+
+intrarater variability, and limited scalability. As a result, there is growing demand for objective, quantitative, 20 
+
+and reproducible methods for assessing disease symptoms at scale [7]. 21 
+
+On the other hand, once individual leaves have been identified and isolated from assay images, a 22 
+
+subsequent task is to quantify disease severity. In plant pathology, severity is most commonly assessed by 23 
+
+measuring the proportion of leaf area exhibiting visible disease symptoms [8]. Even when performed by 24 
+
+experienced specialists, this process is challenging, as evaluators must visually interpret lesion boundaries 25 
+
+and align observations with diagnostic guidelines. As a result, manual assessments inherently involve 26 
+
+subjectivity, and the resulting annotations cannot be regarded as absolute ground truth [8]. This subjectivity 27 
+
+gives rise to both intrarater variability, reflecting differences when the same annotator repeats measurements, 28 
+
+and interrater variability, reflecting disagreement across annotators. 29 
+
+To meet this demand, image-based approaches have become increasingly common for quantifying fungal 30 
+
+lesions, particularly those involving necrotic tissue. Manual or semi-automated workflows based on tools such 31 
+
+3/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+as ImageJ remain widely used [9, 10]. Although these tools enable pixel-based lesion area estimation and 32 
+
+diameter measurements, they are time-intensive and often struggle to robustly quantify irregular lesion 33 
+
+morphologies [6]. Alternative solutions, including dedicated hardware such as the YMJ-C smart leaf area 34 
+
+meter [11] and commercial software such as Adobe Photoshop [12], can partially alleviate these challenges 35 
+
+but frequently incur higher costs or require substantial manual intervention [6]. 36 
+
+More recently, several image analysis tools have been developed to streamline disease quantification. 37 
+
+Examples include PIDIQ [13], which focuses on pathogen-induced chlorosis, Colour-analyzer [6], a web-based 38 
+
+platform for fungal lesion quantification, and Sc-Analyzer [7], which employs a flatbed scanner and 39 
+
+grid-based layout to estimate pathogen spread. However, many existing tools remain semi-automated, 40 
+
+require specialized imaging equipment, or depend on manually tuned color thresholds, limiting their 41 
+
+robustness and reproducibility across experimental conditions [6]. 42 
+
+In this context, there is a clear need for fully automated, reproducible pipelines that can robustly quantify 43 
+
+leaf lesions across large-scale assays while minimizing human intervention. In this study, we focus on lesions 44 
+
+caused by the necrotrophic fungus Sclerotinia sclerotiorum in Arabidopsis thaliana , a pathosystem commonly 45 
+
+used to study host resistance mechanisms. This work supports broader efforts to develop transgenic plants 46 
+
+with enhanced resistance to S. sclerotiorum , including strategies based on RNA interference targeting 47 
+
+essential fungal genes or virulence factors [14]. 48 
+
+Here, we introduce the Lesion Inference & Measurement Engine (LIME), an open-source, fully automated 49 
+
+command-line tool for high-throughput quantification of lesion formation on plant leaves. LIME integrates a 50 
+
+foundation-model-based segmentation stage with a deep learning regression model to estimate lesion area 51 
+
+and total leaf area, enabling precise calculation of infected tissue proportions across hundreds of samples per 52 
+
+assay. By eliminating manual thresholding and subjective scoring, LIME substantially reduces 53 
+
+observer-dependent variability while providing throughput suitable for large-scale phenotyping studies. 54 
+
+The main contributions of this work are as follows: i) We present a fully automated, end-to-end pipeline 55 
+
+for quantitative leaf lesion measurement that requires no manual annotation or threshold tuning during 56 
+
+inference. ii) We demonstrate the use of a zero-shot segmentation foundation model to robustly isolate 57 
+
+individual leaves from high-density assay images under variable lighting conditions. iii) We introduce a deep 58 
+
+learning–based lesion area estimation model that achieves accuracy comparable to human intrarater 59 
+
+variability while providing substantial gains in throughput. iv) We release LIME as an open-source, 60 
+
+reproducible tool designed for integration into standardized plant pathology workflows. 61 
+
+4/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+# Related work 62 
+
+## Traditional lesion quantification methods 63 
+
+Traditional approaches for assessing foliar disease severity, including visual rating scales and manual or 64 
+
+semi-automated image analysis tools, are widely used in plant pathology and phenotyping. These methods, 65 
+
+along with their limitations in terms of subjectivity, scalability, and dependence on manual parameter tuning, 66 
+
+are discussed in detail in the Introduction. While these approaches reduce reliance on purely visual scoring, 67 
+
+they typically require manual interaction, fixed thresholds, or specialized acquisition setups, which can limit 68 
+
+throughput and reproducibility. 69 
+
+## Segmentation methods in plant phenotyping 70 
+
+Traditional segmentation approaches in vision-based plant phenotyping have largely relied on classical image 71 
+
+processing techniques. ApLeaf [15], for example, employs grayscale thresholding to group pixels by intensity 72 
+
+and separate foliage from background. Otsu’s method [16] automatically determines an optimal threshold by 73 
+
+minimizing within-class variance and has been widely adopted for background subtraction in automated 74 
+
+plant recognition systems [17, 18]. Another commonly used technique is the watershed transformation, which 75 
+
+interprets an image as a topographic surface and segments regions by flooding from predefined seed points 76 
+
+until strong gradient boundaries are encountered [19]. 77 
+
+Despite their simplicity and efficiency, these methods are highly sensitive to imaging conditions. 78 
+
+Variations in illumination intensity, angle, or spectral composition can substantially alter leaf 79 
+
+appearance [20, 21], leading to inconsistent contrast, poorly defined boundaries, and reduced segmentation 80 
+
+accuracy. Shadows, glare, and uneven lighting further complicate reproducible leaf delineation, limiting the 81 
+
+robustness of both automated and semi-manual segmentation pipelines [20, 21]. 82 
+
+Deep learning–based segmentation methods have demonstrated improved robustness under such 83 
+
+variability. Convolutional neural network architectures such as U-Net [22] and DeepLab [23] learn 84 
+
+hierarchical feature representations from annotated data and can reliably separate plant structures from 85 
+
+background across a wide range of imaging conditions. However, the effectiveness of supervised segmentation 86 
+
+models depends heavily on the availability of large, pixel-level annotated datasets, which are costly to 87 
+
+produce and often unavailable for specialized plant pathology assays [24]. 88 
+
+To mitigate this limitation, recent work has explored the use of large foundation models for segmentation. 89 
+
+In this study, we leverage the Segment Anything Model (SAM) [25], a promptable segmentation model 90 
+
+pretrained on the SA-1B dataset comprising over 11 million images and one billion masks. SAM provides 91 
+
+5/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+strong zero-shot segmentation performance across diverse visual domains, making it well suited for scenarios 92 
+
+where domain-specific annotated training data are limited. Rather than relying on fully supervised 93 
+
+retraining, SAM is used here to generate candidate leaf masks that are subsequently refined using 94 
+
+domain-specific constraints. 95 
+
+## Computational approaches for leaf lesion assessment 96 
+
+A variety of computational approaches have been proposed for automated disease spot detection and lesion 97 
+
+quantification. Early image-processing methods often relied on color space transformations and handcrafted 98 
+
+rules. Patil and Bodhe convert RGB images to the HSI color space and apply triangle-based thresholding to 99 
+
+isolate diseased regions [26]. Pagola et al. [27] quantify nitrogen deficiency in barley leaves by manipulating 100 
+
+RGB channels and applying principal component analysis (PCA) to derive pixel-wise greenness indices. 101 
+
+Other approaches include fuzzy logic–based systems [28] and rule-based, knowledge-driven frameworks [29]. 102 
+
+More recently, machine learning and deep learning methods have become increasingly prevalent for plant 103 
+
+disease detection and quantification [24]. These approaches offer improved flexibility and robustness relative 104 
+
+to handcrafted pipelines, particularly in the presence of variable lesion morphology, illumination conditions, 105 
+
+and background complexity. Consequently, LIME adopts a deep learning–based framework for lesion severity 106 
+
+estimation, enabling direct prediction of lesion area from image data while reducing reliance on manually 107 
+
+defined thresholds or heuristics. 108 
+
+# Materials and methods 109 
+
+## LIME pipeline overview 110 
+
+LIME is an automated image analysis pipeline for quantifying leaf lesions from high-resolution assay images. 111 
+
+Given a single image containing multiple leaves arranged on a uniform background, the pipeline produces 112 
+
+per-leaf measurements of total leaf area and lesion area. An overview of the workflow is shown in Fig. 1. 113 
+
+The pipeline consists of four sequential stages. First, detached leaves exhibiting disease symptoms are 114 
+
+collected and arranged on a uniform background to form a standardized assay image (Fig. 1A). Second, 115 
+
+candidate segmentation masks are generated directly from the raw assay image using a pretrained, zero-shot 116 
+
+segmentation model to identify potential leaf regions without manual prompts or annotations. These 117 
+
+candidate masks are refined through an automated filtering process to remove background elements and 118 
+
+produce a set of non-overlapping masks corresponding to individual leaves (Fig. 1B). Third, each segmented 119 
+
+leaf is analyzed independently by a convolutional neural network to estimate lesion area, yielding per-leaf 120 
+
+6/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 1. Overview of the LIME workflow. Raw assay images are processed through four stages: (A) fungal infection assay and collection of diseased leaves, (B) zero-shot generation of candidate leaf masks and mask refinement to isolate individual leaves, (C) per-leaf lesion area estimation using a convolutional neural network, and (D) group-wise results collection using QR code recognition. quantitative measurements suitable for downstream analysis (Fig. 1C). Finally, metadata, such as 121 
+
+QR-code-based sample identifiers, can be incorporated during post-processing to associate measurements 122 
+
+with experimental conditions (Fig. 1D). The following sections describe each stage of the pipeline in detail. 123 
+
+## Assay setup and image acquisition 124 
+
+Leaf lesion assays involved detached Sclerotinia-infected Arabidopsis thaliana leaves arranged on a uniform 125 
+
+white background. The leaf infection experiment follows the methods of [3]. Each assay consisted of 126 
+
+approximately 200 individual leaves placed in rows with minimal overlap between neighboring samples. 127 
+
+Leaves were positioned to ensure clear visual separation and consistent orientation across the assay image; 128 
+
+the color palette is a predefined set of RGB colors used to assign each mask group a distinct, consistent 129 
+
+overlay color on the output image so humans can easily tell groups apart; the ruler is used for physical 130 
+
+scaling when calculating the sizes of the lesion area. (Fig. 2A). 131 
+
+Images were acquired using a digital camera mounted at a fixed height above the assay surface to 132 
+
+maintain consistent imaging geometry across experiments. Camera position, focal length, and lighting 133 
+
+7/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+conditions were kept constant within and across assays. A physical scale (ruler) was included within the field 134 
+
+of view of each image to enable conversion from pixel-based measurements to physical units (Fig. 2 A). 135 
+
+For experiments involving multiple genotypes or experimental conditions, leaves corresponding to each 136 
+
+group were arranged in separate horizontal rows. A QR code encoding the sample identifier was placed at 137 
+
+the beginning of each row. These QR codes were later used during post-processing to associate segmented 138 
+
+leaves with their corresponding experimental groups. 139 
+
+All images were captured at high resolution and stored in a lossless format prior to analysis. No manual 140 
+
+cropping, thresholding, or image enhancement was performed before processing with LIME. The raw assay 141 
+
+images served as the sole input to the pipeline. 142 
+
+## Leaf segmentation 143 
+
+SAM-based mask generation 144 
+
+The first step of leaf segmentation in LIME is the generation of candidate object masks from the raw assay 145 
+
+image. For this purpose, we employ the Segment Anything Model (SAM) [25], a promptable segmentation 146 
+
+model pretrained on a large-scale, diverse image corpus. 147 
+
+Given an input assay image, SAM is applied in a fully automatic manner to produce a set of candidate 148 
+
+segmentation masks (Fig. 2 B). Each mask corresponds to a contiguous region of pixels that SAM identifies 149 
+
+as a potential object. No user-defined prompts, bounding boxes, or point annotations are provided during 150 
+
+inference. As a result, the output of this stage consists of a collection of overlapping and non-overlapping 151 
+
+masks representing both leaf and non-leaf regions within the image. 152 
+
+The generated masks are retained in their original resolution and treated as candidate regions for 153 
+
+subsequent processing. At this stage, no assumptions are made regarding object class, and no filtering or 154 
+
+thresholding is applied. The purpose of this stage is solely to enumerate potential leaf regions with high 155 
+
+recall, deferring all selection and refinement decisions to the subsequent mask refinement step. 156 
+
+Iterative mask refinement 157 
+
+The candidate masks produced by SAM include both leaf and non-leaf regions and therefore require further 158 
+
+refinement to isolate individual leaves. LIME performs this refinement through an iterative, color-based 159 
+
+filtering procedure that progressively identifies masks corresponding to leaf tissue while rejecting background 160 
+
+elements and spurious regions (Alg. 1). 161 
+
+At the start of the refinement process, a representative leaf mask is selected from the set of candidate 162 
+
+8/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+masks to initialize a reference color profile. The color distribution of a mask m is computed in the 163 
+
+hue–saturation–value (HSV) color space and represented as a normalized histogram 164 
+
+Hm ∈ RK ,
+
+> K
+
+X
+
+> k=1
+
+Hm(k) = 1 ,
+
+where K denotes the number of histogram bins. The initial reference histogram is denoted by Hr (Fig. 3). 165 
+
+For each remaining candidate mask m, an HSV histogram Hm is computed and compared to the current 166 
+
+reference profile using histogram intersection, 167 
+
+O(m, r ) = 
+
+> K
+
+X
+
+> k=1
+
+ Hm(k) ∩ Hr (k).
+
+A candidate mask is provisionally classified as a leaf if O(m, r ) > τ , where τ is a fixed threshold for 168 
+
+overlapping (10%). 169 
+
+To account for natural variation in leaf coloration and illumination conditions, the reference histogram is 170 
+
+updated iteratively. After each iteration t, the reference profile is updated by averaging the histograms of 171 
+
+newly accepted leaf masks A(t), 172 
+
+H(t+1)  
+
+> r
+
+= 1
+
+|A (t)| + 1 
+
+H(t) 
+
+> r
+
++ X
+
+> m∈A (t)
+
+Hm
+
+ .
+
+In parallel, geometric and topological constraints are applied to exclude implausible leaf candidates. 173 
+
+Masks are discarded if they contain multiple disconnected components, exhibit extreme concavity as 174 
+
+measured by low solidity, or overlap substantially with previously accepted leaf masks. The refinement 175 
+
+process is repeated until the color profile of the reference leaf stabilizes, defined as an iteration in which no 176 
+
+additional candidate masks satisfy the acceptance criteria (Fig. 2 C,D). 177 
+
+The final output of this stage is a set of non-overlapping binary masks, each corresponding to an 178 
+
+individual leaf and suitable for downstream lesion analysis. 179 
+
+## Lesion area estimation 180 
+
+Following leaf segmentation, LIME estimates lesion area for each individual leaf using a convolutional neural 181 
+
+network. This stage operates on cropped leaf images derived from the segmentation masks and produces a 182 
+
+single scalar value corresponding to the predicted lesion area. 183 
+
+9/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 2. Iterative refinement of assay-level leaf segmentation. (A) Assay image containing approximately 200 Arabidopsis thaliana leaves infected with Sclerotinia sclerotiorum . (B) Assay image overlaid with candidate segmentation masks generated by SAM. (C) Assay image overlaid with masks after one iteration of the refinement algorithm. (D) Assay image overlaid with masks after two iterations of refinement. The mask indicated by the yellow arrow is correctly classified as a leaf after refinement. 
+
+CNN architecture 184 
+
+To estimate lesion size on each leaf, we adopt a modified NASNet A backbone. NASNet A—introduced by 185 
+
+Zoph et al. [30] via Neural Architecture Search (NAS)—uses reinforcement learning to assemble two types of 186 
+
+modular “cells”: normal cells, which preserve spatial dimensions for feature extraction, and reduction cells, 187 
+
+which downsample feature maps while increasing their depth. Each cell is defined as a directed acyclic graph 188 
+
+combining operations like depthwise separable convolutions, pooling layers, and skip connections. Thanks to 189 
+
+its automated search process, NASNet A scales gracefully: cell structures optimized on small datasets (e.g., 190 
+
+CIFAR 10) transfer effectively to large benchmarks such as ImageNet. In our pipeline, we load the ImageNet 191 
+
+pretrained NASNet A, replace its classification head with a regression head, and train end-to-end using a 192 
+
+mean absolute percentage error (MAPE) loss to predict per leaf lesion area. 193 
+
+10/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 3. Reference-profile comparison during mask refinement. Comparison of a candidate mask (Leaf 2) and the reference profile (Leaf 1) used in the iterative refinement algorithm. 
+
+Training and inference 194 
+
+The dataset used in this study consists of 1,700 images of detached Arabidopsis thaliana leaves infected with 195 
+
+Sclerotinia sclerotiorum . Individual leaves were imaged following standardized lesion assays and subsequently 196 
+
+segmented and cropped to a fixed spatial resolution of 225 × 225 pixels for lesion analysis. Ground-truth 197 
+
+lesion area annotations were generated using ImageJ (note that rater variability was measured at 10% 198 
+
+MAPE). For each leaf image, lesion regions were manually delineated and quantified in pixel units. These 199 
+
+pixel-based lesion area measurements served as reference labels for training and evaluating the lesion area 200 
+
+estimation model. The dataset was randomly divided into training, validation, and test sets using a 70% / 201 
+
+15% / 15% split. All splits were performed at the leaf level, and no images were shared across subsets. 202 
+
+Lesion area estimation was formulated as a regression problem: given a cropped leaf image xi, the network 203 
+
+predicted a scalar lesion area ˆ yi = fθ (xi), which was compared against the ground-truth lesion area yi. 204 
+
+Model parameters θ were optimized by minimizing the mean absolute percentage error (MAPE), defined as 205 
+
+LMAPE (θ) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+|yi − ˆyi|
+
+yi
+
+, (1) where N is the number of training samples. This objective penalizes the relative error between predicted and 206 
+
+true lesion sizes, helping balance contributions from leaves with small and large lesions. 207 
+
+During inference, each segmented leaf was processed independently to produce a lesion area estimate, 208 
+
+11/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Algorithm 1 Iterative leaf mask refinement. Require: Candidate masks M = {m1, . . . , m N } from SAM 
+
+Ensure: Refined leaf mask set L 
+
+> 1:
+
+Initialize L ← ∅  
+
+> 2:
+
+Select an initial reference mask mr ∈ M  
+
+> 3:
+
+Compute normalized HSV histogram Hr from mr 
+
+> 4:
+
+Remove mr from M and add to L 
+
+> 5:
+
+repeat  
+
+> 6:
+
+A ← ∅ { Newly accepted masks } 
+
+> 7:
+
+for each mask m ∈ M do  
+
+> 8:
+
+Compute normalized HSV histogram Hm 
+
+> 9:
+
+Compute histogram intersection I = Intersect( Hm, H r ) 
+
+> 10:
+
+if I > τ (10%) then  
+
+> 11:
+
+if m satisfies geometric constraints then  
+
+> 12:
+
+Add m to A 
+
+> 13:
+
+end if  
+
+> 14:
+
+end if  
+
+> 15:
+
+end for  
+
+> 16:
+
+if A̸ = ∅ then  
+
+> 17:
+
+Update reference histogram: 
+
+Hr ← Mean( Hr , {Hm | m ∈ A} ) 
+
+> 18:
+
+Remove A from M 
+
+> 19:
+
+Add A to L 
+
+> 20:
+
+end if  
+
+> 21:
+
+until A = ∅ 
+
+> 22:
+
+return L
+
+which was retained in pixel units and passed to the post-processing stage. 209 
+
+## Post-processing and data export 210 
+
+Following lesion area estimation, LIME performs a series of post-processing steps to convert pixel-based 211 
+
+measurements into physical units, associate individual leaves with experimental metadata, and export results 212 
+
+in structured formats. 213 
+
+Total leaf area is computed for each segmented leaf by summing the pixels within its binary segmentation 214 
+
+mask. Lesion area predictions produced by the regression model are also expressed in pixel units. To convert 215 
+
+both measurements to physical units (e.g., mm 2 or cm 2), a calibration factor is computed from the in-frame 216 
+
+physical scale included in each assay image. This factor represents the physical area per pixel and is applied 217 
+
+uniformly across all measurements within the image. 218 
+
+Our assays contain multiple experimental groups, and leaves are arranged in horizontal rows, each labeled 219 
+
+with a QR code encoding the corresponding sample identifier. QR codes are detected by LIME and decoded 220 
+
+from the assay image and used to identify the row associated with each experimental condition. Individual 221 
+
+12/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 4. QR code-based labeling of segmented leaves. Segmented leaves are sorted, labeled, and assigned to experimental groups using QR code metadata. leaf masks are assigned to rows by clustering their centroid y-coordinates using a Gaussian Mixture Model, 222 
+
+with the number of clusters determined by the number of detected QR codes. This procedure enables 223 
+
+automatic association of each leaf with its corresponding experimental group. 224 
+
+Quantitative results are exported as comma-separated value (CSV) files, containing per-leaf 225 
+
+measurements of total leaf area, lesion area, and derived disease severity metrics. In addition, LIME 226 
+
+generates an annotated version of the original assay image in which each segmented leaf is outlined and 227 
+
+labeled, enabling easy cross reference between the CSV entries and the physical leaves in the assay (Fig. 4). 228 
+
+These outputs are the final result of the pipeline and are used for downstream statistical analysis and 229 
+
+visualization. 230 
+
+## Color-based baseline methods 231 
+
+To provide interpretable and lightweight baselines for lesion quantification, we implemented two color-based 232 
+
+lesion detection methods operating in the HSV color space. Both baselines estimate lesion area by identifying 233 
+
+healthy leaf tissue and treating remaining leaf pixels as lesions. These approaches do not require learning 234 
+
+during inference and rely only on color statistics derived from manually sampled data. 235 
+
+HSV threshold-based lesion detection 236 
+
+The first baseline uses fixed HSV thresholds to separate healthy leaf tissue from lesion regions. Input leaf 237 
+
+images are first converted from RGB to HSV color space. Pixels corresponding to the white background are 238 
+
+13/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 5. HSV distributions of sampled leaf pixels. Panels (A)–(C) show the distributions of hue, saturation, and value, respectively, for sampled Arabidopsis thaliana leaf pixels from the training dataset. Healthy and lesion regions exhibit distinct distributions in hue (A) and saturation (B). removed using a high-value, low-saturation threshold. All remaining pixels are treated as leaf tissue. 239 
+
+Healthy leaf pixels are identified using empirically derived HSV thresholds obtained from manual color 240 
+
+sampling of lesion and healthy regions. The samples are from 30 random leaf images from the training 241 
+
+dataset. Fig. 5 shows the distribution of the hue, saturation and value levels of the sampled pixels. Based on 242 
+
+these samples, healthy tissue is characterized by a narrow hue range corresponding to green leaf color, high 243 
+
+saturation values, and moderate value intensity. Pixels falling within this predefined healthy range are 244 
+
+classified as healthy leaf tissue. All other non-background pixels are classified as lesion candidates. 245 
+
+To reduce noise and spurious detections, morphological opening and closing operations are applied to the 246 
+
+lesion mask using a small structuring element. Connected components smaller than a minimum area 247 
+
+threshold are subsequently removed. The final lesion area is computed as the number of pixels classified as 248 
+
+lesion. 249 
+
+K-means clustering-based lesion detection 250 
+
+The second baseline employs unsupervised clustering to partition leaf pixels into color-consistent groups. 251 
+
+After conversion to HSV color space, background pixels are excluded using the same white-background 252 
+
+criterion as in the threshold-based method. The remaining pixels are clustered in HSV space using K-means 253 
+
+clustering with a fixed number of clusters. 254 
+
+Cluster centers are analyzed to identify the cluster corresponding to healthy leaf tissue. This 255 
+
+identification is based on learned color characteristics of healthy leaves, namely high saturation and hue 256 
+
+values within the expected green range. A composite score combining saturation magnitude and proximity of 257 
+
+hue to the healthy-leaf mean is used to select the healthy cluster. 258 
+
+All pixels not assigned to the healthy cluster are classified as lesion pixels. Lesion area is computed as the 259 
+
+total number of pixels assigned to non-healthy clusters. No spatial smoothing or post-clustering 260 
+
+morphological filtering is applied in this baseline. 261 
+
+14/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Area conversion and batch inference 262 
+
+For both color-based baselines, lesion area is initially computed in pixel units for each individual leaf image. 263 
+
+Pixel-based lesion areas are converted to physical units using the same image calibration factor applied in the 264 
+
+main LIME pipeline. Baseline inference is performed independently for each leaf image, enabling direct 265 
+
+comparison with the NASNet–based lesion estimation results. These baselines were evaluated using the same 266 
+
+dataset, metrics, and calibration procedure as the LIME pipeline. 267 
+
+## Evaluation metrics 268 
+
+Model performance for lesion area estimation was evaluated using the MAPE, defined in Equation 1. MAPE 269 
+
+was selected to provide a scale-normalized measure of prediction error across leaves exhibiting a wide range 270 
+
+of lesion sizes. Reported performance values correspond to evaluation on the held-out test set. In addition, 271 
+
+we also reported mean absolute error (MAE) for the model’s performance. 272 
+
+## Hardware and runtime configuration 273 
+
+All experiments were conducted using a workstation equipped with an NVIDIA RTX 3060 Ti GPU. GPU 274 
+
+acceleration was used for both segmentation and lesion area estimation stages. While LIME can be executed 275 
+
+on CPU-only systems, GPU acceleration is recommended due to the computational cost of segmentation 276 
+
+models. 277 
+
+Under this configuration, LIME processed a complete assay image containing approximately 200 leaves in 278 
+
+approximately 15 minutes, including segmentation, lesion estimation, and post-processing steps. For 279 
+
+comparison, manual lesion scoring required approximately 60 seconds per leaf, resulting in a total processing 280 
+
+time of roughly 3 hours for an equivalent assay. 281 
+
+## Baseline methods and evaluation protocol 282 
+
+In addition to the deep learning–based lesion estimation model, two color-based baseline methods were 283 
+
+implemented to provide interpretable reference points for comparison. As mentioned in Section 4.5, the 284 
+
+baselines consist of (i) an HSV threshold-based method and (ii) a K-means clustering–based method 285 
+
+operating in HSV color space. Both approaches estimate lesion area by identifying healthy leaf tissue and 286 
+
+classifying remaining leaf pixels as lesions, without the use of learned models during inference. 287 
+
+Baseline inference was performed on the same set of individual leaf images used for evaluating the lesion 288 
+
+estimation model. Input images, background removal, and pixel-to-physical area conversion were identical 289 
+
+15/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Table 1. Lesion-size group definitions. Sample distribution and lesion-area ranges for the held-out test set. Lesion area is reported in pixel units. 
+
+Lesion-size group Lesion area range (pixels) # samples 
+
+Small < 1656.96 85 Intermediate 1656.96 – < 3024.38 85 Large ≥ 3024.38 85 across all methods to ensure a fair comparison. For each leaf, lesion area was computed in pixel units and 290 
+
+converted to physical units using the same calibration factor derived from the assay image. 291 
+
+Performance of the baseline methods was evaluated using the same metrics applied to the deep 292 
+
+learning–based approach, including MAPE, and MAE. Ground-truth lesion areas were obtained from manual 293 
+
+ImageJ annotations. 294 
+
+## Lesion-size group stratification 295 
+
+In addition to overall performance evaluation, lesion area predictions were analyzed across lesion-size groups 296 
+
+to assess model behavior under different disease severities. Lesion-size stratification was performed on the 297 
+
+held-out test set using ground-truth lesion area annotations of 255 leaves. 298 
+
+Test samples were divided into three lesion-size groups, small, intermediate, and large, based on fixed 299 
+
+lesion area thresholds derived from the empirical distribution of lesion sizes in the test dataset. Thresholds 300 
+
+were selected such that each group contained an equal number of samples, enabling balanced comparison 301 
+
+across severity levels. Lesion area values are reported in pixel units. 302 
+
+The resulting lesion-size group definitions and sample distribution for the test set are summarized in 303 
+
+Table 1. All evaluated methods, including the deep learning–based model and the two color-based baselines, 304 
+
+were assessed independently within each lesion-size group using the same evaluation metrics described in the 305 
+
+Evaluation metrics subsection. 306 
+
+# Results 307 
+
+## Segmentation robustness (qualitative) 308 
+
+The leaf segmentation stage of LIME was evaluated qualitatively by visual inspection of segmentation 309 
+
+outputs across complete assay images. Fig. 2C,D illustrate representative examples of segmentation masks at 310 
+
+different stages of the pipeline, including the initial candidate masks produced by the segmentation model 311 
+
+and the refined masks obtained after iterative filtering. 312 
+
+Across assay images containing approximately 200 leaves arranged on a uniform background, the pipeline 313 
+
+16/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 6. Predicted versus manual lesion areas. NASNet A test-set performance shown as predicted lesion area versus manually annotated lesion area. successfully isolated individual leaves with minimal fragmentation or merging. The iterative refinement 314 
+
+procedure effectively adds new leaf-masks in the segmentation results, as seen by the yellow arrow in Fig. 2. 315 
+
+Visual inspection confirmed that the final segmentation masks corresponded closely to individual physical 316 
+
+leaves and were suitable for downstream lesion analysis. 317 
+
+## Lesion estimation accuracy 318 
+
+The accuracy of lesion area estimation was evaluated on the held-out test set using MAPE and MAE. Fig. 6 319 
+
+shows the relationship between predicted lesion areas and manually annotated ground-truth values. On the 320 
+
+test set, the model achieved a MAPE of 12.9%. This result indicates that the lesion estimation model 321 
+
+produces lesion area measurements that are consistent with manually annotated reference values across a 322 
+
+range of lesion sizes. 323 
+
+## Performance across lesion-size groups 324 
+
+Model performance was evaluated separately for small, intermediate, and large lesion-size groups to 325 
+
+characterize behavior across disease severity levels. Prediction accuracy was assessed using MAE, which 326 
+
+17/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Table 2. Prediction accuracy by lesion-size group. Results for the deep learning–based model and color-based baselines are reported as mean absolute error (MAE, pixels) and mean absolute percentage error (MAPE, %). 
+
+Group Model MAE MAPE (%) 
+
+Small NASNet A 155.25 14.90 HSV Threshold 1644.37 167.32 K-means 5644.25 553.09 Intermediate NASNet A 275.08 12.34 HSV Threshold 2579.25 116.80 K-means 6171.49 284.69 Large NASNet A 652.14 11.56 HSV Threshold 3210.94 64.75 K-means 6132.74 130.15 Overall NASNet A 360.83 12.93 HSV Threshold 2478.19 116.29 K-means 5982.82 322.64 reflects absolute deviation in pixel units, and MAPE, which normalizes error relative to lesion size. 327 
+
+Quantitative results are summarized in Table 2, and performance trends are visualized in Fig. 7. 328 
+
+Across all lesion-size groups, the NASNet A-based model consistently achieved substantially lower MAE 329 
+
+and MAPE values than both color-based baselines. For the NASNet-based model, MAE increased with lesion 330 
+
+size, reflecting the larger absolute lesion areas in the intermediate and large groups. In contrast, MAPE 331 
+
+decreased slightly as lesion size increased, indicating that relative prediction error was more pronounced for 332 
+
+small lesions than for larger ones. 333 
+
+The color-based baselines exhibited markedly different trends. Both HSV thresholding and K-means 334 
+
+clustering produced very large MAE values across all lesion-size groups, indicating substantial absolute 335 
+
+overestimation of lesion area. These errors were especially severe for small lesions, where MAPE exceeded 336 
+
+100%, reflecting the sensitivity of relative error metrics to small denominators. While MAPE values for the 337 
+
+baselines decreased for larger lesions, absolute errors remained high, suggesting that these methods 338 
+
+consistently misclassified healthy tissue as lesion regardless of disease severity. 339 
+
+Overall performance on the full test set followed similar patterns. The NASNet A-based model 340 
+
+maintained stable relative accuracy across lesion sizes, achieving an overall MAPE of 12.9%, whereas both 341 
+
+color-based baselines exhibited high absolute and relative errors and strong dependence on lesion size. 342 
+
+Representative qualitative examples illustrating model behavior across lesion-size groups are shown in 343 
+
+Fig. 9. These examples highlight the ability of the NASNet A-based model to adapt to varying lesion extents, 344 
+
+while color-based methods tend to overestimate lesion regions, particularly for leaves with small lesion sizes. 345 
+
+18/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 7. Prediction accuracy across lesion-size categories. Line plots show MAE (left) and MAPE (right) trends for small, intermediate, and large lesion groups, while bar plots indicate overall performance on the full test set. The NASNet A-based model maintains consistently lower error across lesion sizes than the HSV thresholding and K-means clustering baselines. 
+
+## Consistency and throughput comparison 346 
+
+To assess the consistency of manual lesion scoring, a subset of 12 leaf images was randomly selected from the 347 
+
+dataset and independently rescored by the same biologist. Fig. 8 demonstrates those rescored leaves and the 348 
+
+evaluated lesion areas in pixels. Agreement between the original scores and the rescored values was 349 
+
+quantified using MAPE. 350 
+
+Across the 12 samples, the rescoring exhibited a mean absolute error of 83.3 pixels and a mean absolute 351 
+
+percentage error of 10%. This intrarater error is close in magnitude to the overall LIME test-set MAPE of 352 
+
+12.9% reported in Table 2, which helps contextualize model performance relative to human repeatability. 353 
+
+These results indicate non-negligible intrarater variability in manual lesion quantification, particularly for 354 
+
+leaves with smaller lesion areas. 355 
+
+Runtime performance was assessed by measuring the total time required to process a complete assay 356 
+
+image containing approximately 200 leaves. Under GPU-accelerated execution, the full LIME 357 
+
+pipeline—including segmentation, lesion area estimation, and post-processing—required approximately 15 358 
+
+minutes per assay. In contrast, manual lesion scoring required approximately 60 seconds per leaf, 359 
+
+corresponding to a total processing time of roughly 3 hours for an equivalent assay. Based on these 360 
+
+measurements, LIME provides an approximate 13-fold reduction in processing time compared to manual 361 
+
+scoring for large-scale assays. Importantly, while the intrarater comparison was based on 12 leaves and does 362 
+
+not directly quantify long-session fatigue effects, automated inference avoids fatigue- and attention-related 363 
+
+drift that can affect repetitive manual visual scoring tasks as workload increases. 364 
+
+19/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+Fig 8. Repeated manual scoring of representative leaves. Consistency of manual lesion scoring based on repeated annotation of 12 randomly selected leaf images by the same biologist. Lesion area is reported in pixel units. 20/26 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint Fig 9. Qualitative examples across lesion-size categories. Each row corresponds to a lesion-size group (small, intermediate, large) and shows, from left to right, the original leaf image, the NASNet A occlusion map, the lesion regions identified by HSV thresholding, and the lesion regions identified by K-means clustering. Occlusion maps indicate regions that most influence the NASNet A prediction rather than explicit lesion boundaries. 
+
+# Discussion 365 
+
+## Interpretation of accuracy, lesion-size effects, and human variability 366 
+
+Quantitative evaluation of lesion area estimation demonstrated that the NASNet A-based model achieved a 367 
+
+MAPE of approximately 12.9% on the held-out test set. Stratified analysis across lesion-size groups further 368 
+
+showed that prediction accuracy remained relatively stable for small, intermediate, and large lesions, with 369 
+
+MAPE values ranging from 11.6% to 14.9%. In contrast, both color-based baselines exhibited substantially 370 
+
+higher error and pronounced sensitivity to lesion size, particularly for small and intermediate lesions. 371 
+
+These results indicate that the deep learning–based model generalizes more consistently across disease 372 
+
+severity levels than threshold- or clustering-based approaches. The group-wise comparison highlights that 373 
+
+color-based methods tend to overestimate lesion area when lesion appearance overlaps with healthy tissue 374 
+
+coloration, an effect that becomes more pronounced for smaller lesions where absolute area differences 375 
+
+21/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+translate into large relative errors. 376 
+
+The intrarater rescoring indicates non-negligible variability even when annotations are performed by the 377 
+
+same expert. This variability underscores the inherent subjectivity of manual lesion quantification and 378 
+
+supports interpreting model error as agreement with human reference measurements rather than deviation 379 
+
+from an objective ground truth. Within this context, the accuracy achieved by the NASNet A-based model 380 
+
+falls within the range of variability observed in human scoring. 381 
+
+## Practical implications for phenotyping pipelines 382 
+
+Beyond predictive accuracy, the results demonstrate the practical advantages of a fully automated lesion 383 
+
+quantification pipeline for large-scale leaf phenotyping studies. By eliminating manual threshold selection 384 
+
+and subjective visual scoring, LIME reduces operator-dependent variability and ensures consistent 385 
+
+measurement across experiments. This is particularly important in comparative phenotyping settings, where 386 
+
+subtle differences in disease severity must be evaluated across large numbers of samples. 387 
+
+The manual intrarater analysis (10% MAPE on 12 leaves) and the LIME test-set error (12.9% MAPE) 388 
+
+indicate comparable accuracy in a small-scale repeated-scoring setting. However, the practical advantage of 389 
+
+machine learning becomes stronger with larger cohorts: model performance is stable across throughput, 390 
+
+whereas manual scoring quality can degrade during prolonged repetitive annotation due to human workload 391 
+
+and attentional effects. In this sense, automation provides not only speed, but also consistency preservation 392 
+
+as sample counts increase. 393 
+
+Throughput analysis further highlights the scalability of the approach. Processing a complete assay image 394 
+
+containing approximately 200 leaves required approximately 15 minutes under GPU-accelerated execution, 395 
+
+compared to roughly 3 hours for manual scoring. This reduction in analysis time enables rapid iteration over 396 
+
+large experimental cohorts and makes quantitative lesion analysis feasible in high-throughput experimental 397 
+
+designs, such as genetic screens or multi-condition studies. 398 
+
+The deterministic nature of the pipeline also ensures reproducibility and consistency compared with 399 
+
+manual scoring: repeated analysis of the same assay image yields identical results, facilitating comparisons 400 
+
+across research groups. 401 
+
+## Limitations and future work 402 
+
+Despite its overall robustness, several limitations were observed. Segmentation performance can degrade in 403 
+
+cases where leaves overlap extensively or when background artifacts exhibit color characteristics similar to 404 
+
+22/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+leaf tissue. Such errors may propagate to downstream lesion estimation, emphasizing the importance of 405 
+
+standardized assay layout and imaging conditions. 406 
+
+Additionally, lesion area estimation is formulated as a regression problem that predicts aggregate lesion 407 
+
+area without explicitly delineating lesion boundaries. While this approach avoids the ambiguity associated 408 
+
+with pixel-level lesion annotation, it does not provide spatial localization of lesions within individual leaves. 409 
+
+Meanwhile, the occlusion map shown in Fig. 9 only indicates roughly which regions most influence the 410 
+
+NASNet A prediction, rather than explicit lesion boundaries. Consequently, the current implementation is 411 
+
+best suited for applications where total lesion burden is the primary metric of interest rather than detailed 412 
+
+lesion morphology. 413 
+
+Future work will focus on extending the pipeline to additional pathosystems and symptom types through 414 
+
+retraining of the lesion estimation model on new datasets. Further improvements may also include enhanced 415 
+
+handling of complex assay layouts and the incorporation of alternative lesion quantification strategies when 416 
+
+spatial lesion information is required. 417 
+
+# Conclusion 418 
+
+In this study, we presented LIME, a fully automated pipeline for high-throughput quantification of leaf lesion 419 
+
+severity from assay images. By integrating zero-shot leaf segmentation with a deep learning–based lesion area 420 
+
+estimation model, LIME enables objective and reproducible measurement of plant disease severity across 421 
+
+large-scale phenotyping experiments. 422 
+
+Comprehensive evaluation on Arabidopsis thaliana leaves infected with Sclerotinia sclerotiorum 423 
+
+demonstrated that the proposed approach achieves consistent prediction accuracy across lesion-size groups 424 
+
+and outperforms color-based baselines. Model accuracy was comparable to observed intrarater variability in 425 
+
+manual scoring, while reducing analysis time by an order of magnitude relative to human annotation. These 426 
+
+results indicate that LIME provides a practical, scalable, and reliable solution for quantitative lesion analysis 427 
+
+in standardized plant pathology assays. 428 
+
+# Acknowledgments 429 
+
+Special thanks to the Terrabyte group at the University of Winnipeg and the University of Manitoba for 430 
+
+their ideas and guidance in creating this work. 431 
+
+23/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+# References 
+
+1. Bock CH, Chiang KS, Del Ponte EM. Plant disease severity estimated visually: a century of research, best practices, and opportunities for improving methods and practices to maximize accuracy. Tropical Plant Pathology. 2022;47(1):25-42. 2. Pal G, Mehta D, Singh S, Magal K, Gupta S, Jha G, et al. Foliar Application or Seed Priming of Cholic Acid-Glycine Conjugates can Mitigate/Prevent the Rice Bacterial Leaf Blight Disease via Activating Plant Defense Genes. Frontiers in plant science. 2021;12:746912-2. 3. Walker PL, Ziegler DJ, Giesbrecht S, McLoughlin A, Wan J, Khan D, et al. Control of white mold (Sclerotinia sclerotiorum) through plant-mediated RNA interference. Scientific Reports. 2023;13(1):6477. 4. Yu X, Feng B, He P, Shan L. From Chaos to Harmony: Responses and Signaling upon Microbial Pattern Recognition. Annual review of phytopathology. 2017;55(1):109-37. 5. Ali O, Ramsubhag A, Jayaraman J. Biostimulatory activities of Ascophyllum nodosum extract in tomato and sweet pepper crops in a tropical environment. PLoS One. 2019;14(5):e0216710. 6. Loranger MEW, Yim W, Accomazzi V, Morales-Lizcano N, Moeder W, Yoshioka K. Colour-analyzer: a new dual colour model-based imaging tool to quantify plant disease. Plant methods. 2024;20(1):60-0. 7. Paauw M, Hardeman G, Taks NW, Lambalk L, Berg JA, Pfeilmeier S, et al. ScAnalyzer: an image processing tool to monitor plant disease symptoms and pathogen spread in Arabidopsis thaliana leaves. Plant methods. 2024;20(1):80-0. 8. Kundu R, Chauhan U, Chauhan S. Plant leaf disease detection using image processing. In: 2022 2nd International Conference on Innovative Practices in Technology and Management (ICIPTM). vol. 2. IEEE; 2022. p. 393-6. 9. Mutka AM, Fentress SJ, Sher JW, Berry JC, Pretz C, Nusinow DA, et al. Quantitative, Image-Based Phenotyping Methods Provide Insight into Spatial and Temporal Dimensions of Plant Disease. Plant physiology (Bethesda). 2016;172(2):650-60. 10. Furci L, Pascual-Pardo D, Ton J. A rapid and non-destructive method for spatial–temporal quantification of colonization by Pseudomonas syringae pv. tomato DC3000 in Arabidopsis and tomato. Plant methods. 2021;17(1):126-6. 24/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+11. Su K, Zhao W, Lin H, Jiang C, Zhao Y, Guo Y. Candidate gene discovery of Botrytis cinerea resistance in grapevine based on QTL mapping and RNA-seq. Frontiers in plant science. 2023;14:1127206-6. 12. Fu Y, Li J, Wu H, Jiang S, Zhu Y, Liu C, et al. Analyses of Botrytis cinerea-responsive LrWRKY genes from Lilium regale reveal distinct roles of two LrWRKY transcription factors in mediating responses to B. cinerea. Plant cell reports. 2022;41(4):995-1012. 13. Laflamme B, Middleton M, Lo T, Desveaux D, Guttman DS. Image-Based Quantification of Plant Immunity and Disease. Molecular plant-microbe interactions. 2016;29(12):919-24. 14. Wytinck N, Ziegler DJ, Walker PL, Sullivan DS, Biggar KT, Khan D, et al. Host induced gene silencing of the Sclerotinia sclerotiorum ABHYDROLASE-3 gene reduces disease severity in Brassica napus. PLoS One. 2022;17(8):e0261102. 15. Zhao ZQ, Ma LH, Cheung Ym, Wu X, Tang Y, Chen CLP. ApLeaf: An efficient android-based plant leaf identification system. Neurocomputing (Amsterdam). 2015;151:1112-9. 16. Hamuda E, Glavin M, Jones E. A survey of image processing techniques for plant extraction and segmentation in the field. Computers and electronics in agriculture. 2016;125:184-99. 17. Chen YK, Liu KH, Lin C. Plant Species Recognition Based on Hyperspectral Plant Canopy Images with Deep Learning. In: IGARSS 2023 - 2023 IEEE International Geoscience and Remote Sensing Symposium. IEEE; 2023. p. 7567-70. 18. Chene Y, Rousseau D, Belin E, Garbez M, Galopin G, Chapeau-Blondeau F. Shape descriptors to characterize the shoot of entire plant from multiple side views of a motorized depth sensor. Machine vision and applications. 2016;27(4):447-61. 19. Vincent L, Soille P. Watersheds in digital spaces: an efficient algorithm based on immersion simulations. IEEE transactions on pattern analysis and machine intelligence. 1991;13(6):583-98. 20. Stewart EL, McDonald BA. Measuring Quantitative Virulence in the Wheat Pathogen Zymoseptoria tritici Using High-Throughput Automated Image Analysis. Phytopathology. 2014;104(9):985-92. 21. Sarkar C, Gupta D, Gupta U, Hazarika BB. Leaf disease detection using machine learning and deep learning: Review and challenges. Applied soft computing. 2023;145:110534. 25/26 
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 10, 2026. ;https://doi.org/10.64898/2026.05.07.723432 doi: bioRxiv preprint
+
+22. Ronneberger O, Fischer P, Brox T, Wells WM, Frangi AF, Navab N, et al. U-Net: Convolutional Networks for Biomedical Image Segmentation. In: Medical Image Computing and Computer-Assisted Intervention – MICCAI 2015. vol. 9351 of Lecture Notes in Computer Science. Switzerland: Springer International Publishing AG; 2015. p. 234-41. 23. Chen LC, Papandreou G, Kokkinos I, Murphy K, Yuille AL. DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs. IEEE transactions on pattern analysis and machine intelligence. 2018;40(4):834-48. 24. Shoaib M, Shah B, EI-Sappagh S, Ali A, Ullah A, Alenezi F, et al. An advanced deep learning models-based plant disease detection: A review of recent research. Frontiers in plant science. 2023;14:1158933-3. 25. Kirillov A, Mintun E, Ravi N, Mao H, Rolland C, Gustafson L, et al.. Segment Anything; 2023. ArXiv preprint arXiv:2304.02643. 26. Patil S, Shrikant D, Bodhe K. Leaf disease severity measurement using image processing. International Journal of Engineering and Technology. 2011 10;3(5):297-301. 27. Pagola M, Ortiz R, Irigoyen I, Bustince H, Barrenechea E, Aparicio-Tejo P, et al. New method to assess barley nitrogen nutrition status based on image colour analysis : Comparison with SPAD-502. Computers and electronics in agriculture. 2009;65(2):213-8. 28. Sannakki SS, Rajpurohit VS, Nargund VB, Arunkumar R. Disease Identification and Grading of Pomegranate Leaves Using Image Processing and Fuzzy Logic. International journal of food engineering. 2013;9(4):467-79. 29. Boissard P, Martin V, Moisan S. A cognitive vision approach to early pest detection in greenhouse crops. Computers and electronics in agriculture. 2008;62(2):81-93. 30. Zoph B, Vasudevan V, Shlens J, Le QV. Learning Transferable Architectures for Scalable Image Recognition. arXivorg. 2018. 26/26
