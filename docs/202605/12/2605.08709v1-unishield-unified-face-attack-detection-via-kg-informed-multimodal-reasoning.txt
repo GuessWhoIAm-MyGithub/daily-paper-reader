@@ -1,0 +1,608 @@
+Title: UniShield: Unified Face Attack Detection via KG-Informed Multimodal Reasoning
+
+URL Source: https://arxiv.org/pdf/2605.08709v1
+
+Published Time: Tue, 12 May 2026 00:56:32 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# UniShield: Unified Face Attack Detection via KG-Informed Multimodal Reasoning 
+
+Hongrui Li 1,∗, Yichen Shi 2,∗, Hongyang Wang 1, Yuhao Gao 3, Hui Ma 4, Jun Feng 1,†, Zitong Yu 4,†
+
+> 1
+
+Shijiazhuang Tiedao University 2Shanghai Jiao Tong University 
+
+> 3
+
+Ningbo Institute of Digital Twin 4Great Bay University 
+
+Abstract 
+
+Unified face attack detection (UAD) requires recognizing physical spoofing and digital forgery within a shared decision space, yet existing discriminative or prompt-based methods largely rely on appearance correlations and provide limited evidence-grounded reasoning. We propose UniShield, a knowledge-grounded multimodal reasoning framework for unified face attack defense. UniShield constructs a Face Attack Knowledge Graph (FAKG) that links attack categories to diagnostic visual cues and attack-conditioned relations, and uses it to synthesize 52,025 FAKG-QA examples for Attack-Graph Instruction Tuning (AGIT). To improve rationale con-sistency, we further introduce Graph-Consistent Reasoning Optimization (GCRO), a GRPO-based objective with a KG-consistency reward that encourages generated rationales to match graph-supported cues while penalizing incompatible claims. Experiments on our multimodal UAD benchmark show that UniShield achieves strong performance across binary, coarse-grained, and fine-grained protocols, with consistently high ACC and low HTER. These results suggest that structured attack knowledge can improve both detection accuracy and reasoning reliability over discriminative baselines and general-purpose MLLMs. Our code will be released at https://anonymous.4open.science/r/Unishield-A6A3/ .
+
+1 Introduction 
+
+Face attack detection plays a pivotal role in modern biometric security systems, safeguarding ap-plications such as mobile authentication, access control, and digital identity verification. With the rapid evolution of attack techniques—from traditional print and replay spoofing to sophisticated face forgery and video-driven manipulation—the boundary between physical and digital attacks has become increasingly blurred. Recent research has therefore shifted toward Unified face attack detection (UAD) [ 5, 15 ], which aims to handle heterogeneous attack types within a single framework. Such a unified paradigm is essential for real-world deployment, where systems must generalize across diverse attack forms while maintaining robustness, interpretability, and scalability. Despite recent progress, most existing UAD methods still treat unified face attack detection primarily as a label prediction problem. As summarized in Table 1, traditional deep learning methods learn visual decision boundaries with CNN or Vision Transformer backbones; prompt-learning methods adapt vision–language models through fixed or learnable prompts; and recent MLLM-based methods introduce textual explanations for face-security decisions. However, these paradigms lack an explicit mechanism to connect attack categories, diagnostic visual evidence, and reasoning rationales. As a result, their predictions and explanations can rely on superficial correlations rather than attack-specific forensic knowledge, limiting reliability under heterogeneous physical and digital attacks. To address these challenges, we propose UniShield , a unified MLLM-based face attack defense framework. Unlike conventional parallel pipelines, UniShield adopts a single-stream reasoning 
+
+> *Equal contribution.
+> †Corresponding authors. Preprint.
+> arXiv:2605.08709v1 [cs.CV] 9 May 2026
+
+Table 1: Categorization of existing methods for Face Anti-Spoofing, Face Forgery Detection, and Unified Face Attack Detection under different learning paradigms.         
+
+> Method Type FAS FFD UAD Traditional Deep Learning
+> AS-FAS [16], CDCN [28], Yang et al. [26], Atoum et al. [1] Face X-ray [12], Capsule-Forensics [17], Rossler et al. [19], Guarnera et al. [7] Yu et al. [29]
+> Prompt Learning FGPL [14], Cfpl-fas [10] DeepfakeCLIP [3], C2pclip [22], KGPL [24] La-SoftMoE CLIP [33], UniAttackDetection [5], HiPTune [15]
+> MLLM FaceShield [25], CEPL [30] LVLM-DFD [27], VLForgery [9] Ours
+
+paradigm that tightly integrates visual encoding, language modeling, and structured knowledge guidance. At the core of our framework lies a unified Face Attack Knowledge Graph (FAKG), which explicitly models attack types, shared artifacts, and cross-type semantic relations. By injecting FAKG into multimodal large language model reasoning, UniShield enables knowledge-aware inference trajectories rather than free-form generation. This design supports multi-level outputs within a single forward pass, including: (1) basic real/attack judgment, (2) fine-grained attack type classification across physical and digital categories, and (3) interpretable reasoning rationales grounded in visual cues and structured semantic evidence. Through knowledge-guided supervised fine-tuning and reinforcement learning optimization, UniShield improves unified face attack detection with more interpretable and semantically grounded predictions. Extensive experiments on a newly constructed unified benchmark demonstrate that UniShield consis-tently outperforms existing traditional, prompt-based, and MLLM-based baselines, while providing fine-grained predictions and interpretable reasoning. These results highlight the importance of moving beyond appearance-level discrimination toward structured, knowledge-guided multimodal reasoning for unified face attack defense. Our main contributions are summarized as follows: • A Reasoning-based Unified Face Attack Defense Framework. We propose UniShield, a unified MLLM-based framework that shifts UAD from pattern matching to knowledge-guided multimodal reasoning. UniShield provides a single-stream, interpretable solution for detecting both physical spoofing and digital forgery attacks. • FAKG-Guided Knowledge Injection and Instruction Tuning. We construct a Face Attack Knowledge Graph (FAKG) that organizes attack types, diagnostic cues, and cross-type semantic relations into a unified reasoning space. Based on FAKG, we develop Attack-Graph Instruction Tuning (AGIT), which converts attack-cue subgraphs into multi-hop reasoning Q&A pairs for supervised fine-tuning, enabling structured knowledge injection and cross-attack generalization. • Graph-Consistent Reasoning Optimization for Faithful Reasoning. We propose Graph-Consistent Reasoning Optimization (GCRO), a GRPO-based objective that optimizes predictions with FAKG-consistency supervision. By encouraging rationales to match graph-supported cues and penalizing graph-inconsistent claims, GCRO promotes more KG-consistent reasoning in security-critical scenarios. 
+
+2 Related Work 
+
+2.1 Deep and Prompt Learning for Face Attack Detection 
+
+Face attack detection has long been dominated by task-specific discriminative modeling. For FAS, CNN-based methods model liveness cues such as texture, frequency, or physiological signals [ 1, 16 ,26 , 28 ]; for FFD, detectors focus on manipulation artifacts and spatial inconsistencies [ 7, 12 , 17 , 19 ]. Early UAD efforts extend this formulation to mixed physical–digital attacks [ 29 ], but still mainly rely on appearance-level decision boundaries that are sensitive to dataset-specific artifacts and domain shifts. Recent VLM and prompt-learning methods improve transferability by adapting CLIP-like models to FAS and FFD [ 3, 10 , 14 , 22 , 24 ], and to UAD through shared label spaces, soft mixture-of-experts, and hierarchical prompts [ 5, 15 , 33 ]. However, they still primarily produce label predictions through fixed or learned prompts, without explicitly grounding decisions in structured attack-cue relations. 2Figure 1: Face Attack Knowledge Graph. Squares denote attack types (color-coded); circles denote features. Green circles are shared features across attacks, and purple circles are type-specific features; edges indicate relations. 
+
+2.2 MLLMs for Multimodal Reasoning in Face Security 
+
+MLLMs align a vision encoder with large language models, enabling joint visual understanding and textual generation with emergent reasoning capabilities. General alignment paradigms such as BLIP-2 [ 11 ] and MiniGPT-4 [ 32 ] demonstrate strong instruction-following and multimodal reasoning, motivating their adoption in security-oriented perception. In face security, emerging MLLM-based approaches explore explainable detection. For FAS, FaceShield [ 25 ] employs MLLMs to provide spoofing decisions with textual explanations, and CEPL [ 30 ] further investigates promptable/consistent evidence learning. For FFD, LVLM-DFD [ 27 ]and VLForgery [ 9] extend MLLMs to detect and describe forgery traces with language grounding. In addition, benchmarks such as SHIELD [ 20 ] study MLLM behaviors under spoofing and forgery settings, indicating both opportunities and vulnerabilities. Despite improved reasoning and explain-ability, existing MLLM-based methods typically rely on free-form generation without explicitly modeling structured attack knowledge, which can reduce robustness and fine-grained controllability for unified physical-digital detection. To address this limitation, we introduce UniShield, which integrates structured FAKG reasoning into MLLM inference, enabling attack-aware multimodal reasoning guided by explicit relational knowledge and improving reliability in unified detection. 
+
+3 Methods 
+
+3.1 Knowledge-Driven Cognitive Foundation: The FAKG 
+
+To transcend the limitations of label-centric discriminative models, we transition towards a reasoning-based paradigm by constructing the FAKG. Unlike traditional flat labeling, FAKG organizes domain-informed attack-cue relations between heterogeneous attack modalities and their observable physi-cal/digital manifestations, as illustrated in Fig. 1. This graph functions as a relation-aware semantic scaffold, providing a unified foundation that bridges the gap between low-level visual perception and high-level forensic reasoning [ 5, 15 ]. The overall UniShield framework built on this graph is summarized in Fig. 2. We formalize the FAKG as a heterogeneous semantic graph: 
+
+G = ( E, R), (1) where E denotes the set of cognitive entities and R represents the directed attack-cue relations captured by the graph. Specifically, E comprises a dual-layered hierarchy: 
+
+Attack-type Entities define the taxonomy of the defense space, encompassing Bona Fide faces and a spectrum of threats across the physical-digital divide (e.g., Print, Replay, Adversarial, FaceSwap). 3Prompt ： 
+
+> Describe image
+> texture feature
+> Lighting features
+> Edge features
+> Paper edge features
+> Original Dataset
+> Image Preprocessing Entity & Relationship Features
+
+....             
+
+> Data Analysis / Feature Extraction 1
+> 2Skeleton Construction
+> FAKG one-hop k-hop
+> [Print] Contain Paper Edge
+> [Print] Inconsistent
+> [Replay]
+> Lighting
+> Unnatural
+> GraphGen Structured Skeletons
+> 3
+> MLLM Image Caption
+> The image presents a display of a human face, with a smiling face and a simple single tone background...
+> MLLMs Experts
+> Q/A correspondence
+> Keyword inclusion Human review and revision
+> 4Filtering
+> 5Output ：High-Quality QA Pairs （FAKG-QA Dataset) Q: What is the type of facial attack in the provided image and why?
+> A：The image appears to be an adversarially manipulated sample. This can be inferred from several visual inconsistencies, including
+> blurred and noisy skin textures , abnormal lighting variations, unnatural shadows around the facial region ,visible edge artifacts , and an unnatural facial expression. These irregularities suggest that the image has been deliberately perturbed or modified in a way that disrupts the visual integrity of the face while still preserving its overall semantic appearance.
+
+Stage 1:FAKG-QA Construction 
+
+> Vision Encoder
+
+Pre-trained  MLLM 
+
+Projector 
+
+Image Instruction / Query Q 
+
+> What is the type of facial attack in the provided image and why?
+
+Tokenizer          
+
+> Predict Answer : <think> The image is likely adversarially manipulated, as evidenced by blurred textures, abnormal lighting, screen-like moiré patterns ，unnatural facial shadows and inconsistent facial expressions. These cues indicate intentional perturbations that distort facial integrity while preserving the image’s overall semantic appearance.
+> </think> <answer> Adversarial attack. </answer>
+
+Stage 2: Attack-Graph Instruction Tuning (AGIT) 
+
+Accuracy Reward Format Reward 
+
+Answer: 
+
+Correct / Incorrect 
+
+1 / 0 
+
+<think> ...  </think> 
+
+/ think ...answer 
+
+1 / 0 
+
+KG-consistency Reward 
+
+Group-relative Advantage and Update 
+
+Stage 3: Graph-Consistent Reasoning Optimization （GCRO) 
+
+Generated Rationale 
+
+"blurred texture","abnormal lighting" "unnatural shadows"... 
+
+Ground to FAKG relations 
+
+Regex match LLM verification    
+
+> Supporting relations Conflicting relations
+> KG reward = support -η·conflict
+> abnormal lighting
+> blurred texture
+> screen-like moiré patterns
+> Sampled responses Advantage estimation
+> Policy update
+
+Figure 2: Overview of the UniShield framework, including FAKG-guided QA dataset construction, AGIT, and GCRO for graph-consistent multimodal reasoning in UAD. 
+
+Feature Entities represent the observable diagnostic cues, categorized into Inherent Common Features (e.g. skin texture, global illumination) and Attack-Specific Artifacts (e.g. lattice patterns, geometric inconsistencies). This bifurcation allows the model to perform joint-distribution modeling of shared regularities and idiosyncratic anomalies. The relations within FAKG encode directed semantic dependencies and are defined as triples: 
+
+(a, ρ, f ) ∈ R , (2) where a is the source attack entity, f is the target feature, and ρ denotes the attack-conditioned relation describing how f manifests under a.
+
+This relation-aware formulation is useful for disambiguation: it helps the system distinguish visually similar artifacts by contextualizing them with attack-specific forensic cues. Consequently, FAKG reformulates UAD as a knowledge-informed diagnostic process and encourages the model’s generated rationales to remain connected to established forensic cues. 
+
+3.2 FAKG-Guided Dataset Synthesis 
+
+To construct a high-quality and reasoning-oriented QA dataset, we propose an FAKG-guided synthesis pipeline that integrates structured graph reasoning with multimodal captioning, as shown in Fig. 2. Given an annotated face anti-spoofing dataset D = {(xi, y i)}Ni=1 (image xi with attack label yi) and the Face Attack Knowledge Graph G = ( E, R), our goal is to synthesize a QA corpus 
+
+Q⋆ = {(xi, q i, a i)}Mi=1 , (3) where each QA pair is grounded in both structured KG knowledge and image-specific evidence. 
+
+Stage 1: KG-Driven QA Skeleton Generation. For each sample label yi, we locate its corresponding attack node eyi ∈ E in the knowledge graph G = ( E, R). We then extract a local k-hop ego-subgraph around eyi as the input to GraphGen [ 4], so that the generated QA skeletons are grounded in the structured relations of FAKG. 
+
+k-hop Ego-subgraph Extraction. Let dist G (u, v ) denote the shortest-path distance between nodes 
+
+u and v in G. We define the k-hop neighborhood node set centered at eyi as 
+
+E(k)(yi) = {e ∈ E | dist G (e, e yi ) ≤ k}, (4) and take the induced edge set restricted to these nodes: 
+
+R(k)(yi) = {(u, ρ, v ) ∈ R | u ∈ E (k)(yi), v ∈ E (k)(yi)}. (5) The resulting local subgraph is 
+
+S(k)(yi) =  E(k)(yi), R(k)(yi). (6) 4When k=1 , S(1) (yi) mainly captures direct relations between an attack type and its associated cues, yielding single-relation skeletons such as “Why is this a print attack?” . When k> 1, the subgraph additionally contains intermediate entities that connect shared cues and attack-specific cues, enabling multi-step and contrastive skeletons across attack types. 
+
+Subgraph-to-skeleton Generation. We feed S(k)(yi) into GraphGen [ 4 ] to produce a structured reasoning skeleton: 
+
+τi = GraphGen( S(k)(yi)) . (7) In particular, multi-hop subgraphs allow GraphGen to incorporate both common and distinctive cues, resulting in contrastive questions such as “Why is this a print attack and not a replay attack?” .
+
+Stage 2: Multimodal Caption Generation. Given (xi, y i), we employ an MLLM captioner to produce an evidence-focused description that highlights observable cues relevant to the label: 
+
+ci = MLLM cap (xi, y i), (8) where ci summarizes visual evidence such as illumination, texture consistency, boundary artifacts, and other KG-related features. 
+
+Stage 3: Knowledge–Caption Fusion for QA Synthesis. Finally, we fuse the KG-grounded skeleton and the image caption to synthesize the final QA pair through semantic fusion: 
+
+(qi, a i) = MLLM fus (xi, τ i, c i), (xi, y i) ∈ D ⋆. (9) The resulting high-quality corpus is 
+
+Q⋆ = {(xi, q i, a i) | (xi, y i) ∈ D ⋆}, (10) which integrates structured domain knowledge from G with instance-specific visual evidence, and provides discriminative and interpretable supervision for knowledge-driven training. 
+
+3.3 Attack-Graph Instruction Tuning 
+
+We adopt a two-stage training strategy. In the cold-start stage, we introduce Attack-Graph Instruction Tuning (AGIT), which converts FAKG-centered attack-cue subgraphs into evidence-grounded diag-nostic instruction traces. In implementation, AGIT fine-tunes a pretrained multimodal large language model on our FAKG-guided QA dataset, so that the model learns to follow the required output format and produces a reasonable initial reasoning/prediction before reinforcement learning. Each training sample is organized as: 
+
+(x, q, y think , y ans ), (11) where x denotes the face image, q is the knowledge-driven question, ythink is the rationale, and yans 
+
+is the final prediction (attack label). We concatenate y = [ ythink , y ans ] and optimize the standard teacher-forcing objective: 
+
+LAGIT = − X
+
+> t
+
+log Pθ (yt | x, q, y <t ). (12) While AGIT provides a strong initialization through the standard SFT objective, it does not explicitly constrain the rationale to be consistent with the relations in FAKG, motivating the subsequent graph-consistent reasoning refinement. 
+
+3.4 Graph-Consistent Reasoning Optimization 
+
+To reduce unsupported or inconsistent rationales, we propose Graph-Consistent Reasoning Op-timization (GCRO), a GRPO-based reasoning optimization objective with accuracy, format, and KG-consistency rewards. Built upon the Group Relative Policy Optimization (GRPO) framework [ 8], GCRO shifts the optimization focus from simple label accuracy to reasoning path consistency, encouraging the model’s generated rationales to remain aligned with FAKG-supported cues. Given an input (x, q ), GCRO samples a group of G responses: 
+
+y(g) = {y(g),think , y (g),ans } ∼ πθold (· | x, q ), g = 1 , . . . , G, (13) and assigns each response a scalar reward: 
+
+R(g) = λacc R(g) 
+
+> acc
+
++ λfmt R(g) 
+
+> fmt
+
++ λkg R(g) 
+
+> kg
+
+. (14) 5Following the original GRPO setting [ 8 ], Racc and Rfmt are implemented as rule-based answer-correctness and response-format checks; below we detail only our proposed KG-consistency reward. 
+
+KG-consistency Reward. Our key contribution is a KG-consistency reward that encourages ra-tionales to align with the domain relations encoded in FAKG. We decompose Rkg into a positive matching reward and a contradiction penalty: 
+
+R(g) 
+
+> kg
+
+= clip [0 ,1] 
+
+
+
+R(g) 
+
+> match
+
+− ηR (g)
+
+> conflict
+
+
+
+. (15) To compute these terms, we project the generated reasoning text onto the existing FAKG relation space: 
+
+C(g) = Ground 
+
+
+
+y(g),think , G
+
+
+
+=
+
+n
+
+(a, ρ, f ) ∈ R Match regex 
+
+
+
+y(g),think , a, ρ, f 
+
+
+
+∨ Match llm 
+
+
+
+y(g),think , a, ρ, f 
+
+o 
+
+.
+
+(16) Here, Match regex denotes deterministic regular-expression matching with predefined patterns for each FAKG relation, and Match llm verifies paraphrased or implicit mentions of the same relation. The LLM verifier is restricted to existing FAKG relations and cannot introduce new relations. For the ground-truth attack type a∗, let S+(a∗) denote the FAKG relations that support this attack type, and S−(a∗) denote relations that are incompatible with it. We compute: 
+
+R(g) 
+
+> match
+
+= |C (g) ∩ S +(a∗)||S +(a∗)| + ϵ , R(g) 
+
+> conflict
+
+= |C (g) ∩ S −(a∗)||S −(a∗)| + ϵ . (17) Thus, rationales that mention KG-supported diagnostic relations receive positive reward, while ratio-nales that invoke graph-incompatible relations are penalized. This provides a compact approximation of logical consistency under the closed-world FAKG schema. By integrating GCRO, UniShield is encouraged to produce predictions with rationales that are more consistent with FAKG-supported forensic cues. 
+
+Group-relative Advantage and Update. GCRO estimates advantages by normalizing rewards within each group (without a learned critic): 
+
+ˆA(g) = R(g) − μR
+
+σR + ϵ , μR = 1
+
+G
+
+> G
+
+X
+
+> g=1
+
+R(g), σR =
+
+vuut 1
+
+G
+
+> G
+
+X
+
+> g=1
+
+ R(g) − μR
+
+2. (18) We then optimize the policy with a group-relative objective: 
+
+LGCRO = −E
+
+h
+
+log πθ
+
+ y(g) | x, q  · ˆA(g)i
+
+, (19) where ˆA(g) is treated as a constant w.r.t. θ. By combining AGIT and GCRO, the model is encouraged to improve both prediction accuracy and KG-consistent reasoning. 
+
+4 Experimental Results 
+
+4.1 Experimental Settings Datasets. In this study, we build upon the UniAttackData dataset [ 5 ], which is currently the largest publicly available open-source benchmark for UAD, containing 28,706 videos (1,800 live and 26,906 fake) spanning 2 physical attack types and 12 digital attack types. On top of UniAttackData, we construct a customized FAKG-QA dataset with 52,025 high-quality QA pairs covering diverse attack categories, providing structured supervision for training and evaluating UAD models under heterogeneous spoofing scenarios. The FAKG-QA dataset integrates data from well-established datasets such as CASIA-SURF and CeFA [ 13 ], using these datasets as the basis for generating QA pairs and providing broad coverage of both physical and digital face spoofing attacks. The dataset composition and representative examples are shown in Fig. 3 and Fig. 4. 
+
+Implementation Details. We instantiate UniShield with Qwen2.5-VL [ 2] backbones, including both 3B and 7B variants, to evaluate the scalability of our framework. All experiments are conducted 6Figure 3: FAKG-QA dataset composi-tion. Inner/middle/outer rings indicate binary, coarse, and fine-grained labels. Table 2: Label definitions and data sizes under different protocols.                
+
+> Data Prot. Labels AGIT Size GCRO Size Train –Real Face, {Pr, Re, FS, AE, VD, Adv} 41000 4100 Test Prot.1 Real Face, Attack 4706 Prot.2 Real Face, Physical, Digital Prot.3 Real Face, {Pr, Re, FS, AE, VD, Adv}
+> Pr : Print; Re : Replay; FS : FaceSwap;
+> AE : Attribute-Edit; VD : Video-Driven; Adv : Adversarial.
+
+Figure 4: Example images in our dataset. on three NVIDIA A100 GPUs with 80GB memory. Our training pipeline consists of two stages: Attack-Graph Instruction Tuning (AGIT) and Graph-Consistent Reasoning Optimization (GCRO). In the AGIT stage, we perform full-parameter fine-tuning by updating the vision encoder, multimodal projector, and language model. In the GCRO stage, implemented with GRPO, we freeze the vision encoder and multimodal projector for efficiency, and optimize only the language model. As shown in our results, this two-stage training strategy consistently improves both 3B and 7B variants, with the final 7B variant achieving the best overall performance. 
+
+Protocols and Metrics. As summarized in Tab. 2, all models are trained with the full fine-grained label space and evaluated under three protocol-specific label spaces: • Prot.1 (Binary): Real Face vs. Attack .• Prot.2 (Coarse): Real Face , Physical , Digital .• Prot.3 (Fine-grained): Real Face and six fine-grained attack types. We report accuracy (ACC) and half total error rate (HTER). For Prot.1, HTER follows the standard binary definition, i.e., 
+
+HTER = 12 (FAR + FRR) . (20) For Prot.2/3, HTER is computed over protocol-specific categories with a one-vs-rest formulation. Thus, cross-attack misclassification is counted as a category-level error in the corresponding multi-class protocol. For the #Total row, ACC and HTER are computed as weighted averages of the corresponding category-level metrics over protocol-specific categories, with each category weighted by its number of images. 
+
+Compared Methods. We train and evaluate UniShield on our proposed dataset against five rep-resentative baselines, including CDCN [ 28 ], CLIP [ 18 ], CoOp [ 31 ], UniAttackDetection [ 5 ], and HiPTune [ 15 ]. For VLM-based methods, we follow the data preprocessing in UniAttackDetection [ 5]to ensure a fair comparison. Since existing face-security MLLM methods are mainly designed for sin-gle face anti-spoofing or forgery detection tasks rather than unified physical–digital attack detection, we instead select strong general-purpose MLLMs for evaluation. In addition, we compare UniShield with state-of-the-art MLLMs, including GLM-4.6V [23], GPT-5.2 [21], and Gemini-3-Pro [6]. 
+
+4.2 Comparison Results Compared to SOTA methods. Table 3 and Table 4 compare UniShield with representative SOTA methods under three protocols. UniShield consistently achieves the best overall performance across 7Table 3: Performance comparison under Protocol 1 and Protocol 2. 
+
+Method Prot.1 Prot.2 ACC HTER Real Face Physical Digital #Total ACC HTER ACC HTER ACC HTER ACC HTER CDCN [28] 98.4 1.17 89.0 11.0 97.3 2.67 98.9 1.11 98.0 2.04 CLIP [18] 93.6 50.0 86.7 6.67 99.1 0.44 99.6 0.23 98.7 0.68 CoOp [31] 92.8 8.82 75.7 12.2 99.7 0.17 98.4 0.79 97.2 1.39 UniAttackDetection [5] 99.0 0.97 88.0 6.00 99.1 0.44 99.6 0.19 98.8 0.61 HiPTune [15] 98.4 1.13 96.1 1.96 99.3 0.33 98.7 0.67 98.9 0.69 GLM-4.6V [23] 8.50 49.7 100 0.00 0.00 100 0.43 49.8 6.70 56.2 GPT-5.2 [21] 80.2 42.4 38.3 30.8 1.67 49.2 67.0 27.0 53.0 31.5 Gemini-3-Pro [6] 31.4 36.7 100 0.00 72.8 26.1 14.6 42.9 31.4 36.9 UniShield (3B) 98.6 1.42 99.0 1.00 97.2 1.40 98.9 1.09 98.6 1.14 UniShield (7B) 99.6 0.47 99.3 0.67 99.8 0.22 99.4 0.37 99.5 0.36 
+
+Table 4: Performance comparison under Protocol 3.                                                                                                                                                                                        
+
+> Method Real Face Print Replay FaceSwap Attribute-Edit Video-Driven Adversarial #Total ACC HTER ACC HTER ACC HTER ACC HTER ACC HTER ACC HTER ACC HTER ACC HTER CDCN [28] 1.33 49.3 76.2 11.9 66.3 16.8 38.5 30.7 25.3 37.3 16.5 41.8 3.28 48.4 26.3 36.9 CLIP [18] 25.7 37.2 99.3 0.33 99.3 0.33 98.9 0.56 98.7 0.67 99.0 0.50 100 0.00 94.7 2.67 CoOp [31] 78.0 11.0 99.3 0.33 99.0 0.50 96.1 1.96 99.7 0.17 93.8 3.08 100 0.00 96.9 1.55 UniAttackDetection [5] 85.3 7.33 99.3 0.33 98.7 0.67 98.9 0.56 98.7 0.67 98.2 0.92 100 0.00 98.4 0.82 HiPTune [15] 97.3 2.67 99.8 0.17 100 0.00 88.1 11.9 98.0 1.00 99.0 0.50 99.9 0.06 97.3 2.58 GLM-4.6V [23] 100 0.00 15.0 85.0 1.67 93.3 0.00 100 0.00 100 0.00 100 0.00 100 8.40 91.3 GPT-5.2 [21] 61.7 38.3 38.3 45.0 2.00 53.3 0.00 100 0.00 100 0.00 100 0.29 49.9 9.05 68.0 Gemini-3-Pro [6] 95.0 5.00 60.0 20.0 66.7 18.3 19.0 40.5 0.00 100 13.3 43.4 17.3 41.4 29.5 39.0 UniShield (3B) 99.0 1.00 98.8 0.83 94.0 3.00 97.3 1.34 96.7 1.67 99.3 0.33 99.9 0.06 98.6 0.79 UniShield (7B) 99.3 0.67 99.7 0.33 99.3 0.33 98.4 1.00 97.3 1.33 100 0.00 100 0.00 99.4 0.38
+
+all settings. In Prot.1, UniShield (7B) reaches 99.6% ACC and 0.47% HTER, surpassing prior specialized methods such as UniAttackDetection and HiPTune. In Prot.2, it further obtains the best overall result with 99.5% ACC and 0.36% HTER on #Total, while maintaining balanced performance across real-face, physical, and digital categories. More importantly, under the fine-grained Prot.3 setting, UniShield (7B) achieves 99.4% ACC and 0.38% HTER. The consistent gains across diverse attack types, including both physical and digital attacks, demonstrate that attack-graph aligned reasoning improves not only binary spoof detection but also fine-grained attack discrimination. 
+
+Compared to SOTA MLLMs. We further evaluate strong general-purpose MLLMs, including GLM-4.6V, GPT-5.2, and Gemini-3-Pro. Despite their general visual-language capabilities, these models perform poorly under the proposed protocols. For example, the best-performing MLLM on Prot.1, GPT-5.2, achieves only 80.2% ACC and 42.4% HTER, far behind UniShield (7B). The gap becomes more pronounced in Prot.3, where all evaluated MLLMs obtain below 30% overall ACC. These results indicate that off-the-shelf MLLMs lack the domain-specific grounding and decision calibration required for unified attack detection. In contrast, UniShield explicitly aligns visual observations with structured attack knowledge, enabling more accurate and reliable predictions across protocols and attack categories. Beyond quantitative gaps, Fig. 5 provides a representative qualitative case: given a Video-Driven attack (ground truth), GPT-5.2 fails to make a decision, while Gemini-3-Pro and Qwen3.5-Plus incorrectly predict a Print attack by relying on superficial cues (e.g., perceived flatness or lighting patterns). In contrast, UniShield correctly identifies the sample as Video-Driven and, guided by a more reliable reasoning process, provides the correct prediction with consistent supporting evidence. 8Figure 5: Comparison of multimodal models on the UAD task 
+
+4.3 Ablation Study 
+
+We conduct ablation studies to quantify the contributions of our two key components, AGIT and GCRO. As shown in Tab. 5, AGIT substantially improves over model trained by standard CoT dataset on the 3B model, increasing ACC by 8.8%, 8.9%, and 10.6% and reducing HTER by 9.52%, 0.18%, and 1.73% on Prot. 1–3, respectively. This demonstrates that attack-graph-guided instruction tuning provides more effective supervision than generic chain-of-thought reasoning. Starting from the AGIT-tuned model, GCRO further outperforms vanilla GRPO by incorporating graph-consistency rewards, bringing additional ACC gains of 0.7%, 0.2%, and 0.2% and HTER reductions of 1.16%, 0.90%, and 0.40% on Prot. 1–3. The 7B results show the same trend, where applying GCRO after AGIT improves ACC/HTER from 99.3%/0.67%, 99.2%/0.78%, and 98.8%/0.71% to 99.6%/0.47%, 99.5%/0.36%, and 99.4%/0.38%. Fig. 6 further shows that GCRO produces rationales more aligned with FAKG-supported attack cues than GRPO. Table 5: Ablation results under three protocols. Gray rows mark key methods; colored values show changes from the previous row. 
+
+Method Prot.1 Prot.2 Prot. 3 ACC HTER ACC HTER ACC HTER 
+
+UniShield-3B Backbone 16.3 40.4 10.3 48.7 14.9 39.9 + CoT 83.4 13.7 83.2 4.98 83.4 4.98 + AGIT 92.2 ↑8.8 4.18 ↓9.52 92.1 ↑8.9 4.80 ↓0.18 94.0 ↑10.6 3.25 ↓1.73 
+
++ AGIT+GRPO 97.9 2.58 98.4 2.04 98.4 1.19 + AGIT+GCRO 98.6 ↑0.7 1.42 ↓1.16 98.6 ↑0.2 1.14 ↓0.90 98.6 ↑0.2 0.79 ↓0.40 
+
+UniShield-7B Backbone 7.86 48.6 13.3 45.7 8.7 45.6 + AGIT 99.3 0.67 99.2 0.78 98.8 0.71 + AGIT+GCRO 99.6 ↑0.3 0.47 ↓0.20 99.5 ↑0.3 0.36 ↓0.42 99.4 ↑0.6 0.38 ↓0.33 UniShield (GCPO):                                             
+
+> <think> The provided image belongs to the
+> FaceSwap attack type... It is not a Video-Driven attack because this image shows some dynamic blur, while Video-Driven attacks usually do not have dynamic blur ;moreover, the artifacts appear as spatial face-region replacement rather than temporal inconsistencies from video processing, reinforcing the FaceSwap conclusion. </think>
+> <answer>FaceSwap</answer>
+> UniShield (GRPO) ：
+> Ground Truth : FaceSwap
+> <think> The provided image belongs to the FaceSwap attack type..... In addition, the image does not show print-specific evidence (paper texture, cutting edges) or replay-screen patterns (moiré), further supporting the FaceSwap judgment. </think> <answer>FaceSwap</answer>
+> What is the type of facial attack in the provided image and why?
+
+Figure 6: Performance comparison be-tween GRPO and GCRO. 
+
+5 Conclusion 
+
+In this paper, we presented UniShield, a knowledge-grounded multimodal reasoning framework for unified face attack detection. By introducing the FAKG, we organize attack categories and diagnostic cues into a structured semantic space across heterogeneous physical and digital attack modalities. Our approach leverages AGIT and GCRO to encourage rationales that are more consistent with graph-supported forensic cues. Extensive evaluations on our multimodal UAD benchmark show that UniShield achieves strong detection performance while providing more interpretable predictions. Nevertheless, our evaluation is mainly conducted on a UniAttackData-derived benchmark, and FAKG currently relies on predefined attack-cue relations. Extending the framework to independent third-party benchmarks and adapting it to unseen attack types remain important future directions. 9References 
+
+[1] Yousef Atoum, Yaojie Liu, Amin Jourabloo, and Xiaoming Liu. Face anti-spoofing using patch and depth-based cnns. In 2017 IEEE international joint conference on biometrics (IJCB) , pages 319–328. IEEE, 2017. [2] Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang, Sinan Tan, Peng Wang, Junyang Lin, Chang Zhou, and Jingren Zhou. Qwen-vl: A versatile vision-language model for understanding, localization, text reading, and beyond, 2023. URL https://arxiv.org/abs/2308.12966 .[3] Xueying Chen, Tianqiang Huang, Wenyu Liu, Zhenghong Wang, Wentong Li, Wei Huang, Riqing Chen, and Haifeng Luo. Deepfakeclip: Semantic-opposite prompt learning for general-izable deepfake detection. Knowledge-Based Systems , page 114681, 2025. [4] Zihong Chen, Wanli Jiang, Jinzhe Li, Zhonghang Yuan, Huanjun Kong, Wanli Ouyang, and Nanqing Dong. Graphgen: Enhancing supervised fine-tuning for llms with knowledge-driven synthetic data generation, 2025. URL https://arxiv.org/abs/2505.20416 .[5] Hao Fang, Ajian Liu, Haocheng Yuan, Junze Zheng, Dingheng Zeng, Yanhong Liu, Jiankang Deng, Sergio Escalera, Xiaoming Liu, Jun Wan, and Zhen Lei. Unified physical-digital face attack detection, 2024. URL https://arxiv.org/abs/2401.17699 .[6] Google. Gemini models: Gemini 3 pro. https://ai.google.dev/gemini-api/docs/ models , 2025. Accessed: 2026-02-12. [7] Luca Guarnera, Oliver Giudice, and Sebastiano Battiato. Deepfake detection by analyzing convolutional traces. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops , pages 666–667, 2020. [8] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue, Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Hanwei Xu, Honghui Ding, Huazuo Gao, Hui Qu, Hui Li, Jianzhong Guo, Jiashi Li, Jingchang Chen, Jingyang Yuan, Jinhao Tu, Junjie Qiu, Junlong Li, J. L. Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai Hu, Kaichao You, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Mingxu Zhou, Meng Li, Miaojun Wang, Mingming Li, Ning Tian, Panpan Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen, Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen, Shanghao Lu, Shangyan Zhou, Shanhuang Chen, Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing Wu, Tao Yun, Tian Pei, Tianyu Sun, T. Wang, Wangding Zeng, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin, Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxiang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang, Xinxia Shan, Y. K. Li, Y. Q. Wang, Y. X. Wei, Yang Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yunfan Xiong, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Y. X. Zhu, Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu, Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zijia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu Zhang, and Zhen Zhang. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature ,645(8081):633–638, September 2025. ISSN 1476-4687. doi: 10.1038/s41586-025-09422-z. URL http://dx.doi.org/10.1038/s41586-025-09422-z .[9] Xinan He, Yue Zhou, Bing Fan, Bin Li, Guopu Zhu, and Feng Ding. Vlforgery face triad: Detection, localization and attribution via multimodal large language models, 2025. URL 
+
+https://arxiv.org/abs/2503.06142 .10 [10] Xueli Hu, Huan Liu, Haocheng Yuan, Zhiyang Fu, Yizhi Luo, Ning Zhang, Hang Zou, Jianwen Gan, and Yuan Zhang. Fine-grained prompt learning for face anti-spoofing. In Proceedings of the 32nd ACM International Conference on Multimedia , pages 7619–7628, 2024. [11] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models, 2023. URL https: //arxiv.org/abs/2301.12597 .[12] Lingzhi Li, Jianmin Bao, Ting Zhang, Hao Yang, Dong Chen, Fang Wen, and Baining Guo. Face x-ray for more general face forgery detection, 2020. URL https://arxiv.org/abs/ 1912.13458 .[13] Ajian Liu, Zichang Tan, Jun Wan, Sergio Escalera, Guodong Guo, and Stan Z Li. Casia-surf cefa: A benchmark for multi-modal cross-ethnicity face anti-spoofing. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 1179–1187, 2021. [14] Ajian Liu, Shuai Xue, Jianwen Gan, Jun Wan, Yanyan Liang, Jiankang Deng, Sergio Escalera, and Zhen Lei. Cfpl-fas: Class free prompt learning for generalizable face anti-spoofing, 2024. URL https://arxiv.org/abs/2403.14333 .[15] Ajian Liu, Haocheng Yuan, Xiao Guo, Hui Ma, Wanyi Zhuang, Changtao Miao, Yan Hong, Chuanbiao Song, Jun Lan, Qi Chu, Tao Gong, Yanyan Liang, Weiqiang Wang, Jun Wan, Xiaoming Liu, and Zhen Lei. Benchmarking unified face attack detection via hierarchical prompt tuning, 2025. URL https://arxiv.org/abs/2505.13327 .[16] Y. Liu, A. Jourabloo, and X. Liu. Learning deep models for face anti-spoofing: Binary or auxiliary supervision. In CVPR , 2018. [17] Huy H. Nguyen, Junichi Yamagishi, and Isao Echizen. Capsule-forensics: Using capsule networks to detect forged images and videos, 2018. URL https://arxiv.org/abs/1810. 11215 .[18] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agar-wal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision, 2021. URL 
+
+https://arxiv.org/abs/2103.00020 .[19] Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. Faceforensics++: Learning to detect manipulated facial images. In Proceedings of the IEEE/CVF international conference on computer vision , pages 1–11, 2019. [20] Yichen Shi, Yuhao Gao, Yingxin Lai, Hongyang Wang, Jun Feng, Lei He, Jun Wan, Changsheng Chen, Zitong Yu, and Xiaochun Cao. Shield : An evaluation benchmark for face spoofing and forgery detection with multimodal large language models, 2025. URL https://arxiv.org/ abs/2402.04178 .[21] Aaditya Singh, Adam Fry, Adam Perelman, Adam Tart, Adi Ganesh, Ahmed El-Kishky, Aidan McLaughlin, Aiden Low, AJ Ostrow, Akhila Ananthram, Akshay Nathan, Alan Luo, Alec Helyar, Aleksander Madry, Aleksandr Efremov, Aleksandra Spyra, Alex Baker-Whitcomb, Alex Beutel, Alex Karpenko, Alex Makelov, Alex Neitz, Alex Wei, Alexandra Barr, Alexandre Kirchmeyer, Alexey Ivanov, Alexi Christakis, Alistair Gillespie, Allison Tam, Ally Bennett, Alvin Wan, Alyssa Huang, Amy McDonald Sandjideh, Amy Yang, Ananya Kumar, Andre Saraiva, Andrea Vallone, Andrei Gheorghe, Andres Garcia Garcia, Andrew Braunstein, An-drew Liu, Andrew Schmidt, Andrey Mereskin, Andrey Mishchenko, Andy Applebaum, Andy Rogerson, Ann Rajan, Annie Wei, Anoop Kotha, Anubha Srivastava, Anushree Agrawal, Arun Vijayvergiya, Ashley Tyra, Ashvin Nair, Avi Nayak, Ben Eggers, Bessie Ji, Beth Hoover, Bill Chen, Blair Chen, Boaz Barak, Borys Minaiev, Botao Hao, Bowen Baker, Brad Lightcap, Brandon McKinzie, Brandon Wang, Brendan Quinn, Brian Fioca, Brian Hsu, Brian Yang, Brian Yu, Brian Zhang, Brittany Brenner, Callie Riggins Zetino, Cameron Raymond, Camillo Lugaresi, Carolina Paz, Cary Hudson, Cedric Whitney, Chak Li, Charles Chen, Charlotte Cole, Chelsea Voss, Chen Ding, Chen Shen, Chengdu Huang, Chris Colby, Chris Hallacy, Chris Koch, Chris Lu, Christina Kaplan, Christina Kim, CJ Minott-Henriques, Cliff Frey, Cody Yu, 11 Coley Czarnecki, Colin Reid, Colin Wei, Cory Decareaux, Cristina Scheau, Cyril Zhang, Cyrus Forbes, Da Tang, Dakota Goldberg, Dan Roberts, Dana Palmie, Daniel Kappler, Daniel Levine, Daniel Wright, Dave Leo, David Lin, David Robinson, Declan Grabb, Derek Chen, Derek Lim, Derek Salama, Dibya Bhattacharjee, Dimitris Tsipras, Dinghua Li, Dingli Yu, DJ Strouse, Drew Williams, Dylan Hunn, Ed Bayes, Edwin Arbus, Ekin Akyurek, Elaine Ya Le, Elana Widmann, Eli Yani, Elizabeth Proehl, Enis Sert, Enoch Cheung, Eri Schwartz, Eric Han, Eric Jiang, Eric Mitchell, Eric Sigler, Eric Wallace, Erik Ritter, Erin Kavanaugh, Evan Mays, Evgenii Nikishin, Fangyuan Li, Felipe Petroski Such, Filipe de Avila Belbute Peres, Filippo Raso, Florent Bekerman, Foivos Tsimpourlas, Fotis Chantzis, Francis Song, Francis Zhang, Gaby Raila, Garrett McGrath, Gary Briggs, Gary Yang, Giambattista Parascandolo, Gildas Chabot, Grace Kim, Grace Zhao, Gregory Valiant, Guillaume Leclerc, Hadi Salman, Hanson Wang, Hao Sheng, Haoming Jiang, Haoyu Wang, Haozhun Jin, Harshit Sikchi, Heather Schmidt, Henry Aspegren, Honglin Chen, Huida Qiu, Hunter Lightman, Ian Covert, Ian Kivlichan, Ian Silber, Ian Sohl, Ibrahim Hammoud, Ignasi Clavera, Ikai Lan, Ilge Akkaya, Ilya Kostrikov, Irina Kofman, Isak Etinger, Ishaan Singal, Jackie Hehir, Jacob Huh, Jacqueline Pan, Jake Wilczynski, Jakub Pachocki, James Lee, James Quinn, Jamie Kiros, Janvi Kalra, Jasmyn Samaroo, Jason Wang, Jason Wolfe, Jay Chen, Jay Wang, Jean Harb, Jeffrey Han, Jeffrey Wang, Jennifer Zhao, Jeremy Chen, Jerene Yang, Jerry Tworek, Jesse Chand, Jessica Landon, Jessica Liang, Ji Lin, Jiancheng Liu, Jianfeng Wang, Jie Tang, Jihan Yin, Joanne Jang, Joel Morris, Joey Flynn, Johannes Ferstad, Johannes Heidecke, John Fishbein, John Hallman, Jonah Grant, Jonathan Chien, Jonathan Gordon, Jongsoo Park, Jordan Liss, Jos Kraaijeveld, Joseph Guay, Joseph Mo, Josh Lawson, Josh McGrath, Joshua Vendrow, Joy Jiao, Julian Lee, Julie Steele, Julie Wang, Junhua Mao, Kai Chen, Kai Hayashi, Kai Xiao, Kamyar Salahi, Kan Wu, Karan Sekhri, Karan Sharma, Karan Singhal, Karen Li, Kenny Nguyen, Keren Gu-Lemberg, Kevin King, Kevin Liu, Kevin Stone, Kevin Yu, Kristen Ying, Kristian Georgiev, Kristie Lim, Kushal Tirumala, Kyle Miller, Lama Ahmad, Larry Lv, Laura Clare, Laurance Fauconnet, Lauren Itow, Lauren Yang, Laurentia Romaniuk, Leah Anise, Lee Byron, Leher Pathak, Leon Maksin, Leyan Lo, Leyton Ho, Li Jing, Liang Wu, Liang Xiong, Lien Mamitsuka, Lin Yang, Lindsay McCallum, Lindsey Held, Liz Bourgeois, Logan Engstrom, Lorenz Kuhn, Louis Feuvrier, Lu Zhang, Lucas Switzer, Lukas Kondraciuk, Lukasz Kaiser, Manas Joglekar, Mandeep Singh, Mandip Shah, Manuka Stratta, Marcus Williams, Mark Chen, Mark Sun, Marselus Cayton, Martin Li, Marvin Zhang, Marwan Aljubeh, Matt Nichols, Matthew Haines, Max Schwarzer, Mayank Gupta, Meghan Shah, Melody Huang, Meng Dong, Mengqing Wang, Mia Glaese, Micah Carroll, Michael Lampe, Michael Malek, Michael Sharman, Michael Zhang, Michele Wang, Michelle Pokrass, Mihai Florian, Mikhail Pavlov, Miles Wang, Ming Chen, Mingxuan Wang, Minnia Feng, Mo Bavarian, Molly Lin, Moose Abdool, Mostafa Rohaninejad, Nacho Soto, Natalie Staudacher, Natan LaFontaine, Nathan Marwell, Nelson Liu, Nick Preston, Nick Turley, Nicklas Ansman, Nicole Blades, Nikil Pancha, Nikita Mikhaylin, Niko Felix, Nikunj Handa, Nishant Rai, Nitish Keskar, Noam Brown, Ofir Nachum, Oleg Boiko, Oleg Murk, Olivia Watkins, Oona Gleeson, Pamela Mishkin, Patryk Lesiewicz, Paul Baltescu, Pavel Belov, Peter Zhokhov, Philip Pronin, Phillip Guo, Phoebe Thacker, Qi Liu, Qiming Yuan, Qinghua Liu, Rachel Dias, Rachel Puckett, Rahul Arora, Ravi Teja Mullapudi, Raz Gaon, Reah Miyara, Rennie Song, Rishabh Aggarwal, RJ Marsan, Robel Yemiru, Robert Xiong, Rohan Kshirsagar, Rohan Nuttall, Roman Tsiupa, Ronen Eldan, Rose Wang, Roshan James, Roy Ziv, Rui Shu, Ruslan Nigmatullin, Saachi Jain, Saam Talaie, Sam Altman, Sam Arnesen, Sam Toizer, Sam Toyer, Samuel Miserendino, Sandhini Agarwal, Sarah Yoo, Savannah Heon, Scott Ethersmith, Sean Grove, Sean Taylor, Sebastien Bubeck, Sever Banesiu, Shaokyi Amdo, Shengjia Zhao, Sherwin Wu, Shibani Santurkar, Shiyu Zhao, Shraman Ray Chaudhuri, Shreyas Krishnaswamy, Shuaiqi, Xia, Shuyang Cheng, Shyamal Anadkat, Simón Posada Fishman, Simon Tobin, Siyuan Fu, Somay Jain, Song Mei, Sonya Egoian, Spencer Kim, Spug Golden, SQ Mah, Steph Lin, Stephen Imm, Steve Sharpe, Steve Yadlowsky, Sulman Choudhry, Sungwon Eum, Suvansh Sanjeev, Tabarak Khan, Tal Stramer, Tao Wang, Tao Xin, Tarun Gogineni, Taya Christian-son, Ted Sanders, Tejal Patwardhan, Thomas Degry, Thomas Shadwell, Tianfu Fu, Tianshi Gao, Timur Garipov, Tina Sriskandarajah, Toki Sherbakov, Tomer Kaftan, Tomo Hiratsuka, Tongzhou Wang, Tony Song, Tony Zhao, Troy Peterson, Val Kharitonov, Victoria Chernova, Vineet Kosaraju, Vishal Kuo, Vitchyr Pong, Vivek Verma, Vlad Petrov, Wanning Jiang, Weixing Zhang, Wenda Zhou, Wenlei Xie, Wenting Zhan, Wes McCabe, Will DePue, Will Ellsworth, Wulfie Bain, Wyatt Thompson, Xiangning Chen, Xiangyu Qi, Xin Xiang, Xinwei Shi, Yann Dubois, Yaodong Yu, Yara Khakbaz, Yifan Wu, Yilei Qian, Yin Tat Lee, Yinbo Chen, Yizhen 12 Zhang, Yizhong Xiong, Yonglong Tian, Young Cha, Yu Bai, Yu Yang, Yuan Yuan, Yuanzhi Li, Yufeng Zhang, Yuguang Yang, Yujia Jin, Yun Jiang, Yunyun Wang, Yushi Wang, Yutian Liu, Zach Stubenvoll, Zehao Dou, Zheng Wu, and Zhigang Wang. Openai gpt-5 system card, 2025. URL https://arxiv.org/abs/2601.03267 .[22] Chuangchuang Tan, Renshuai Tao, Huan Liu, Guanghua Gu, Baoyuan Wu, Yao Zhao, and Yunchao Wei. C2p-clip: Injecting category common prompt in clip to enhance generalization in deepfake detection. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pages 7184–7192, 2025. [23] V Team, Wenyi Hong, Wenmeng Yu, Xiaotao Gu, Guo Wang, Guobing Gan, Haomiao Tang, Jiale Cheng, Ji Qi, Junhui Ji, Lihang Pan, Shuaiqi Duan, Weihan Wang, Yan Wang, Yean Cheng, Zehai He, Zhe Su, Zhen Yang, Ziyang Pan, Aohan Zeng, Baoxu Wang, Bin Chen, Boyan Shi, Changyu Pang, Chenhui Zhang, Da Yin, Fan Yang, Guoqing Chen, Jiazheng Xu, Jiale Zhu, Jiali Chen, Jing Chen, Jinhao Chen, Jinghao Lin, Jinjiang Wang, Junjie Chen, Leqi Lei, Letian Gong, Leyi Pan, Mingdao Liu, Mingde Xu, Mingzhi Zhang, Qinkai Zheng, Sheng Yang, Shi Zhong, Shiyu Huang, Shuyuan Zhao, Siyan Xue, Shangqin Tu, Shengbiao Meng, Tianshu Zhang, Tianwei Luo, Tianxiang Hao, Tianyu Tong, Wenkai Li, Wei Jia, Xiao Liu, Xiaohan Zhang, Xin Lyu, Xinyue Fan, Xuancheng Huang, Yanling Wang, Yadong Xue, Yanfeng Wang, Yanzi Wang, Yifan An, Yifan Du, Yiming Shi, Yiheng Huang, Yilin Niu, Yuan Wang, Yuanchang Yue, Yuchen Li, Yutao Zhang, Yuting Wang, Yu Wang, Yuxuan Zhang, Zhao Xue, Zhenyu Hou, Zhengxiao Du, Zihan Wang, Peng Zhang, Debing Liu, Bin Xu, Juanzi Li, Minlie Huang, Yuxiao Dong, and Jie Tang. Glm-4.5v and glm-4.1v-thinking: Towards versatile multimodal reasoning with scalable reinforcement learning, 2025. URL https://arxiv.org/abs/2507.01006 .[24] Hao Wang, Cheng Deng, and Zhidong Zhao. Knowledge-guided prompt learning for deepfake facial image detection, 2025. URL https://arxiv.org/abs/2501.00700 .[25] Hongyang Wang, Yichen Shi, Zhuofu Tao, Yuhao Gao, Liepiao Zhang, Xun Lin, Jun Feng, Xiaochen Yuan, Zitong Yu, and Xiaochun Cao. Faceshield: Explainable face anti-spoofing with multimodal large language models, 2025. URL https://arxiv.org/abs/2505.09415 .[26] Jianwei Yang, Zhen Lei, and Stan Z. Li. Learn convolutional neural network for face anti-spoofing, 2014. URL https://arxiv.org/abs/1408.5601 .[27] Peipeng Yu, Jianwei Fei, Hui Gao, Xuan Feng, Zhihua Xia, and Chip Hong Chang. Unlocking the capabilities of large vision-language models for generalizable and explainable deepfake detection, 2025. URL https://arxiv.org/abs/2503.14853 .[28] Zitong Yu, Chenxu Zhao, Zezheng Wang, Yunxiao Qin, Zhuo Su, Xiaobai Li, Feng Zhou, and Guoying Zhao. Searching central difference convolutional networks for face anti-spoofing, 2020. URL https://arxiv.org/abs/2003.04092 .[29] Zitong Yu, Rizhao Cai, Zhi Li, Wenhan Yang, Jingang Shi, and Alex C. Kot. Benchmarking joint face spoofing and forgery detection with visual and physiological cues, 2024. URL 
+
+https://arxiv.org/abs/2208.05401 .[30] Honglu Zhang, Zhiqin Fang, Ningning Zhao, Saihui Hou, Long Ma, Renwang Pei, and Zhaofeng He. Harnessing chain-of-thought reasoning in multimodal large language models for face anti-spoofing, 2026. URL https://arxiv.org/abs/2506.01783 .[31] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. International journal of computer vision , 130(9):2337–2348, 2022. [32] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. Minigpt-4: En-hancing vision-language understanding with advanced large language models, 2023. URL 
+
+https://arxiv.org/abs/2304.10592 .[33] Hang Zou, Chenxi Du, Hui Zhang, Yuan Zhang, Ajian Liu, Jun Wan, and Zhen Lei. La-softmoe clip for unified physical-digital face attack detection, 2024. URL https://arxiv.org/abs/ 2408.12793 .13 A FAKG-QA Construction and Detailed Prompting 
+
+A.1 FAKG Knowledge Graph Construction 
+
+To construct the Face Attack Knowledge Graph (FAKG), we leverage the UniAttackData dataset to define key attack types, including Print, Replay, FaceSwap, Video-Driven, Adversarial, and Attribute-Edit, each representing a distinct spoofing pattern. These types form the primary semantic nodes in the graph, as detailed in Algorithm 1. Each attack type is linked to common visual and physical features—such as lighting inconsistencies, abnormal textures, and boundary artifacts—that help differentiate live faces from spoofed samples. Relationships between attack types and features are initially based on statistical data from the dataset and further refined using insights from face anti-spoofing literature. MLLMs are utilized to strengthen semantic connections by generating structured reasoning paths that map visual cues to attack mechanisms. Expert knowledge is incorporated to refine and validate feature–attack relationships, particularly for attack types with overlapping visual characteristics (e.g., replay and video-driven). This hybrid approach ensures the FAKG is both structurally sound and semantically rich, providing a robust foundation for downstream reasoning and model training. 
+
+Algorithm 1 Construction of the Face Attack Knowledge Graph (FAKG) 
+
+Require: UniAttackData dataset D, literature knowledge L, MLLM M , expert knowledge E
+
+Ensure: Face Attack Knowledge Graph G 
+
+> 1:
+
+Initialize graph G = ( V, R ) 
+
+> 2:
+
+Extract attack types T from dataset D 
+
+> 3:
+
+for each attack type t ∈ T do  
+
+> 4:
+
+Add node t into V 
+
+> 5:
+
+Extract feature set Ft from dataset statistics  
+
+> 6:
+
+for each feature f ∈ Ft do  
+
+> 7:
+
+Add node f into V 
+
+> 8:
+
+Add relation (t, f ) into R 
+
+> 9:
+
+end for  
+
+> 10:
+
+end for  
+
+> 11:
+
+for each attack type t ∈ T do  
+
+> 12:
+
+Use MLLM M to generate additional feature candidates F ′ 
+
+> t
+> 13:
+
+for each feature f ′ ∈ F ′ 
+
+> t
+
+do  
+
+> 14:
+
+Add node f ′ into V if not existing  
+
+> 15:
+
+Add relation (t, f ′) into R 
+
+> 16:
+
+end for  
+
+> 17:
+
+end for  
+
+> 18:
+
+Extract feature relations RL from literature L 
+
+> 19:
+
+for each relation (t, f ) ∈ RL do  
+
+> 20:
+
+Add node f if not existing  
+
+> 21:
+
+Add relation (t, f ) into R 
+
+> 22:
+
+end for  
+
+> 23:
+
+for each relation (t, f ) ∈ R do  
+
+> 24:
+
+if expert E marks the relation as inconsistent then  
+
+> 25:
+
+Modify or remove (t, f ) 
+
+> 26:
+
+end if  
+
+> 27:
+
+end for  
+
+> 28:
+
+return Final knowledge graph G
+
+Once the FAKG is constructed, it is integrated into the framework to generate corresponding QA pairs. Each pair is designed to explain the attack type and its associated features. The QA pairs are derived from the knowledge graph, helping each prompt capture relevant attack-specific features and their relationships. 14 A.2 FAKG-QA Detailed Prompt Design 
+
+We designed multiple prompts for generating the FAKG-QA pairs from the knowledge graph. These prompts allow the model to reason across different attack types and semantic levels. The prompts aim to extract both coarse-grained and fine-grained attack semantics. Here are the detailed prompts used: 
+
+Prompt 1: Multi-Hop Reasoning Q&A Generation. This prompt instructs GraphGen to construct a QA framework that generates coherent questions and answers based on the extracted attack types and relationships, leveraging the Qwen series of models. As shown in Fig. 7, the framework utilizes Qwen’s capabilities to ensure accurate semantic alignment and context-aware generation. Instruction: 
+
+> Based on the following knowledge subgraph, generate multi-hop reasoning questions and answers. You will be given a Unified Face Attack Detection (UAD) knowledge subgraph that contains a set of entities, relations, and facts. Your task is to propose a question that requires multiple reasoning steps to answer. The answer should be inferred from the given knowledge subgraph.
+> Required Q&A format:
+> Q: What type of face attack is present in the provided image? A: It is [Attack Category], because [Detailed Reasoning].
+> Constraints:
+> - [Attack Category] must be an entity from the knowledge subgraph. - [Detailed Reasoning] must combine multiple spoofing/forgery features, such as resolution, pixelization, missing skin texture, abnormal lighting, paper edges, cut marks, etc.
+
+Example Subgraph: 
+
+> --Entities--1. 2D 2. Print 3. Paper edge 4. Unnatural lighting --Relations--1. 2D-Print: Print is a type of 2D attack 2. Print-Paper edge: Print attacks are often accompanied by paper edges 3. Print-Unnatural lighting: Print attacks often cause lighting inconsistencies Question: What type of face attack is present in the given image, and why? Answer: It is a Print attack, which belongs to the 2D attack category. This is because the lighting is inconsistent and lacks natural shadows. In addition, paper edges can be observed around the image, which are important characteristics of a print attack.
+> Task Subgraph:
+> --Entities--\{entities\} --Relations--\{relationships\} Output only the generated question and answer. Do not copy the example. Do not provide irrelevant information.
+> Multi-Hop Reasoning Q&A Generation Prompt
+
+Figure 7: Multi-Hop Reasoning Q&A Generation Prompt 
+
+Prompt 2: Generating Image Descriptions. This prompt directs GLM-4.1V to generate image captions, focusing on attack-specific visual features present in the provided image. As shown in Fig. 8, the model leverages its capabilities to ensure accurate identification and description of attack-related visual cues. 
+
+Prompt 3: Integrating the QA Framework and Image Descriptions. This prompt guides GLM-4.1V to fuse the generated QA framework with the image captions, producing a detailed and inter-pretable answer that links the visual cues to attack types. As shown in Fig. 9, the fusion process ensures a coherent connection between the visual information and the semantic content of the attack. 
+
+A.3 Data Purification and Consistency-Driven Filtering 
+
+To ensure that the synthesized training samples maintain a high degree of causal consistency between expert knowledge and visual content, we design a multi-stage pre-fusion filtering pipeline. This 15 Prompt: 
+
+You are an expert in Image Captioning. I will provide you with an image that has been subjected to a face attack. Please generate a detailed description of the provided image, focusing on the facial attack features present in the image. Pay special attention to the following aspects: 
+
+Visual Content : Describe the overall visual effect of the image, focusing primarily on the features of the face. This includes, but is not limited to, facial structure and key facial features such as the eyes, mouth, nose, ears, etc. 
+
+Lighting and Shadows : Is the lighting natural? Are the shadows realistic? Are there unnatural light differences? Do these differences indicate potential attack traces? 
+
+Facial Details : Are there any missing or distorted skin textures, pores, or other facial details, especially around key areas like the eyes and mouth? 
+
+Facial Expression : Does the face show any signs of stiffness or disconnection in its expression? Does it appear artificial or mechanical? 
+
+Edge Transitions : Are the transitions between the face and the background smooth? For example, are there signs of paper edges, cropping marks, or unnatural stitching? 
+
+Material and Reflection : Are there any abnormal gloss, reflections, or material appearance? For example, does the skin appear unnaturally smooth or have strange shine? 
+
+Attack Signs : Look for typical signs of facial attacks, such as print attacks, cropping, replay attacks, etc. 
+
+Goal : Generate a detailed description of the image, highlighting and describing potential facial attack features. 
+
+Image Caption Prompt Figure 8: Image caption prompt Prompt: 
+
+Please integrate the provided image description with the following question skeleton and generate a detailed, logical answer. Based on the image features, indicate why the image belongs to the mentioned attack type. Analyze factors such as facial expression, lighting, edge transitions, material, and more to provide an in-depth analysis of the attack type. 
+
+Example Question Skeleton: Question: What is the facial attack type in the provided image, and why? 
+
+Answer: Based on the image description, it can be inferred that this image exhibits a [Attack Type] attack. The facial features in the image show [Specific Attack Signs], such as [Specific Detail], which suggests that the image belongs to the [Attack Type] category. Further analysis reveals that [Attack Type] is typically characterized by [Attack Characteristics], such as [Specific Expression or Detail], which is a typical sign of an attack. 
+
+Fusion Prompt 
+
+Figure 9: Fusion prompt process occurs after the generation of the QA reasoning framework but before the final multimodal fusion, acting as a rigorous quality gate. 
+
+Semantic Consistency Verification via FAKG. Upon obtaining the QA reasoning framework from GraphGen, we first perform a structural validation. By parsing the entity-relation triplets (a, f, ϕ )
+
+within the framework, we match them against the canonical topology of the FAKG. Any combination that violates domain common sense (e.g., attributing "paper edge" artifacts to a "digital adversarial attack") is flagged as structurally invalid and discarded. This ensures the reasoning chain remains anchored to forensic ground truth at the knowledge level. 
+
+Rationale Logical Flow Validation. Before the final fusion, we employ a MLLM as an intelligent verifier to identify deep semantic contradictions. An example prompt template is shown in Fig. 10. • Verification Logic: The MLLM is prompted as a "Critic" to scrutinize the alignment between the image captions (describing raw visual facts) and the proposed QA framework (describing the attack logic). For instance, if the image caption identifies "pristine high-resolution textures" while the QA framework assumes "screen replaying" (which necessitates moiré patterns), the verifier will detect a factual mismatch. • Execution Policy: Samples marked with "Fact-Conflict" by the verifier are pruned. This mechanism effectively suppresses hallucination coupling, a common pitfall where incorrect logic is forcefully paired with mismatched visual evidence. 16 Logical Flow Verification Prompt 
+
+You are an expert forensic analyst verifying the logical consistency  between visual observations and reasoning about face attacks. 
+
+Input: 
+
+1. Image Caption: {caption} 2. Proposed QA Rationale: {rationale} 
+
+Task: 
+
+Determine whether the reasoning is logically consistent with the  visual evidence described in the caption. Output one of the following labels: - Consistent - Fact-Conflict A conflict occurs if the reasoning assumes artifacts or evidence  that contradict the visual description. Figure 10: Prompt for Logical Flow Verification. 
+
+A.3.1 Multi-Stage Pruning for Hallucination Mitigation. 
+
+We further leverage the MLLM’s semantic understanding to perform heuristic pruning. An example prompt template is shown in Fig. 11: • Logical Complexity Scoring: We prioritize samples featuring multi-hop reasoning and dense diagnostic evidence, filtering out overly simplistic or repetitive templates. • Information Gain Filtering: Generic dialogues with low diagnostic value are removed to ensure the model learns complex, "clinical-style" forensic logic during SFT. You are an expert evaluator assessing the diagnostic value of a  question-answer pair for training forensic reasoning models. 
+
+Evaluate the sample based on: 
+
+1. Logical Complexity: Does the reasoning involve multi-step analysis or merely a simple statement? 2. Information Gain: Does the dialogue contain meaningful forensic cues that help distinguish  different attack types? 
+
+Output a score from 1-5 for each dimension. 
+
+Samples with low complexity or low information gain should be discarded. 
+
+Heuristic Pruning  Prompt 
+
+Figure 11: Prompt for Heuristic Pruning 17
