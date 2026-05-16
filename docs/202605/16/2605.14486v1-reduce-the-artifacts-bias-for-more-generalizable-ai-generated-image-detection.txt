@@ -1,0 +1,556 @@
+Title: Reduce the Artifacts Bias for More Generalizable AI-Generated Image Detection
+
+URL Source: https://arxiv.org/pdf/2605.14486v1
+
+Published Time: Fri, 15 May 2026 00:44:18 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Reduce the Artifacts Bias for More Generalizable AI-Generated Image Detection 
+
+Yiheng Li 1,2 Yang Yang 1,2∗ Zichang Tan 3 Gao Li 4 Zhen Lei 1,2,5,6 Wenhao Wang 7 ∗ 
+
+> 1
+
+School of Artificial Intelligence, University of Chinese Academy of Sciences, Beijing, China  
+
+> 2
+
+MAIS, Institute of Automation, Chinese Academy of Sciences, Beijing, China  
+
+> 3
+
+Sangfor Technologies Inc. 4 China Mobile Financial Technology Co., Ltd., Beijing, China  
+
+> 5
+
+CAIR, HKSIS, Chinese Academy of Sciences, Hong Kong, China  
+
+> 6
+
+SCSE, FIE, M.U.S.T, Macau, China 7 Vast Intelligence Lab, Sydney, Australia 
+
+{liyiheng2024, yangyang2013, zhen.lei}@ia.ac.cn, wangwenhao@vastilab.com 
+
+## Abstract 
+
+As the misuse of AI-generated images grows, generalizable image detection tech-niques are urgently needed. Recent state-of-the-art (SOTA) methods adopt aligned training datasets to reduce content, size, and format biases, empowering models to capture robust forgery cues. A common strategy is to employ reconstruction tech-niques, e.g., VAE and DDIM, which show remarkable results in diffusion-based methods. However, such reconstruction-based approaches typically introduce lim-ited and homogeneous artifacts, which cannot fully capture diverse generative patterns, such as GAN-based methods. To complement reconstruction-based fake images with aligned yet diverse artifact patterns, we propose a GAN-based upsam-pling approach that mimics GAN-generated fake patterns while preserving content, size, and format alignment. This naturally results in two aligned but distinct types of fake images. However, due to the domain shift between reconstruction-based and upsampling-based fake images, direct mixed training causes suboptimal results, where one domain disrupts feature learning of the other. Accordingly, we propose a Separate Expert Fusion (SEF) framework to extract complementary artifact infor-mation and reduce inter-domain interference. We first train domain-specific experts via LoRA adaptation on a frozen foundational model, then conduct decoupled fusion with a gating network to adaptively combine expert features while retaining their specialized knowledge. Rather than merely benefiting GAN-generated image detection, this design introduces diverse and complementary artifact patterns that enable SEF to learn a more robust decision boundary and improve generalization across broader generative methods. Extensive experiments demonstrate that our method yields strong results across 13 diverse benchmarks. Codes are released at: 
+
+https://github.com/liyih/SEF_AIGC_detection .
+
+## 1 Introduction 
+
+Generative AI [ 21 , 17 , 58 ] advances rapidly, enabling easy creation of hyper-realistic images for creative design, media production, scientific visualization, and the entertainment industry. However, malicious use of such technology can spread disinformation, facilitate fraud, and manipulate public opinion, undermining information authenticity and social trust. Consequently, reliable AI-generated image detection [ 52 , 54 , 35 , 53 ] is urgently needed to mitigate these harms and enable responsible AIGC use. A critical challenge is achieving strong generalization [ 40 , 31 ], namely the ability to detect images generated not only by known models but also by unseen generators.                                
+
+> ∗Corresponding Authors. Preprint.
+> arXiv:2605.14486v1 [cs.CV] 14 May 2026 VAE
+> Reconstruction
+> Content
+> Alignment
+> Size
+> Alignment
+> Format
+> Alignment
+> PreviousAlignedDataset
+> Feature Manifold
+> VAE
+> Artifacts
+> DivergentArtifacts
+> (suchas:GAN)
+> GAP
+> Poor
+> Generalization
+> ArtifactsBias
+> RealImage
+> Down
+> Sampling
+> SRGAN
+> Upsampling
+> CheckboardArtifacts
+> SpectralDiscrepancy
+> StructuralInconsistency
+> SyntheticImage
+> T-srgan
+> T-vae
+> (byVAE)
+> Combination Artifact
+> Alignment
+> MixedDataset
+> Detector
+> 1.ExpertPre-Training2.Fusion
+> Expert 1 Expert 2
+> Feature Manifold
+> StrongerDecision
+> Boundry
+> BetterGeneralization
+> І:Motivation
+> ІІ:GAN-ArtifactAlignedDatasetConstruction
+> ІІІ:SeparateExpertFusionStrategy
+> GradientConflict
+> ManifoldIncompatibility
+> PoorResults
+> Real
+> Fake
+
+Figure 1: Overview of the proposed framework to reduce the artifact bias. (i) Motivation: We identify the artifact bias and generalization gap between GAN and VAE domains. (ii) Dataset Construction: We leverage SRGAN to generate synthetic negatives that mimic authentic GAN artifacts while maintaining strict alignment. (iii) Training Strategy: two-stage expert fusion to resolve gradient conflict and manifold incompatibility for a unified representation. To achieve highly generalizable detection, recent SOTA methods [ 6 , 7, 36 ] typically adopt an aligned training paradigm, in which reconstructed images that closely resemble real images are used as synthetic negatives. These methods perform strongly across benchmarks, as they reduce training biases that impair generalization and drive the model to capture intrinsic, model-agnostic artifacts. In particular, prior approaches [ 45 , 20 ] effectively remove biases related to content, size, and format [7]. However, these methods overlook a critical limitation referred to as artifact bias . Specifically, these methods rely on only a single reconstruction strategy, such as VAE [ 46 , 7, 45 ] and DDIM [ 51 , 6]. They achieve excellent detection results on diffusion-based generated images but present distinct limitations for other [ 17 ] generators, such as GAN. The artifacts introduced by reconstruction methods possess inherent biases and cannot be easily transferred to GAN-based generation scenarios. Resolving this gap requires addressing two key technical questions as follows: 
+
+How to construct an aligned dataset that mimics divergent artifacts? Since existing aligned datasets primarily capture diffusion-oriented artifacts, a complementary source is needed to introduce artifact patterns distinct from those of diffusion models to broaden the forgery spectrum while preserving alignment. We address this by leveraging SRGAN [ 29 ], a classic super-resolution (SR) method, to construct aligned synthetic negatives. As an SR-oriented GAN variant, SRGAN preserves the adversarial training dynamics and hierarchical feature mapping of standard GANs, enabling it to introduce GAN-style artifacts while keeping content, size, and format consistent with the real images. These artifacts mainly arise from three generator-level factors: checkerboard artifacts [ 39 ] induced by transposed-convolution upsampling, structural inconsistencies caused by limited receptive fields and architectural constraints [ 54 ], and spectral discrepancies characterized by unnatural frequency distributions due to inaccurate replication of high-frequency power spectra [ 14 , 16 ]. By capturing these mechanisms, SRGAN provides synthetic negatives with complementary GAN artifact patterns. 
+
+How to train a model on an aligned dataset containing mixed artifacts? Empirical results show that simply mixing two datasets containing different types of artifacts at a fixed ratio leads to suboptimal performance. This degradation can be attributed to manifold incompatibility and gradient conflict. Specifically, these artifacts occupy different regions of the feature space, making it difficult for a single model to learn a unified representation through joint optimization. During mixed training, gradients from one artifact domain may conflict with those from the other, encouraging the model to rely on more salient domain-specific shortcuts while suppressing the subtle intrinsic cues needed for generalizable fakeness detection. To address this issue, we first train two specialized experts independently, allowing each expert to capture its own artifact manifold without cross-domain gradient interference. We then fuse the experts by unfreezing only a minimal subset of parameters while keeping the backbones frozen, thereby preserving their specialized knowledge. By decoupling artifact-specific feature learning from cross-domain knowledge integration, this strategy mitigates negative transfer and enables the model to learn a more robust and unified representation across diverse generative architectures. 2The overall framework is shown in Fig. 1. We conduct extensive experiments to evaluate the effectiveness of our proposed framework across diverse generative scenarios. The results demonstrate that our model achieves superior and balanced detection performance on both GAN-based and diffusion-based images, effectively overcoming the artifact bias inherent in single-reconstruction methods. Furthermore, our approach consistently outperforms existing competitive methods across multiple large-scale benchmarks, confirming its robust generalization capability to unseen generators. In summary, the primary contributions of this work are threefold. • Identification of Artifact Bias: We identify the critical limitation of artifact bias in existing aligned training paradigms and analyze its impact on model generalization. • GAN-Artifact Aligned Dataset: We introduce a novel aligned dataset construction method using SRGAN to effectively replicate GAN-specific artifacts for complementarity. • Separate Expert Fusion Strategy: We propose a two-stage expert fusion strategy that decouples artifact feature extraction from knowledge integration to mitigate negative transfer and achieve a unified representation of diverse generative artifacts. 
+
+## 2 Related Work 
+
+AI-Generated Image Detection. Driven by the growth of generative models, AI-generated image detection has become crucial, with early works primarily relying on capturing low-level artifacts. CNNSpot [ 59 ] is a pioneer in synthetic image detection, employing a simple CNN to capture forgery traces. Building on this, some work [ 33 , 25 ] relies on spatial-based analysis. For instance, NPR [ 54 ] utilizes a localized differential operator to capture structural artifacts caused by up-sampling. Another significant line of research focuses on frequency-domain analysis [ 53 , 24 , 43 ]. For example, SAFE [ 30 ] utilizes the high-frequency components of the Discrete Wavelet Transform as input to expose subtle architectural inconsistencies that are often imperceptible in the spatial domain. Beyond spatial and frequency analysis, a third category of research identifies forgeries based on reconstruction error [ 10 , 8, 37 ]. DIRE [ 60 ] is the first to use reconstruction error calculated by the real and diffusion-generated images. Recent SOTA methods tend to finetune the visual foundation models, such as CLIP [ 44 ] and DINO [ 4]. These pre-trained models encapsulate highly generalizable knowledge derived from massive datasets, effectively complementing the fragile patterns learned from limited training sets. UnivFD [ 40 ] is the pioneer to use the CLIP for synthetic image detection, while Fatformer [ 35 ] adopts a forgery-aware adapter to finetune the pre-trained CLIP. C2P-CLIP [ 55 ] leverages contrastive learning to inject category-aware semantic concepts into the encoder. Effort [ 62 ] employs orthogonal subspace decomposition to effectively disentangle domain-specific artifacts from domain-invariant features. AIDE [ 61 ] combines high-level CLIP representations with the patch-aware low-level features for more robust detection. Simplicity Prevails [ 66 ] provides a comprehensive evaluation of diverse foundation models, exploring their efficacy for synthetic image detection. 
+
+Alignment Training Paradigm. Beyond architectural design, the generalization of detection models is heavily influenced by training data bias, where minimizing such bias typically yields superior generalizable performance. De-fake [ 49 ] analyzes the dataset and observes that synthetic image dimensions are invariably integer multiples of 128. C2P-CLIP [ 55 ] identifies semantic bias within datasets through word frequency analysis. Grommelt et al. [18] reveals format in common datasets. In this view, some approaches are introduced to reduce these biases. SemGIR [ 63 ] generates corresponding synthetic images based on descriptions of real images to mitigate semantic bias, while DRCT [ 6] reduces the semantic bias via diffusion reconstruction. B-Free [ 20 ] uses self-conditioned inpainted reconstructions and content augmentation to reduce the dataset bias. AlignedForensics [ 45 ]adopts VAE to align both content and size more efficiently. DDA [ 7 ] further alleviates format-level bias, preventing the model from learning shortcut features. REM [ 36 ] injects controlled Gaussian noise into the VAE latent space, enabling the reconstruction of samples that maintain both visual realism and diversity. However, artifacts in these works often originate from a single reconstruction model, leading to a single-type artifact bias that fails to meet the practical demand for detecting diverse forgery traces. 3REAL   
+
+> SD 2.1
+> VAE
+> SRGAN
+> MSE: 0.012
+> MSE: 0.015
+> MSE: 0.017
+> MSE: 0.024
+> MSE: 0.0016
+> MSE: 0.012
+> MSE: 0.0052
+> MSE: 0.0083
+> MSE: 0.0021
+> MSE: 0.0047
+> HF Ratio
+> Sharpness PSNR
+> MSE
+> DCTBlockiness
+> EdgeSkew
+> TexEntropy
+> Saturation
+
+Figure 2: Comparison between synthetic images generated by SD 2.1 VAE and SRGAN. The radar chart shows the similarity of VAE and SRGAN images to real images across eight normalized metrics in [0, 1], where 1.0 (gray dashed line) indicates perfect alignment. The metrics are computed from 1,000 randomly sampled images. Refer to Appendix A.3 for details of metrics and original data. 
+
+## 3 Methods 
+
+3.1 Artifacts Bias Reconstruction-Induced Bias. Recent aligned training paradigms [ 45 , 7] typically construct a synthetic dataset Tvae by mapping real images x ∈ D R through reconstruction models like VAEs [ 46 ], yielding aligned fake images xvae = Fvae (x). While this reduces semantic and layout biases, the resulting artifacts δvae = xvae − x are highly dependent on the decoder architecture. Due to latent compression and L2 reconstruction losses, VAE-induced artifacts tend to follow a constrained and homogeneous pattern. Consequently, models trained solely on Tvae are exposed to an incomplete artifact spectrum and may overfit to reconstruction-specific cues. When facing generators with divergent artifact formation mechanisms, such as GANs whose artifacts δgan exhibit a distributional shift from δvae , the learned boundary struggles to capture transferable forgery evidence. We define this performance degradation due to incomplete artifact coverage as Artifact Bias .
+
+Simulating Divergent Artifacts via SRGAN. To mitigate this gap while preserving aligned training, we construct a parallel dataset Tsrgan with SRGAN, whose artifact distribution is farther from reconstruction-induced artifacts and thus complementary to Tvae . Specifically, for a real image x,we apply a deterministic degradation D(·) and restore it via xsrgan = Gsrgan (D(x)) . Since Gsrgan 
+
+inherits the adversarial learning mechanisms and hierarchical upsampling of mainstream GANs, its residual δsrgan = xsrgan − x captures the structural and spectral inconsistencies of GAN forgeries. Together, Tvae and Tsrgan form content-aligned yet artifact-complementary datasets that expose the model to a broader artifact spectrum. As illustrated in Fig. 2, the two exhibit complementary characteristics . VAE causes milder distortion with statistics closer to real images but slight local edge distortions, while SRGAN exhibits more global degradation with higher error, lower sharpness and color fidelity, yet more realistic edge distributions and stronger block artifacts. To reduce bias in artifact regions, we apply mask-aware forgery augmentation to both Tvae and Tsrgan . Given a synthetic image If ake and its corresponding real image Ireal , we randomly generate a foreground or background mask M and obtain the augmented image ˆIf ake as: 
+
+ˆIf ake = M ⊙ If ake + (1 − M ) ⊙ Ireal (1) where ⊙ denotes the element-wise multiplication operator. Refer to Appendix A.2 for details. The aligned datasets Tvae and Tsrgan are obtained via the SD2.1 VAE [ 46 ] and SRGAN [ 29 ], respectively. Both of them are built upon the same real anchor images DR. We conduct single-source training to establish baseline performance, where the model is optimized exclusively on either 
+
+Tvae or Tsrgan . As shown in Fig. 3, a clear domain-specific advantage is observed where Tvae 
+
+(blue bar ) performs better on diffusion-based test sets, while Tsrgan (red bar ) exhibits superior generalization on GAN-based test sets. This gap confirms that Tvae and Tsrgan capture distinct and not fully overlapping forensic features, establishing a trade-off in cross-domain generalization under the shared-real constraint. 497.8 89.8 90.8 90.8 90.1 89.9 88.5 95.2 96.0 92.1 97.1                                                               
+
+> 76.8
+> 92.0 92.2 89.0
+> 57.5
+> 91.8 90.8 96.3
+> 85.9
+> 97.7 88.0 89.7 89.7 88.8 86.3 88.5 90.4
+> 96.8 90.6
+> 98.5 92.7 94.1 94.1 93.6 92.3 93.4 94.5 96.6 94.4
+> 50
+> 70
+> 90
+> VQDM FLUX1-dev SD3 SDXL DALLE-3 Imagen3 GLIDE Midjour ney-v6 ADM Mean
+> VAE
+> SRGAN
+> Mixed
+> SEF
+> 89.0 84.4 88.7 90.6
+> 96.2
+> 89.7 88.5
+> 94.6
+> 69.6
+> 87.9
+> 94.2 90.9 88.7
+> 95.3 97.7 90.9 90.8 95.7
+> 84.4
+> 92.1 91.9 88.3 85.8 90.7 95.1
+> 88.5 88.8 92.3
+> 68.5
+> 87.8
+> 95.0 93.5 91.7 95.3 98.2 93.5 93.8 96.9
+> 85.5
+> 93.7
+> 60
+> 80
+> 100
+> StyleGAN3 StyleGAN-XL Pr oGAN CycleGAN GauGAN R3GAN StyleSwim BigGAN Star GAN Mean
+> VAE
+> SRGAN
+> Mixed
+> SEF
+
+Flux1-dev, SD3, SDXL, DALLE-3, ImageGen3, MJ-v6 : AIGIBench, 
+
+VQDM, GLIDE, ADM: GenImage 
+
+StyleGAN3, StyleGAN-XL, R3GAN, StyleSwim, ProGAN : AIGIBench, 
+
+CycleGAN, GauGAN, BigGAN, StarGAN: ForenSynths Figure 3: Performance comparison of different training paradigms on GAN-based (Top) and diffusion-based (Bottom) benchmarks. 3.2 Conflict in Mixed Artifacts Training and Remedy 
+
+The observed domain-specific specialization of Tvae and Tsrgan suggests that a joint training strategy aggregating both datasets might provide a universal solution. However, as shown in Fig. 3, empirical results ( yellow bar ) from our mixed-source training reveal a counter-intuitive phenomenon: instead of achieving the best of both worlds, the joint model often converges to a sub-optimal solution that underperforms compared to its single-source counterparts in their respective domains. This performance degradation stems from the training conflict induced by the significant manifold gap between disparate artifact distributions under the shared-real anchor. We denote the input space as X
+
+and the feature manifold as Z. Given two datasets: Tvae = {D R, DF,V } and Tsrgan = {D R, DF,S },where DR represents the identical real distribution, while DF,V (VAE-based) and DF,S (SRGAN-based) represent disjoint fake distributions. 
+
+Theorem 1: Under the shared-real anchor DR, joint Empirical Risk Minimization (ERM) on Tvae ∪
+
+Tsrgan converges to a sub-optimal solution θjoint compared to single-source counterparts. Formally, for i ∈ { vae, srgan }, we have: 
+
+Li(θjoint ) > Li(θ∗
+
+i ) (2) where θ∗
+
+i is the optimal solution obtained by training exclusively on the single-source dataset Ti.
+
+Proof 1: Let the joint objective be Ljoint = λLvae + (1 − λ)Lsrgan . For a representative sub-task 
+
+Tvae , the first-order Taylor expansion at the update step θt+1 yields: 
+
+Lvae (θt+1 ) ≈ L vae (θt) − ηλ ∥∇L vae ∥2 − η(1 − λ)⟨∇L vae , ∇L srgan ⟩ (3) Due to distributional gaps of artifacts on the feature manifold, the model struggles to align incom-patible discrimination directions under the shared-real anchor DR. This induces gradient conflicts (⟨∇L vae , ∇L srgan ⟩ < 0) in certain steps, where the positive cross-term acts as an adversarial penalty that counteracts gradient gains and deviates the optimization from individual optima. Unlike single-source training, which converges unimpeded to θ∗
+
+i , the joint model stagnates in a compromise region θjoint with strictly higher risks. See in the Appendix A.1 for details of gradient conflicts. To break this optimization bottleneck, it is imperative to decouple the parameter update process. An intuitive strategy is to leverage dedicated experts independently pre-trained on their own artifact domains and frozen for joint training. 
+
+Theorem 2: Let F (x; ϕ) = πv (x; ϕ)f (x; θ∗
+
+vae ) + πs(x; ϕ)f (x; θ∗
+
+srgan ) be the joint training with frozen experts {θ∗
+
+i }. If the feature manifolds of DF,V and DF,S are separable, there exists an optimal gating parameter ϕ∗ such that the expected risk Ldecouple strictly lower-bounds the joint ERM: 
+
+Ldecouple (ϕ∗) < Ljoint (θjoint ) (4) where θjoint is the sub-optimal solution from Theorem 1. 
+
+Proof 2: The expected risk for this paradigm over the mixed distribution Tmix is formulated as: 
+
+Ldecouple (ϕ) = E(x,y )∼Tmix 
+
+ℓ  πv (x; ϕ)f (x; θ∗
+
+vae ) + πs(x; ϕ)f (x; θ∗
+
+srgan ), y  (5) By freezing experts at {θ∗
+
+i }, the optimization is restricted to the routing space ϕ. This structural constraint ensures ∇θ L = 0 , thereby isolating the gradient updates and eliminating the antagonistic 5Real     
+
+> VAE
+> Fake
+> SRGAN
+> Fake
+> Mixed aligned Batch
+> SRGAN Expert
+> VAE Expert
+> Adaptive Gate
+> Real
+> Diffusion
+> GAN
+> Prediction
+> Head
+> Decision Boundry
+> (without bias)
+> CLS Head DINO + LoRA
+> DINO + LoRA CLS Head
+> Real
+> VAE
+> Fake
+> VAE-aligned Batch
+> Real
+> SRGAN
+> Fake
+> SRGAN-aligned Batch SRGAN Expert
+> VAE Expert
+> Real
+> Diffusion
+> GAN
+> Real
+> Diffusion
+> GAN
+> Decision Boundry
+> (with bias)
+> Decision Boundry
+> (with bias)
+> Stage 2: Separate Expert Fusion Stage 1: Expert Training
+
+Figure 4: Overview of our proposed Separate Expert Fusion. SEF decouples domain-specific experts to avoid gradient conflicts and enables flexible adaptation by partially unfreezing LoRA layers. With gated fusion and multi-source training, it learns a robust decision boundary and achieves synergistic performance beyond individual experts. term ⟨∇L vae , ∇L srgan ⟩ identified in Theorem 1. Assuming an ideal gating function π(x; ϕ∗) that identifies the generative source, the total risk decomposes into a convex combination of individual optimal risks: 
+
+Ldecouple (ϕ∗) = λLvae (θ∗
+
+> vae
+
+) + (1 − λ)Lsrgan (θ∗
+
+> srgan
+
+) (6) From Theorem 1, we established that joint ERM forces a performance compromise, i.e., Li(θ∗ 
+
+> i
+
+) <
+
+Li(θjoint ) for i ∈ { vae, srgan }. Summing these strict inequalities yields: 
+
+λLvae (θ∗
+
+> vae
+
+) + (1 − λ)Lsrgan (θ∗
+
+> srgan
+
+) < Ljoint (θjoint ) (7) Thus, Ldecouple (ϕ∗) < Ljoint (θjoint ). This proves that preserving the specialized proficiency of each expert by bypassing the gradient conflict inherent in direct mixed training. 
+
+3.3 Separate Expert Fusion 
+
+Based on the theoretical analysis in Section 3.2, as shown in Fig. 4, we propose the Separate Expert Fusion (SEF) framework. The core philosophy of SEF is to physically isolate the forensic features of heterogeneous generators, thereby circumventing the antagonistic gradients identified in joint training. Instead of freezing entire experts, we find that unfreezing the last k LoRA parameters enables more flexible parameter tuning, which effectively preserves the pre-trained knowledge of experts while adapting to downstream tasks. As shown in Fig. 3, this decoupled training paradigm ( green bar )not only yields balanced high performance on both diffusion and GAN-based methods but even outperforms individual experts specialized in a single domain. This phenomenon arises because multi-source training data enables the model to learn a more robust decision boundary , further demonstrating that SEF achieves a synergistic “1+1 > 2” effect in multi-source mixed training. In the first stage, we focus on independent pre-training for domain-specific experts. For each forgery domain i ∈ { vae, srgan }, we incorporate LoRA [ 22 ] into a frozen foundation model Φ. By training only the LoRA parameters ∆θi and the final prediction head W(i) 
+
+> fc
+
+on domain-specific data Ti,each expert develops high sensitivity to unique generator-specific artifacts. The resulting optimal checkpoints θ∗ 
+
+> i
+
+are subsequently saved, effectively “locking” the discriminative power required to identify heterogeneous forgeries. The second stage realizes the decoupled parameter principle. We load the pre-trained experts and unfreeze the last k LoRA blocks ( ∆θ(L−k:L)) to perform more flexible tuning. Here, L is the total number of LoRA layers. A lightweight gating network G(·; ϕ)
+
+computes the routing weight w, representing the input’s affinity toward a specific expert manifold. The final fused feature ffuse is constructed as a convex combination: 
+
+ffuse = (1 − w) ⊙ f1 + w ⊙ f2 (8) In each batch, real images are paired with the corresponding fake samples from both Tvae and Tsrgan 
+
+for joint training. The optimization is driven by a balanced Binary Cross-Entropy (BCE) loss using differential learning rates. Specifically, the gating network and fusion head Θgate are updated with a standard learning rate η, while the ∆θ(L−k:L) is tuned at γ ∗ η to refine the feature boundary without compromising the pre-learned forensic traces. Here, γ ∈ (0 , 1) is a scaling factor that adjusts the learning rate of the unfrozen top-layer parameters. 64 Experiments 
+
+4.1 Implementation Details 
+
+Our framework employs DINO-v3-L [ 50 ] as the backbone, fine-tuned via LoRA [ 22 ] with a rank 
+
+r = 8 and scaling factor α = 1 . To ensure consistency, we follow the format alignment established in the DDA [ 7] framework. Input images are resized to 336 × 336 pixels, utilizing random cropping during training and center cropping for evaluation. The training set is constructed using real images from the MSCOCO dataset [ 34 ]. To maintain precise spatial alignment between real and synthetic pairs, all image dimensions are padded or cropped to multiples of 8 before being processed by the VAE or SRGAN. For the SRGAN-based synthesis, we employ a 4× bicubic downsampling as the deterministic degradation function D(·). Optimization is performed using a learning rate of 1 × 10 −4
+
+with a cosine annealing scheduler. All experiments are conducted on 8 NVIDIA V100 GPUs. The training is conducted in two stages with a constant gradient accumulation of four steps. In Stage 1, the model is trained for 10,000 iterations with a batch size of 16. In Stage 2, the batch size is increased to 32, and the training proceeds for 5,000 iterations. Additionally, γ is set to 0.1, and the number of last unfreezed layers k is set to 4. 
+
+4.2 Benchmarks and Comparative Methods 
+
+Firstly, we reorganize a cross-domain forgery benchmark that covers a diverse set of GAN-based and diffusion-based generative methods based on [ 32 , 68 , 59 ], including both classical and advanced approaches. We then evaluate performance across 12 off-the-shelf benchmarks, comprising (1) 11 whole-image forgery benchmarks: GenImage [ 68 ], DRCT-2M [ 6], Synthbuster [ 1], DDA-COCO [ 7], EvalGEN [ 7 ], AIGCDetectionBenchmark [ 65 ], ForenSynths [ 59 ], Chameleon [ 61 ], WildRF [ 5], SynthWildx [ 11 ], and BFree-Online [ 20 ]; and (2) one localized forgery (dedicated inpainting) benchmark: BR-GEN [ 3], which focuses on inpainting detection. For BR-GEN, we randomly sample 3,000 fake images from each subcategory along with their corresponding real images to construct the test set. All sampled fake images contain inpainting in the central region, ensuring that center-cropped inputs always include forged content. These benchmarks incorporate diverse authentic sources and varied generative architectures, providing a rigorous testbed to validate universal generalization across unseen domains. The compared detectors include (1) low-level based methods: NPR [ 54 ], SAFE [ 31 ], and AIDE [ 61 ], (2) foundational model based methods: UnivFD [ 40 ], FatFormer [ 35 ]and C2P-CLIP [ 55 ], (3) aligned methods: DRCT [ 6], Aligned [ 45 ] and DDA [ 7]. Balanced accuracy is adopted as the primary evaluation metric, with the decision threshold fixed at 0.5. 
+
+4.3 Performance Effectiveness on Cross-Domain Forgeries. As shown in Tab. 1, most existing methods exhibit a clear generalization gap between GAN-based and diffusion-based forgeries. GAN-specialized models (e.g., FatFormer and C2P-CLIP) achieve strong performance on GANs but degrade significantly on diffusion models, while diffusion-oriented methods (e.g., AlignedForensics and DDA) show the opposite trend, highlighting the difficulty of learning unified forensic representations under heterogeneous generation mechanisms. In contrast, our method achieves the best overall performance with a Total Avg. of 94.1%, consistently outperforming prior approaches across both domains (93.7% on GANs and 94.4% on diffusion), demonstrating superior cross-domain generalization. Notably, the balanced gains over both domains validate that our framework effectively mitigates domain-specific biases and captures more robust forensic cues. Refer to Appendix A.7 for Grad-CAM [48]. 
+
+Generalization Across Diverse Benchmarks. As shown in Tab. 2, existing methods exhibit notable performance fluctuations across diverse benchmarks, revealing limited robustness to distribution shifts in real-world scenarios. Although recent approaches such as DDA achieve strong overall performance, their results remain inconsistent on several challenging datasets, indicating residual domain bias. In contrast, our method achieves the best average performance of 94.2% and outperforms prior methods on most benchmarks. This consistent superiority demonstrates its strong generalization capability, suggesting that our framework effectively captures more robust and transferable forensic representations under diverse and unseen distributions. Detailed results for each benchmark are provided in the Appendix A.4. 7Table 1: Comparison of balanced accuracy on the cross-domain forgery benchmark. † represents that model is re-implementation via DINO-v3-L. The best results are formatted in bold, and the second-best results are underlined. We use official checkpoints released by each method to produce the results. Type NPR UnivFD FatFormer SAFE C2P-CLIP AIDE DRCT Aligned DDA DDA † Ours GAN-based  BigGAN [2] 84.3 95.1 99.5 89.7 99.0 84.9 82.2 66.5 83.6 95.7 96.9 CycleGAN [67] 96.1 98.3 99.4 98.9 99.7 92.0 89.4 55.3 63.9 91.6 95.3 ProGAN [26] 99.8 99.8 99.9 99.9 100.0 92.8 70.4 74.5 92.3 92.0 91.7 StarGAN [9] 99.3 95.8 99.8 99.9 99.8 88.1 53.0 77.6 66.3 73.9 85.5 GauGAN [41] 82.5 99.5 99.4 91.5 99.7 87.7 83.3 68.6 89.9 96.5 98.2 R3GAN [23] 77.7 78.5 94.4 91.6 92.5 90.8 44.0 67.7 96.0 90.5 93.5 StyleGAN-XL [47] 75.8 80.5 93.4 91.0 58.1 88.3 49.0 56.4 48.1 82.3 93.5 
+
+StyleGAN3 [27] 78.9 61.1 90.7 90.4 94.4 85.6 65.2 48.3 60.1 91.7 95.0 
+
+StyleSwim [64] 77.0 84.1 93.9 91.6 91.2 82.1 72.2 68.4 52.5 89.1 93.8 
+
+GAN Avg. 85.7 88.1 96.7 93.8 92.7 88.0 67.6 64.8 72.5 89.2 93.7 Diffusion-based  VQDM [19] 78.1 85.4 86.9 96.3 79.0 99.9 89.1 71.1 71.8 97.8 98.5 ADM [13] 69.7 97.7 78.5 82.1 65.1 99.6 75.2 63.1 88.0 95.5 96.6 GLIDE [38] 79.8 59.9 84.4 90.5 87.1 94.3 69.2 51.3 84.7 88.3 93.4 SD-XL [42] 78.3 59.1 75.0 93.3 74.1 93.3 62.0 86.6 97.8 91.5 94.1 Midjourney-V6 [56] 61.3 52.3 47.6 76.1 60.6 74.8 64.7 83.3 96.6 95.4 94.5 SD3 [15] 78.3 56.3 62.9 92.4 67.7 92.9 57.7 78.8 97.7 91.5 94.1 DALLE-3 [57] 66.6 53.5 50.1 41.9 50.4 66.3 73.8 81.5 94.9 91.1 93.6 FLUX1-dev [28] 79.5 48.4 48.2 91.4 57.9 89.8 51.4 78.4 93.0 91.0 92.7 Imagen3 [12] 79.5 50.6 46.9 89.6 49.5 90.5 53.0 81.6 85.7 90.6 92.3 
+
+Diff. Avg. 74.6 62.6 64.5 83.7 65.7 89.0 66.2 75.1 90.0 92.5 94.4 
+
+Total Avg. 80.2 75.4 80.6 88.8 79.2 88.5 66.9 70.0 81.3 90.9 94.1 
+
+Table 2: Overall evaluation across 11 diverse benchmarks. Following DDA [ 7 ], JPEG compression with a quality factor of 96 is applied to the synthetic images in GenImage, ForenSynths, and AIGCDetectionBenchmark. The results from NPR to DDA are cited from DDA. Method GenImage DRCT-2M DDA-COCO EvalGEN Synthbuster ForenSynths AIGCDetect. Chameleon Synthwildx WildRF Bfree-Online Avg. NPR 51.5 37.3 42.2 2.9 50.0 47.9 53.1 59.9 49.8 63.5 49.5 46.1 UnivFD 64.1 61.8 52.4 15.4 67.8 77.7 72.5 50.7 52.3 55.3 49.0 56.3 FatFormer 62.8 52.2 51.7 45.6 56.1 90.0 85.0 51.2 52.1 58.9 50.0 59.6 SAFE 50.3 59.3 49.9 1.1 46.5 49.7 50.3 59.2 49.1 57.2 50.5 47.6 C2P-CLIP 74.4 59.2 51.3 38.9 68.5 92.0 81.4 51.1 57.1 59.6 50.0 62.1 AIDE 61.2 64.6 50.0 19.1 53.9 59.4 63.6 63.1 48.8 58.4 53.1 54.1 DRCT 84.7 90.5 60.2 77.8 84.8 73.9 81.4 56.6 55.1 50.6 55.7 70.1 Aligned 79.0 95.5 86.5 68.0 77.4 53.9 66.6 71.0 78.8 80.1 68.5 75.0 DDA 91.7 98.1 92.2 97.2 90.1 81.4 87.8 82.4 90.9 90.3 95.1 90.7 DDA † 97.7 98.9 96.2 99.5 90.6 85.4 94.9 90.8 87.4 91.7 90.5 93.1 Ours 98.2 99.0 96.6 98.1 96.4 90.5 96.2 86.2 89.3 95.3 89.9 94.2 
+
+Table 3: Comparison of local forgery detection on BR-GEN. We use official checkpoints released by each method to produce the results. Detector Stuff Background Total Avg. LaMa MAT SDXL BrushNet PowerPaint Avg. LaMa MAT SDXL BrushNet PowerPaint Avg. NPR 56.7 60.6 59.3 62.4 63.6 60.5 47.3 69.8 74.6 78.8 81.1 70.3 65.4 UnivFD 66.2 69.4 60.4 67.1 60.1 64.6 87.2 90.3 61.9 67.3 67.2 80.8 72.7 FatFormer 71.6 75.1 64.1 64.1 69.8 68.9 84.6 94.3 69.2 66.8 74.1 77.8 73.4 SAFE 59.9 52.9 54.6 59.4 56.9 56.7 79.0 57.2 64.5 76.6 72.3 69.9 63.3 C2P-CLIP 67.7 68.3 60.5 64.8 64.4 65.5 87.4 87.7 68.1 71.8 76.8 78.4 72.0 AIDE 59.3 63.0 65.1 59.4 61.2 61.6 71.5 82.3 85.3 82.1 84.1 81.1 71.4 DRCT 64.2 64.2 60.1 62.9 61.7 62.6 76.7 77.6 71.0 69.7 70.4 73.1 67.9 Aligned 55.2 61.9 57.3 71.6 65.1 62.2 51.4 79.1 74.1 90.5 84.9 76.0 69.1 DDA 54.7 57.8 61.4 73.9 69.1 63.4 58.0 73.2 84.9 92.7 90.0 79.8 71.6 DDA † 66.0 71.6 71.9 79.9 77.4 73.4 78.4 91.9 93.4 95.1 94.4 90.6 82.0 Ours 80.2 83.3 77.6 85.0 82.4 81.7 92.4 96.2 94.9 96.6 95.5 95.1 88.4 
+
+Performance on Local Forgery Detection. As shown in Tab. 3, existing methods struggle to achieve consistent performance in local forgery detection, particularly under diverse inpainting models and region types. Most approaches perform noticeably worse on Stuff regions compared to Background, indicating limited sensitivity to fine-grained and localized artifacts. Our method significantly outper-forms all baselines, achieving the best overall performance of 88.4%, with substantial improvements on both Stuff (81.7%) and Background (95.1%) subsets. Notably, the strong gains across different generators demonstrate that our framework effectively captures localized forensic cues, leading to superior robustness in detecting subtle and spatially constrained manipulations. This improvement 8SRGAN-only    
+
+> VAE-only
+> SEF+max
+> SEF+min
+> SEF+avg
+> SEF+concat
+> SEF+gate
+> (b) Impact of the factor K(c) Impact of the factor
+
+γ(a) Impact of the stratefy for fusion                
+
+> 94.5
+> 93.5
+> 92.5
+> 91.5 0246890
+> 91
+> 92
+> 93
+> 94
+> 95
+> 00.05 0.1 0.5 1.0
+> 91.9
+> 92.3
+> 94.1 94.1 93.9
+> 91.9
+> 93.7 94.1
+> 93.2
+> 90.0
+> 88
+> 90
+> 92
+> 94
+> 96
+> 89.0 90.0
+> 91.9
+> 88.9
+> 91.1 92.0
+> 94.1
+
+Figure 5: Ablation studies. (a) We compare the different functions to fuse the output of separate experts. (b) We compare the number of last unfrozen LoRA blocks K in the fusion stage. (c) We compare the different scaling factors γ in the fusion stage. All the experiments are conducted on the cross-domain forgery benchmark. Table 4: Performance of cross-domain forgery benchmark under various perturbations. 
+
+w/Blur w/Cropping w/JPEG w/Noise SAFE NPR FatFormer C2P-CLIP AIDE DDA DDA † Ours 
+
+✓ × × × 81.4 80.2 78.0 79.2 82.5 79.6 85.3 87.9 
+
+× ✓ × × 85.8 85.5 81.3 80.0 86.7 79.9 87.8 91.4 
+
+× × ✓ × 70.1 74.1 78.4 74.0 71.2 80.4 86.2 88.6 
+
+× × × ✓ 69.9 73.0 73.8 70.9 80.1 76.7 84.9 88.3 
+
+✓ ✓ ✓ ✓ 76.6 78.2 77.9 76.1 79.9 79.2 86.2 89.2 
+
+is partly attributed to the proposed mask-aware forgery augmentation, which enhances the model’s sensitivity to artifact regions during aligned data generation. 
+
+4.4 Ablation Study 
+
+As shown in Fig. 5 (a), we first compare our default setting (SEF + gate) with several alternative strategy for fusing experts, including (1) single SRGAN or VAE expert, (2) taking the maximum or minimum score between these two experts, (3) averaging the scores from different scores, (4) simply concatenating the vectors of two experts. It could be observed that using the adaptive gate mechanism is significantly better than other ways. As shown in Fig. 5 (b) and (c), we allocate two important factors k and γ in the expert fusion stage. Experiments demonstrate that the best performance is achieved when k is set to 4, with results tending toward saturation when k exceeds this value. The optimal value for γ is 0.1. An excessively large γ would cause the second-stage fine-tuning to disrupt the domain-specific forensic traces pre-learned in the first stage, thereby compromising the original discriminative power of the experts. Refer to Appendix A.6 for the backbone ablation , consistent improvement achieve across DINO-v2-L, DINO-v3-L and DINO-v3-H+. 
+
+4.5 Robust Analysis 
+
+As shown in Tab. 4, our method consistently achieves the best performance under all perturbation settings, demonstrating the strongest robustness on the cross-domain forgery benchmark. Specifically, under blur, cropping, JPEG compression, noise, and the combination of all perturbations, our method reaches 87.9%, 91.4%, 88.6%, 88.3%, and 89.2%, respectively, outperforming all competing methods in every case. Compared with the strongest baseline, DDA †, our method achieves an average improvement of 3.0% points across all perturbation settings. Overall, these results indicate that our method remains highly effective not only under individual perturbations but also in the more challenging setting where multiple degradations are applied simultaneously. Details of the implementation of each perturbation are shown in Appendix A.5 following [16]. 
+
+## 5 Conclusion 
+
+In this work, we identify artifact bias as a key limitation of existing aligned training paradigms for AI-generated image detection. To address this issue, we introduce a GAN-based aligned data construction strategy using SRGAN, which better captures GAN-specific artifacts while preserving alignment in content, size, and format. We further propose a Separate Expert Fusion framework 9that decouples artifact-specific feature learning from knowledge integration, thereby reducing inter-domain interference between reconstruction-based and GAN-based synthetic negatives. Extensive experiments show that our method achieves strong and balanced performance on both diffusion and GAN-generated images, while consistently generalizing well to diverse unseen generators. We hope this work provides a practical step toward more robust and generalizable forgery detection, and inspires future research on bias-aware training paradigms for AIGC forensics. 
+
+Limitation and Future Work. The proposed expert-based design may introduce some additional training complexity and stage, requiring more careful optimization and resource allocation during training. In the future, we will explore lightweight fusion strategies to retain the advantages of expert specialization while lowering training costs, and extend our framework to cover more artifact sources and generative traces from emerging image synthesis and editing paradigms. 
+
+## References 
+
+[1] Quentin Bammey. Synthbuster: Towards detection of diffusion model generated images. IEEE Open Journal of Signal Processing , 5:1–9, 2023. [2] Andrew Brock, Jeff Donahue, and Karen Simonyan. Large scale gan training for high fidelity natural image synthesis. arXiv preprint arXiv:1809.11096 , 2018. [3] Lvpan Cai, Haowei Wang, Jiayi Ji, YanShu ZhouMen, Shen Chen, Taiping Yao, and Xiaoshuai Sun. Zooming in on fakes: A novel dataset for localized ai-generated image detection with forgery amplification approach. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 2534–2542, 2026. [4] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF international conference on computer vision , pages 9650–9660, 2021. [5] Bar Cavia, Eliahu Horwitz, Tal Reiss, and Yedid Hoshen. Real-time deepfake detection in the real-world. 
+
+arXiv preprint arXiv:2406.09398 , 2024. [6] Baoying Chen, Jishen Zeng, Jianquan Yang, and Rui Yang. Drct: Diffusion reconstruction contrastive training towards universal detection of diffusion generated images. In Forty-first International Conference on Machine Learning , 2024. [7] Ruoxin Chen, Junwei Xi, Zhiyuan Yan, Ke-Yue Zhang, Shuang Wu, Jingyi Xie, Xu Chen, Lei Xu, Isabel Guan, Taiping Yao, et al. Dual data alignment makes ai-generated image detector easier generalizable. 
+
+arXiv preprint arXiv:2505.14359 , 2025. [8] Siyuan Cheng, Lingjuan Lyu, Zhenting Wang, Xiangyu Zhang, and Vikash Sehwag. Co-spy: Combining semantic and pixel features to detect synthetic images by ai. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13455–13465, 2025. [9] Yunjey Choi, Minje Choi, Munyoung Kim, Jung-Woo Ha, Sunghun Kim, and Jaegul Choo. Stargan: Unified generative adversarial networks for multi-domain image-to-image translation. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 8789–8797, 2018. [10] Beilin Chu, Xuan Xu, Xin Wang, Yufei Zhang, Weike You, and Linna Zhou. Fire: Robust detection of diffusion-generated images via frequency-guided reconstruction error. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 12830–12839, 2025. [11] Davide Cozzolino, Giovanni Poggi, Riccardo Corvi, Matthias Nießner, and Luisa Verdoliva. Raising the bar of ai-generated image detection with clip. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4356–4366, 2024. [12] Google DeepMind. Imagen3. https://deepmind.google/technologies/imagen-3 . 2024. [13] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. [14] Ricard Durall, Margret Keuper, and Janis Keuper. Watch your up-convolution: Cnn based generative deep neural networks are failing to reproduce spectral distributions. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 7890–7899, 2020. [15] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. 
+
+10 [16] Joel Frank, Thorsten Eisenhofer, Lea Schönherr, Asja Fischer, Dorothea Kolossa, and Thorsten Holz. Leveraging frequency analysis for deep fake image recognition. In International conference on machine learning , pages 3247–3258. PMLR, 2020. [17] Ian J Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. Advances in neural information processing systems , 27, 2014. [18] Patrick Grommelt, Louis Weiss, Franz-Josef Pfreundt, and Janis Keuper. Fake or jpeg? revealing common biases in generated image detection datasets. In European Conference on Computer Vision , pages 80–95. Springer, 2024. [19] Shuyang Gu, Dong Chen, Jianmin Bao, Fang Wen, Bo Zhang, Dongdong Chen, Lu Yuan, and Baining Guo. Vector quantized diffusion model for text-to-image synthesis. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10696–10706, 2022. [20] Fabrizio Guillaro, Giada Zingarini, Ben Usman, Avneesh Sud, Davide Cozzolino, and Luisa Verdoliva. A bias-free training paradigm for more general ai-generated image detection. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 18685–18694, 2025. [21] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. [22] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Liang Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. Iclr , 1(2):3, 2022. [23] Yiwen Huang, Aaron Gokaslan, Volodymyr Kuleshov, and James Tompkin. The gan is dead; long live the gan! a modern gan baseline. Advances in Neural Information Processing Systems , 37:44177–44215, 2024. [24] Yonghyun Jeong, Doyeon Kim, Seungjai Min, Seongho Joe, Youngjune Gwon, and Jongwon Choi. Bihpf: Bilateral high-pass filters for robust deepfake detection. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 48–57, 2022. [25] Zexi Jia, Chuanwei Huang, Yeshuang Zhu, Hongyan Fei, Xiaoyue Duan, Zhiqiang Yuan, Ying Deng, Jiapei Zhang, Jinchao Zhang, and Jie Zhou. Secret lies in color: Enhancing ai-generated images detection with color distribution analysis. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 13445–13454, 2025. [26] Tero Karras, Timo Aila, Samuli Laine, and Jaakko Lehtinen. Progressive growing of gans for improved quality, stability, and variation. arXiv preprint arXiv:1710.10196 , 2017. [27] Tero Karras, Miika Aittala, Samuli Laine, Erik Härkönen, Janne Hellsten, Jaakko Lehtinen, and Timo Aila. Alias-free generative adversarial networks. Advances in neural information processing systems , 34: 852–863, 2021. [28] Black Forest Labs. Flux.1-dev. https://huggingface.co/black-forest-labs/FLUX.1-dev . 2024. [29] Christian Ledig, Lucas Theis, Ferenc Huszár, Jose Caballero, Andrew Cunningham, Alejandro Acosta, Andrew Aitken, Alykhan Tejani, Johannes Totz, Zehan Wang, et al. Photo-realistic single image super-resolution using a generative adversarial network. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 4681–4690, 2017. [30] Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Fuli Feng. Improving synthetic image detection towards generalization: An image transformation perspective. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 1 , pages 2405–2414, 2025. [31] Yiheng Li, Zichang Tan, Zhen Lei, Xu Zhou, and Yang Yang. Towards generalizable ai-generated image detection via image-adaptive prompt learning. arXiv preprint arXiv:2508.01603 , 2025. [32] Ziqiang Li, Jiazhen Yan, Ziwen He, Kai Zeng, Weiwei Jiang, Lizhi Xiong, and Zhangjie Fu. Is artificial intelligence generated image detection a solved problem? arXiv preprint arXiv:2505.12335 , 2025. [33] Shuqiao Liang, Jian Liu, Renzhang Chen, and Quanlong Guan. Ferretnet: Efficient synthetic image detection via local pixel dependencies. arXiv preprint arXiv:2509.20890 , 2025. [34] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European conference on computer vision , pages 740–755. Springer, 2014. 
+
+11 [35] Huan Liu, Zichang Tan, Chuangchuang Tan, Yunchao Wei, Jingdong Wang, and Yao Zhao. Forgery-aware adaptive transformer for generalizable synthetic image detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10770–10780, 2024. [36] Ruiqi Liu, Yi Han, Zhengbo Zhang, Liwei Yao, Zhiyuan Yan, Jialiang Shen, ZhiJin Chen, Boyi Sun, Lubin Weng, Jing Dong, et al. Beyond artifacts: Real-centric envelope modeling for reliable ai-generated image detection. arXiv preprint arXiv:2512.20937 , 2025. [37] Yunpeng Luo, Junlong Du, Ke Yan, and Shouhong Ding. Lareˆ 2: Latent reconstruction error based method for diffusion-generated image detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 17006–17015, 2024. [38] Alex Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever, and Mark Chen. Glide: Towards photorealistic image generation and editing with text-guided diffusion models. arXiv preprint arXiv:2112.10741 , 2021. [39] Augustus Odena, Vincent Dumoulin, and Chris Olah. Deconvolution and checkerboard artifacts. Distill , 1 (10):e3, 2016. [40] Utkarsh Ojha, Yuheng Li, and Yong Jae Lee. Towards universal fake image detectors that generalize across generative models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 24480–24489, 2023. [41] Taesung Park, Ming-Yu Liu, Ting-Chun Wang, and Jun-Yan Zhu. Semantic image synthesis with spatially-adaptive normalization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 2337–2346, 2019. [42] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. [43] Yuyang Qian, Guojun Yin, Lu Sheng, Zixuan Chen, and Jing Shao. Thinking in frequency: Face forgery detection by mining frequency-aware clues. In European conference on computer vision , pages 86–103. Springer, 2020. [44] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR, 2021. [45] Anirudh Sundara Rajan, Utkarsh Ojha, Jedidiah Schloesser, and Yong Jae Lee. Aligned datasets improve detection of latent diffusion-generated images. arXiv preprint arXiv:2410.11835 , 2024. [46] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. [47] Axel Sauer, Katja Schwarz, and Andreas Geiger. Stylegan-xl: Scaling stylegan to large diverse datasets. In 
+
+ACM SIGGRAPH 2022 conference proceedings , pages 1–10, 2022. [48] Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv Batra. Grad-cam: Visual explanations from deep networks via gradient-based localization. In 
+
+Proceedings of the IEEE international conference on computer vision , pages 618–626, 2017. [49] Zeyang Sha, Zheng Li, Ning Yu, and Yang Zhang. De-fake: Detection and attribution of fake images generated by text-to-image generation models. In Proceedings of the 2023 ACM SIGSAC conference on computer and communications security , pages 3418–3432, 2023. [50] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. [51] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. [52] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, and Yunchao Wei. Learning on gradients: Generalized artifacts representation for gan-generated images detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12105–12114, 2023. 
+
+12 [53] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. Frequency-aware deepfake detection: Improving generalizability through frequency space domain learning. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 5052–5060, 2024. [54] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. Rethinking the up-sampling operations in cnn-based generative network for generalizable deepfake detection. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 28130–28139, 2024. [55] Chuangchuang Tan, Renshuai Tao, Huan Liu, Guanghua Gu, Baoyuan Wu, Yao Zhao, and Yunchao Wei. C2p-clip: Injecting category common prompt in clip to enhance generalization in deepfake detection. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , pages 7184–7192, 2025. [56] Midjourney Team. Midjourney v6.1. https://www.midjourney.com/home , . 2024. [57] OpenAI Team. Dall-e 3 ai image generator. https://dalle3.ai/ , . 2024. [58] Aäron Van Den Oord, Nal Kalchbrenner, and Koray Kavukcuoglu. Pixel recurrent neural networks. In 
+
+International conference on machine learning , pages 1747–1756. PMLR, 2016. [59] Sheng-Yu Wang, Oliver Wang, Richard Zhang, Andrew Owens, and Alexei A Efros. Cnn-generated images are surprisingly easy to spot... for now. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 8695–8704, 2020. [60] Zhendong Wang, Jianmin Bao, Wengang Zhou, Weilun Wang, Hezhen Hu, Hong Chen, and Houqiang Li. Dire for diffusion-generated image detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 22445–22455, 2023. [61] Shilin Yan, Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Weidi Xie. A sanity check for ai-generated image detection. arXiv preprint arXiv:2406.19435 , 2024. [62] Zhiyuan Yan, Jiangming Wang, Peng Jin, Ke-Yue Zhang, Chengchun Liu, Shen Chen, Taiping Yao, Shouhong Ding, Baoyuan Wu, and Li Yuan. Orthogonal subspace decomposition for generalizable ai-generated image detection. arXiv preprint arXiv:2411.15633 , 2024. [63] Xiao Yu, Kejiang Chen, Kai Zeng, Han Fang, Zijin Yang, Xiuwei Shang, Yuang Qi, Weiming Zhang, and Nenghai Yu. Semgir: Semantic-guided image regeneration based method for ai-generated image detection and attribution. In Proceedings of the 32nd ACM International Conference on Multimedia , pages 8480–8488, 2024. [64] Bowen Zhang, Shuyang Gu, Bo Zhang, Jianmin Bao, Dong Chen, Fang Wen, Yong Wang, and Baining Guo. Styleswin: Transformer-based gan for high-resolution image generation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11304–11314, 2022. [65] Nan Zhong, Yiran Xu, Sheng Li, Zhenxing Qian, and Xinpeng Zhang. Patchcraft: Exploring texture patch for efficient ai-generated image detection. arXiv preprint arXiv:2311.12397 , 2023. [66] Yue Zhou, Xinan He, Kaiqing Lin, Bing Fan, Feng Ding, and Bin Li. Simplicity prevails: The emergence of generalizable aigi detection in visual foundation models. arXiv preprint arXiv:2602.01738 , 2026. [67] Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A Efros. Unpaired image-to-image translation using cycle-consistent adversarial networks. In Proceedings of the IEEE international conference on computer vision , pages 2223–2232, 2017. [68] Mingjian Zhu, Hanting Chen, Qiangyu Yan, Xudong Huang, Guanyu Lin, Wei Li, Zhijun Tu, Hailin Hu, Jie Hu, and Yunhe Wang. Genimage: A million-scale benchmark for detecting ai-generated image. Advances in neural information processing systems , 36:77771–77782, 2023. 
+
+13 A Technical Appendices and Supplementary Material 
+
+This appendix provides supplementary to support our main paper. Section A.1 analyzes gradient conflicts in direct mixed training. Section A.2 describes our mask-aware forgery augmentation method. Section A.3 elaborates on evaluation metrics for synthetic image assessment. Section A.4 reports full detailed benchmark comparison results. Section A.5 illustrates the parameter settings of various image perturbations. Section A.6 shows the ablation study of different backbones. Section A.7 illustrates the visualization of Cam-Grad. Section A.8 gives the border impact. 
+
+Figure 6: Per-Batch Gradient Cosine Similarity Between VAE and GAN Objectives. 
+
+Figure 7: Distribution of Inter-Source Gradient Cosine Similarity 
+
+Figure 8: Layer-Wise Gradient Cosine Similarity Across Transformer Blocks 
+
+14 Table 5: Ablation study of mask-aware forgery augmentation. ‡ means re-implement without mask-aware forgery augmentation. Detector GAN-Based Methods Diffusion-based Methods 11 Diverse Benchmarks BR-GEN Stuff BR-GEN Background Ours ‡ 93.2 93.1 94.2 76.1 93.4 Ours 93.7 ( ↑ 0.5) 94.4 ( ↑ 1.3) 94.2 ( −− ) 81.7 ( ↑ 5.6) 95.1 ( ↑ 1.7)
+
+A.1 Detailed Analysis of Gradient Conflicts in Mixed Training. 
+
+To verify the existence of gradient conflicts in multi-source mixed training, we design a direct validation experiment. Specifically, we use a DINO-v3-L model with LoRA (rank = 8, alpha = 1), where the pretrained backbone parameters are frozen, and only the LoRA layers and the classification head remain trainable—fully consistent with the actual training setup. We select the first 50 iterations for analysis, and the batch size is setup to 8 to ensure statistical stability. Within each batch, we independently perform forward and backward passes using VAE-reconstructed data (SD 2.1) and GAN-based super-resolution data (SRGAN), respectively. We then collect the gradient vectors over all trainable LoRA parameters, denoted as ∇L vae and ∇L srgan , and compute their cosine similarity 
+
+cos( ∇L vae , ∇L srgan ).As shown in Fig. 6, the batch-wise cosine similarity oscillates sharply within the range of 
+
+[−0.04 , +0 .08] , frequently crossing zero. The alternating red (conflict) and blue (alignment) re-gions indicate that the gradient directions of the two data sources do not exhibit stable cooperation at each step. Overall, gradient conflicts occurred in over 20% (12 out of 50) of the iterations, signifi-cantly undermining the convergence. The histogram in Fig. 7 further shows that the mean cosine similarity is only 0.014, extremely close to zero, with a nearly symmetric distribution around zero. This indicates that the optimal gradient directions for VAE and GAN artifacts are nearly orthogonal in the high-dimensional space. As a result, joint optimization leads to suboptimal results for both, Gradient conflict occurs uniformly across layers. Fig. 8 presents the layer-wise cosine similarity across all 24 Transformer blocks of ViT-L. The mean similarity for every block is close to zero, while the standard deviation is large (error bars spanning [−0.2, +0 .2] ), especially in the shallow layers (Blocks 0–3), where the variance is most pronounced. This indicates that gradient conflict is not confined to specific depths of the model but is instead distributed throughout the entire network. The larger variance in shallow layers can be attributed to the fundamental differences in low-level visual features (e.g., edges and textures) captured by the two artifact types: VAE-induced frequency attenuation artifacts versus GAN-induced checkerboard artifacts. These findings provide direct empirical evidence supporting the use of an expert separation architec-ture. When the gradient directions from two data sources are nearly orthogonal, jointly training a single shared LoRA parameter space leads to mutual cancellation in update directions, preventing the model from learning effective representations for both artifact types simultaneously. 
+
+A.2 Details of Mask-Aware Forgery Augmentation. 
+
+As illustrated in Fig. 9, we present several visual examples to demonstrate the proposed mask-aware forgery augmentation strategy, including cases based on both foreground masks and background masks. These examples provide an intuitive understanding of how the augmentation selectively operates on different spatial regions, thereby enriching the diversity of local artifact patterns. As shown in Table 5, mask-aware forgery augmentation brings consistent improvements across different settings. While the gains on GAN-based (+0.5%) and diffusion-based (+1.3%) methods are modest, a significant improvement is observed on BR-GEN Stuff regions (+5.6%), indicating enhanced sensitiv-ity to localized artifacts. Performance on Background regions also improves (+1.7%), demonstrating better overall robustness without compromising simpler cases. 
+
+A.3 Details of Metrics for Evaluating Synthetic Images. 
+
+In the radar chart, all metrics are referenced to the statistical values of real images. For each metric m,we normalize the raw value into a proximity score sm ∈ [0 , 1] , where 1.0 indicates perfect alignment with real images. Let vm denote the measured value and rm the real-image reference value. The 15 Real Fake Mask Augmented Fake 
+
+> Foreground Mask  Background Mask Foreground Mask  Background Mask
+
+Figure 9: Visualization of mask-aware forgery augmentation. The first two cases use foreground masks, while the latter two adopt background masks. normalization scale is defined as: 
+
+dm = max  |vVAE  
+
+> m
+
+− rm|, |vSRGAN  
+
+> m
+
+− rm| (9) The proximity score is then computed as: 
+
+sm = 1 − |vm − rm|
+
+α · dm
+
+, (10) where α is a margin factor that prevents the lowest-scoring method from collapsing to zero (we set 
+
+α = 1 .2), ensuring visual distinguishability on the radar chart. This normalization enables intuitive cross-dimensional comparison among the following metrics with different scales. As shown in Tab. 6, we illustrate the original data without normalization for each metric. Detailed descriptions for each metric are as follows: • MSE : Measures the average pixel-wise squared error between the generated and real images, reflecting pixel-level reconstruction accuracy. Lower values indicate closer fidelity. 16 Table 6: Comparison of image quality metrics among real images, VAE reconstruction, and SRGAN generation. Method MSE PSNR HF Ratio Sharpness Saturation TexEntropy EdgeSkew DCTBlockiness Real 0.0000 100.0000 0.0217 2722.6614 0.3222 8.4277 1.4597 0.1251 VAE 0.0043 25.2975 0.0160 1684.5698 0.3160 8.2075 1.4960 0.1222 SRGAN 0.0085 22.3019 0.0149 1490.9292 0.3005 8.1485 1.4660 0.1239 
+
+Table 7: Performance comparison on DRCT-2M via balanced accuracy.                                                                                                                                                                                            
+
+> Method LDM SDv1.4 SDv1.5 SDv2 SDXL SDXL-Refiner SD-Turbo SDXL-Turbo LCM-SDv1.5 LCM-SDXL SDv1-Ctrl SDv2-Ctrl SDXL-Ctrl SDv1-DR SDv2-DR SDXL-DR Avg. NPR 33.0 29.1 29.0 35.1 33.2 28.4 27.9 27.9 29.4 30.2 28.4 28.3 34.7 67.9 67.4 66.1 37.3 UnivFD 85.4 56.8 56.4 58.2 63.2 55.0 56.5 53.0 54.5 65.9 68.0 65.4 75.9 64.6 56.2 53.9 61.8 FatFormer 55.9 48.2 48.2 48.2 48.2 48.3 48.2 48.2 48.3 50.6 49.7 49.9 59.8 66.3 60.6 56.0 52.2 SAFE 50.3 50.1 50.0 50.0 49.9 50.1 50.0 50.0 50.1 50.0 49.9 50.0 54.7 98.2 98.5 97.3 59.3 C2P-CLIP 83.0 51.7 51.7 52.9 51.9 64.6 51.7 50.6 52.0 66.1 56.9 54.7 77.8 67.2 57.1 56.7 59.2 AIDE 64.4 74.9 75.1 58.5 53.5 66.3 52.8 52.8 70.0 54.3 65.9 53.6 53.9 95.3 73.3 69.0 64.6 DRCT 96.7 96.3 96.3 94.9 96.2 93.5 93.4 92.9 91.2 95.0 95.6 92.7 92.0 94.1 69.6 57.4 90.5 AlignedForensics 99.9 99.9 99.9 99.6 90.2 81.3 99.7 89.4 99.7 90.0 99.9 99.2 87.6 99.9 99.8 92.6 95.5 DDA 99.2 98.9 99.0 98.3 98.0 96.8 97.9 94.8 95.9 98.2 98.7 99.0 99.4 99.0 99.5 96.3 98.1 DDA †99.3 98.9 98.8 98.7 99.1 98.5 98.7 98.4 98.9 99.2 99.3 99.2 99.3 99.3 99.2 98.2 98.9 Ours 99.2 99.2 99.1 98.8 99.0 98.3 98.9 98.5 98.9 99.1 99.2 99.1 99.2 99.2 99.2 98.9 99.0
+
+Table 8: Performance comparison on GenImage via balanced accuracy. 
+
+Method Midjourney SDv1.4 SDv1.5 ADM GLIDE Wukong VQDM BigGAN Avg. NPR 53.4 55.1 55.0 43.8 41.2 57.4 48.4 57.7 51.5 UnivFD 55.1 55.6 55.7 62.5 61.3 61.1 76.9 84.4 64.1 FatFormer 52.1 53.6 53.8 61.4 65.5 60.9 72.5 82.2 62.8 SAFE 49.0 49.7 49.8 49.5 53.0 50.3 50.2 50.9 50.3 C2P-CLIP 56.6 77.5 76.9 71.6 73.5 79.4 73.7 85.9 74.4 AIDE 58.2 77.2 77.4 50.4 54.6 70.5 50.8 50.6 61.2 DRCT 82.4 88.3 88.2 76.9 86.1 87.9 85.4 87.0 84.7 AlignedForensics 97.5 99.7 99.6 52.4 57.6 99.6 75.0 50.6 79.0 DDA 95.6 98.7 98.6 89.5 89.6 98.7 76.5 86.5 91.7 DDA † 97.6 98.8 98.9 98.0 98.3 98.8 98.2 98.1 98.3 Ours 96.9 98.6 98.8 97.9 98.1 98.7 98.5 98.4 98.2 
+
+• PSNR : Evaluates image reconstruction quality by quantifying the ratio of the maximum pixel intensity to the reconstruction error. Higher values indicate smaller distortion and better visual authenticity. • HF Ratio : Computes the proportion of high-frequency energy in the frequency domain via FFT. Higher values indicate richer details, while lower values suggest smoothing or loss of fine structures. • Sharpness : Uses the variance of the Laplacian response to measure image clarity. Higher values indicate sharper images, while lower values imply blur. • Saturation : Calculates the mean saturation in the HSV color space, reflecting color vivid-ness. Lower values indicate desaturation. • TexEntropy : Measures texture complexity using entropy derived from the gray-level co-occurrence matrix (GLCM). Higher values indicate richer textures. • EdgeSkew : Computes the skewness of Sobel gradient magnitudes at edge pixels. Higher values suggest stronger or over-enhanced edges, while values closer to real indicate more natural edge distributions. • DCTBlockiness : The grayscale image is split into 8 × 8 blocks. We compute the ratio of gradient energy at block boundaries to the total gradient energy. A higher value denotes stronger grid-boundary discontinuities, while a lower value means smoother inter-block transitions. 
+
+A.4 Detailed Results of Each Benchmark. 
+
+This subsection presents the comprehensive detailed quantitative results across all adopted bench-marks, including DRCT-2M (Tab. 7), GenImage (Tab. 8), AIGCDetectionBenchmark (Tab. 9), ForenSynths (Tab. 10), Synthbuster (Tab. 11), SynthWildx (Tab. 12), WildRF (Tab. 12), DDA-COCO (Tab. 13), and EvalGEN (Tab. 14). These experiments cover a wide spectrum of mainstream genera-tive models, spanning both traditional GAN architectures and advanced diffusion-based generators. 17 Table 9: Performance comparison on AIGCDetectionBenchmark via balanced accuracy.                                                                                                                                                                                                       
+
+> Method ADM DALLE2 GLIDE Midjourney VQDM BigGAN CycleGAN GauGAN ProGAN SDXL SD14 SD15 StarGAN StyleGAN StyleGAN2 WFR Wukong Avg. NPR 43.8 20.0 41.2 53.4 48.4 53.1 76.6 42.2 58.7 59.6 55.1 55.0 67.4 57.9 54.6 58.8 57.4 53.1 UnivFD 62.5 50.0 61.3 55.1 76.9 87.5 96.9 98.8 99.4 58.2 55.6 55.7 95.1 80.0 69.4 69.2 61.1 72.5 FatFormer 80.2 68.5 91.1 54.4 88.0 99.2 99.5 99.1 98.5 71.7 67.5 67.2 99.4 98.0 98.8 88.3 75.6 85.0 SAFE 49.5 49.5 53.0 49.0 50.2 52.2 51.9 50.0 50.0 49.8 49.7 49.8 50.1 50.0 50.0 49.8 50.3 50.3 C2P-CLIP 71.6 52.3 73.5 56.6 73.7 98.4 96.8 98.8 99.3 62.3 77.5 76.9 99.6 93.1 79.4 94.8 79.4 81.4 AIDE 52.9 51.1 60.2 49.8 69.3 70.1 93.6 60.6 89.0 49.6 51.6 51.0 72.1 66.5 59.0 80.6 54.5 63.6 DRCT 79.9 89.2 89.2 85.5 88.6 81.4 91.0 93.8 71.1 88.3 91.4 91.0 53.0 62.7 63.8 73.9 90.8 81.4 AlignedForensics 51.6 52.0 55.6 96.2 72.1 51.2 49.5 50.8 50.7 95.1 99.7 99.6 53.8 52.7 51.6 50.0 99.6 66.6 DDA 89.5 94.6 89.6 95.6 76.6 91.0 72.5 92.7 92.8 99.4 98.7 98.6 72.7 87.8 90.2 52.1 98.8 87.8 DDA †98.0 99.2 98.3 97.6 98.2 96.5 96.2 97.8 92.6 99.5 98.8 98.9 86.2 92.8 93.8 91.6 98.8 96.2 Ours 97.9 99.1 98.1 96.9 98.5 96.9 95.3 98.2 91.7 99.5 98.6 98.8 85.5 93.3 94.1 94.9 98.7 96.2
+
+Table 10: Performance comparison on ForenSynths via balanced accuracy. 
+
+Method BigGAN CRN CycleGAN DeepFake GauGAN IMLE ProGAN SAN SeeingDark StarGAN StyleGAN StyleGAN 2 WFR Avg. NPR 53.1 0.4 76.6 35.7 42.2 5.3 58.7 48.4 63.6 67.4 57.9 54.6 58.8 47.9 UnivFD 87.5 55.7 96.9 69.4 98.8 68.1 99.4 58.2 62.2 95.1 80.0 69.4 69.2 77.7 FatFormer 99.3 72.1 99.5 93.0 99.3 72.1 98.4 70.8 81.9 99.4 98.1 98.9 88.3 90.1 SAFE 52.2 50.0 51.9 50.1 50.0 50.0 50.0 50.9 41.1 50.1 50.0 50.0 49.8 49.7 C2P-CLIP 98.4 93.3 96.8 92.6 98.8 93.2 99.3 63.2 94.7 99.6 93.1 79.4 94.8 92.1 AIDE 70.1 12.2 93.6 53.2 60.6 15.9 89.0 55.3 44.2 72.1 66.5 59.0 80.6 59.4 DRCT 81.4 78.4 91.0 51.5 93.8 82.6 71.1 84.9 72.2 53.0 62.7 63.8 73.9 73.9 AlignedForensics 51.2 50.4 49.5 71.7 50.8 49.7 50.7 67.6 51.4 53.8 52.7 51.6 50.0 53.9 DDA 91.0 87.0 72.5 76.5 92.7 89.7 92.8 94.7 58.6 72.7 87.8 90.2 52.1 81.4 DDA † 96.5 76.1 96.2 79.2 97.8 76.1 92.6 95.5 82.5 86.2 92.8 93.8 91.6 89.0 Ours 96.9 87.8 95.3 76.1 98.2 87.9 91.7 94.6 80.0 85.5 93.3 94.1 94.9 90.5 
+
+Table 11: Performance comparison on Synthbuster via balanced accuracy. 
+
+Method DALL·E 2 DALL·E 3 Firefly GLIDE Midjourney SD 1.3 SD 1.4 SD 2 SDXL Avg. NPR 51.1 49.3 46.5 48.5 52.8 51.4 51.8 46.0 52.8 50.0 UnivFD 83.5 47.4 89.9 53.3 52.5 70.4 69.9 75.7 68.0 67.8 FatFormer 59.4 39.5 60.3 72.7 44.4 53.7 54.0 52.3 69.1 56.1 SAFE 58.0 9.9 10.3 52.2 56.7 59.4 59.1 53.0 59.5 46.5 C2P-CLIP 55.6 63.2 59.5 86.7 52.9 75.2 76.7 69.2 77.7 68.5 AIDE 34.9 33.7 24.8 65.0 57.5 74.1 73.7 53.2 68.4 53.9 DRCT 77.2 86.6 84.1 82.6 73.7 86.6 86.6 83.2 71.3 84.8 AlignedForensics 50.2 48.9 51.7 53.5 98.7 98.8 98.8 98.6 97.3 77.4 DDA 86.3 90.0 91.9 76.5 93.5 92.9 92.7 93.3 93.5 90.1 DDA † 94.0 93.9 94.0 93.6 94.2 94.2 94.2 94.2 94.2 94.0 Ours 96.3 96.3 96.4 96.2 96.6 96.6 96.6 96.6 96.6 96.4 
+
+Table 12: Performance comparison on SynthWildx and WildRF via balanced accuracy. 
+
+Method SynthWildx WildRF DALL·E 3 Firefly Midjourney Avg. Facebook Reddit Twitter Avg. NPR 43.6 61.3 44.5 49.8 78.1 61.0 51.3 63.5 UnivFD 45.4 65.3 46.2 52.3 49.1 60.2 56.5 55.3 FatFormer 46.5 61.6 48.3 52.1 54.1 68.1 54.4 58.9 SAFE 49.4 48.2 49.6 49.1 50.9 74.1 37.5 57.2 C2P-CLIP 56.9 61.4 53.0 57.1 54.4 68.4 55.9 59.6 AIDE 63.4 48.8 51.9 48.8 57.8 71.5 45.8 58.4 DRCT 58.3 56.4 50.5 55.1 46.6 53.1 55.2 50.6 AlignedForensics 85.5 58.5 92.2 78.8 89.4 69.1 81.8 80.1 DDA 92.3 87.3 93.1 90.9 93.1 86.4 91.5 90.3 DDA † 90.5 89.1 90.4 90.0 93.4 93.5 94.3 93.8 Ours 89.8 88.8 89.2 89.3 95.3 95.6 94.8 95.3 
+
+Our method delivers consistent and outstanding detection performance across these diverse bench-marks, clearly surpassing the compared state-of-the-art approaches. Such convincing overall results firmly verify the strong generalization ability and practical effectiveness of our proposed solution for universal AI-generated image detection. 
+
+A.5 Details of Perturbations. 
+
+Following [ 16 ], we introduce five kinds of perturbations to evaluate the robustness of each detection method. Specifically, we use blurring, cropping, compression, noise, and a combination of them. For each dataset, we go through every image and apply the perturbation to it with a 50% probability. • Blurring applies Gaussian filtering, where the kernel size is randomly selected from the set (3, 5, 7, 9). 18 Table 13: Performance comparison on DDA-COCO via balanced accuracy. 
+
+Method real fake Avg XL EMA MSE SD21 SD35 FLUX.1 NPR 55.4 16.1 31.1 41.3 41.2 24.9 19.2 42.2 UnivFD 99.2 3.9 9.6 7.3 7.4 3.4 1.8 52.4 FatFormer 96.4 5.4 6.9 10.4 10.3 6.6 2.8 51.7 SAFE 98.8 0.6 0.9 0.9 1.0 0.3 1.8 49.9 C2P-CLIP 99.5 2.0 2.7 4.3 4.2 4.0 1.3 51.3 AIDE 98.8 0.6 2.2 1.7 1.8 0.3 0.6 50.0 DRCT 94.2 16.9 34.8 33.5 33.6 21.7 17.2 60.2 AlignedForensics 99.8 82.5 99.2 99.0 99.1 55.4 3.6 86.5 DDA 99.0 95.0 99.3 99.7 99.7 68.1 50.2 92.2 DDA † 98.6 94.8 99.1 99.3 99.3 80.0 78.8 95.2 Ours 98.5 98.2 99.8 99.8 99.8 88.2 82.8 96.6 
+
+Table 14: Performance comparison on EvalGEN via balanced accuracy. 
+
+Method Flux GoT Infinity NOVA OmiGen Avg. NPR 0.7 0.2 6.5 4.7 2.2 2.9 UnivFD 4.0 9.2 15.7 8.3 39.6 15.4 FatFormer 9.9 47.9 44.7 98.3 27.3 45.6 SAFE 1.0 0.5 1.9 0.6 1.6 1.1 C2P-CLIP 8.7 49.6 35.3 86.4 14.5 38.9 AIDE 17.9 24.7 3.4 16.3 33.4 19.1 DRCT 72.5 81.4 77.9 84.6 72.5 77.8 AlignedForensics 32.0 72.3 74.0 84.8 77.0 68.0 DDA 89.9 99.5 97.8 99.5 99.5 97.2 DDA † 95.7 99.8 100.0 100.0 99.7 99.0 Ours 92.0 99.4 100.0 99.9 99.2 98.1 
+
+Table 15: Ablation study of different backbones.                                  
+
+> Detector GAN-Based Methods Diffusion-based Methods 11 Diverse Benchmarks BR-GEN Stuff BR-GEN Background DDA+DINO-v2-L 72.5 90.0 90.7 63.4 79.8 Ours+DINO-v2-L 90.7 92.8 93.1 80.9 92.8 DDA+DINO-v3-L 89.2 92.5 93.1 73.4 90.6 Ours+DINO-v3-L 93.7 94.4 94.2 81.7 95.1 DDA+DINO-v3-H+ 91.6 91.7 94.7 79.4 93.7 Ours+DINO-v3-H+ 94.1 95.2 96.3 89.6 96.5
+
+• Cropping randomly crops the image on both spatial axes. The cropping percentage is sampled from the uniform distribution U (5 , 20) , and the cropped region is upsampled to the original resolution. • Compression performs JPEG compression, with the quality factor randomly sampled from 
+
+U (10 , 75) .• Noise injects independent and identically distributed (i.i.d.) Gaussian noise into the image. The variance of the Gaussian distribution is randomly sampled from U (5 .0, 20 .0) .
+
+A.6 Ablation of Different Backbones. 
+
+As shown in Tab. 15, we evaluate whether the proposed method remains effective across different visual backbones, with particular attention to its performance on the 11 diverse benchmarks (Detailed results of these 11 benchmarks are shown in Tab. 16). Our method consistently improves over DDA on this evaluation group for all three backbones, increasing the score from 90.7% to 93.1% with DINO-v2-L, from 93.1% to 94.2% with DINO-v3-L, and from 94.7% to 96.3% with DINO-v3-H+. This consistent gain suggests that the proposed method does not rely on a specific backbone but provides stable improvements under a broad and diverse benchmark setting. As the backbone becomes stronger, both methods benefit from better representations, while our method maintains a clear advantage and achieves the best result of 96.3% on the 11 diverse benchmarks with DINO-v3-H+. These results show that the proposed design is complementary to backbone scaling and improves generalization across diverse evaluation scenarios. 19 Table 16: Backbone ablation across 11 diverse benchmarks. Following DDA [ 7 ], JPEG compres-sion with a quality factor of 96 is applied to the synthetic images in GenImage, ForenSynths, and AIGCDetectionBenchmark. Method GenImage DRCT-2M DDA-COCO EvalGEN Synthbuster ForenSynths AIGCDetect. Chameleon Synthwildx WildRF Bfree-Online Avg. DDA+DINO-v2-L 91.7 98.1 92.2 97.2 90.1 81.4 87.8 82.4 90.9 90.3 95.1 90.7 Ours+DINO-v2-L 96.3 98.5 94.9 93.8 96.8 91.2 94.3 81.9 91.1 92.7 92.6 93.1 DDA+DINO-v3-L 97.7 98.9 96.2 99.5 90.6 85.4 94.9 90.8 87.4 91.7 90.5 93.1 Ours+DINO-v3-L 98.2 99.0 96.6 98.1 96.4 90.5 96.2 86.2 89.3 95.3 89.9 94.2 DDA+DINO-v3-H+ 98.8 99.3 96.7 99.0 96.8 88.5 96.5 93.2 88.3 93.6 91.1 94.7 Ours+DINO-v3-H+ 98.8 99.4 97.5 97.9 96.2 94.3 97.1 92.3 93.0 95.6 96.8 96.3 Real Image  GAN Image  Diffusion Image 
+
+> SRGAN Expert  VAE Expert  SRGAN Expert  VAE Expert  SRGAN Expert  VAE Expert
+
+Figure 10: Visualization of Grad-CAM. Brighter colors indicate salient regions. 
+
+A.7 Additional Visualization. 
+
+As shown in Fig. 10, we show representative examples and their Grad-Cam results of both SRGAN and VAE experts, spanning real photographs, GAN-generated images, and diffusion-generated images. The two experts focus on distinct visual regions and capture complementary forensic cues, jointly covering diverse artifact patterns from different generative models. 20 A.8 Border Impact. 
+
+Our work studies AI-generated image detection, which has a positive societal impact by helping miti-gate the spread of synthetic or manipulated visual content, including misinformation, impersonation, and fraudulent media. Reliable detection methods can support content moderation, digital forensics, copyright protection, and public trust in online visual information. At the same time, such systems may have potential negative impacts if they produce false positives, fail to generalize across domains or demographic groups, or are over-relied upon as definitive evidence. Moreover, detection methods may motivate adversaries to develop more evasive generation techniques. We therefore emphasize that AI-generated image detectors should be used as decision-support tools rather than sole arbiters, and should be evaluated transparently across diverse datasets and deployment scenarios. 21

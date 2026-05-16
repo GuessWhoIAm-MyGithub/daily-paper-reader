@@ -1,0 +1,560 @@
+Title: ACE-LoRA: Adaptive Orthogonal Decoupling for Continual Image Editing
+
+URL Source: https://arxiv.org/pdf/2605.14948v1
+
+Published Time: Fri, 15 May 2026 01:18:44 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# ACE-LoRA: Adaptive Orthogonal Decoupling for Continual Image Editing 
+
+Yuehao Liu 
+
+Shanghai Jiao Tong University 
+
+yuehao.liu@sjtu.edu.cn 
+
+Weijia Zhang 
+
+Shanghai Jiao Tong University 
+
+weijia.zhang@sjtu.edu.cn 
+
+Xuanming Shang 
+
+Shanghai Jiao Tong University 
+
+sxm2021@sjtu.edu.cn 
+
+Zhizhou Chen 
+
+Nanjing University 
+
+zhizhouchen@smail.nju.edu.cn 
+
+Yanhao Ge 
+
+VIVO 
+
+halege@vivo.com 
+
+Shanyan Guan ∗
+
+VIVO 
+
+guanshanyan@vivo.com 
+
+Chao Ma ‡
+
+Shanghai Jiao Tong University 
+
+chaoma@sjtu.edu.cn 
+
+Abstract 
+
+State-of-the-art diffusion models often rely on parameter-efficient fine-tuning to perform specialized image editing tasks. However, real-world applications require continual adaptation to new tasks while preserving previously learned knowledge. Despite the practical necessity, continual learning for image editing remains largely underexplored. We propose ACE-LoRA, a dynamic regularization framework for continual image editing that effectively mitigates catastrophic forgetting. ACE-LoRA leverages Adaptive Orthogonal Decoupling to identify and orthogonalize task interference, and introduces a Rank-Invariant Historical Information Com-pression strategy to address scalability issues in continual updates. To facilitate continual learning in image editing and provide a standardized evaluation proto-col, we introduce CIE-Bench, the first comprehensive benchmark in this domain. CIE-Bench encompasses diverse and practically relevant image editing scenarios with a balanced level of difficulty to effectively expose limitations of existing models while remaining compatible with parameter-efficient fine-tuning. Extensive experiments demonstrate that our method consistently outperforms existing base-lines in terms of instruction fidelity, visual realism, and robustness to forgetting, establishing a strong foundation for continual learning in image editing. 
+
+1 Introduction 
+
+Diffusion models [ 16 , 7, 40 , 33 , 6] have achieved strong performance on general image editing tasks. However, due to the scarcity of large-scale, high-quality task-specific training data, they often under-perform in specialized tasks, for which parameter-efficient fine-tuning [ 17 , 5 , 27 , 28 , 21 , 38 ] offers a widely adopted solution. While finetuning may work for isolated tasks, real-world deployments necessitate models with continual learning [ 35 , 39 , 48 ] capabilities to incrementally acquire new edit-ing skills while preserving performance on previously learned tasks, thereby mitigating catastrophic forgetting [ 32 , 10 ]. Although continual learning has been extensively studied in traditional image classification [ 29 , 22 ], multimodal large language models [ 47 , 13 ], and, more recently, text-to-image generation [41, 20], its application to image editing remains largely underexplored.       
+
+> *Project lead. ‡Corresponding author. 40th Conference on Neural Information Processing Systems (NeurIPS 2026).
+> arXiv:2605.14948v1 [cs.CV] 14 May 2026 (a) LoRA similarities between tasks under individual FT
+> (b) LoRA similarities between tasks under sequential FT
+> (c) Energy proportion of top -r singular values
+> (d) Cosine similarities between reconstructed and original weights
+
+Figure 1: (a)&(b) Analysis on LoRA similarities between tasks under individual/sequential finetuning. 
+
+(c)&(d) Analysis on SVD energy proportion/reconstruction error for history compression. Existing works for continual learning can be broadly categorized into architecture-based, rehearsal-based, and regularization-based methods. Architecture-based methods [ 3 , 13 , 19 , 49 ] expand the model with task-specific modules to capture specialized knowledge, but often incur increased in-ference cost and reduced generalization. Rehearsal-based methods [ 43 , 2, 43 ] retains historical information, such as training samples or intermediate activations; however, it is often impractical when historical data is unavailable or raise privacy concerns. In contrast, regularization-based meth-ods [ 47 , 56 , 4, 31 ] appear to be a more appealing paradigm by circumventing the above limitations. They constrain parameter updates to lie within subspaces that minimize interference with previously learned tasks, typically via orthogonalization strategies that decouple task-specific update directions. Nonetheless, adapting regularization-based methods to image editing is a non-trivial problem. Prior regularization-based methods [ 47 , 4, 31 ] generally construct constraint subspaces offline using historical task parameters and enforce orthogonality between new task updates and these fixed subspaces. However, such approaches overlook a critical aspect of training dynamics that different data samples induce distinct update directions and interference direction with historical tasks. This challenge is particularly pronounced in diffusion models due to the compounded stochasticity arising from noise sampling and timestep variation. To address this limitation, we propose ACE-LoRA, a dynamic mechanism for mitigating inter-task interference. Instead of constructing a static constrained subspace offline, ACE-LoRA continuously constructs a dynamic interference vector from the real-time responses of historical models during training. The interference vector, defined as gradients of previous parameters under current data, is used to enforce orthogonality with current parameter updates, thereby reducing destructive interference across tasks. Despite its effectiveness, the computational overhead of interference vector scales linearly with the number of previously learned tasks. To address this scalability issue, we further introduce a rank-invariant historical information compression strategy, which consolidates all historical task parameters into a single fixed-rank representation. This compressed representation serves as a surrogate for past knowledge and is used to impose dynamic constraints on current parameter updates, achieving a principled balance between effectiveness and efficiency. To enable continual learning in image editing and provide a standardized evaluation protocol, we construct CIE-Bench, the first comprehensive benchmark for continual image editing. CIE-Bench is built upon three key principles: (1) multi-domain diversity, ensuring broad coverage of heterogeneous image editing scenarios; (2) challenge–learnability balance, guaranteeing that tasks expose the limitations of existing models while remaining learnable under parameter-efficient finetuning; and (3) practical utility, ensuring alignment with real-world deployment. We further design a dedicated evaluation protocol for domain-specific image editing, mitigating hallucination issues in general-purpose evaluation metrics [ 52 , 23 ]. Extensive experiments demonstrate that our method consistently outperforms existing baselines in terms of instruction fidelity, visual realism, and robustness to forgetting, establishing a strong foundation for continual learning in image editing. 2𝐵 1
+
+𝐴 1  
+
+> Δ𝑊 1=𝐵 1𝐴 1
+> r
+> r
+
++ … +
+
+𝑊 𝑎𝑙𝑙 
+
+∈ 𝑅 𝑑 2×𝑑 1
+
+SVD  U 𝑉 𝑇 Σ
+
+> r
+> r
+> r
+
+𝐵 t−1
+
+𝐴 t−1  
+
+> Δ𝑊 t−1=𝐵 t−1𝐴 t−1
+> r
+> r
+> Noise
+> Timestep
+> Timestep
+
+∇B Interference Vector 
+
+> Constraint
+
+𝐵 his 
+
+𝐴 his   
+
+> Δ𝑊 his =𝐵 his 𝐴 his
+> r
+> r
+
+𝐵 t
+
+𝐴 t   
+
+> Δ𝑊 t=𝐵 t𝐴 t
+> r
+> r
+> Iso -Rank History Compaction Adaptive Orthogonal Decoupling
+
+Figure 2: Overview of ACE-LoRA. ACE-LoRA leverages Adaptive Orthogonal Decoupling to identify and orthogonalize task interference and introduces a Rank-Invariant Historical Information Compression strategy to address scalability issues in continual updates. Physical Perception  Entity Manipulation  Cognitive Reasoning    
+
+> Task A: Focus
+> Task B: Light Task B: Causal Reasoning Task B: Virtual Try -On
+> Task A: Text Editing Task A: ERP Outpainting
+> Fill the black space
+> as a seamless 360
+> ERP ...
+> Have the brown rat
+> take a bite out of
+> the slice of bread.
+> Change the texture
+> of the word 'MIND'
+> to look like mercury.
+> Replace the outfit
+> with the clothes … .
+> Don’t alter action.
+> Refocus on the white
+> lounge chair in the
+> middle.
+> Move the light from
+> bottom -right to the
+> left side.
+
+Figure 3: Overview of CIE-Bench for continual image editing. CIE-Bench consists of three main categories: Physical Perception, Entity Manipulation, and Cognitive Reasoning, and includes six sub-tasks: ERP Outpainting, Refocus, Relighting, Text Editing, Virtual Try-on, and Causal Reasoning. 
+
+2 Methodology 
+
+Existing regularization-based continual learning methods [ 47 , 4, 31 ] mainly rely on static parameter constraints, which fail to capture stochastic interactions induced by data, noise, and timestep sam-pling. We propose ACE-LoRA, a dynamic regularization framework that models task-dependent optimization interactions and imposes data-aware constraints on parameter updates. As shown in Fig. 2, our framework consists of two components. First, Adaptive Orthogonal De-coupling (Sec. 2.1) constructs a dynamic interference vector from historical-parameter gradients on current data and imposes update-space orthogonality to mitigate cross-task interference. A two-stage finetuning scheme further stabilizes constrained optimization while preserving adaptation flexibility. Second, Rank-Invariant Historical Information Compression (Sec. 2.2) maintains a compact iso-rank representation of accumulated LoRA modules, enabling scalable preservation of historical knowledge. 
+
+2.1 Adaptive Orthogonal Decoupling with Two-Stage Optimization Adaptive Orthogonal Decoupling The finetuning process of diffusion models involves significant multi-dimensional stochasticity, including random timesteps, noise sampling, and varied text-image interactions, which make static or offline-computed constraints intractable. In this work, we introduce Adaptive Orthogonal Decoupling (AOD) to dynamically regularize parameter updates. Specifically, AOD designates the gradient of historical weights on the current task’s data as the interference vector ,thereby constraining current parameter updates to be strictly orthogonal to this vector. To facilitate real-time access to historical task parameters, We employ an incremental LoRA [ 18 ]finetuning strategy. Specifically, for task t, we denote W0 as the pretrained base weights, Bi, A i as the LoRA weights of historical task i, Bt, A t as the LoRA weights of current task, and the parameter updates during finetuning are formulated as: W = W0 + t−1P
+
+i=1 
+
+BiAi + BtAt where only Bt and At
+
+are trainable. We derive the interference vector via the following formulation: 
+
+IV t = ∇lt(xt; W0 +
+
+t−1X
+
+i=1 
+
+BiAi), f or each x t ∈ Dt, (1) 3where Dt and lt(·) are the training data and loss function under task t.Given that historical tasks have already converged to local optima, gradients induced by transferable knowledge are small. Consequently, the principal directions of the interference vector predominantly encapsulate the feature collisions between current and historical tasks, precisely delineating the sub-dimensions where optimization of new knowledge inherently disrupts historical priors. By imposing a dedicated orthogonal loss to explicitly penalize the directional alignment with interference vector, AOD effectively facilitates the assimilation of new concepts while rigorously protecting historical knowledge against catastrophic forgetting. Existing studies [ 46 , 14 ] reveal a functional dichotomy in LoRA: LoRA A captures generalizable, task-agnostic features, whereas LoRA B governs task-specific adaptation. We analyze the cosine similarity of LoRA weights under independent and sequential finetuning, as shown in Fig. 1(a,b). Under independent finetuning, LoRA A remains highly consistent across tasks despite task isolation, while LoRA B is nearly orthogonal. Under sequential finetuning, LoRA A maintains high cross-task similarity, whereas LoRA B shows stronger similarity between adjacent tasks that decays with task distance. This suggests that LoRA B is more sensitive to task-specific adaptation and progressively tracks evolving downstream objectives. Motivated by these observations, we compute the interference vector only over LoRA B :
+
+gIV t = ∇Bhis lt(xt; W0 + Bhis Ahis ), ∀xt ∈ Dt, (2) where Bhis and Ahis denote the accumulated LoRA weights from previous tasks. Since diffusion-based image editing relies on shared structural priors to preserve source-image consistency, constrain-ing LoRA A can impair these priors and degrade spatial consistency. 
+
+Two-stage fine-tuning Scheme. Imposing constraints on model weights reduces the effective optimization space and may lead to conflicts among objectives, resulting in suboptimal adaptation to new tasks. Inspired by annealing schedule [ 11 ], we propose a two-stage finetuning scheme to balance plasticity and stability. In the first stage, the model is optimized without constraints to explore task-specific optima. In the second stage, orthogonality constraint is introduced to preserve previously learned knowledge while performing constrained updates around the obtained optimum. This design enables stable retention of prior knowledge without sacrificing adaptation performance on new tasks. 
+
+2.2 Rank-Invariant Historical Information Compression 
+
+While AOD effectively preserves previous learned knowledge, dynamically computing gradients across an ever-expanding sequence of historical task adapters inevitably leads to a linear escalation in computational overhead. Drawing inspiration from LoRA merging [ 45 , 44 ], we introduce a Rank-Invariant Historical Information Compression strategy. Specifically, for task t, we first aggregate the LoRA modules across all historical tasks: 
+
+Whis = B1A1 + B2A2 + ... + Bt−1At−1, whereB i ∈ Rd2×r , A i ∈ Rr×d1 , (3) and then deconstruct the merged LoRA weights with singular value decomposition (SVD) as Whis =
+
+U ΣV T . By retaining only the top-r largest singular values, we thereby factorize the matrix into a new pair of LoRA weights: 
+
+]Whis = U Σ[: r]V T , and B his = U
+
+q
+
+Σ[: r], A his =
+
+q
+
+Σ[: r]V T . (4) Theoretically, this truncated SVD guarantees an optimal rank-r approximation. Since downstream finetuning on limited data naturally induces inherently low-rank weight updates, critical task-adaptive knowledge is heavily concentrated within the principal subspaces spanned by the leading singular values. The overall orthogonalization loss is formulated as: 
+
+Lorth = ⟨IV t, B t⟩ = [ ∇Bhis lt(xt; W0 + Bhis Ahis )] T Bt. (5) We analyze the energy proportion of top-r singular values under different training strategies as the number of tasks increases. As shown in Fig. 1(c), our rank-invariant approximation exhibits negligible information loss under AOD-based framework, and importantly, remains stable as the number of tasks increases. In addition, Fig. 1(d) presents the cosine similarity between original weights and those reconstructed from low-rank approximation of merged weights. Results show that the reconstructed 4Table 1: Quantitative comparison ( Overall Score ) of different methods on CIE-Bench. We com-pare ACE-LoRA with representative continual learning methods (including architecture-based and regularization-based methods) and model merging techniques on CIE-Bench. Method Replay ERP Focus Light Text Virtual Tryon Causal Avg. Zero-shot - 7.0645 4.4656 2.9590 5.8852 4.6014 7.1140 5.3483 MTFT - 8.9677 9.0076 9.0656 9.7951 9.8768 9.9035 9.4361 Avg Sequential FT - 7.4556 6.5947 7.8836 8.4722 9.3365 9.2807 8.1705 Data Rehearsal ! 8.2873 8.0657 7.4854 8.3029 9.2933 9.4825 8.4862                                                                                                                                                                                       
+
+> ▽LoRA Merging TIES [50] %8.0804 5.4322 5.9881 7.3099 6.0261 8.0263 6.8105 DARE [54] %8.1475 5.7232 4.7378 7.2525 6.0285 8.1053 6.6658
+> ▽Architecture-based CL-MoE [19] %7.7829 7.4330 6.1226 8.5043 8.7794 8.7456 7.8946 MoELoRA [3] %7.2554 6.2904 5.7618 9.2377 9.1826 9.5526 7.8801 HiDe-LLaVA [13] %8.0622 4.4349 6.5079 9.1664 2.2547 7.5175 6.3239 SMoLoRA [49] %8.0889 7.2518 6.7972 8.1194 7.8651 9.1316 7.8757
+> ▽Regularization-based O-LoRA [47] %8.1142 6.7604 6.1898 7.7523 8.8202 8.7018 7.7231 RegLoRA [4] %8.1298 6.9167 7.5932 7.8457 9.0191 8.7632 8.0446 KeepLoRA [31] %8.3749 6.1147 7.4302 7.4588 8.5423 8.1842 7.6842
+> ACE-LoRA (ours) %8.6344 7.9585 8.1472 9.0635 9.9501 9.4298 8.8639
+> Last
+> Sequential FT -7.3548 5.8091 4.5901 8.3442 9.2826 9.2807 7.4436 Data Rehearsal !7.9435 8.7405 7.5492 8.9180 9.2826 9.4825 8.6527
+> ▽LoRA Merging TIES [50] %8.0887 5.5420 4.5410 7.2705 6.0507 8.0263 6.5865 DARE [54] %8.0403 5.2538 4.0902 7.1230 6.1232 8.1053 6.4560
+> ▽Architecture-based CL-MoE [19] %8.0081 6.1374 4.6148 8.0984 9.2899 8.7456 7.4823 MoELoRA [3] %7.7258 5.1374 4.3361 7.8279 9.1014 9.5526 7.2802 HiDe-LLaVA [13] %8.4194 4.6947 5.7787 8.3443 2.2826 7.5175 6.1729 SMoLoRA [49] %7.7177 6.8702 6.6885 7.9180 8.0290 9.1316 7.7258
+> ▽Regularization-based O-LoRA [47] %8.3710 6.2901 6.2705 7.5082 9.0797 8.7018 7.7035 RegLoRA [4] %8.0323 6.5725 7.3852 7.4262 9.0725 8.7632 7.8753 KeepLoRA [31] %8.1048 4.3511 6.4344 7.7377 8.8116 8.1842 7.2707
+> ACE-LoRA (ours) %8.4274 7.9466 8.1885 9.5738 9.6449 9.4298 8.8685
+
+weights are almost indistinguishable from the original ones for AOD-based framework. Therefore, our Rank-Invariant Historical Information Compression strategy effectively preserves the essential information of historical parameters and remains robust to increasing task sequences, enabling efficient and scalable continual learning without compromising model performance. 
+
+3 CIE-Bench: A Benchmark of Continual Learning for Image Editing 
+
+Aiming to systematically evaluate the ability of diffusion models to continually acquire new edit-ing capabilities while retaining previously learned knowledge, we introduce CIE-Bench, the first benchmark for continual image editing. CIE-Bench is designed to bridge a critical gap in existing benchmarks and datasets, which largely emphasize static single-task generalization while overlooking the challenges of dynamic and lifelong adaptation. As shown in Fig. 3, CIE-Bench consists of three high-level categories and six sub-tasks, spanning diverse editing granularities from low-level visual adjustments to high-level semantic and compositional reasoning, enabling a comprehensive evaluation of both perceptual fidelity and semantic consistency in continual image editing settings. 
+
+Task Selection To construct a representative evaluation suite, the tasks of CIE-Bench are curated based on three key criteria: comprehensive multi-domain diversity , demonstrable adaptation plasticity ,and substantial practical utility for real-world scenarios. Critically, the selected tasks must probe the intrinsic capability bottlenecks of existing foundational models while exhibiting robust learnability under few-shot finetuning regimes. This ensures that each incremental learning step represents a meaningful expansion of the model’s capability boundaries, accurately simulating the operational demands of scalable generative systems. Guided by the aforementioned principles, we carefully curate a sequence of six representative tasks encompassing Physical Perception, Entity Manipulation, and Cognitive Reasoning. This composition 5ImgEdit -Judge (Qwen2.5 -vl)  Ours 
+
+Brief reasoning: The editing focused on the 
+
+foreground green bushes as instructed, 
+
+with no unintended changes elsewhere .
+
+Score 1: 5 
+
+Score 2: 5 
+
+...While the output image features focused 
+
+green bushes, it is a completely different 
+
+image from the original . ...the task goal of 
+
+editing the specific input image is 
+
+completely unfulfilled. 
+
+The edited image exhibits extreme 
+
+unintended alterations. (1)Object/Layout: ... 
+
+(2) Lighting: ... (3) Content: ... 
+
+Summary Evaluation: 
+
+Dimension 1 Score: 1 | Dimension 2 Score: 
+
+1
+
+Generate a photo refocused on the foreground green 
+
+bushes. 
+
+ImgEdit -Judge (Qwen2.5 -vl)  Ours 
+
+Brief reasoning: Light source moved to top -
+
+right ; shadows changed naturally; no 
+
+unintended changes visible. 
+
+Score 1: 5 
+
+Score 2: 5 
+
+Objects match: True 
+
+... the lighting logic for all main objects 
+
+remains completely unchanged from the 
+
+original image. ... 
+
+The edited image is largely identical to the 
+
+original in terms of object appearance, but 
+
+it contains obvious unintended alterations. 
+
+A large, dark shadow appears in the top -
+
+right quadrant of the background. ... 
+
+Summary Evaluation: 
+
+Dimension 1 Score: 1 
+
+Dimension 2 Score: 2 
+
+Move the light source in the frame from the top -left 
+
+of the frame to the top -right of the frame. 
+
+ImgEdit -Judge (GPT -4o)  Ours 
+
+Brief reasoning: Instructions followed: full 
+
+360 panorama living room created , natural, 
+
+no obvious unintended changes. 
+
+Score 1: 5 
+
+Score 2: 5 
+
+Objects match: True 
+
+The generated content successfully reflects 
+
+the textual description , ...However, the 
+
+image fails critical panoramic 
+
+properties . ..."Match left and right edges" 
+
+for a seamless 360 ERP is not met ... 
+
+The non -masked regions from the original 
+
+image are severely altered …
+
+Summary Evaluation: 
+
+Dimension 1 Score: 2 
+
+Dimension 2 Score: 1 
+
+ImgEdit -Judge (GPT -4o)  Ours 
+
+Brief reasoning: “QUEEN’S ” changed 
+
+correctly to red handwritten style ; overall 
+
+sign natural, other text unchanged. 
+
+Score 1: 5 
+
+Score 2: 5 
+
+Objects match: True 
+
+...The model failed to modify this specific 
+
+instance of the text; it remains black and in 
+
+the original sans -serif font ... 
+
+There are significant unintended alterations .
+
+The original text 'OPTICAL' in the upper 
+
+black section of the sign has been 
+
+completely removed and replaced by the 
+
+new text 'QUEEN'S'... 
+
+Summary Evaluation: 
+
+Dimension 1 Score: 2 
+
+Dimension 2 Score: 2 
+
+Change the word 'QUEEN'S' on the hanging sign to a 
+
+red handwritten marker font style. 
+
+Fill the black spaces …. The image depicts …. Outpaint as a 
+
+360 ERP. Keep the horizon level. Match left and right edges. Figure 4: Visual comparison between our evaluation metrics and ImgEdit-Judge [52]. Table 2: Effectiveness of Adaptive Orthogonal Decoupling (AOD). We compare two constraint strategies, AOD and parameter orthogonality, and report their Last and Imm. metrics for each task. Method ERP Focus Light Text Tryon Causal Avg. BWT 
+
+Param. Orth. Imm. 9.0403 8.5877 8.0246 9.2295 9.5362 9.1702 8.9314 -0.5358 Last 8.3548 6.6794 7.7049 9.2541 9.2101 9.1702 8.3956 
+
+AOD Imm. 9.0645 8.3588 9.1066 9.7869 9.4855 9.4298 9.2054 -0.1702 
+
+Last 8.4274 7.9466 8.1885 9.5738 9.6449 9.4298 8.8685 
+
+ensures that the benchmark thoroughly tests the model’s capacity to decouple and retain complex, non-overlapping data distributions. The final benchmark evaluates sequential learning across the following distinct image editing tasks: • ERP Outpainting: Spatial reconstruction of panoramic images, requiring the model to con-textually synthesize extensive masked regions within Equirectangular Projections (ERP) while maintaining global geometric consistency. • Refocus: Shifting the focal plane or depth of field through localized blur and sharpening while preserving the scene composition. • Relighting: Manipulating scene illumination while preserving structure and maintaining consis-tent shadows and surface shading. • Text Editing: Locally modifying textual content while preserving font style, layout, and back-ground consistency. • Virtual Try-On: Synthesizing target garments on human subjects while preserving identity under complex poses and occlusions. • Causal Reasoning: Applying causal, physics-grounded transformations that reflect plausible physical or chemical state changes. 
+
+Data curation. CIE-Bench is constructed from high-fidelity image pairs carefully curated for con-tinual image editing tasks. The raw data is collected from a heterogeneous mixture of existing domain-specific datasets, internet-sourced imagery, and outputs generated by state-of-the-art special-ized editing models, ensuring broad coverage of diverse visual distributions and editing scenarios. 6Table 3: Quantitative comparison ( IF &PN ) of different methods on CIE-Bench. In the table, we report the Last metric of different methods on each dataset, organized by IF /PN .Method Replay ERP Focus Light Text Virtual Tryon Causal Avg. Zero-shot - 3.19/3.87 2.79/1.68 1.19/1.77 3.24/2.65 1.17/3.43 3.17/3.95 2.46/2.89 MTFT - 3.99/4.98 4.56/4.44 4.56/4.51 4.90/4.89 4.97/4.91 4.92/4.98 4.65/4.78 Sequential FT - 3.23/4.13 2.72/3.09 2.23/2.36 4.30/4.04 4.72/4.56 4.45/4.83 3.61/3.84 Data Rehearsal ! 3.09/4.85 4.56/4.18 3.91/3.64 4.46/4.46 4.78/4.50 4.68/4.80 4.25/4.40                                                                                    
+
+> ▽LoRA Merging TIES [50] %3.23/4.85 2.44/3.11 1.88/2.66 3.75/3.52 2.25/3.80 3.67/4.36 2.87/3.72 DARE [54] %3.20/4.84 2.42/2.83 1.65/2.44 3.63/3.49 2.25/3.88 3.68/4.43 2.80/3.65
+> ▽Architecture-based CL-MoE [19] %3.25/4.76 2.81/3.33 2.04/2.57 4.11/3.99 4.78/4.51 4.22/4.53 3.53/3.95 MoELoRA [3] %3.02/4.70 2.31/2.83 1.98/2.36 4.02/3.80 4.67/4.43 4.70 /4.85 3.45/3.83 HiDe-LLaVA [13] %3.53 /4.89 1.71/2.98 2.56/3.22 4.07/4.27 1.01/1.28 3.51/4.01 2.73/3.44 SMoLoRA [49] %2.89/4.83 3.58/3.29 3.43/3.26 4.06/3.86 4.36/3.67 4.49/4.64 3.80/3.93
+> ▽Regularization-based O-LoRA [47] %3.42/4.95 3.07/3.22 3.20/3.07 3.87/3.64 4.70/4.38 4.16/4.54 3.74/3.97 RegLoRA [4] %3.13/4.90 3.56/3.01 3.87/3.52 3.81/3.61 4.78/4.29 4.15/4.61 3.88/3.99 KeepLoRA [31] %3.23/4.87 1.88/2.47 3.29/3.15 4.04/3.70 4.57/4.24 3.99/4.19 3.50/3.77
+> ACE-LoRA (ours) %3.43/ 5.00 4.31 /3.63 4.26 /3.93 4.80 /4.77 4.93 /4.72 4.56/ 4.87 4.38 /4.49
+
+All image pairs are standardized through a unified preprocessing pipeline to maintain consistent resolution, visual quality, and formatting across domains. To guarantee reliable optimization targets, all candidate pairs undergo a rigorous multi-stage manual filtering process. We retain only high-quality instances where the target edit is accurately executed while task-irrelevant regions and structural content remain faithfully preserved. Samples containing artifacts, semantic inconsistencies, excessive distortions, or unintended background modifications are systematically removed. 
+
+Evaluation protocol. Establishing an objective measurement protocol is critical for accurately assessing plasticity and stability in continual learning. Conventional pixel-level metrics inherently fail to capture the complex semantic and structural transformations of advanced image editing. Furthermore, recent MLLM-based evaluators (e.g., ImgJudge [ 52 ], VIEScore [ 23 ]) struggle on our specialized downstream tasks despite their success in general domains. These metrics are bottlenecked by two concurrent limitations: (1) capability-reproducibility dilemma, where open-weight models lack fine-grained visual recognition to avoid misjudgments, while capable closed-source APIs compromise reproducibility; and (2) reliance on overly generic prompts that omit implicit domain conventions, rendering evaluators oblivious to common-sense rules essential for fine-grained assessment (see Fig. 4) To circumvent these limitations, we design a customized, reproducible evaluation framework tailored for CIE-Bench. We adopt Qwen3.5-plus [ 51 ] (open-source version: Qwen3.5-397B-A17B) as our base evaluator, driven by task-specific evaluation prompts formulated with explicit domain priors. Following [ 52 ], our pipeline introduces a dual-dimensional assessment strategy, which includes 
+
+Instruction Following (IF, 1-5 ratings) and Perceptual Naturalness (PN, 1-5ratings). IF quantifies adherence to target concepts and domain constraints, whereas PN penalizes unnatural artifacts and unintended alterations in non-target regions. We define the Overall Score as the sum of IF and PN, to characterize the overall editing performance. Together, they offer a granular analysis of sequential model performance aligned with real-world standards. 
+
+4 Experiments 
+
+4.1 Experimental Setup Baseline. We adopt Flux2-Klein-9B [ 25 ] as the base model and compare ACE-LoRA with represen-tative continual learning methods (including architecture-based and regularization-based methods) and model merging techniques on CIE-Bench. Consistent with prior work, we further include Zero-Shot, Multi-Task Fine-Tuning (MTFT), and Sequential Fine-Tuning (Sequential FT, which sequentially fine-tunes a single LoRA across all tasks), that are commonly regarded as the empirical lower bound, upper bound, and baseline for continual learning methods, respectively. We also report the performance of Data Rehearsal as a reference. 
+
+Evaluation Metrics. Following prior work, we evaluate continual learning performance using Last 
+
+and Avg . Last measures the performance on all tasks after the completion of sequential fine-tuning, while Avg reports the average performance across tasks during sequential fine-tuning process. In 7input  Seq FT  KeepLoRA TIES  ACE -LoRA (ours) SMoLoRA  GT           
+
+> ERP Outpainting :Fill the black spaces …The photo shows … Outpaint as a seamless 360 ERP.
+> Focus: Generate a photo and refocus on the evergreen tree branches in the foreground.
+> Light: Move the light source in the frame from the top -left of the frame to the bottom -left of the frame.
+> Text: Change the font style of the word ‘STRONG’ to a flowing handwritten cursive script.
+> Virtual Tryon: Replace the outfit with the clothes in the bottom -left corner and remove it in final output.
+> Causal: Have the mealybug nibble a small portion out of the ficus leaf's edge.
+
+Figure 5: Qualitative comparison of visual results for different methods on CIE-Bench. For each dataset, we selected a representative example and attached the editing instruction above the image. Table 4: Results of adopting different task orders. In the table, we report the Last metric of each task under different task orders. We use the initials to represent different tasks; see Sec. 4.3 for details. Task Order ERP Focus Light Text Tryon Causal Avg. 
+
+CVLEFT 8.0806 7.7656 7.9583 9.6825 9.3676 8.9464 8.6335 FVELTC 8.1452 7.5234 8.0081 9.2899 9.1618 9.0797 8.5347 EFLTVC 8.4274 7.9466 8.1885 9.5738 9.6449 9.4298 8.8685 some experiments, we report the Imm. and Backward Transfer (BWT). The former refers to the performance evaluated after training on the current task, while the latter quantifies the average degree of forgetting on previously learned tasks during the acquisition of new tasks. For each task, we follow our evaluation pipeline to assess instruction following (IF), perceptual naturalness (PN), and overall score (OS = IF + PN). 
+
+4.2 Main Results 4.2.1 Quantitative Evaluation 
+
+Tab. 1 and Tab. 3 present comprehensive quantitative comparisons of various methods evaluated on CIE-Bench. 
+
+Inefficacy of Existing Paradigms. As shown in Tab. 1 and Tab. 3, LoRA-based merging strategies consistently underperform compared to sequential training paradigms, including standard Sequential Fine-tuning. This result suggests that, within the context of continual learning (CL) for image editing, simple weight interpolation across task-specific adaptations is insufficient for achieving effective task decoupling. Moreover, existing CL methods do not demonstrate substantial gains over Sequential Fine-tuning, and in some cases even lead to performance degradation. This observation suggests that current CL paradigms designed for MLLMs struggle to generalize seamlessly to image editing models. We attribute this discrepancy to the unique characteristics inherent to image editing, particularly the compounded stochasticities introduced by noise and timestep sampling. 8Table 5: Effectiveness of different strategies for history information compression (Imm./Last/BWT).                                                         
+
+> Method ERP Focus Light Text Tryon Causal Avg. BWT
+> Random Imd. 8.8226 8.3125 8.7916 8.2750 9.2147 8.6160 8.6721 -0.2802 Last 8.3548 7.9375 7.5416 8.7250 9.1764 8.6160 8.3919 Summation Imd. 8.1290 7.8281 8.6583 8.2750 9.0809 9.1785 8.5250 -0.3030 Last 7.8065 6.3359 7.8750 9.0333 9.1029 9.1785 8.2220 SVD Imd. 9.0645 8.3588 9.1066 9.7869 9.4855 9.4298 9.2054 -0.1702
+> Last 8.4274 7.9466 8.1885 9.5738 9.6449 9.4298 8.8685
+
+Superiority of ACE-LoRA. By introducing dynamic constraints over current training data, ACE-LoRA achieves the best performance on CIE-Bench, substantially outperforming existing CL base-lines and even surpassing Data Rehearsal in both Avg and Last metrics. Notably, on tasks such as Text and Virtual_Tryon, Last scores of ACE-LoRA are comparable to Individual LoRA, indicating effec-tive mitigation of catastrophic forgetting. Furthermore, Tab. 3 shows that ACE-LoRA outperforms CL baselines in both Instruction Following (IF) and Perceptual Naturalness (PN), demonstrating its ability to preserve instruction fidelity while maintaining high visual quality under continual fine-tuning. 
+
+4.2.2 Qualitative Analysis 
+
+Fig. 5 provides a qualitative comparison of different methods on CIE-Bench. Visualizations reveal that ACE-LoRA manifests a distinct superiority over existing CL baselines in both Instruction Following and Perceptual Naturalness on historical tasks. Across examples from the Focus, Light, and Text tasks, ACE-LoRA strictly adheres to the editing prompts, yielding generation outcomes that are highly consistent with the ground truth (GT), whereas baseline methods suffer from severe semantic drift or instruction neglect due to catastrophic forgetting. Furthermore, ACE-LoRA effectively reserves the structural constraints of historical tasks while maintaining image naturalness. For instance, in ERP Outpainting, ACE-LoRA ensures seamless alignment between the left and right boundaries, achieving global continuity that is often broken by baseline methods. In Virtual Try-on, ACE-LoRA precisely restricts edits to the target garment and preserves other regions, whereas baselines tend to introduce unintended modifications beyond the specified area. 
+
+4.3 Model Analysis Effectiveness of Adaptive Orthogonal Decoupling. Tab. 2 compares AOD with parameter-space orthogonal constraints. Overall, AOD consistently outperforms parameter orthogonalization across both plasticity and stability metrics, with particularly significant gains in stability. This is due to AOD’s data-dependent modeling of interference, which identifies and suppresses only task-conflicting directions while preserving shared optimization directions beneficial for both historical and current tasks. In contrast, parameter-space orthogonalization enforces uniform constraints on all parameter directions, which may unnecessarily restrict shared knowledge and thus limit plasticity. 
+
+Strategies for historical information compression Tab. 5 compares random sampling (randomly sampling a single historical task at each training step), summation (summing LoRA A and LoRA B
+
+over historical tasks), and SVD-based compression. Overall, SVD performs best across all metrics, achieving the highest average scores in Imm. and Last as well as the least negative BWT, indicating both more effective mitigation of forgetting and improved plasticity. The advantage of SVD lies in its ability to preserve the principal directions of historical knowledge while filtering redundancy, enabling more accurate interference estimation and maintaining strong model plasticity. 
+
+Sensitivity to task order. We evaluate ACE-LoRA under different task sequences (Tab. 4) and observe stable performance across orders (Avg: 8.53–8.87), indicating low sensitivity to task permutations. 
+
+Validity of MLLM-as-a-Judge. Human study details (Tab. 6, Tab. 7) are deferred to Appendix D. 
+
+5 Conclusion 
+
+In this work, we propose ACE-LoRA, a dynamic regularization framework for continual image editing under parameter-efficient fine-tuning. ACE-LoRA mitigates catastrophic forgetting via Adaptive Orthogonal Decoupling and remains scalable with rank-invariant historical information compression. We also introduce CIE-Bench, the first comprehensive benchmark for continual image editing with a standardized evaluation protocol. Extensive experiments demonstrate consistent improvements over strong baselines. Limitations are detailed in the Appendix. 9Limitations. ACE-LoRA introduces additional training constraints, increasing training time to about 
+
+1.5× that of sequential finetuning, comparable to other regularization-based methods. Like other LoRA-based continual learning approaches, its scalability may be limited as task-specific adapters accumulate across tasks. 
+
+References 
+
+[1] Tim Brooks, Aleksander Holynski, and Alexei A Efros. Instructpix2pix: Learning to follow image editing instructions. In CVPR , pages 18392–18402, 2023. [2] Arslan Chaudhry, Marcus Rohrbach, Mohamed Elhoseiny, Thalaiyasingam Ajanthan, P Dokania, P Torr, and M Ranzato. Continual learning with tiny episodic memories. In Workshop on Multi-Task and Lifelong Reinforcement Learning , 2019. [3] Cheng Chen, Junchen Zhu, Xu Luo, Heng T Shen, Jingkuan Song, and Lianli Gao. Coin: A benchmark of continual instruction tuning for multimodel large language models. NeurIPS , 2024. [4] Jinpeng Chen, Runmin Cong, Yuzhi Zhao, Hongzheng Yang, Guangneng Hu, Horace Ho Shing Ip, and Sam Kwong. Sefe: Superficial and essential forgetting eliminator for multimodal continual instruction tuning. 2025. [5] Shoufa Chen, Chongjian Ge, Zhan Tong, Jiangliu Wang, Yibing Song, Jue Wang, and Ping Luo. Adapt-former: Adapting vision transformers for scalable visual recognition. NeurIPS , 2022. [6] Guillaume Couairon, Jakob Verbeek, Holger Schwenk, and Matthieu Cord. Diffedit: Diffusion-based semantic image editing with mask guidance. arXiv preprint arXiv:2210.11427 , 2022. [7] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. NeurIPS , 2021. [8] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In ICML , 2024. [9] Mehrdad Farajtabar, Navid Azizan, Alex Mott, and Ang Li. Orthogonal gradient descent for continual learning. In International conference on artificial intelligence and statistics , 2020. [10] Robert M French. Catastrophic forgetting in connectionist networks. Trends in cognitive sciences , 1999. [11] Hao Fu, Chunyuan Li, Xiaodong Liu, Jianfeng Gao, Asli Celikyilmaz, and Lawrence Carin. Cyclical annealing schedule: A simple approach to mitigating kl vanishing. arXiv preprint arXiv:1903.10145 , 2019. [12] Rui Gao and Weiwei Liu. Ddgr: Continual learning with deep diffusion-based generative replay. In ICML ,2023. [13] Haiyang Guo, Fanhu Zeng, Ziwei Xiang, Fei Zhu, Da-Han Wang, Xu-Yao Zhang, and Cheng-Lin Liu. Hide-llava: Hierarchical decoupling for continual instruction tuning of multimodal large language model. 
+
+arXiv preprint arXiv:2503.12941 , 2025. [14] Soufiane Hayou, Nikhil Ghosh, and Bin Yu. Lora+: Efficient low rank adaptation of large models. 2024. [15] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross attention control. arXiv preprint arXiv:2208.01626 , 2022. [16] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. NeurIPS , 2020. [17] Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for nlp. In ICML ,2019. [18] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 2022. [19] Tianyu Huai, Jie Zhou, Xingjiao Wu, Qin Chen, Qingchun Bai, Ze Zhou, and Liang He. Cl-moe: Enhancing multimodal large language model with dual momentum mixture-of-experts for continual visual question answering. In CVPR , 2025. [20] Zhehao Huang, Yuhang Liu, Yixin Lou, Zhengbao He, Mingzhen He, Wenxing Zhou, Tao Li, Kehan Li, Zeyi Huang, and Xiaolin Huang. T2i-conbench: Text-to-image benchmark for continual post-training. 
+
+arXiv preprint arXiv:2505.16875 , 2025. 
+
+10 [21] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Visual prompt tuning. In ECCV , 2022. [22] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. Proceedings of the national academy of sciences , 2017. [23] Max Ku, Dongfu Jiang, Cong Wei, Xiang Yue, and Wenhu Chen. Viescore: Towards explainable metrics for conditional image synthesis evaluation. In ACL , 2024. [24] Nupur Kumari, Bingliang Zhang, Richard Zhang, Eli Shechtman, and Jun-Yan Zhu. Multi-concept customization of text-to-image diffusion. In CVPR , 2023. [25] Black Forest Labs. FLUX.2: Frontier Visual Intelligence. https://bfl.ai/blog/flux-2 , 2025. [26] Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, et al. Flux. 1 kontext: Flow matching for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 , 2025. [27] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. 
+
+arXiv preprint arXiv:2104.08691 , 2021. [28] Xiang Lisa Li and Percy Liang. Prefix-tuning: Optimizing continuous prompts for generation. arXiv preprint arXiv:2101.00190 , 2021. [29] Zhizhong Li and Derek Hoiem. Learning without forgetting. TPAMI , 2017. [30] Huiwei Lin, Baoquan Zhang, Shanshan Feng, Xutao Li, and Yunming Ye. Pcr: Proxy-based contrastive replay for online class-incremental continual learning. In CVPR , 2023. [31] Mao-Lin Luo, Zi-Hao Zhou, Yi-Lin Zhang, Yuanyu Wan, Tong Wei, and Min-Ling Zhang. Keeplora: Continual learning with residual gradient adaptation. 2026. [32] Michael McCloskey and Neal J Cohen. Catastrophic interference in connectionist networks: The sequential learning problem. In Psychology of learning and motivation . 1989. [33] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. Sdedit: Guided image synthesis and editing with stochastic differential equations. arXiv preprint arXiv:2108.01073 ,2021. [34] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real images using guided diffusion models. In CVPR , 2023. [35] German I Parisi, Ronald Kemker, Jose L Part, Christopher Kanan, and Stefan Wermter. Continual lifelong learning with neural networks: A review. Neural networks , 2019. [36] William Peebles and Saining Xie. Scalable diffusion models with transformers. In ICCV , 2023. [37] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. [38] Wu Ran, Weijia Zhang, ShuYang Pang, Qi Zhu, Jinfan Liu, JingSheng Liu, Xin Cao, Qiang Li, Yichao Yan, and Chao Ma. Correlated low-rank adaptation for convnets. In NeurIPS , 2025. [39] David Rolnick, Arun Ahuja, Jonathan Schwarz, Timothy Lillicrap, and Gregory Wayne. Experience replay for continual learning. In NeurIPS , 2019. [40] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. [41] Juwon Seo, Ji-Su Kang, and Gyeong-Moon Park. Lfs-gan: Lifelong few-shot image generation. In ICCV ,2023. [42] James Seale Smith, Leonid Karlinsky, Vyshnavi Gutta, Paola Cascante-Bonilla, Donghyun Kim, Assaf Arbelle, Rameswar Panda, Rogerio Feris, and Zsolt Kira. Coda-prompt: Continual decomposed attention-based prompting for rehearsal-free continual learning. In CVPR , 2023. [43] James Seale Smith, Lazar Valkov, Shaunak Halbe, Vyshnavi Gutta, Rogerio Feris, Zsolt Kira, and Leonid Karlinsky. Adaptive memory replay for continual learning. In CVPR , 2024. 
+
+11 [44] George Stoica, Pratik Ramesh, Boglarka Ecsedi, Leshem Choshen, and Judy Hoffman. Model merging with svd to tie the knots. arXiv preprint arXiv:2410.19735 , 2024. [45] Dennis Tang, Prateek Yadav, Yi-Lin Sung, Jaehong Yoon, and Mohit Bansal. Lora merging with svd: Understanding interference and preserving performance. In ICML , 2025. [46] Chunlin Tian, Zhan Shi, Zhijiang Guo, Li Li, and Chengzhong Xu. Hydralora: An asymmetric lora architecture for efficient fine-tuning. 2024. [47] Xiao Wang, Tianze Chen, Qiming Ge, Han Xia, Rong Bao, Rui Zheng, Qi Zhang, Tao Gui, and Xuan-Jing Huang. Orthogonal subspace learning for language model continual learning. In Findings of the Association for Computational Linguistics: EMNLP , 2023. [48] Zifeng Wang, Zizhao Zhang, Chen-Yu Lee, Han Zhang, Ruoxi Sun, Xiaoqi Ren, Guolong Su, Vincent Perot, Jennifer Dy, and Tomas Pfister. Learning to prompt for continual learning. In CVPR , 2022. [49] Ziqi Wang, Chang Che, Qi Wang, Yangyang Li, Zenglin Shi, and Meng Wang. Smolora: Exploring and defying dual catastrophic forgetting in continual visual instruction tuning. In CVPR , 2025. [50] Prateek Yadav, Derek Tam, Leshem Choshen, Colin A Raffel, and Mohit Bansal. Ties-merging: Resolving interference when merging models. 2023. [51] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. [52] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A unified image editing dataset and benchmark. 2025. [53] Jiazuo Yu, Yunzhi Zhuge, Lu Zhang, Ping Hu, Dong Wang, Huchuan Lu, and You He. Boosting continual learning of vision-language models via mixture-of-experts adapters. In CVPR , 2024. [54] Le Yu, Bowen Yu, Haiyang Yu, Fei Huang, and Yongbin Li. Language models are super mario: Absorbing abilities from homologous models as a free lunch. In ICML , 2024. [55] Mengyao Zhai, Lei Chen, Frederick Tung, Jiawei He, Megha Nawhal, and Greg Mori. Lifelong gan: Continual learning for conditional image generation. In ICCV , 2019. [56] Hao Zhu, Yifei Zhang, Junhao Dong, and Piotr Koniusz. Bilora: Almost-orthogonal parameter spaces for continual learning. In CVPR , 2025. 
+
+12 Appendix A Related Work 
+
+Diffusion-Based Image Editing. Large-scale diffusion models [ 40 , 37 , 8, 26 , 36 ] have demonstrated remarkable success in synthesizing high-fidelity and semantically complex images from textual prompts. Leveraging these powerful generative priors for image editing, zero-shot approaches formu-late editing as controlled trajectory manipulation in the generative process. Specifically, SDEdit [ 33 ]performs zero-shot editing by injecting stochastic noise into input images and subsequently reversing the diffusion process conditioned on target prompts. To better preserve fine-grained structural consis-tency, Prompt-to-Prompt [ 15 ] replaces cross-attention maps associated with source text tokens during latent denoising steps. Supervised approaches like InstructPix2Pix [ 1 ] fine-tune diffusion models on large-scale instruction–image pairs, enabling direct image editing in a single forward pass. For efficient adaptation to new concepts, low-rank adaptation techniques such as LoRA [ 18 ] constrain parameter updates within low-rank subspaces, while methods like CustomDiffusion [ 24 ] further optimize these adapters for rapid customization of target concepts. However, sequential fine-tuning of low-rank modules in dynamic editing scenarios can lead to unintended interference in the learned subspaces, effectively overwriting previously learned representations. This uncontrolled rank-space interference may result in progressive degradation of historical knowledge, motivating the need for explicit mechanisms to stabilize parameter updates in continual editing pipelines. 
+
+Continual Learning in Foundation Models. The central objective of continual learning (CL) is to mitigate catastrophic forgetting in sequential task learning. Current CL methods can be broadly categorized into architecture-, rehearsal-, and regularization-based approaches. Architecture-based methods preserve task-specific knowledge by allocating dedicated model components. For instance, CODA-Prompt [ 42 ] maintains an expandable pool of learnable prompts, while MoE-Adapters [ 53 ]route representations through specialized expert modules conditioned on the input task. Rehearsal-based methods alleviate forgetting by retaining or approximating past data distributions. For example, DDGR [ 12 ] leverages pre-trained diffusion models to synthesize representative historical samples, while memory-efficient approaches such as PCR [ 30 ] maintain compact exemplar sets and employ proxy-based contrastive learning to preserve past knowledge. Regularization-based methods constrain parameter updates to reduce interference with previously learned tasks. OGD [ 9 ] enforces orthog-onality between current updates and the gradient subspace of prior tasks. Similarly, O-LoRA [ 47 ]mitigates interference by learning task-specific low-rank adapters under orthogonality constraints. 
+
+Continual Learning for Generative Models. Preserving generative capabilities under sequential task shifts requires carefully balancing plasticity and stability between historical knowledge and new adaptations. Lifelong GAN [ 55 ] addresses this issue by applying knowledge distillation on intermediate representations of a frozen generator to maintain consistency. In low-data regimes, LFS-GAN [ 41 ] restricts parameter updates to normalization layers while preserving source-domain fidelity through contrastive patch-level objectives. In diffusion-based generative models, Null-text Inversion [ 34 ] avoids direct parameter updates by optimizing unconditional text embeddings, enabling faithful reconstruction of real images without modifying core network weights. To systematically evaluate sequential adaptation in text-to-image models, T2I-ConBench [ 20 ] introduces metrics for quantifying semantic degradation across consecutively fine-tuned concepts. Despite these advances, continual learning for image editing remains underexplored. To address this gap, we propose ACE-LoRA, a regularization-based framework tailored for continual image editing, and introduce the first comprehensive benchmark along with a standardized evaluation protocol for assessing continual image editing performance. 
+
+B More Details of CIE-Bench 
+
+B.1 More Examples 
+
+We present more examples from CIE-Bench in Fig. 6. For each task, we provide three examples, each consisting of the original image ( left ), the edited image ( right ), and the editing instruction displayed above the images. 13 Fill the black spaces ... The photo shows ... Outpaint as a seamless 360 
+
+ERP. Keep the horizon level. Match left and right edges. 
+
+Fill the black spaces ... The photo shows ... Outpaint as a seamless 360 
+
+ERP. Keep the horizon level. Match left and right edges. 
+
+Fill the black spaces ... The photo depicts ... Outpaint as a seamless 360 
+
+ERP. Keep the horizon level. Match left and right edges. 
+
+Generate a photo and refocus it on the front stone chess piece. 
+
+Generate a photo and refocus on the back half of the moss covered tree 
+
+trunk in the foreground.  Refocus on the white lounge chair in the middle. 
+
+Generate a photo and refocus on the back half of the moss covered tree 
+
+trunk in the foreground. 
+
+Move the light source in the frame from the bottom of the frame to the 
+
+top -left of the frame. 
+
+Move the light source in the frame from the bottom -left of the frame to 
+
+the bottom -right of the frame. 
+
+Transform the word 'KIND' to appear as if it is constructed from green 
+
+ivy leaves. Do not change the size of any text in the image 
+
+Restyle the word 'MIND' to look like a multi -colored graffiti tag with 
+
+spray paint texture. Do not change the size of any text in the image 
+
+Change the texture of the word 'Sunny' to resemble dripping golden 
+
+honey. Do not change the size of any text in the image. 
+
+Replace the outfit with the clothes in the bottom -left corner and remove it 
+
+in final output. The final image should be a body shot. Do not alter the 
+
+character's actions or posture. 
+
+Replace the outfit with the clothes in the bottom -left corner and remove it 
+
+in final output. The final image should be a body shot. Do not alter the 
+
+character's actions or posture. 
+
+Replace the outfit with the clothes in the bottom -left corner and remove it 
+
+in final output. The final image should be a body shot. Do not alter the 
+
+character's actions or posture. 
+
+Have the brown rat take a bite out of the slice of bread.  Cut a small rectangular section from the corner of the oilcloth with the 
+
+scissors.  Heat the lower right side of the coin with the candle flame. 
+
+EPR 
+
+Outpainting 
+
+Focus 
+
+Light 
+
+Text 
+
+Virtual 
+
+Tryon 
+
+Causal Figure 6: Visualization of CIIE-Bench, which consists of six sub-tasks: ERP Outpainting, Refocus, Relighting, Text Editing, Virtual Try-on, and Causal Reasoning Table 6: Alignment ratio of MLLM evaluator with human preferences in absolute scores. 
+
+Score ERP Focus Light Text Tryon Causal Avg. 
+
+Instruction Following 0.4762 0.6571 0.8190 0.8000 0.9143 0.7619 0.7381 Perceptual Naturalness 0.8667 0.7143 0.9476 0.8762 0.6476 0.8095 0.8103 Overall Score 0.6476 0.6095 0.8667 0.7048 0.6667 0.7333 0.7048 
+
+C More Analysis 
+
+C.1 Implementation Details and Experiments Compute Resources. 
+
+We use Flux2-Klein-9B [ 25 ] as the base model, set the LoRA rank of all methods to 48, train for 10 epochs on each task, and use a learning rate of 1e-4. We use four H20 GPUs for training, each equipped with 96GB of memory, and the server has a total of 1TB of RAM. For our method, the training time per task ranges from 0.5 to 2 hours, and the total training time for the entire benchmark is approximately 8 hours. 
+
+D Human Study for MLLM-as-a-Judge 
+
+To validate the effectiveness of the MLLM-as-a-Judge framework, we conduct a human study from both absolute and relative perspectives. We select 90 editing samples, with 15 samples for each task, covering diverse editing quality levels. 14 Table 7: Alignment ratio of MLLM evaluator with human preferences in relative rankings.                             
+
+> Score ERP Focus Light Text Tryon Causal Avg.
+> Instruction Following 0.6800 0.7708 0.9286 0.9811 0.9190 0.6667 0.8244 Perceptual Naturalness 0.9600 0.7778 0.9655 0.9333 0.5625 0.8889 0.8480 Overall Score 0.8293 0.7126 0.9508 0.9200 0.8621 0.7021 0.8295
+
+For absolute evaluation, following [ 52 ], we compare the scores assigned by the MLLM evaluator with those given by human experts for each edited sample. A match is counted when the absolute score difference is within 1. For relative evaluation, we assess pairwise ranking agreement, i.e., whether the MLLM evaluator and human experts agree on which sample in each pair exhibits higher editing quality. This setting is motivated by potential discrepancies in absolute score calibration, particularly for partially successful edits. 15

@@ -1,0 +1,686 @@
+Title: Inline Critic Steers Image Editing
+
+URL Source: https://arxiv.org/pdf/2605.12724v1
+
+Published Time: Thu, 14 May 2026 00:14:47 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Inline Critic Steers Image Editing 
+
+Weitai Kang 1 Xiaohang Zhan 2 Yizhou Wang 2 Mang Tik Chiu 2 Jason Kuen 2
+
+Kangning Liu 2 Yan Yan 11University of Illinois Chicago 2Adobe 
+
+## Abstract 
+
+Instruction-based image editing exhibits heterogeneous difficulty not only across cases but also across regions of an image, motivating refinement approaches that allocate correction to where the model struggles. Existing refinement signals arrive late, after a fully generated image or a completed denoising step. We ask whether such a signal can act within an ongoing forward pass. To investigate this, we probe a frozen image-editing model and find that although generation capability emerges only in the last few layers, the error pattern is already set in early layers (rank correlation ρ = 0 .83 with the final-layer error map). Based on this, we introduce Inline Critic , a learnable token that critiques a frozen model’s predictions at its intermediate layers and steers its hidden states to refine generation during the forward pass. A three-stage recipe is proposed to stabilize the training from learning how to critique to steering generation. As a result, we achieve state of the art on GEdit-Bench (7.89), a +9 .4 gain on RISEBench over the same backbone, and the strongest open-source result on KRIS-Bench (81.92, surpassing GPT-4o). We further provide analyses showing that the critic genuinely shapes the model’s attention and prediction updates at subsequent layers. 
+
+## 1 Introduction 
+
+Instruction-based image editing aims to modify an input image according to a natural-language instruction. Despite recent progress, the task remains challenging because its difficulty is highly heterogeneous, both within a single image and across cases. Some demand major yet precise modification while others only need small changes or remain untouched [ 39 , 47 , 46 , 52 , 27 ]. An editor should therefore allocate different amounts of effort across regions and cases. Recent work addresses this issue by introducing refinement signals that identify weak generations and allocate additional correction accordingly. One line of work computes this signal from a fully generated image: an external vision-language model or reward model critiques the output, which drives reranking, regeneration, or reinforcement learning [ 23 , 29 , 49 , 25 , 53 , 24 ]. Another line obtains the signal earlier in the generation process, from each completed denoising step: confidence, uncertainty, or difficulty estimates then adjust the current step or steer subsequent iterations [39, 21, 9, 19 , 1, 20 , 12 , 6, 22 , 5 ]. Pushing this further, we are curious whether the refinement signal can act even earlier, within the ongoing forward pass , to adjust the prediction before a step completes. To investigate this possibility, we analyze the intermediate hidden states of a strong pretrained image editor [ 45 ]. We freeze the model and train lightweight probe heads at multiple intermediate layers to assess their encoded generation ability. On 400 random samples drawn from different datasets, for each probe head’s output we compute a prediction error map against the ground truth. We pool and rank-normalize the error maps, and compare them against the map of the final layer. As shown in Fig. 1, although intermediate-layer generation becomes competitive only near the last few layers, the relative error pattern is already stable within early layers, with a Spearman’s ρ = 0 .83 against the final layer’s map averaged by steps and even higher agreement in later layers. In other words, where the model performs well or poorly emerges long before the forward pass completes.                                               
+
+> Preprint.
+> arXiv:2605.12724v1 [cs.CV] 12 May 2026 "Replace the wooden
+> rocking chair with a
+> black leather
+> upholstered rocking
+> recliner with ornate
+> wooden armrests
+> and legs."
+> Qwen -Image -Edit
+> L12 L18 L24 L30 L36 L42 L48 L54 L60 (Final)
+> Generation
+> Output
+> Rank -Normalized
+> Per -Position
+> Error Map
+> Ground Truth
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> L6ρ=0. 83 L12 ρ=0. 84 L18 ρ=0. 84 L24 ρ=0. 86 L30 ρ=0. 88 L36 ρ=0.9 0L42 ρ=0.9 2L48 ρ=0.9 5L54 ρ=0.9 7
+> Input
+> Compute
+> Per -Position
+> Error
+> Spearman
+> Correlation
+> (ρ)
+> Layer Index L6
+> L60
+
+Figure 1: Motivation for inline critic. Top: On a frozen model, we add lightweight heads at intermediate blocks (L6–L54) to probe the generation outputs, with the original final output at L60. 
+
+Middle: Each head runs its own multi-step denoising to generate an image. Bottom: Based on the final output, we compute a MSE map against the ground truth in each block. After 8x pooling and rank-normalization, we measure the Spearman correlation between each intermediate map and the final map. Results: Although generation capability only emerges in the last few blocks, the spatial error pattern is set far earlier. Even at L6, agreement with the final-layer map already reaches 
+
+ρ = 0 .83 , and grows monotonically with depth. We therefore ask whether this prior can be exploited within the forward pass to let the model recognize and correct its weak regions in time. Motivated by this, we aim to inline a critique into the forward pass, so that the model can learn to judge its emerged difficulty pattern. This critique is coupled with the generation objective, forcing it to be a useful refinement signal. Therefore, we introduce Inline Critic , a learnable token added to a frozen model that critiques its prediction at multiple intermediate layers and steers its hidden states to refine generation. We stabilize training through a three-stage recipe. We first probe the generation behavior of intermediate layers, the error of which the critic then learns to predict and later steers the model’s prediction at each layer. At inference, the model does not need to compute the probe heads or critic predictions, with just an additional critic token in the input sequence. Our contributions are as follows: (i) Analysis : by probing the intermediate layers, we find that the spatial pattern of where the model struggles is already stable in early layers, long before the forward pass completes; (ii) Method : motivated by this, we propose Inline Critic , a learnable token that critiques the model’s prediction at intermediate layers and steers their hidden states to refine generation, together with a three-stage curriculum that first establishes the critique signal, then activates generation steering; (iii) Results : our method reaches state of the art on benchmarks (e.g. 
+
+7.89 on GEdit-Bench). We further provide analyses showing that the critic influence where our model re-allocates attention at the next layer and where it updates its prediction in subsequent layers. 
+
+## 2 Related Work 
+
+2.1 Refinement Mechanisms for Generation 
+
+We organize refinement methods by when the refinement signal becomes available. Post-generation 
+
+methods derive feedback from completed images [ 23 , 29 , 49 , 25 , 53 , 24 ], typically using an external vision-language model or reward model. Post-step methods derive feedback after a completed denoising forward pass and use it to adjust the current step or steer subsequent iterations [ 39 , 21 , 9,19 , 1, 20 , 12 , 6, 22 , 5]. Our method instead produces a spatial critique within the ongoing forward pass and lets later layers consume it before the denoising step completes. 
+
+Post-Generation Refinement. Post-generation methods improve generation by evaluating com-pleted generation outputs and using the verdict to drive reranking, regeneration, or reinforcement-learning fine-tuning. Reflect-DiT [ 24 ] feeds a vision-language model’s textual critique back as in-context guidance for another generation attempt. ReflectionFlow [ 53 ] scales inference-time op-timization for text-to-image diffusion using VLM-derived reflection data. ReasonEdit [ 49 ] frames editing as a multimodal-LLM thinking–editing–reflection loop. ThinkRL-Edit [ 23 ], UniWorld-V2 [ 25 ], and EditScore [ 29 ] optimize image editors with reinforcement learning signals from explicit 2Qwen2.5 VL               
+
+> ...
+> "Replace the
+> wooden ...
+> with a black
+> ...armrests
+> and legs ."
+> VAE
+> MM -DiT
+> Text
+> Stream
+> Image
+> Stream
+> Block 6 (Probe Layer ℓ_1 )
+> Block 1
+> Block 2
+> Block 7
+> Block 8
+> ...
+> Block 12 (Probe Layer ℓ_2 )
+> Block 13
+> Block 14
+> ...  ...
+> Block 54 (Probe Layer ℓ_9 )
+> Block 60
+> ...
+
+❄
+
+❄ 
+
+> (Noise Token)
+> Hidden State ( H)
+> stop -grad
+> (sg )
+> AdaLN & MLP ( φ)
+> Time Step
+> (t)
+
+❄
+
+🔥 
+
+> Flow Matching
+> Stage 1:
+> Mid -layer
+> Genera2on Probes
+> MLP (
+
+ψ) MLP ( χ)
+
+> 🔥
+
+sg   
+
+> A:en;on on
+> Cri;c Token
+> is Masked
+> ⊗Inner Product
+> Predict Error
+> Flow Matching
+> {
+
+φ}   
+
+> Predict Error Map
+> {r,ψ,χ}
+
+🔥 
+
+🔥               
+
+> ...
+> "Replace the
+> wooden ...
+> with a black
+> ...armrests
+> and legs."
+> MM -DiT
+> Text
+> Stream
+> Image
+> Stream
+> Block 6 (Probe Layer ℓ_1 )
+> Block 1
+> Block 2
+> Block 7
+> Block 8
+> ...
+> Block 12 (Probe Layer ℓ_2 )
+> Block 13
+> Block 14
+> ...  ...
+> Block 54 (Probe Layer ℓ_9 )
+> Block 60
+> ...
+
+❄
+
+❄
+
+❄  
+
+> Stage 2:
+> Masked Cri2c
+> Training
+> 🔥
+> Token (
+
+r)              
+
+> Cri3c
+> ...
+> "Replace the
+> wooden ...
+> with a black
+> ...armrests
+> and legs."
+> VAE
+> MM -DiT
+> Text
+> Stream
+> Image
+> Stream
+> Block 6 (Probe Layer ℓ_1 )
+> Block 1
+> Block 2
+> Block 7
+> Block 8
+> ...
+> Block 12 (Probe Layer ℓ_2 )
+> Block 13
+> Block 14
+> ...  ...
+> Block 54 (Probe Layer ℓ_9 )
+> Block 60
+> ...
+
+❄
+
+❄
+
+❄  
+
+> Stage 3:
+> Unmasked Joint
+> Training
+> 🔥
+> Token (
+
+r)  
+
+> Cri3c Qwen2.5 VL
+> Flow Matching
+> 🔥
+> 𝓛 probe 𝓛 cri(c
+> Map (ê)
+> 𝓛 gen
+> 𝓛 probe
+> 𝓛 cri(c
+
+Figure 2: Three-stage training of Inline Critic. Left : Stage 1 trains probe heads at several intermediate layers to predict the generation target from frozen hidden states. Middle : Stage 2 adds a critic token that is trained, at every probed block, to predict the error of Stage-1’s probes; an attention mask hides it from other tokens so the model and the probes are unaffected. Right : Stage 3 removes the mask and trains the critic jointly with the generation loss to steer generation. reward models or implicit MLLM feedback. These methods are powerful for semantic assessment, but their feedback is only available after the image has been generated. 
+
+Post-Step Refinement. Post-step methods use signals extracted after a denoising forward pass to adjust the current step or subsequent iterations. Diffusion Self-Guidance [ 12 ] extracts internal features and backpropagates a property-specific objective to steer sampling. Attend-and-Excite [ 6]similarly extracts attention activations and backpropagates an objective on them to update the latent. Perturbed-Attention Guidance [ 1] and Autoguidance [ 19 ] construct a degraded or weak prediction at each step and use the difference as guidance, while Feedback Guidance [ 21 ] formulates a state-dependent per-step feedback signal. Difficulty- and uncertainty-aware samplers provide finer spatial signals: Patch Forcing [ 39 ] estimates per-patch difficulty to allocate more denoising effort to hard regions, and BayesDiff [ 20 ] and De Vita and Belagiannis [9] estimate pixel-wise uncertainty for diffusion sampling. In discrete masked generation, Token-Critic [ 22 ] scores generated visual tokens for remasking, and MaskGIT [ 5] uses token confidence to schedule iterative decoding. These methods show that local difficulty and uncertainty are useful refinement signals, but the signal is produced only after the forward pass completes, rather than emerging within the ongoing forward pass. 
+
+2.2 Learnable Tokens for Generation 
+
+Learnable tokens provide a parameter-efficient way to adapt frozen generators. Textual Inversion [ 14 ]represents a new visual concept as a learned token embedding inserted into the prompt sequence. DreamArtist [ 11 ] learns positive and negative prompt embeddings, while ReVersion [ 16 ] learns tokens that encode relations between subjects. Several works make the learned representation layer-or time-dependent: NeTI [ 2 ] parameterizes the token as a function of layer index and denoising timestep, P+ [ 42 ] uses different embeddings across cross-attention layers, and ProSpect [ 50 ] assigns learnable tokens to different denoising stages. These tokens primarily act as conditioning codes that inject new concepts, relations, or attributes. Our critic token serves a different role: it is trained to critique the model by predicting spatial generation error from intermediate hidden states, and to expose this critique back to later layers to steer the generation behavior. 33 Method 
+
+We first provide a brief review of the image editing backbone (Sec. 3.1), then introduce our proposed Inline Critic (Sec. 3.2) and its three-stage training recipe (Sec. 3.2.1–3.2.3), illustrated in Fig. 2. 
+
+3.1 Preliminary: Qwen-Image-Edit 
+
+Our backbone is the open-source instruction-based image editor Qwen-Image-Edit [ 45 ]. A Qwen2.5-VL [ 3] encodes the editing instruction together with the source image into conditioning tokens c,forming the text stream . The image stream consists of S noise tokens that the model denoises, concatenated with source image tokens encoded by a Wan2.1-VAE [41]. A double-stream diffusion transformer of L = 60 MM-DiT blocks [ 13 ] operates jointly on the two streams: at each block, the text-stream and image-stream tokens are concatenated along the sequence dimension and mixed by a joint self-attention, and modality-specific feed-forward and adaptive-LayerNorm layers update each stream. After block L, the noise-token outputs form the per-position velocity prediction. Training follows the rectified-flow objective [ 28 , 26 ]. Let x0 ∈ RS×dz be the VAE-encoded target latent and x1 ∼ N (0, I) a noise sample. Given a time t ∈ [0 , 1] , noise tokens are set to xt =(1 − t) x0 + t x1, and the network’s per-position velocity prediction fθ (xt, t, c) is regressed against the target velocity v⋆ = x1 − x0 with the mean-squared-error (MSE) loss 
+
+Lgen (θ) = Et, x0, x1, c
+
+h
+
+fθ (xt, t, c) − v⋆ 2i
+
+. (1) 
+
+3.2 Inline Critic 
+
+Inline Critic adds two lightweight modules to the frozen editor. First, we pick K intermediate blocks 
+
+L∗ = {ℓ1, . . . , ℓ K } ⊆ { 1, . . . , L } uniformly across the network. At each ℓ ∈ L ∗, a probe head g(ℓ)
+
+> ϕ
+
+takes the detached noise token hidden states H(ℓ) ∈ RS×d as input and is supervised by the same rectified-flow target v⋆ as the final layer; its per-position prediction error against v⋆ forms the error map that the critic later learns to predict. Second, we append a learnable critic token r ∈ Rd to the text stream, giving conditioning [c; r]. At every probed layer ℓ, small projection layers turn its hidden state r(ℓ) into a per-position estimate of this error map, and the critic token is later trained to influence the model’s prediction through attention. The probes and projection layers participate only in training; at inference, they are dropped and only the critic token remains active in the forward pass. Co-training all components from initialization would make the critic learn against a target that changes as the critic begins to influence the backbone, an instability analogous to the moving-target issue addressed by target networks in deep Q-learning [ 30 ]. We therefore stage the training so that the critic learns against a stable target before being released to influence the model. We detail each stage in the following subsections. 
+
+3.2.1 Stage 1: Mid-layer Generation Probes 
+
+As illustrated in Fig. 2 (left), we instantiate each probe g(ℓ) 
+
+> ϕ
+
+as 
+
+g(ℓ) 
+
+> ϕ
+
+(H(ℓ), t ) = MLP (ℓ)
+
+> ϕ
+
+
+
+AdaLN (ℓ)
+
+> ϕ
+
+  sg( H(ℓ)), τ (t)
+
+, (2) where sg( ·) is the stop-gradient operator, τ (t) is the time embedding shared with the backbone, 
+
+AdaLN (ℓ) 
+
+> ϕ
+
+is a continuous adaptive LayerNorm conditioned on τ (t) (the same module type used inside the MM-DiT blocks), and MLP (ℓ) 
+
+> ϕ
+
+is a 3-layer feed-forward head whose output matches the per-position velocity. Only ϕ is trainable in this stage. The probes are trained with the original rectified-flow loss of Eq. 1 applied at every probed layer: 
+
+Lprobe (ϕ) = 1
+
+K
+
+X
+
+> ℓ∈L ∗
+
+Et, x0, x1, c
+
+h
+
+g(ℓ) 
+
+> ϕ
+
+(H(ℓ), t ) − v⋆ 2i
+
+. (3) 
+
+3.2.2 Stage 2: Masked Critic Training 
+
+As illustrated in Fig. 2 (middle), we now introduce the critic token r together with K pairs of small projection heads {ψ(ℓ), χ (ℓ)}ℓ∈L ∗ (each a 3-layer MLP). At every probed layer ℓ and noise token 4position i, the critic prediction is the inner product 
+
+ˆe(ℓ) 
+
+> i
+
+= ψ(ℓ) r(ℓ), χ (ℓ) sg( H(ℓ) 
+
+> i
+
+) , i = 1 , . . . , S, (4) where H(ℓ) 
+
+> i
+
+∈ Rd is the hidden state of the i-th noise token at block ℓ. The per-layer prediction error map is ˆe(ℓ) = (ˆ e(ℓ)1 , . . . , ˆe(ℓ) 
+
+> S
+
+).To train the critic without changing the hidden states, we hide the critic token from the other tokens’ attention at every block. Otherwise, the attention on the critic token would shift the noise tokens’ hidden states and the probe error along with them, leaving the critic chasing a moving target. Letting 
+
+r denote the critic’s index in the joint sequence, we add a mask M to the pre-softmax scores with 
+
+Mij =
+
+−∞ if i̸ = r and j = r, 
+
+0 otherwise, (5) where i (query) and j (key) range over all tokens in the joint sequence. The joint self-attention output for every non-critic token is then identical to a run with no critic token, so the model and the per-position generation error stay fixed. The critic itself attends to the other tokens normally. The critic target is the frozen Stage-1 probes’ per-position generation error. Since this error spans several orders of magnitude across noise tokens and time steps, we rescale it with log(1 + ·) to keep the learning from being dominated by a few high-value positions: 
+
+e(ℓ) 
+
+> i
+
+= log 
+
+
+
+1 + g(ℓ) 
+
+> ϕ
+
+(H(ℓ), t )i − v⋆i
+
+> 2
+
+
+
+, (6) where g(ℓ) 
+
+> ϕ
+
+(H(ℓ), t )i and v⋆i are the probe output and the target velocity, and the gradient is stopped on e(ℓ) 
+
+> i
+
+. The critic is trained by MSE, averaged over the K probed layers and S noise-token positions: 
+
+Lcritic (r, ψ, χ ) = 1
+
+K S 
+
+X
+
+> ℓ∈L ∗
+> S
+
+X
+
+> i=1
+
+
+
+ˆe(ℓ) 
+
+> i
+
+− sg  e(ℓ)
+
+> i
+
+2
+
+. (7) Only {r, ψ (ℓ), χ (ℓ)} are trainable, while θ and ϕ remain frozen. In Stage 2, the critic predicts the per-position generation error at every probed layer without affecting the model or its own target. 
+
+3.2.3 Stage 3: Unmasked Joint Training 
+
+As illustrated in Fig. 2 (right), in Stage 3 we unmask the critic and jointly optimize the generation loss with the critic loss. This unmasking relaxes the strict target stability of Stage 2 in exchange for joint adaptation, which is acceptable since the critic has been pre-calibrated in Stage 2. The joint loss is 
+
+Lstage 3 = Lgen + λc Lcritic + λp Lprobe , (8) where Lgen , Lcritic , Lprobe are Eqs. 1, 7, 3, and λc, λ p > 0 are loss weights. The trainable parameters are {ϕ, r, ψ (ℓ), χ (ℓ)}, while θ remains frozen. Because the unmasked attention and Lgen now shift the noise token hidden states at intermediate blocks and thereby change the encoded generation behavior that the probes were trained against, we unfreeze ϕ and keep Lprobe in the loss so that the probes can track this change. With the backbone frozen, unmasking enables the critic token r to steer intermediate hidden states through attention. Gradients from Lgen then flow into r via these attention connections, driving it to refine the model’s generation behavior, while Lcritic keeps the critic anchored to the updated probed generation error. In effect, this turns the critic token into an inline verifier that self-evaluates the intermediate generation at every probed layer and emits corrective feedback through attention, without any additional forward pass or external reward model. At inference, the critic token stays unmasked in the forward pass, and we no longer compute the probe outputs or the critic prediction. The per-step cost is therefore essentially identical to the original editor backbone. 
+
+## 4 Experiments 
+
+4.1 Implementation 
+
+We train Inline Critic on two Qwen-Image-Edit [ 45 ] backbones, Qwen-Image-Edit-2509 and Qwen-Image-Edit-2511, resulting in Critic-v1 and Critic-v2, respectively. The model uses K = 9 probe 5Table 1: Main results on GEdit-Bench [27] (EN split). The best Overall score is in bold. 
+
+Model Semantic Consistency Perceptual Quality Overall BAGEL [10] 7.36 6.83 6.52 FLUX.1-Kontext [Pro] [4] 7.02 7.60 6.56 Step1X-Edit [27] 7.66 7.35 6.97 Qwen-Image-Edit-2509 [45] 8.15 7.86 7.54 UniWorld-Qwen-Image-Edit-2509 [25] 8.36 7.87 7.76 ReasonEdit-Q [49] 8.34 7.97 7.77 UniWorld-V2 [25] 8.39 8.02 7.83 
+
+Critic-v1 8.33 7.98 7.80 
+
+Critic-v2 8.48 8.02 7.89 
+
+Table 2: Main results on KRIS-Bench [ 46 ]. Closed-source proprietary models are marked with †.The best Overall score is in bold.                                                                                   
+
+> Model Attribute Perception Spatial Perception Temporal Prediction Factual Social Science Natural Science Conceptual Logical Reasoning Instruction Decomposition Procedural Overall BAGEL-Think [10] 67.42 68.33 58.67 66.18 63.55 61.40 61.92 48.12 50.22 49.02 60.18 Doubao †[43] 70.92 59.17 40.58 63.30 65.50 61.19 62.23 47.75 60.58 54.17 60.70 Gemini 2.0 †[18] 66.33 63.33 63.92 65.26 68.19 56.94 59.65 54.13 71.67 62.90 62.41 Uni-CoT [36] 72.76 72.87 67.10 71.85 70.81 66.00 67.16 53.43 73.93 63.68 68.00
+> Critic-v1 84.06 86.42 55.97 79.96 83.35 82.57 82.76 67.91 74.39 71.15 79.02 GPT-4o †[31] 83.17 79.08 68.25 79.80 85.50 80.06 81.37 71.56 85.08 78.32 80.09
+> Critic-v2 85.76 89.50 58.44 82.09 84.40 84.91 84.79 77.46 75.94 76.70 81.92
+
+layers. Training is conducted on a 2.2M-pair mixture of public image-editing datasets [ 44 , 51 , 17 , 7 , 8,15 , 48 , 35 ]. The instruction is replaced by an Qwen3.5-27B [ 37 ] rewrite using the ThinkRL-Edit [ 23 ]prompt with probability 0.5. All stages are trained for 4 epochs with AdamW on 32 A100-80G GPUs. We evaluate on RISEBench [ 52 ], KRIS-Bench [ 46 ], GEdit-Bench [ 27 ], and ImgEdit [ 47 ], with the same rewrite applied on RISEBench and KRIS-Bench. We use 40 denoising steps at guidance scale 
+
+4.0. Details of dataset, augmentation, optimization, and training hyperparameters are provided in Appendix A. Qualitative results and limitations are put in Appendix B and C. 
+
+4.2 Main Results GEdit-Bench. We start with general editing instructions on GEdit-Bench, scored by GPT-4.1. As shown in Tab. 1, our Critic-v2 achieves state-of-the-art performance with an 7.89 Overall score, also obtaining the highest Semantic Consistency ( 8.48 ) and tying for the best Perceptual Quality ( 8.02 ). Our Critic-v1 reaches 7.80 , outperforming UniWorld-Qwen-Image-Edit-2509 [ 25 ] ( 7.76 ) under the same backbone. Both Semantic Consistency and Perceptual Quality improve over the backbone. 
+
+KRIS-Bench. We next evaluate on reasoning-heavy benchmarks, where the difficulty arises primar-ily from language reasoning and world knowledge. This shifts the bottleneck onto the understanding encoder (Qwen2.5-VL [ 3 ]) of our backbone, so we first rewrite the original instruction with the stronger Qwen3.5-27B to provide a clearer, more direct prompt. We provide ablation on this rewrite in Sec. 4.3. Table 2 reports per-sub-axis scores on KRIS-Bench, scored by GPT-4o with the official prompts. Our Critic-v2 ranks first overall at 81 .92 , surpassing GPT-4o [ 31 ] ( 80 .09 ) by +1 .83 and the strongest open-source baseline Uni-CoT [36] ( 68 .00 ) by +13 .92 .
+
+RISEBench. RISEBench (Tab. 3, scored by GPT-4.1 with the official prompts) targets the same reasoning-heavy regime, with categories that probe temporal, causal, spatial, and logical reasoning. Our Critic-v2 attains an Overall of 37 .8, improving over its backbone ( 19 .4) by +18 .4 and establish-ing a new state of the art among open-source editors; it also outperforms several proprietary models, including Gemini-2.5-Flash-Image † (33 .9) and GPT-Image-1 † (30 .0). 
+
+ImgEdit. We score ImgEdit by GPT-4.1 with official prompts. We find that run-to-run variance of this benchmark can exceed typical method-to-method gaps. Compounding this issue, most prior works do not release their exact scoring configurations (e.g., GPT temperature). We therefore re-evaluate recent strong baselines under the consistent protocol in Tab. 4. Our Critic-v2 obtains the best Overall score at 4.408 , and Inline Critic consistently improves over the corresponding backbone on 6Table 3: Main results on RISEBench [ 52 ] (%). Closed-source proprietary models are marked with 
+
+> †
+
+. The best Overall score among open-source editors is in bold. Method Instruction Reasoning Appearance Consistency Visual Plausibility Temporal Reasoning Causal Reasoning Spatial Reasoning Logical Reasoning Overall                                                                                              
+
+> Closed-source proprietary models
+> GPT-Image-1 †[32] 62.8 80.2 94.9 36.5 34.4 37.0 10.6 30.0 Gemini-2.5-Flash-Image †[40] 61.2 86.0 91.3 29.4 48.9 37.0 18.8 33.9 Gemini-3-pro-image †[38] 77.0 85.5 94.4 43.5 63.3 48.0 37.6 48.3 GPT-Image-2 †[34] 73.8 89.3 94.9 45.9 66.7 50.0 34.1 49.4 GPT-Image-1.5 †[33] 69.7 92.5 94.9 57.6 62.2 62.0 21.2 51.4
+> Open-source editors
+> FLUX.1-Kontext-Dev [4] 26.0 71.6 85.2 2.3 5.5 13.0 1.2 5.8 Qwen-Image-Edit-2509 [45] 37.2 66.4 86.9 4.7 11.1 17.0 2.4 9.2 BAGEL (w/ CoT) [10] 45.9 73.8 80.1 5.9 17.8 21.0 1.2 11.9 Qwen-Image-Edit-2511 [45] 49.9 71.0 91.5 21.2 18.9 31.0 4.7 19.4
+> Critic-v1 59.1 85.4 92.2 37.6 46.7 42.0 8.2 34.2
+> Critic-v2 63.7 88.5 90.7 35.3 47.8 50.0 15.3 37.8
+
+Table 4: Main results on ImgEdit [ 47 ]. Recent strong baselines are re-evaluated under a consistent protocol. The best Overall score is in bold. Method action add adjust bkgd compose extract remove replace style Overall Qwen-Image-Edit-2509 [45] 4.769 4.407 4.323 4.255 3.652 3.427 4.512 4.605 4.850 4.311 UniWorld-Qwen-Image-Edit-2509 [25] 4.806 4.407 4.330 4.255 3.449 3.766 4.535 4.609 4.883 4.338 Qwen-Image-Edit-2511 [45] 4.639 4.425 4.287 4.191 3.855 3.877 4.519 4.587 4.860 4.360                     
+
+> Critic-v1 4.824 4.533 4.351 4.316 3.739 3.578 4.469 4.609 4.837 4.362
+> Critic-v2 4.806 4.481 4.394 4.248 3.899 3.889 4.539 4.558 4.863 4.408
+
+most categories ( 7 of 9 for Critic-v1, 8 of 9 for Critic-v2). On the same 2509 backbone, our Critic-v1 (4.362 ) further outperforms the UniWorld-Qwen-Image-Edit-2509 RL-finetune [25] ( 4.338 ). 
+
+Heterogeneity results. Fig. 3 reports the performance in cases with different difficulty on ImgEdit with Qwen-Image-Edit-2509 as the baseline. The left panel groups samples into bins according to the baseline’s per-sample scores, while the right panel groups samples by edit type. Both panels show that the gain of Critic-v1 concentrates on the hard cases, with a bit of variance on the easy cases. Specifically, we bring +0.897 on the [1 , 2) score bin and +0.151 on the hardest edit type extract .
+
+4.3 Ablation Studies 
+
+In ablation study, we use 288K samples from the training set and train for one epoch on Qwen-Image-Edit-2509. For reproducibility, we choose Qwen3.5-27B as the judge at temperature 0.As shown in Tab. 5, simply training with additional data by LoRA brings only a very limited improvement. For Inline Critic, directly using only the stage 3 of Sec. 3.2 is suboptimal. In that case, the critic target keeps moving before the critique training stabilizes, and the generation loss might pull the critic token toward acting as a generic learnable conditioning token. Consequently, single-stage Inline Critic reaches 4.213 , essentially matching the learnable token baseline at 4.214 .Instead, introducing our three-stage training recipe can improve Overall to 4.252 . We also find that the choice of K is not sensitive: increasing from K=4 to K=9 gives the same Overall score (both at 
+
+4.252 ). We adopt K=9 in the final model mainly to add a small amount of trainable capacity and to better expose the behavior of different model layers. Finally, rewrite augmentation provides a further improvement, raising Overall to 4.270 . On the reasoning-heavy RISEBench, Tab. 6 shows that Inline Critic consistently improves the backbone under both instruction settings: from 9.2 to 18 .6 (+9 .4)with raw instructions, and from 28 .9 to 34 .2 (+5 .3) with rewritten instructions. 
+
+4.4 Analysis 
+
+We analyze whether the critic token truly steers spatial changes inside the backbone. Our experiments show that three behaviors align with the critic prediction: A) the spatial redistribution of the model’s attention, B) the spatial update of the model’s generation behavior, and C) the difference in generation shift between runs with and without the critic token. 
+
+Setup. All analyses use n = 600 held-out validation samples. We empirically inspect layer L36 to 
+
+L42 at denoising step t = 38 , where the critic is better calibrated, thereby reducing the confound that 7score                      
+
+> [1, 2) [2, 3) [3, 4) [4, 4.5) [4.5, 5) {5}
+> 1
+> 2
+> 3
+> 4
+> 5
+> -0.20
+> 0
+> +0.20
+> +0.40
+> +0.60
+> +0.80
+> +1.00
+> +0.897
+> +0.500
+> +0.190 +0.192
+> +0.056
+> -0.174
+> 1.13
+> 2.20
+> 3.36
+> 4.26
+> 4.67
+> 5.00
+> extract compose bkgd adjust add remove replace action style
+> 3.0
+> 3.5
+> 4.0
+> 4.5
+> 5.0
+> -0.05
+> 0
+> +0.05
+> +0.10
+> +0.15
+> +0.151
+> +0.087
+> +0.060
+> +0.028
+> +0.126
+> -0.043
+> +0.004
+> +0.056
+> -0.013
+> 3.43
+> 3.65
+> 4.26 4.32 4.41
+> 4.51
+> 4.61
+> 4.77 4.85
+> Improvement score Improvement
+> score bins of baseline Editing type of different splits
+
+Figure 3: Heterogeneity results on ImgEdit. Bins are formed by baseline performance (left) and edit type (right). Our method’s improvement concentrates on the hard cases. Table 5: Ablation of design choices on ImgEdit. “Learnable token” adds a single learnable conditioning token trained with only the generation loss. K denotes the number of probed layers. “3-stage” follows the training curriculum of Sec. 3.2; “single-stage” uses only stage 3 of Sec. 3.2. “rewrite aug.” replaces the training instruction with a Qwen3.5-27B rewrite [ 23 ] with probability 0.5.                                                                                
+
+> Method action add adjust bkgd compose extract remove replace style Overall
+> Qwen-Image-Edit-2509 (backbone) 4.750 4.179 4.174 3.961 3.725 3.365 4.318 4.268 4.797 4.171
+> + LoRA 4.815 4.088 3.940 4.060 3.812 3.444 4.341 4.304 4.850 4.184
+> + Learnable token 4.843 4.214 4.181 4.184 3.696 3.439 4.302 4.362 4.707 4.214
+> + Inline Critic, single-stage ( K=4 )4.796 4.109 4.145 4.028 4.000 3.470 4.380 4.199 4.790 4.213
+> + Inline Critic, 3-stage ( K=4 )4.861 4.168 4.241 4.085 3.884 3.544 4.399 4.294 4.793 4.252
+> + Inline Critic, 3-stage ( K=9 )4.852 4.249 4.153 4.234 3.725 3.521 4.450 4.286 4.797 4.252
+> + Inline Critic, 3-stage ( K=4 ) + rewrite aug. 4.935 4.197 4.145 4.128 3.826 3.715 4.395 4.297 4.790 4.270
+
+the critic might be under-trained at the analyzed point. All Spearman correlations are computed in the same way as in Fig. 1. Let E = ˆ e(36) be the critic’s predicted error map. For each experiment, we define a spatial-change map Y on the noise tokens and measure its agreement with E by 
+
+ρ = Spearman( Y, E ). (9) 
+
+Experiment A: attention redistribution. We first measure where the model reallocates attention between L36 and L37 , and compare this spatial pattern against the critic’s prediction E. For noise tokens acting as the key, α(ℓ) is a map about the sum of pre-softmax attention scores each token receives from all queries. We then use 
+
+YA = |α(37) − α(36) |. (10) As shown in Fig. 4 (left), the median ρ is +0.542, with P (ρ > 0) = 0 .90 and P (ρ > 0.2) = 0 .80 .The two maps are positively aligned: regions flagged as harder (i.e., with higher error prediction) by the critic also exhibit the higher attention changes, indicating that the critic redirects attention. 
+
+Experiment B: generation behavior update. We next measure where the model’s encoded generation behavior changes between L36 and L42 , and compare this spatial pattern against the critic’s prediction E. For each probe layer, m(ℓ) is a map about the error between the probe layer ℓ
+
+and the ground-truth. We then use 
+
+YB = |m(42) − m(36) |. (11) Fig. 4 (center) shows a strong agreement, with median ρ = +0 .641 , P (ρ > 0) = 0 .96 , and 
+
+P (ρ > 0.2) = 0 .91 . The regions where the critic predicts higher error are essentially the regions where the flow matching representation moves the most between two probe layers, indicating that the critic’s prediction shapes the actual generation update. 8Table 6: Ablation of test-time instruction rewrite on RISEBench [ 52 ] (%). We compare Qwen-Image-Edit-2509 and Critic-v1 under raw and rewritten test instructions. The Qwen3.5-27B rewriter follows the ThinkRL-Edit [23] template. The best Overall score is in bold. Method Instruction Reasoning Appearance Consistency Visual Plausibility Temporal Reasoning Causal Reasoning Spatial Reasoning Logical Reasoning Overall 
+
+Raw instruction 
+
+Qwen-Image-Edit-2509 [45] 37 .2 66 .4 86 .9 4.7 11 .1 17 .0 2.4 9.2
+
+Critic-v1 44 .9 73 .2 89 .7 7.1 24 .4 32 .0 8.2 18 .6
+
+Rewritten instruction 
+
+Qwen-Image-Edit-2509 [45] 57 .1 85 .5 91 .5 36 .5 32 .2 41 .0 3.5 28 .9
+
+Critic-v1 59 .1 85 .4 92 .2 37 .6 46 .7 42 .0 8.2 34 .2-0.4 -0.2 0 0.2 0.4 0.6 0.8 1                                       
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> -0.6 -0.4 -0.2 00.2 0.4 0.6 0.8 1
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> -0.75 -0.5 -0.25 00.25 0.5 0.75
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> # sample # sample # sample
+> ρof attention redistribution ↔critic prediction ρof generation update ↔critic prediction ρof critic -driven generation shift ↔critic prediction
+> median = +0.542 median = +0.641 median = +0.309
+> P( ρ>0.2) = 0.62
+> P( ρ>0) = 0.77
+> P( ρ>0.2) = 0.91
+> P( ρ>0) = 0.96
+> P( ρ>0.2) = 0.80
+> P( ρ>0) = 0.90
+
+critic prediction critic prediction critic prediction 
+
+attention 
+
+redistribution 
+
+generation 
+
+update 
+
+critic -driven 
+
+generation shift 
+
+Figure 4: Top : per-sample histogram of ρ between the different model-side spatial map and the critic’s prediction. Bottom : one sample showing the spatial map (left) and critic’s prediction (right). 
+
+Experiment C: generation shift by critic’s causal intervention. We finally test whether the alignment observed in Experiment B is genuinely causal. To this end, we run inference twice on the same input: once without masking the critic token ( un ), and once with the critic token masked out (ma ). Let m(ℓ)un and m(ℓ)ma denote the generation error m(ℓ) (as defined in Experiment B) under the unmasked and masked settings, respectively. We then define 
+
+YC = (m(42) un − m(36) un ) − (m(42) ma − m(36) ma ) , (12) which is used to measure, between the two layers, how much of the L36 → L42 shift in generation error can be attributed to access to the critic. As shown in Fig. 4 (right), we observe a clear positive correlation, with median ρ = +0 .309 , P (ρ > 0) = 0 .77 , and P (ρ > 0.2) = 0 .62 . This suggests that the critic plays a causal role in steering the generation process. 
+
+## 5 Conclusion 
+
+We introduced Inline Critic , a learnable token that critiques a frozen editor at intermediate layers and steers its hidden states to refine generation within the forward pass, trained by a three-stage curriculum. Empirically, Critic-v2 achieves 7.89 Overall on GEdit-Bench, 81 .92 on KRIS-Bench, 37 .8 on RISEBench ( +18 .4 over its backbone), showing consistent improvements across general editing and reasoning-heavy settings. Our analysis further shows that the attention and generation updates align with the critic’s prediction, supporting Inline Critic as an effective refinement mechanism. 
+
+## References 
+
+[1] Donghoon Ahn, Hyoungwon Cho, Jaewon Min, Wooseok Jang, Jungwoo Kim, SeonHwa Kim, Hyun Hee Park, Kyong Hwan Jin, and Seungryong Kim. Self-rectifying diffusion sampling with perturbed-attention guidance. In Computer Vision – ECCV 2024 , pages 1–17, 2024. doi: 10.1007/978-3-031-73464-9_1. URL 
+
+https://www.ecva.net/papers/eccv_2024/papers_ECCV/papers/09184.pdf .
+
+9[2] Yuval Alaluf, Elad Richardson, Gal Metzer, and Daniel Cohen-Or. A neural space-time representation for text-to-image personalization. ACM Transactions on Graphics (SIGGRAPH Asia) , 42(6):243:1–243:10, 2023. doi: 10.1145/3618322. URL https://doi.org/10.1145/3618322 .[3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-VL technical report. arXiv preprint arXiv:2502.13923 ,2025. URL https://arxiv.org/abs/2502.13923 .[4] Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, Sumith Kulal, Kyle Lacey, Yam Levi, Cheng Li, Dominik Lorenz, Jonas Müller, Dustin Podell, Robin Rombach, Harry Saini, Axel Sauer, and Luke Smith. FLUX.1 Kontext: Flow matching for in-context image generation and editing in latent space. Black Forest Labs technical report (arXiv:2506.15742), 2025. URL https://arxiv.org/abs/2506.15742 .[5] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T. Freeman. MaskGIT: Masked generative image transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11315–11325, June 2022. URL 
+
+https://openaccess.thecvf.com/content/CVPR2022/html/Chang_MaskGIT_Masked_ Generative_Image_Transformer_CVPR_2022_paper.html .[6] Hila Chefer, Yuval Alaluf, Yael Vinker, Lior Wolf, and Daniel Cohen-Or. Attend-and-excite: Attention-based semantic guidance for text-to-image diffusion models. ACM Transactions on Graphics (SIGGRAPH) ,42(4):1–10, 2023. doi: 10.1145/3592116. URL https://doi.org/10.1145/3592116 .[7] Junying Chen, Zhenyang Cai, Pengcheng Chen, Shunian Chen, Ke Ji, Xidong Wang, Yunjin Yang, and Benyou Wang. ShareGPT-4o-Image: Aligning multimodal models with GPT-4o-level image generation. 
+
+arXiv preprint arXiv:2506.18095 , 2025. URL https://arxiv.org/abs/2506.18095 .[8] Zhihong Chen, Xuehai Bai, Yang Shi, Chaoyou Fu, Huanyu Zhang, Haotian Wang, Xiaoyan Sun, Zhang Zhang, Liang Wang, Yuanxing Zhang, Pengfei Wan, and Yi-Fan Zhang. OpenGPT-4o-Image: A compre-hensive dataset for advanced image generation and editing. arXiv preprint arXiv:2509.24900 , 2025. URL 
+
+https://arxiv.org/abs/2509.24900 .[9] Michele De Vita and Vasileios Belagiannis. Diffusion model guided sampling with pixel-wise aleatoric uncertainty estimation. In Proceedings of the Winter Conference on Ap-plications of Computer Vision (WACV) , pages 3844–3854, February 2025. URL https: //openaccess.thecvf.com/content/WACV2025/html/De_Vita_Diffusion_Model_Guided_ Sampling_with_Pixel-Wise_Aleatoric_Uncertainty_Estimation_WACV_2025_paper.html .[10] Chaorui Deng, Deyao Zhu, Kunchang Li, Chenhui Gou, Feng Li, Zeyu Wang, Shu Zhong, Weihao Yu, Xiaonan Nie, Ziang Song, Guang Shi, and Haoqi Fan. Emerging properties in unified multimodal pretraining. arXiv preprint arXiv:2505.14683 , 2025. URL https://arxiv.org/abs/2505.14683 .[11] Ziyi Dong, Pengxu Wei, and Liang Lin. DreamArtist++: Controllable one-shot text-to-image generation via positive-negative adapter. arXiv preprint arXiv:2211.11337 , 2022. URL https://arxiv.org/abs/ 2211.11337 .[12] Dave Epstein, Allan Jabri, Ben Poole, Alexei Efros, and Aleksander Holynski. Diffusion self-guidance for controllable image generation. In Advances in Neural Information Processing Systems (NeurIPS) , vol-ume 36, pages 16222–16239. Curran Associates, Inc., 2023. URL https://papers.nips.cc/paper_ files/paper/2023/hash/3469b211b829b39d2b0cfd3b880a869c-Abstract-Conference.html .[13] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, Dustin Podell, Tim Dockhorn, Zion English, and Robin Rombach. Scaling rectified flow transformers for high-resolution image synthesis. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 12606–12633. PMLR, 21–27 Jul 2024. URL https://proceedings.mlr.press/ v235/esser24a.html .[14] Rinon Gal, Yuval Alaluf, Yuval Atzmon, Or Patashnik, Amit Haim Bermano, Gal Chechik, and Daniel Cohen-Or. An image is worth one word: Personalizing text-to-image generation using textual inversion. In 
+
+International Conference on Learning Representations (ICLR) , 2023. URL https://openreview.net/ forum?id=NAQvF08TcyG .
+
+10 [15] Feng Han, Yibin Wang, Chenglin Li, Zheming Liang, Dianyi Wang, Yang Jiao, Zhipeng Wei, Chao Gong, Cheng Jin, Jingjing Chen, and Jiaqi Wang. UniREditBench: A unified reasoning-based image editing benchmark. arXiv preprint arXiv:2511.01295 , 2025. URL https://arxiv.org/abs/2511.01295 .[16] Ziqi Huang, Tianxing Wu, Yuming Jiang, Kelvin C. K. Chan, and Ziwei Liu. ReVersion: Diffusion-based relation inversion from images. In SIGGRAPH Asia 2024 Conference Papers , pages 1–11, 2024. doi: 10.1145/3680528.3687658. URL https://ziqihuangg.github.io/projects/reversion .[17] Mude Hui, Siwei Yang, Bingchen Zhao, Yichun Shi, Heng Wang, Peng Wang, Cihang Xie, and Yuyin Zhou. HQ-Edit: A high-quality dataset for instruction-based image editing. In International Conference on Learning Representations (ICLR) , 2025. URL https://openreview.net/forum?id=mZptYYttFj .[18] Kat Kampf and Nicole Brichtova. Experiment with Gemini 2.0 Flash native image gener-ation. Google Developers Blog, 2025. URL https://developers.googleblog.com/en/ experiment-with-gemini-20-flash-native-image-generation .[19] Tero Karras, Miika Aittala, Tuomas Kynkäänniemi, Jaakko Lehtinen, Timo Aila, and Samuli Laine. Guiding a diffusion model with a bad version of itself. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , volume 37, pages 52996–53021. Curran Associates, Inc., 2024. doi: 10. 52202/079017-1679. URL https://proceedings.neurips.cc/paper_files/paper/2024/hash/ 5ee7ed60a7e8169012224dec5fe0d27f-Abstract-Conference.html .[20] Siqi Kou, Lei Gan, Dequan Wang, Chongxuan Li, and Zhijie Deng. BayesDiff: Estimating pixel-wise uncertainty in diffusion via bayesian inference. In International Conference on Learning Representations (ICLR) , 2024. URL https://openreview.net/forum?id=YcM6ofShwY .[21] Felix Koulischer, Florian Handke, Johannes Deleu, Thomas Demeester, and Luca Ambrogioni. Feedback guidance of diffusion models. In Advances in Neural Information Processing Systems (NeurIPS) , 2025. URL https://openreview.net/forum?id=8ySOcf7UpM .[22] José Lezama, Huiwen Chang, Lu Jiang, and Irfan Essa. Improved masked image generation with token-critic. In Computer Vision – ECCV 2022 , pages 70–86, 2022. doi: 10.1007/978-3-031-20050-2_5. URL 
+
+https://www.ecva.net/papers/eccv_2022/papers_ECCV/html/2901_ECCV_2022_paper.php .[23] Hengjia Li, Liming Jiang, Qing Yan, Yizhi Song, Hao Kang, Zichuan Liu, Xin Lu, Boxi Wu, and Deng Cai. ThinkRL-Edit: Thinking in reinforcement learning for reasoning-centric image editing. arXiv preprint arXiv:2601.03467 , 2026. URL https://arxiv.org/abs/2601.03467 .[24] Shufan Li, Konstantinos Kallidromitis, Akash Gokul, Arsh Koneru, Yusuke Kato, Kazuki Kozuka, and Aditya Grover. Reflect-DiT: Inference-time scaling for text-to-image diffusion transformers via in-context reflection. arXiv preprint arXiv:2503.12271 , 2025. URL https://arxiv.org/abs/2503.12271 .[25] Zongjian Li, Zheyuan Liu, Qihui Zhang, Bin Lin, Feize Wu, Shenghai Yuan, Zhiyuan Yan, Yang Ye, Wangbo Yu, Yuwei Niu, Shaodong Wang, Xinhua Cheng, and Li Yuan. Uniworld-V2: Reinforce im-age editing with diffusion negative-aware finetuning and MLLM implicit feedback. arXiv preprint arXiv:2510.16888 , 2025. URL https://arxiv.org/abs/2510.16888 .[26] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matthew Le. Flow matching for generative modeling. In International Conference on Learning Representations (ICLR) , 2023. URL 
+
+https://openreview.net/forum?id=PqvMRDCJT9t .[27] Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chunrui Han, Guopeng Li, Yuang Peng, Quan Sun, Jingwei Wu, Yan Cai, Zheng Ge, Ranchen Ming, Lei Xia, Xianfang Zeng, Yibo Zhu, Binxing Jiao, Xiangyu Zhang, Gang Yu, and Daxin Jiang. Step1X-Edit: A practical framework for general image editing. arXiv preprint arXiv:2504.17761 ,2025. URL https://arxiv.org/abs/2504.17761 .[28] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In International Conference on Learning Representations (ICLR) , 2023. URL 
+
+https://openreview.net/forum?id=XVjTT1nw5z .[29] Xin Luo, Jiahao Wang, Chenyuan Wu, Shitao Xiao, Xiyan Jiang, Defu Lian, Jiajun Zhang, Dong Liu, and Zheng Liu. EditScore: Unlocking online RL for image editing via high-fidelity reward modeling. In 
+
+International Conference on Learning Representations (ICLR) , 2026. URL https://openreview.net/ forum?id=E7YpL4L4Xh .
+
+11 [30] Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A. Rusu, Joel Veness, Marc G. Bellemare, Alex Graves, Martin Riedmiller, Andreas K. Fidjeland, Georg Ostrovski, Stig Petersen, Charles Beattie, Amir Sadik, Ioannis Antonoglou, Helen King, Dharshan Kumaran, Daan Wierstra, Shane Legg, and Demis Hassabis. Human-level control through deep reinforcement learning. Nature , 518(7540):529–533, February 2015. doi: 10.1038/nature14236. URL https://doi.org/10.1038/nature14236 .[31] OpenAI. Introducing 4o image generation. OpenAI product release, 2025. URL https://openai.com/ index/introducing-4o-image-generation/ .[32] OpenAI. GPT Image 1. OpenAI API model card, 2025. URL https://platform.openai.com/docs/ models/gpt-image-1 .[33] OpenAI. GPT Image 1.5. OpenAI API model card, 2025. URL https://platform.openai.com/ docs/models/gpt-image-1.5 .[34] OpenAI. GPT Image 2. OpenAI API model card, 2026. URL https://platform.openai.com/docs/ models/gpt-image-2 .[35] Yusu Qian, Eli Bocek-Rivele, Liangchen Song, Jialing Tong, Yinfei Yang, Jiasen Lu, Wenze Hu, and Zhe Gan. Pico-Banana-400K: A large-scale dataset for text-guided image editing. arXiv preprint arXiv:2510.19808 , 2025. URL https://arxiv.org/abs/2510.19808 .[36] Luozheng Qin, Jia Gong, Yuqing Sun, Tianjiao Li, Haoyu Pan, Mengping Yang, Xiaomeng Yang, Chao Qu, Zhiyu Tan, and Hao Li. Uni-CoT: Towards unified chain-of-thought reasoning across text and vision. In International Conference on Learning Representations (ICLR) , 2026. URL https://openreview. net/forum?id=5nevWRoNjn .[37] Qwen Team. Qwen3.5-27B. Hugging Face model card, 2026. URL https://huggingface.co/Qwen/ Qwen3.5-27B .[38] Naina Raisinghani. Introducing nano banana pro. Google Blog; introduces Gemini 3 Pro Image, 2025. URL https://blog.google/innovation-and-ai/products/nano-banana-pro .[39] Johannes Schusterbauer, Ming Gui, Yusong Li, Pingchuan Ma, Felix Krause, and Björn Ommer. Denoising, fast and slow: Difficulty-aware adaptive sampling for image generation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2026. URL https://arxiv.org/abs/2604.19141 .[40] David Sharon and Nicole Brichtova. Image editing in Gemini just got a major upgrade. Google Blog; introduces Gemini 2.5 Flash Image / Nano Banana, 2025. URL https://blog.google/products/ gemini/updated-image-editing-model .[41] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wenmeng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xianzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yitong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. URL 
+
+https://arxiv.org/abs/2503.20314 .[42] Andrey Voynov, Qinghao Chu, Daniel Cohen-Or, and Kfir Aberman. P+: Extended textual conditioning in text-to-image generation. arXiv preprint arXiv:2303.09522 , 2023. URL https://arxiv.org/abs/ 2303.09522 .[43] Peng Wang, Yichun Shi, Xiaochen Lian, Zhonghua Zhai, Xin Xia, Xuefeng Xiao, Weilin Huang, and Jian-chao Yang. SeedEdit 3.0: Fast and high-quality generative image editing. arXiv preprint arXiv:2506.05083 ,2025. URL https://arxiv.org/abs/2506.05083 .[44] Cong Wei, Zheyang Xiong, Weiming Ren, Xeron Du, Ge Zhang, and Wenhu Chen. OmniEdit: Building image editing generalist models through specialist supervision. In International Conference on Learning Representations (ICLR) , 2025. URL https://openreview.net/forum?id=Hlm0cga0sv .[45] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng-ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, Yuxiang Chen, Zecheng Tang, Zekai Zhang, Zhengyi Wang, An Yang, Bowen Yu, Chen Cheng, Dayiheng Liu, Deqing Li, Hang Zhang, Hao Meng, Hu Wei, Jingyuan Ni, Kai Chen, Kuan Cao, Liang Peng, Lin Qu, Minggang Wu, Peng Wang, Shuting Yu, Tingkun Wen, Wensen Feng, Xiaoxiao Xu, Yi Wang, Yichang Zhang, Yongqiang Zhu, Yujia Wu, Yuxuan Cai, and Zenan Liu. Qwen-Image technical report. arXiv preprint arXiv:2508.02324 , 2025. URL https://arxiv.org/abs/2508.02324 .
+
+12 [46] Yongliang Wu, Zonghui Li, Xinting Hu, Xinyu Ye, Xianfang Zeng, Gang Yu, Wenbo Zhu, Bernt Schiele, Ming-Hsuan Yang, and Xu Yang. KRIS-Bench: Benchmarking next-level intelligent image editing models. In Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track , 2025. URL https://openreview.net/forum?id=aWSh1Ec64T .[47] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. ImgEdit: A unified image editing dataset and benchmark. In Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track , 2025. URL https://openreview.net/forum? id=uUCSrMlfD3 .[48] Yejy53. Nano-consistent-150k. Hugging Face dataset, 2025. URL https://huggingface.co/ datasets/Yejy53/Nano-consistent-150k .[49] Fukun Yin, Shiyu Liu, Yucheng Han, Zhibo Wang, Peng Xing, Rui Wang, Wei Cheng, Yingming Wang, Aojie Li, Zixin Yin, Pengtao Chen, Xiangyu Zhang, Daxin Jiang, Xianfang Zeng, and Gang Yu. ReasonEdit: Towards reasoning-enhanced image editing models. arXiv preprint arXiv:2511.22625 , 2025. URL 
+
+https://arxiv.org/abs/2511.22625 .[50] Yuxin Zhang, Weiming Dong, Fan Tang, Nisha Huang, Haibin Huang, Chongyang Ma, Tong-Yee Lee, Oliver Deussen, and Changsheng Xu. ProSpect: Prompt spectrum for attribute-aware personalization of diffusion models. ACM Transactions on Graphics (SIGGRAPH Asia) , 42(6):244:1–244:14, 2023. doi: 10.1145/3618342. URL https://doi.org/10.1145/3618342 .[51] Haozhe Zhao, Xiaojian Ma, Liang Chen, Shuzheng Si, Rujie Wu, Kaikai An, Peiyu Yu, Minjia Zhang, Qing Li, and Baobao Chang. UltraEdit: Instruction-based fine-grained image editing at scale. In Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track , 2024. URL 
+
+https://openreview.net/forum?id=9ZDdlgH6O8 .[52] Xiangyu Zhao, Peiyuan Zhang, Kexian Tang, Xiaorong Zhu, Hao Li, Wenhao Chai, Zicheng Zhang, Renqiu Xia, Guangtao Zhai, Junchi Yan, Hua Yang, Xue Yang, and Haodong Duan. Envisioning beyond the pixels: Benchmarking reasoning-informed visual editing. In Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track , 2025. URL https://openreview.net/forum? id=T3UksaPK64 .[53] Le Zhuo, Liangbing Zhao, Sayak Paul, Yue Liao, Renrui Zhang, Yi Xin, Peng Gao, Mohamed Elhoseiny, and Hongsheng Li. From reflection to perfection: Scaling inference-time optimization for text-to-image diffusion models via reflection tuning. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 15329–15339, October 2025. URL https://openaccess. thecvf.com/content/ICCV2025/html/Zhuo_From_Reflection_to_Perfection_Scaling_ Inference-Time_Optimization_for_Text-to-Image_Diffusion_ICCV_2025_paper.html .
+
+13 Appendix A Details of Implementation 
+
+Training. We build Inline Critic on two public Qwen-Image-Edit [ 45 ] backbones, Qwen-Image-Edit-2509 and Qwen-Image-Edit-2511, yielding two variants that we refer to as Critic-v1 and Critic-v2. We use K = 9 probes at L∗ = {6, 12 , 18 , 24 , 30 , 36 , 42 , 48 , 54 }, with 256 -dim outputs for ψ(ℓ) and χ(ℓ). The training set is a 2.2M-pair mixture from OmniEdit [ 44 ], UltraEdit [ 51 ], HQ-Edit [ 17 ], ShareGPT-4o-Image [ 7 ], OpenGPT-4o-Image [ 8], UniREdit-Data-100K [ 15 ], Nano-Consistent-150K [ 48 ], and the SFT split of Pico-Banana-400K [ 35 ], processed at 512 ×512 . For classifier-free guidance, the instruction is dropped with probability 0.05 , and with probability 0.5
+
+replaced by an offline Qwen3.5-27B [ 37 ] rewrite using the ThinkRL-Edit [ 23 ] prompt. Each stage runs for 4 epochs with AdamW (lr 1×10 −4, β = (0 .9, 0.999) , weight decay 0.01 ) and a cosine-with-restarts schedule (min-LR ratio 0.1, 500 warmup steps). The per-device batch is 4 with gradient accumulation 4, on 4 nodes of 8 A100-80G GPUs. Stage 3 uses λc = λp = 1 in Eq. 8. 
+
+Testing. We evaluate on RISEBench [ 52 ], KRIS-Bench [ 46 ], GEdit-Bench [ 27 ], and ImgEdit [ 47 ], with the same Qwen3.5-27B rewrite applied on RISEBench and KRIS-Bench. We resize inputs to a 
+
+∼1024 2-pixel budget at the original aspect ratio, and use 40 denoising steps at guidance scale 4.0.
+
+## B Qualitative Results 
+
+We provide qualitative results in Fig. 5. Starting from the early backbone layers, the probe-layer error maps highlight broad regions that are likely to require modification. As the depth increases from L6
+
+to L54 , these regions gradually become more focused, indicating that the critic refines the model’s internal behavior throughout the forward pass. The final outputs demonstrate that this progressive refinement leads to edits that are both instruction-faithful and visually coherent. Input L6 L18 L30 L42 L54 Output 
+
+> “edit the image to show the polar bear on a single, large ice floe with no surrounding ice pieces in the water”
+> “Transform the scene into a vibrant night market, including the large foreground lamp, glowing warmly, and a starry sky above.”
+
+Figure 5: Qualitative results. We visualize the probe-layer error maps across backbone layers (L6 → L54 ), together with the input image (left) and the final edited result (right). 
+
+## C Limitations 
+
+The critic is trained to predict the per-position MSE of the probe head, but the training data can be highly noisy. Therefore it is not always a faithful measure of generation quality, which leaves the critic’s learning signal correspondingly noisy. A natural next step is to replace the MSE target with a feature-space criterion, so that the critic learns perceptually meaningful errors. 14

@@ -1,0 +1,894 @@
+Title: GuardMarkGS: Unified Ownership Tracing and Edit Deterrence for 3D Gaussian Splatting
+
+URL Source: https://arxiv.org/pdf/2605.12919v1
+
+Published Time: Thu, 14 May 2026 00:35:47 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# GuardMarkGS: Unified Ownership Tracing and Edit Deterrence for 3D Gaussian Splatting 
+
+Utae Jeong 1 Jaewan Choi 1 Junseok Lee 1
+
+Jongheon Jeong 1 Sang Ho Yoon 2 ByoungSoo Koh 3 Sangpil Kim 1∗ 
+
+> 1
+
+Korea University 2 KAIST 3 Hanshin University 
+
+Abstract 
+
+3D Gaussian Splatting (3DGS) is becoming a practical representation for novel view synthesis, but its growing adoption, together with rapid advances in instruction-driven 3DGS editing, also exposes a dual copyright risk: once a 3DGS-based asset is released, it can be used without permission and manipulated through 3D editing. Existing protection methods address only one side of this problem. Watermarking can trace ownership after unauthorized use, but it cannot prevent malicious editing. Adversarial edit-deterrence methods can disrupt editing, but they do not provide evidence of ownership. To the best of our knowledge, we present the first unified protection framework for 3DGS that jointly optimizes ownership tracing and unauthorized editing deterrence. Our framework combines a scene-wide watermarking objective over all Gaussians with an adversarial objective for edit deterrence. The adversarial branch combines latent-anchor separation, denoising-trajectory diversion, and cross-attention diversion to divert the editing trajectory, while an update-saliency-motivated Gaussian selection strategy assigns stronger adversarial updates to mask-selected Gaussians, improving the balance among watermark recovery, edit deterrence, and rendering fidelity. Experiments on scenes from Mip-NeRF 360 and Instruct-NeRF2NeRF demonstrate that the proposed framework achieves a favorable balance among bit accuracy, edit deterrence, and rendering quality. These results suggest that practical copyright protection of 3DGS-based assets can be more effectively addressed by integrating ownership tracing and unauthorized editing deterrence into a single optimization framework. 
+
+1 Introduction 
+
+3D Gaussian Splatting (3DGS) [ 1 ] has emerged as a powerful representation for novel view synthe-sis [ 2– 4], combining photorealistic rendering quality with real-time rendering speed. As 3DGS assets are increasingly used in AR/VR, digital content production, and other commercial pipelines, copy-right protection becomes a central concern. In practice, a released 3DGS scene can be redistributed without authorization and manipulated by 3D editing pipelines [ 5– 9]. Recent advances in text-driven editing [ 10 – 12 ] further make it possible to produce visually convincing derivatives from released assets using only text prompts. As illustrated in Fig. 1, this creates a practical threat scenario in which an owner may lose control over both proving ownership and preserving the integrity of the content. These observations indicate that copyright protection for 3DGS should not be formulated only as watermark insertion after release. A watermark can support ownership tracing after unauthorized use, but it cannot prevent the released asset from being transformed into a semantically altered derivative. A practical protection mechanism should therefore preserve evidence of ownership while also deterring unauthorized instruction-driven editing.    
+
+> ∗Corresponding Author Preprint.
+> arXiv:2605.12919v1 [cs.CV] 13 May 2026 Alice
+> 011…00
+> Adversarial signal
+> Watermark signal
+> Unauthorized rendering
+> Embedding copyright protection signal Unauthorized use Source verification & Edit deterrence
+> Bob
+> 011…00 Watermark
+> Decoder
+> Joint optimization
+> 3DGS
+> Rendering after editing
+> Edit failed Unauthorized editing
+> (1) Rendering
+> (2) Edit
+> Editing Prompt:
+> Turn the bear statue
+> into a grizzly bear
+
+Figure 1: Application scenario of GuardMarkGS. We aim to identify ownership and prevent unauthorized editing by optimizing a 3DGS asset to embed watermark signals and adversarial noise. Left: Alice optimizes her 3DGS asset with watermark and adversarial signals. Middle: Bob performs unauthorized rendering and editing using Alice’s asset. Right: Alice verifies ownership by recovering the watermark with her decoder, while preventing Bob from obtaining the intended editing results. Existing protection strategies are split into two largely disconnected families. Passive protection methods, such as ownership tracing via digital watermarking [ 13 – 19 ], identify the source of an asset after unauthorized use or redistribution, but their role is fundamentally post-hoc. By contrast, active protection methods based on adversarial optimization [ 20 – 25 ] aim to make unauthorized editing difficult, but they do not embed a recoverable ownership signal for later verification. Thus, watermark-only methods focus on traceability, whereas adversarial edit-deterrence methods focus on deterrence, and neither alone fully addresses the practical copyright threat in Fig. 1. However, unifying these two protection goals for 3DGS remains largely unexplored and is particu-larly challenging in the 3D setting. Reliable watermark recovery usually benefits from scene-wide optimization, because the ownership signal should remain detectable from many rendered view-points [ 26 – 28 ]. In contrast, imposing adversarial signals uniformly on the same scene-wide Gaussian support can unnecessarily perturb regions that are important for watermark recovery and rendering quality. This issue is not resolved by a straightforward composition of existing objectives: as shown in our experiments, directly adding DEGauss-style adversarial terms [ 25 ] to a 3DGSW-style wa-termarking objective [ 26 ] substantially weakens watermark recovery and rendering fidelity while providing limited edit deterrence. Thus, successful joint optimization must account for the different spatial and functional characteristics of watermarking and adversarial edit deterrence. To address these issues, we propose GuardMarkGS , a unified protection framework that jointly optimizes ownership tracing and unauthorized editing deterrence within a single protected 3DGS. GuardMarkGS assigns distinct roles to the two protection signals within a single coordinated opti-mization. The watermarking branch preserves watermark signal through a scene-wide objective over rendered views, while the adversarial branch assigns stronger edit-deterrence updates to mask-selected Gaussians identified by update-saliency-motivated selection. We further introduce parameter-role-aware adversarial modulation, which scales adversarial gradients according to the rendering sensitivity of each Gaussian parameter. This selective and role-aware allocation reduces unnecessary interference with watermark recovery and rendering fidelity, which is the key difficulty in naive joint optimization. To further disrupt unauthorized editing, the adversarial branch combines latent-anchor separation with denoising-trajectory and cross-attention diversion terms [ 29 ], targeting the latent representation, denoising direction, and prompt-image alignment used by editors. This design provides a unified mechanism for balancing watermark recovery, edit deterrence, and rendering fidelity. Under sUCPS, a unified score that jointly evaluates traceability, edit deterrence, and fidelity, GuardMarkGS improves over the best existing baseline by 10.7%. Our main contributions are as follows: • We propose a unified dual-branch framework that jointly optimizes scene-wide ownership tracing and unauthorized edit deterrence for a single protected 3DGS representation. • We introduce update-saliency-motivated Gaussian selection and parameter-role-aware adver-sarial modulation, which allocate stronger adversarial updates to defense-effective Gaussians while reducing unnecessary degradation to watermark recovery and rendering fidelity. • We introduce an adversarial edit-deterrence objective that integrates latent-anchor separation with denoising-trajectory and cross-attention diversion, and experimentally show that the proposed method achieves a sound balance among traceability, edit deterrence, and fidelity. 22 Related works 
+
+3D Gaussian Splatting representation. 3D Gaussian Splatting (3DGS) [ 1] has become a widely used representation for novel view synthesis by modeling a scene with explicit anisotropic Gaus-sian primitives and rendering them efficiently through differentiable splatting. Its combination of photorealistic quality and real-time rendering makes 3DGS increasingly practical for interactive 3D applications, digital content production, and downstream asset reuse [ 30 – 35 ]. At the same time, the explicit Gaussian parameters make 3DGS directly editable and easy to redistribute. Once a 3DGS asset is released, its parameters can be copied, modified, or fine-tuned by downstream users, which creates a need for copyright protection mechanisms that preserve rendering fidelity while enabling ownership tracing of the released representation or protecting it against unauthorized manipulation. 
+
+Copyright protection for 3D Gaussian Splatting. Recent 3DGS copyright protection methods mostly follow a passive paradigm. GaussianMarker [ 27 ], GuardSplat [ 28 ], and 3DGSW [ 26 ] embed watermark signals into Gaussian parameters while attempting to preserve rendering quality. These methods support post-hoc ownership tracing: after an asset is leaked or redistributed, the owner can render images from the protected scene and decode a message to verify provenance. However, they do not explicitly prevent a malicious user from applying instruction-driven 3D edits [ 5, 6, 8 , 9] to the released asset. As a result, they solve the tracing problem but not the deterrence problem: ownership can be verified after misuse, but the released content may already have been semantically altered. 
+
+Defenses against instruction-driven editing. A separate line of research studies active defenses [ 20 –24 , 36 ] against diffusion-based image editing [ 29 , 37 – 39 ]. These methods inject adversarial perturba-tions that disrupt latent diffusion guidance or denoising trajectories, thereby lowering edit success. Extending this idea to 3D assets is challenging because 3D editing pipelines repeatedly render the current scene from multiple viewpoints, edit the rendered images, and optimize the 3D representation to match the edited views. Perturbations that are effective for a single image may not remain consis-tent across viewpoints or may be weakened during iterative 3D optimization. DEGauss [ 25 ] extends adversarial protection to 3DGS and is, to our knowledge, the most relevant defense-only baseline in the 3D setting. However, DEGauss does not provide ownership tracing, and its whole-scene adversarial protection can noticeably degrade rendering quality. 
+
+3D Gaussian Splatting editing pipelines. Text-driven 3DGS editing has advanced rapidly through pipelines such as DGE [ 6 ] and GaussianEditor [ 7 ]. These methods repeatedly render the current 3D representation, edit the views with an image editing model [ 37 ], and fit the 3DGS back to the edited results. This iterative render-edit-update cycle makes 3DGS editing powerful, but it also exposes a practical pathway for unauthorized manipulation. If an unauthorized user can access the released 3DGS model, they can produce high-quality malicious variants with only a text prompt. Thus, the same properties that make 3DGS useful for legitimate editing also make it vulnerable to misuse. The above studies address important but incomplete aspects of 3DGS protection. Watermarking methods provide ownership evidence, but they do not actively deter unauthorized edits. Adversarial defense methods can suppress instruction-driven editing, but they do not provide recoverable own-ership signals. Our work targets this missing intersection. Rather than treating ownership tracing and edit deterrence as separate goals, we formulate them as a unified optimization problem for a single protected 3DGS model. A scene-wide watermarking objective preserves ownership evidence across views, while an update-saliency-motivated adversarial objective allocates stronger updates to mask-selected Gaussian regions. This design provides a practical protection framework that supports ownership tracing, resists unauthorized editing, and simultaneously accounts for rendering quality. 
+
+3 Problem setup 
+
+Let G = {gi}Ni=1 denote a 3DGS scene composed of N Gaussians, where each Gaussian contains geometric and appearance parameters such as position, scale, rotation, opacity, and view-dependent features. Rendering the scene from a camera viewpoint v yields an image Iv = Rv (G), where Rv (·)
+
+denotes the differentiable 3DGS renderer for viewpoint v.Our goal is to optimize a protected scene Gprot that satisfies three requirements simultaneously. First, it must carry an ownership message m ∈ { 0, 1}k, where k denotes the message length, that can be decoded from rendered views with high bit accuracy. Second, under the threat scenario illustrated in Fig. 1, in which the released asset is subjected to editing with an edit instruction ψ, the edited outputs 3Trainable                                         
+
+> 3DGS 𝒢 !"#$
+> Pre -trained
+> 3DGS 𝒢 "%&
+> U-Net
+> Φtraj 𝐼 !
+> "#$ ;𝜓 ,𝑡 ,𝜖
+> Φtraj 𝐼 !
+> %"&' ;𝜓 ,𝑡 ,𝜖
+> Rendered Image 𝐼 '
+> "%&
+> Low frequency
+> Noise 𝜖
+> Timestep 𝑡
+> Text prompt 𝝍
+> 𝑞 !"# ,%
+> &'()
+> 𝑞 !"# ,%
+> '*+ ̃
+> 𝓏 %
+> '*+ ̃
+> 𝓏 %
+> &'()
+> Decoded message
+> 110…101
+> 110…101
+> G.T. message Rendered Image 𝐼 '
+> !"#$ Update -saliency -
+> motivated selection
+> Soft per -Gaussian
+> selection weights 𝑚 !
+> Initialization Joint Optimization Protected Output
+> Protected
+> 3DGS 𝒢 !"#$
+> Viewpoint 𝑣
+> Scene -wide watermarking branch
+> Adversarial edit -deterrence branch
+> ✓Ownership tracing
+> ✓Edit deterrence
+> ✓Rendering fidelity
+> ℒtotal
+> : Rendering
+> : Operation flow
+> : Unfreeze parameters
+> : Freeze parameters
+> 𝒮 ()$ 𝒮 *)$$+
+> 𝒮 $"),
+> ℒwm
+> ℒ-.)(/$0 ,ℒ"%+1%"
+> ℒadv
+> Viewpoint 𝑣 𝓏 %
+> &'()
+> 𝓏 %
+> '*+
+> 110…101
+> Turn the bear statue
+> into agrizzly bear
+> Role -aware adv.
+> grad. modulation 𝜌 2
+> Watermark
+> Decoder
+> Low -pass
+> Filter
+> VAE
+> Encoder
+> Watermark
+> Decoder
+> 3D  editor
+> Rendered
+> Imag e
+
+Figure 2: Overview of GuardMarkGS. Left: We initialize 3DGS from a pretrained scene, keep a reference, and compute soft per-Gaussian weights via update-saliency-motivated Gaussian selection. Middle: The watermarking branch embeds watermark signals, while the adversarial branch uses latent-anchor separation, denoising-trajectory diversion, and cross-attention diversion. These terms use rendering constraints and softly weighted adversarial gradients modulated by parameter role. Right: The optimized 3DGS preserves fidelity, supports ownership tracing, and deters editing. should deviate from the ideal editing results. Third, it must preserve the visual quality of the original 3DGS scene in novel-view rendering. Formally, the desired protected scene should satisfy Tracing: Dmsg 
+
+ Rv (Gprot ) → m, (1) Deterrence: E Gprot , ψ ̸ ≈ E (G, ψ ), (2) Fidelity: Rv (Gprot ) ≈ R v (G), (3) where Dmsg is the watermark decoder, E denotes the instruction-driven editing pipeline considered in our threat scenario, and ψ denotes the edit instruction. The central difficulty is to jointly satisfy these requirements under the fixed scene-wide support needed for watermark. Uniformly applying adversarial perturbations over the same support can interfere with watermark recovery, edit deterrence, and rendering fidelity. Moreover, unlike image-domain attacks with direct pixel-space budgets [ 20 , 21 , 23 , 24 ], 3DGS perturbations are applied to Gaussian parameters with different rendering roles, while fidelity is observed only after rendering. Thus, our framework must control both the spatial support and parameter-role sensitivity of adversarial updates. 
+
+4 Method 
+
+4.1 Overview 
+
+Fig. 2 illustrates the proposed framework. GuardMarkGS consists of two optimization branches: a scene-wide watermarking branch for ownership tracing, described in Sec. 4.2, and an adversarial edit-deterrence branch, described in Sec. 4.3. At iteration t, we sample a training view set Vt,which is shared by both branches. The watermarking branch optimizes all rendered views in Vt
+
+to embed a recoverable ownership message into the protected 3DGS scene. For the adversarial branch, we precompute a fixed soft Gaussian mask from text-guided multi-view segmentation before optimization. This mask controls the adversarial update strength of each Gaussian, assigning stronger edit-deterrence updates to mask-selected Gaussians while allowing surrounding Gaussians to receive weaker updates. We further modulate adversarial gradients according to the rendering role of each Gaussian parameter, mitigating the mismatch between Gaussian-parameter perturbations and rendered-image fidelity. We optimize the protected scene with the following overall objective: 
+
+Ltotal = Lwm + λadv Ladv . (4) where Lwm denotes the scene-wide watermarking objective for ownership tracing, Ladv denotes the adversarial objective for edit deterrence, and λadv controls the relative strength of the edit-deterrence branch. The watermarking objective is applied scene-wide, whereas adversarial gradients are scaled by soft mask weights and parameter-role coefficients, enabling stronger updates on mask-selected Gaussians and more conservative perturbations for visually sensitive parameter groups. 4w/o Gaussian selection w/ Gaussian selection Original image (a) bear w/o Gaussian selection w/ Gaussian selection Original image (b) face 
+
+Figure 3: Visualization of adversarially updated Gaussians. Without the proposed Gaussian selection, the adversarial objective naturally forms regions of large adversarial updates around the main scene objects in easier-to-defend scenes such as bear . However, in more difficult-to-defend scenes such as face , these update patterns become spatially scattered. Based on this observation, we use update-saliency-motivated selection to select Gaussians where defense-effective updates are concentrated and assign them stronger adversarial updates. 
+
+4.2 Scene-wide watermark optimization 
+
+The watermark branch follows an iterative message recovery process over rendered protected views using a pre-trained watermark decoder [ 13 ]. Since low-frequency components are generally more robust to common distortions, we decode the watermark from the low-frequency wavelet band of each rendered view [40]. We define the watermark objective as follows: 
+
+Lwm = λmsg Lmsg + λquality Lquality , (5) where λmsg and λquality control the relative weights of message recovery and rendering fidelity. Both 
+
+Lmsg and Lquality are computed for each rendered view in Vt. Here, Lmsg is binary cross entropy between decoded bits and the target message, and Lquality combines an ℓ1 term and an LPIPS [ 41 ]term between the protected renders and the corresponding frozen reference renders. We optimize this watermarking objective scene-wide because the watermark signal should remain recoverable from diverse viewpoints and robust to realistic image- or model-level distortions. 
+
+4.3 Adversarial edit deterrence 4.3.1 Update-saliency-motivated Gaussian selection 
+
+Fig. 3 visualizes the Gaussians whose parameters are strongly updated by the adversarial terms later defined in Eq. (8) . Without the proposed Gaussian selection, easier-to-defend scenes such as 
+
+bear naturally show concentrated update-salient patterns around the main scene objects, whereas more difficult-to-defend scenes such as face exhibit irregular and spatially scattered updates. This observation suggests that effective edit deterrence benefits from concentrating the adversarial budget on a selected Gaussian subset rather than perturbing the entire scene uniformly. Motivated by this observation, we precompute text-guided 2D semantic masks [ 42 ] before optimization and convert them into per-Gaussian mask scores by accumulating the mask values weighted by each Gaussian’s rasterized pixel contribution. For each Gaussian gi, we compute 
+
+si =
+
+P
+
+> v∈V mask
+
+P 
+
+> p
+
+ai,v (p) Mv (p)
+
+P
+
+> v∈V mask
+
+P 
+
+> p
+
+ai,v (p) + ϵ , (6) where Mv is the 2D mask at view v and ai,v (p) denotes the rasterized contribution of Gaussian gi to pixel p. Instead of using a strict binary mask, we convert the score into a soft per-Gaussian coefficient that controls the strength of adversarial updates: 
+
+mi = min 
+
+
+
+1,
+
+ si
+
+τmask + ϵ
+
+γmask 
+
+. (7) Here, τmask controls the score level at which the adversarial update scale saturates, while γmask 
+
+controls how sharply this update coefficient decays for Gaussians with lower mask scores. In practice, 
+
+Vmask is sampled once before optimization, and the soft mask is kept fixed. The adversarial gradient for each Gaussian is scaled by mi, so that mask-selected Gaussians receive stronger updates while surrounding Gaussians receive weaker updates. Rather than enforcing a hard separation between selected and surrounding Gaussians, the soft coefficient applies stronger adversarial updates to selected Gaussians while allowing weaker updates on nearby Gaussians. This soft allocation helps preserve rendering fidelity and watermark recovery by avoiding overly localized or overly aggressive perturbations. Experiments comparing hard and soft masking appear in Appendix H. 54.3.2 Adversarial objective 
+
+The adversarial branch aims to make the editing trajectory diverge from the intended one. For the sampled view set Vt, we optimize an averaged multi-view objective: 
+
+Ladv = 1
+
+|V t|
+
+X
+
+> v∈V t
+
+
+
+L(v)render − λlat S(v)lat − λtraj S(v)traj − λxattn S(v)xattn 
+
+
+
+. (8) Here, L(v)render measures reconstruction error against the corresponding frozen reference render, λlat ,
+
+λtraj , and λxattn control the relative contributions of the three diversion terms, Gref denotes the frozen pretrained 3DGS scene, and z(·) is the VAE encoder. The latent-anchor separation term increases separation in the VAE latent space between the protected render and the frozen reference render: 
+
+S(v)lat = z Rv (Gprot ) − z Rv (Gref ) 22 . (9) The denoising-trajectory diversion term, S(v)traj , separates the protected render from the frozen ref-erence render under the same edit prompt ψ, diffusion timestep t, and sampled noise ϵ [ 43 ]. Let 
+
+Φtraj (I; ψ, t, ϵ ) denote the frozen editor’s denoising-trajectory descriptor, which summarizes the prompt-induced edit direction and a short denoising trajectory from image I. We define 
+
+S(v)traj = Φtraj 
+
+ Rv (Gprot ); ψ, t, ϵ  − Φtraj 
+
+ Rv (Gref ); ψ, t, ϵ  22 . (10) This term pushes the protected render away from the reference editing direction even when the protected and reference renders remain visually similar before editing. We additionally use a cross-attention diversion term, S(v)xattn , which enlarges the query separation in the mid-block text-conditioned cross-attention of the frozen diffusion editor [44]: 
+
+S(v)xattn = 1
+
+dmid 
+
+Φxattn mid 
+
+ Rv (Gprot ); ψ, t, ϵ  − Φxattn mid 
+
+ Rv (Gref ); ψ, t, ϵ  22 , (11) where Φxattn mid denotes a descriptor obtained by pooling query tokens from the mid-block text-conditioned cross-attention. By increasing this diversion term, the protected render induces prompt-to-image alignment that differs from that of the reference, disrupting the intended editing trajectory. For a detailed definition of the cross-attention diversion term in Eq. (11) , please refer to Appendix G. 
+
+4.3.3 Parameter-role-aware adversarial modulation 
+
+The update-saliency-motivated Gaussian selection determines which Gaussians should receive stronger adversarial signals. However, it does not resolve another source of imbalance: each Gaussian consists of parameters with different rendering roles whose perturbations have different effects on rendered images. In particular, the scale si and rotation ri determine the anisotropic covariance of a Gaussian, opacity αi controls visibility and alpha compositing, the DC color coefficient cdc  
+
+> i
+
+con-trols view-independent appearance, and the remaining spherical-harmonic coefficients crest  
+
+> i
+
+control view-dependent residual appearance. Therefore, applying the same adversarial gradient scale to all parameter groups does not reliably control the resulting rendered-image degradation. To account for the different rendering sensitivities of Gaussian parameter groups, we assign a parameter-role coefficient ρk to each parameter group k and modulate only the adversarial gradient: 
+
+e∇θi,k Ladv = mi ρk ∇θi,k Ladv , (12) where θi,k denotes the k-th parameter group of Gaussian gi. The final gradient ∇θi,k L used to update the protected scene combines the watermark gradient with the modulated adversarial gradient: 
+
+∇θi,k L = ∇θi,k Lwm + λadv e∇θi,k Ladv . (13) The parameter-role coefficients are chosen to reflect the rendering sensitivity of each parameter role: opacity and DC color are treated more conservatively because they can cause visible density or color drift across views, whereas scale, rotation, and view-dependent residual features can carry adversarial signals with less direct global appearance shift. 6Table 1: Quantitative results. The results are averaged over the benchmark set. PSNR, SSIM, LPIPS, and bit accuracy are measured from rendered images. CLIP, CLIP-T, and CLIP-D are measured after 3D editing using DGE. 3DGSW+DEGauss denotes a straightforward composition of watermarking and adversarial objectives. Orig. denotes the value after editing a pretrained 3DGS. GuardMarkGS achieves the highest sUCPS, which jointly evaluates traceability, edit deterrence, and fidelity.                                                                                           
+
+> Method sUCPS ↑Bit Acc. (%) ↑CLIP CLIP-T CLIP-D PSNR ↑SSIM ↑LPIPS ↓
+> Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑
+> 3DGSW [26] 0.7791 99.00
+> 1.0000 0.9629 0.0371 0.2825 0.2826 -0.0001 0.1476 0.1408 0.0068 33.94 0.9505 0.0866 GaussianMarker [27] 0.7516 98.51 0.9731 0.0269 0.2835 -0.0010 0.1537 -0.0061 35.37 0.9710 0.0597
+> GuardSplat [28] 0.7489 98.92 0.9854 0.0146 0.2819 0.0006 0.1492 -0.0016 29.34 0.9225 0.0627 DEGauss [25] 0.6467 N/A 0.9250 0.0750 0.2713 0.0112 0.1268 0.0208 30.34 0.9120 0.1502 3DGSW+DEGauss 0.6200 62.79 0.9596 0.0404 0.2813 0.0012 0.1387 0.0089 29.90 0.8463 0.1950 GuardMarkGS (Ours) 0.8622 97.23 0.9093 0.0907 0.2676 0.0149 0.1086 0.0390 30.36 0.8935 0.1471 Before Edit After Edit
+> DEGauss GuardMarkGS
+
+Figure 4: Qualitative results. We compare rendered images before and after 3D editing using DGE. To qualitatively evaluate editing defense performance, we compare our method with DEGauss [ 25 ]. The first row shows pre-edit renders, while the second row presents the corresponding post-edit outputs. Here, the red boxes indicate the edited results of pretrained 3DGS. Despite providing both traceability and edit deterrence, our method maintains higher rendering fidelity than DEGauss. 
+
+5 Experiments 
+
+5.1 Setups Scenes and datasets. We evaluate on bicycle and garden from Mip-NeRF 360 [ 45 ], and face , person ,
+
+bear , and fangzhou from Instruct-NeRF2NeRF [ 5]. All evaluations are conducted on novel views, so that our method and the baselines are compared fairly under the same rendering setting. 
+
+Baselines. We compare against watermarking baselines, 3DGSW [ 26 ], GaussianMarker [ 27 ], and GuardSplat [ 28 ], as well as one defense-only baseline, DEGauss [ 25 ]. To examine whether joint pro-tection can be obtained by a simple composition of existing methods, we include 3DGSW+DEGauss, which adds DEGauss-style adversarial terms to a 3DGSW-style watermarking objective. 
+
+Editing pipelines. We use DGE [ 6 ] as the main unauthorized editing pipeline, as it is a representative 3DGS editing method enforcing multi-view consistency. We evaluate defense performance using GaussianEditor [7] to examine whether edit deterrence transfers to another editing pipeline. 
+
+Evaluation metrics. We evaluate our method and the baselines from three perspectives. Traceability :we render images from novel views and measure watermark bit accuracy from the decoded ownership message. Deterrence capability : after applying the editing pipelines, we render the edited scenes from novel views and measure CLIP [ 46 ], CLIP-T, and CLIP-D. Here, CLIP measures the similarity between the edited results from the protected and original scenes, CLIP-T measures the similarity between the edited protected result and the target text prompt, and CLIP-D measures how strongly the image editing direction aligns with the text editing direction. Fidelity : after applying each protection method to a pretrained 3DGS model, we compare the rendered protected images against the original renders using PSNR, SSIM [ 47 ], and LPIPS [ 41 ]. To assess the balance across these three aspects, we define a unified score, soft Unified Copyright Protection Score (sUCPS), which combines traceability, edit deterrence, and fidelity after per-metric normalization. This metric is high only when consistently superior performance is demonstrated across all aspects. Please refer to Appendix E for the definitions of CLIP, CLIP-T, and CLIP-D, and to Appendix F for the definition of sUCPS. 7Table 2: Ablation study of the joint optimization design. Since watermarking and adversarial objectives are essential for joint optimization, we omit them from the columns and present ablation studies on update-saliency-motivated Gaussian selection and parameter-role-aware adversarial modu-lation. Results show that the proposed components improve the trade-off among traceability, edit deterrence, and rendering fidelity, with the full model achieving the best balance.                                                                         
+
+> Gaussian Selection Adversarial Modulation sUCPS ↑Bit Acc. (%) ↑CLIP CLIP-T CLIP-D PSNR ↑SSIM ↑LPIPS ↓
+> Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑
+> --0.6776 67.80 1.0000
+> 0.8706 0.1294
+> 0.2825
+> 0.2620 0.0205
+> 0.1476
+> 0.0851 0.0625 28.73 0.8159 0.3069
+> ✓-0.8566 97.02 0.9088 0.0912 0.2678 0.0147 0.1098 0.0378 30.22 0.8801 0.1503 -✓0.6683 65.02 0.8734 0.1266 0.2625 0.0200 0.0890 0.0586 28.74 0.8161 0.3062
+> ✓✓0.8622 97.23 0.9093 0.0907 0.2676 0.0149 0.1086 0.0390 30.36 0.8935 0.1471
+
+Implementation details. Experiments use an NVIDIA RTX A6000 GPU. Each scene is optimized for 8 epochs using a 32-bit watermark message, and target Gaussians for adversarial noise injection are selected using 2D masks from 24 viewpoints. We set λmsg = 0 .1, λquality = 1 .0, and λlat =
+
+λtraj = λxattn = 10 −4. Additional algorithmic details and edit prompts are provided in Appendix B. 
+
+5.2 Main results Quantitative results. Tab. 1 summarizes the averaged quantitative results over the evaluated bench-mark set, including the proposed unified score sUCPS. The watermark-only methods achieve high bit accuracy and strong rendering fidelity, but they show clear limitations on the edit-deterrence metrics. DEGauss is included as a defense-only reference, but it does not provide watermark decoding and therefore cannot satisfy the ownership-tracing requirement. The 3DGSW+DEGauss further tests a straightforward composition of existing watermarking and edit-deterrence objectives. This naive combination fails to achieve a stable balance, as it substantially reduces bit accuracy and rendering quality while providing only limited edit-deterrence gains. These results show that joint protection cannot be obtained by simply adding adversarial edit-deterrence terms to a watermarking objective. In contrast, our method demonstrates recoverable ownership tracing with high bit accuracy and effective editing defense, while still maintaining competitive fidelity. Taken together, these results suggest that GuardMarkGS provides a more integrated and practical solution for copyright protection of 3DGS-based assets by jointly addressing owner identification and unauthorized 3D edit deterrence. 
+
+Qualitative results. Fig. 4 compares our method with DEGauss [ 25 ] before and after 3D editing using DGE [ 6]. The defense-only baseline introduces visible degradation in the pre-edit renders, whereas our method maintains higher rendering fidelity while still disrupting the edited results. These qualitative results indicate that our method provides a better balance between fidelity and edit deterrence, in addition to supporting ownership traceability through watermark recovery. Additional qualitative results are provided in Appendix K. 
+
+Additional generalization experiments. We further evaluate edit deterrence under GaussianEdi-tor [ 7], a 3D editing pipeline other than DGE [ 6 ]. The results show that the proposed method is not limited to a single editing method and can still suppress unauthorized edits under this alternative editor. The results for this cross-editor generalization setting are provided in Appendix C. 
+
+5.3 Ablation study Effect of update-saliency-motivated selection. Tab. 2 reports the ablation of update-saliency-motivated Gaussian selection under the same scene-wide watermarking and adversarial objectives. When parameter-role modulation is enabled, adding the proposed selection strategy improves bit accuracy from 65 .02 to 97 .23 , PSNR from 28 .74 to 30 .36 , and SSIM from 0.8161 to 0.8935 , while reducing LPIPS from 0.3062 to 0.1471 . Although the variants without selection can produce stronger raw CLIP-based edit-deterrence gaps, they do so with severe degradation in watermark recovery and rendering fidelity. This indicates that Gaussian selection mainly stabilizes the joint optimization. Additional results comparing hard and soft Gaussian masking are provided in Appendix H. 
+
+Effect of parameter-role modulation. Tab. 2 also assesses the effect of the role-aware coefficients in Eq. (12) . Fixing the proposed Gaussian selection, adding parameter-role-aware modulation improves sUCPS from 0.8566 to 0.8622 , bit accuracy from 97 .02 to 97 .23 , and PSNR from 30 .22 to 30 .36 . The CLIP-based edit-deterrence scores remain comparable, with CLIP changing from 0.9088 to 0.9093 ,8Table 3: Ablation on adversarial diversion-term combinations. We evaluate various combinations of latent-anchor separation Slat , denoising-trajectory diversion Straj , and cross-attention diversion 
+
+Sxattn . The results show that the three terms work complementarily to achieve strong edit deterrence.                                                                                                                      
+
+> Slat Straj Sxattn sUCPS ↑Bit Acc. (%) ↑CLIP CLIP-T CLIP-D PSNR ↑SSIM ↑LPIPS ↓
+> Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑
+> -✓✓0.8621 95.35 1.0000 0.9251 0.0749 0.2825 0.2712 0.0113 0.1476 0.1232 0.0244 30.02 0.8956 0.1398
+> ✓-✓0.7733 97.12 0.9562 0.0438 0.2795 0.0030 0.1426 0.0050 31.24 0.9022 0.1301
+> ✓✓-0.8595 95.42 0.9224 0.0776 0.2737 0.0088 0.1237 0.0239 30.32 0.8944 0.1333 --✓0.7686 96.59 0.9642 0.0358 0.2798 0.0027 0.1412 0.0064 31.28 0.9043 0.1298
+> ✓--0.7325 97.12 0.9644 0.0356 0.2814 0.0011 0.1474 0.0002 31.20 0.9067 0.1288 -✓-0.8402 95.13 0.9306 0.0694 0.2747 0.0078 0.1334 0.0142 30.22 0.8999 0.1286
+> ✓✓✓0.8622 97.23 0.9093 0.0907 0.2676 0.0149 0.1086 0.0390 30.36 0.8935 0.1471
+
+CLIP-T from 0.2678 to 0.2676 , and CLIP-D from 0.1098 to 0.1086 . These results suggest that parameter-role-aware modulation further improves the fidelity side of the trade-off while preserving the edit-deterrence effect of the selected adversarial updates. Additional ablations on the perturbed Gaussian parameter groups are provided in Appendix I. 
+
+Diversion-term analysis. We analyze how the three diversion terms in Eq. (8) contribute to editing defense performance. Specifically, we examine latent-anchor separation Slat in Eq. (9) , denoising-trajectory diversion Straj in Eq. (10) , and cross-attention diversion Sxattn in Eq. (11) . Tab. 3 shows that rendering fidelity and bit accuracy remain comparable across variants, whereas edit-deterrence metrics vary more substantially. This indicates that the performance gain does not simply come from injecting a larger amount of adversarial noise, but from the complementary effects of the three diversion terms. Using all three terms achieves stronger editing defense, resulting in a better balance across traceability, edit deterrence, and rendering fidelity, yielding the highest sUCPS. 
+
+Ablation of the joint protection design. Tab. 2 summarizes how the two allocation mechanisms interact under the fixed watermarking and adversarial objectives. Without both Gaussian selection and role-aware modulation, the model produces strong raw CLIP-based edit-deterrence gaps, but suffers from low bit accuracy and poor rendering fidelity, indicating a severe conflict between the two protection signals. Gaussian selection provides the main improvement in watermark recovery and rendering fidelity by controlling the spatial support of adversarial updates. Role-aware modulation further refines this allocation by scaling adversarial gradients according to Gaussian parameter roles. The full model achieves the best overall sUCPS, suggesting that effective joint protection requires explicit control over both the selected Gaussian support and the parameter-role sensitivity, rather than simply applying watermarking and adversarial objectives to the same 3DGS support. 
+
+6 Conclusion 
+
+We present a unified protection framework for 3D Gaussian Splatting that jointly addresses ownership tracing and unauthorized edit deterrence. The core idea is to embed the watermark signal over the full scene while assigning stronger adversarial updates to a mask-selected Gaussian subset. This design addresses a central tension in 3DGS copyright protection: ownership evidence should remain recoverable across diverse viewpoints through scene-wide watermarking, while adversarial signals should be selectively allocated under joint optimization rather than uniformly imposed on the same scene-wide support. This allocation helps maintain a stable balance among traceability, edit deterrence, and rendering fidelity. The experimental results show that the proposed framework achieves the best sUCPS, our unified score that jointly reflects traceability, edit deterrence, and fidelity, while maintaining competitive performance across all three aspects. We believe that future 3D copyright protection systems should move beyond isolated objectives, such as passive ownership tracing or active edit deterrence, and instead optimize them jointly. 
+
+Limitations and future works. We have shown that copyright tracing via digital watermarking and active copyright protection through adversarial signal injection can be achieved simultaneously within a unified framework. However, to become a practical copyright protection technique, the method must demonstrate sufficient robustness under a wider range of distortion scenarios, including not only distortions applied to rendered images but also model-level perturbations that directly modify the protected 3D representation itself. Therefore, future work should include a broader and more systematic analysis under realistic copyright-protection scenarios that incorporate such distortions. 9References 
+
+[1] Bernhard Kerbl, Georgios Kopanas, Thomas Leimkühler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Transactions on Graphics , 42(4), July 2023. [2] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, Ravi Ramamoorthi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view synthesis. In Andrea Vedaldi, Horst Bischof, Thomas Brox, and Jan-Michael Frahm, editors, Computer Vision – ECCV 2020 , pages 405–421. Springer International Publishing, 2020. [3] Thomas Müller, Alex Evans, Christoph Schied, and Alexander Keller. Instant neural graphics primitives with a multiresolution hash encoding. ACM Trans. Graph. , 41(4), July 2022. doi: 10.1145/3528223. 3530127. [4] Tao Lu, Mulin Yu, Linning Xu, Yuanbo Xiangli, Limin Wang, Dahua Lin, and Bo Dai. Scaffold-gs: Structured 3d gaussians for view-adaptive rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 20654–20664, 2024. [5] Ayaan Haque, Matthew Tancik, Alexei A. Efros, Aleksander Holynski, and Angjoo Kanazawa. Instruct-nerf2nerf: Editing 3d scenes with instructions. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 19740–19750, October 2023. [6] Minghao Chen, Iro Laina, and Andrea Vedaldi. DGE: direct gaussian 3d editing by consistent multi-view editing. In ECCV (74) , pages 74–92, 2024. [7] Yiwen Chen, Zilong Chen, Chi Zhang, Feng Wang, Xiaofeng Yang, Yikai Wang, Zhongang Cai, Lei Yang, Huaping Liu, and Guosheng Lin. GaussianEditor: Swift and Controllable 3D Editing with Gaussian Splatting . In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 21476–21485, June 2024. [8] Jing Wu, Jia-Wang Bian, Xinghui Li, Guangrun Wang, Ian D. Reid, Philip Torr, and Victor Adrian Prisacariu. Gaussctrl: Multi-view consistent text-driven 3d gaussian splatting editing. In ECCV (14) , pages 55–71, 2024. [9] Dong In Lee, Hyeongcheol Park, Jiyoung Seo, Eunbyung Park, Hyunje Park, Ha Dam Baek, Sangheon Shin, Sangmin Kim, and Sangpil Kim. Editsplat: Multi-view fusion and attention-guided optimization for view-consistent 3d scene editing with 3d gaussian splatting. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pages 11135–11145, June 2025. [10] Can Wang, Menglei Chai, Mingming He, Dongdong Chen, and Jing Liao. Clip-nerf: Text-and-image driven manipulation of neural radiance fields. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3835–3844, June 2022. [11] Jingyu Zhuang, Chen Wang, Liang Lin, Lingjie Liu, and Guanbin Li. Dreameditor: Text-driven 3d scene editing with neural fields. In SIGGRAPH Asia 2023 Conference Papers . Association for Computing Machinery, 2023. doi: 10.1145/3610548.3618190. [12] Etai Sella, Gal Fiebelman, Peter Hedman, and Hadar Averbuch-Elor. Vox-e: Text-guided voxel editing of 3d objects. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 430–440, October 2023. [13] Jiren Zhu, Russell Kaplan, Justin Johnson, and Li Fei-Fei. Hidden: Hiding data with deep networks. In Computer Vision – ECCV 2018: 15th European Conference, Munich, Germany, September 8-14, 2018, Proceedings, Part XV , page 682–697. Springer-Verlag, 2018. ISBN 978-3-030-01266-3. doi: 10.1007/978-3-030-01267-0_40. [14] Pierre Fernandez, Guillaume Couairon, Hervé Jégou, Matthijs Douze, and Teddy Furon. The stable signature: Rooting watermarks in latent diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 22466–22477, October 2023. [15] Yuxin Wen, John Kirchenbauer, Jonas Geiping, and Tom Goldstein. Tree-rings watermarks: Invisible fingerprints for diffusion images. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 58047–58063. Curran Associates, Inc., 2023. [16] Huayang Huang, Yu Wu, and Qian Wang. Robin: Robust and invisible watermarks for diffusion models with adversarial optimization. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Processing Systems , volume 37, pages 3937–3963. Curran Associates, Inc., 2024. doi: 10.52202/079017-0129. 
+
+10 [17] Chenxin Li, Brandon Y. Feng, Zhiwen Fan, Panwang Pan, and Zhangyang Wang. Steganerf: Embedding invisible information within neural radiance fields. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 441–453, October 2023. [18] Ziyuan Luo, Qing Guo, Ka Chun Cheung, Simon See, and Renjie Wan. Copyrnerf: Protecting the copyright of neural radiance fields. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 22401–22411, October 2023. [19] Youngdong Jang, Dong In Lee, MinHyuk Jang, Jong Wook Kim, Feng Yang, and Sangpil Kim. Waterf: Robust watermarks in radiance fields for protection of copyrights. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12087–12097, 2024. [20] Hadi Salman, Alaa Khaddaj, Guillaume Leclerc, Andrew Ilyas, and Aleksander M ˛ adry. Raising the cost of malicious ai-powered image editing. In Proceedings of the 40th International Conference on Machine Learning , 2023. [21] Chumeng Liang, Xiaoyu Wu, Yang Hua, Jiaru Zhang, Yiming Xue, Tao Song, Zhengui Xue, Ruhui Ma, and Haibing Guan. Adversarial example does good: preventing painting imitation from diffusion models via adversarial examples. In Proceedings of the 40th International Conference on Machine Learning , 2023. [22] Joonsung Jeon, Woo Jae Kim, Suhyeon Ha, Sooel Son, and Sung eui Yoon. Advpaint: Protecting images from inpainting manipulation via adversarial attention disruption. In The Thirteenth International Conference on Learning Representations , 2025. [23] Chumeng Liang and Xiaoyu Wu. Mist: Towards improved adversarial examples for diffusion models. 
+
+arXiv preprint arXiv:2305.12683 , 2023. [24] Shawn Shan, Jenna Cryan, Emily Wenger, Haitao Zheng, Rana Hanocka, and Ben Y. Zhao. Glaze: Protecting artists from style mimicry by Text-to-Image models. In 32nd USENIX Security Symposium (USENIX Security 23) , pages 2187–2204, Anaheim, CA, August 2023. USENIX Association. ISBN 978-1-939133-37-3. [25] Lingzhuang Meng, Mingwen Shao, Yuanjian Qiao, and Xiang Lv. DEGauss: Defending against malicious 3d editing for gaussian splatting. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [26] Youngdong Jang, Hyunje Park, Feng Yang, Heeju Ko, Euijin Choo, and Sangpil Kim. 3d-gsw: 3d gaussian splatting for robust watermarking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 5938–5948, June 2025. [27] Xiufeng Huang, Ruiqi Li, Yiu ming Cheung, Ka Chun Cheung, Simon See, and Renjie Wan. Gaussian-marker: Uncertainty-aware copyright protection of 3d gaussian splatting. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. [28] Zixuan Chen, Guangcong Wang, Jiahao Zhu, Jianhuang Lai, and Xiaohua Xie. Guardsplat: Efficient and robust watermarking for 3d gaussian splatting. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pages 16325–16335, June 2025. [29] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bjorn Ommer. High-Resolution Image Synthesis with Latent Diffusion Models . In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10674–10685, June 2022. [30] Zehao Yu, Anpei Chen, Binbin Huang, Torsten Sattler, and Andreas Geiger. Mip-splatting: Alias-free 3d gaussian splatting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 19447–19456, June 2024. [31] Antoine Guédon and Vincent Lepetit. Sugar: Surface-aligned gaussian splatting for efficient 3d mesh reconstruction and high-quality mesh rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 5354–5363, June 2024. [32] Binbin Huang, Zehao Yu, Anpei Chen, Andreas Geiger, and Shenghua Gao. 2d gaussian splatting for geometrically accurate radiance fields. In ACM SIGGRAPH 2024 Conference Papers , SIGGRAPH ’24. Association for Computing Machinery, 2024. ISBN 9798400705250. doi: 10.1145/3641519.3657428. [33] Zehao Yu, Torsten Sattler, and Andreas Geiger. Gaussian opacity fields: Efficient adaptive surface reconstruction in unbounded scenes. ACM Trans. Graph. , 43(6), November 2024. ISSN 0730-0301. doi: 10.1145/3687937. 
+
+11 [34] Jiaxiang Tang, Jiawei Ren, Hang Zhou, Ziwei Liu, and Gang Zeng. Dreamgaussian: Generative gaussian splatting for efficient 3d content creation. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun, editors, International Conference on Learning Representations , volume 2024, pages 33879–33896, 2024. [35] Taoran Yi, Jiemin Fang, Junjie Wang, Guanjun Wu, Lingxi Xie, Xiaopeng Zhang, Wenyu Liu, Qi Tian, and Xinggang Wang. Gaussiandreamer: Fast generation from text to 3d gaussians by bridging 2d and 3d diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 6796–6807, June 2024. [36] Thanh Van Le, Hao Phung, Thuan Hoang Nguyen, Quan Dao, Ngoc N. Tran, and Anh Tran. Anti-dreambooth: Protecting users from personalized text-to-image synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 2116–2127, October 2023. [37] Tim Brooks, Aleksander Holynski, and Alexei A. Efros. InstructPix2Pix: Learning to Follow Image Editing Instructions . In 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 18392–18402, June 2023. [38] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, Advances in Neural Information Processing Systems , volume 33, pages 6840–6851. Curran Asso-ciates, Inc., 2020. URL https://proceedings.neurips.cc/paper_files/paper/2020/file/ 4c5bcfec8584af0d967f1ab10179ca4b-Paper.pdf .[39] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. In NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications , 2021. URL https://openreview.net/forum?id= qw8AKxfYbI .[40] S. D. Lin and Chin-Feng Chen. A robust dct-based watermarking for copyright protection. IEEE Trans. on Consum. Electron. , 46(3):415–421, August 2000. ISSN 0098-3063. doi: 10.1109/30.883387. [41] Richard Zhang, Phillip Isola, Alexei A. Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , June 2018. [42] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollar, and Ross Girshick. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 4015–4026, October 2023. [43] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real images using guided diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 6038–6047, June 2023. [44] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross-attention control. In International Conference on Learning Representations (ICLR) , 2023. [45] Jonathan T. Barron, Ben Mildenhall, Dor Verbin, Pratul P. Srinivasan, and Peter Hedman. Mip-nerf 360: Unbounded anti-aliased neural radiance fields. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 5470–5479, June 2022. [46] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Marina Meila and Tong Zhang, editors, 
+
+Proceedings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pages 8748–8763. PMLR, 18–24 Jul 2021. [47] Zhou Wang, A.C. Bovik, H.R. Sheikh, and E.P. Simoncelli. Image quality assessment: from error visibility to structural similarity. IEEE Transactions on Image Processing , 13(4):600–612, 2004. doi: 10.1109/TIP.2003.819861. [48] Jaehwan Jeong, Sumin In, Sieun Kim, Hannie Shin, Jongheon Jeong, Sang Ho Yoon, Jaewook Chung, and Sangpil Kim. Faceshield: Defending facial image against deepfake threats. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 10364–10374, October 2025. 
+
+12 Appendix A Broader impact 
+
+The proposed framework can help creators and organizations protect 3D assets in digital heritage, virtual production, AR/VR, and simulation pipelines. By combining ownership tracing and edit deterrence within a protected 3DGS representation, our method supports practical copyright protection even when released assets are redistributed or subjected to instruction-driven editing. This can help content owners preserve ownership evidence, discourage unauthorized manipulation, and deploy protected 3D assets while maintaining rendering fidelity. More broadly, our work highlights the need for copyright protection systems that jointly consider traceability, edit deterrence, and visual quality, providing a foundation for future research on reliable protection of editable 3D representations. 
+
+B Additional algorithmic details 
+
+In this section, we provide the algorithmic details mentioned in Sec. 5 of the main paper. The overall optimization procedure is summarized in Alg. 1. In addition, Tab. 4 lists the edit text prompts used to evaluate edit-deterrence performance, including the main evaluation reported in Tab. 1. 
+
+Algorithm 1 Joint optimization of GuardMarkGS 
+
+Require: Pretrained 3DGS scene G, frozen reference scene Gref ← G , training view set V, ownership message m, prompt library Ψlib , parameter-role coefficients {ρk}, total iterations T
+
+Ensure: Protected 3DGS scene Gprot  
+
+> 1:
+
+Initialize Gprot ← G  
+
+> 2:
+
+Precompute a soft Gaussian mask {mi} from text-guided multi-view semantic segmentation  
+
+> 3:
+
+Set role coefficients {ρk} for Gaussian parameter groups  
+
+> 4:
+
+for t = 1 to T do  
+
+> 5:
+
+Sample a multi-view set Vt ⊂ V  
+
+> 6:
+
+Sample an edit prompt ψ ∼ Ψlib  
+
+> 7:
+
+for each v ∈ V t do  
+
+> 8:
+
+Render protected view Iprot  
+
+> v
+
+= Rv (Gprot ) 
+
+> 9:
+
+Render reference view Iref  
+
+> v
+
+= Rv (Gref ) 
+
+> 10:
+
+Compute watermark loss L(v)wm  
+
+> 11:
+
+Compute adversarial loss L(v)adv  
+
+> 12:
+
+end for  
+
+> 13:
+
+Aggregate the scene-wide watermark loss over Vt
+
+Lwm = 1
+
+|V t|
+
+X
+
+> v∈V t
+
+L(v)wm  
+
+> 14:
+
+Aggregate the averaged adversarial loss over Vt
+
+Ladv = 1
+
+|V t|
+
+X
+
+> v∈V t
+
+L(v)adv  
+
+> 15:
+
+Backpropagate Lwm to obtain scene-wide watermark gradients  
+
+> 16:
+
+Compute adversarial gradients ∇θi,k Ladv  
+
+> 17:
+
+Apply the soft Gaussian mask and role coefficients: 
+
+e∇θi,k Ladv = miρk∇θi,k Ladv  
+
+> 18:
+
+Combine the watermark and λadv -weighted modulated adversarial gradients  
+
+> 19:
+
+Update the parameters of Gprot with the optimizer  
+
+> 20:
+
+end for  
+
+> 21:
+
+return Gprot 
+
+13 Table 4: Edit prompts used for evaluating edit-deterrence performance. For each evaluated scene, we list the text prompts used to perform 3D editing under each scene-specific evaluation setting. 
+
+scene edit text prompt scene edit text prompt 
+
+bear Turn the bear statue into a panda Turn the bear statue into a grizzly bear Turn the bear statue into an asiatic black bear Turn the bear statue into a wild boar bicycle Change the bicycle color to bright red Turn the ground into a Namibian desert A photo of the bicycle at the Namibian desert face Wear him a glasses Make him wear a Venetian mask Turn him into the Tolkien Elf Turn him into an Einstein A photo of a marble sculpture garden Change the table color to deep mahogany brown Turn the vase into red A photo of a garden scene with autumn person Make the man look like a mosaic Sculpture Turn the man into a robot Turn him into a Minecraft character Make him reading a book fangzhou Turn him into a comic book character Turn him into an old man with wrinkles Turn him into a spider man with Mask 
+
+C Additional results under different editing pipeline 
+
+We provide additional quantitative results using GaussianEditor [ 7], a 3D editing pipeline other than DGE [ 6]. Tab. 5 reports edit-deterrence results when GaussianEditor is used. In addition, Fig. 5 shows qualitative results edited with GaussianEditor. Taken together, these results show that the edit-deterrence performance of our proposed method is not limited to a specific editing model. Table 5: Generalization to GaussianEditor: quantitative results. Lower CLIP, CLIP-T, and CLIP-D values indicate more successful editing defense. Here, the Orig. column reports the values measured from edits of the original scene, while the Method column reports the values measured from edits of the protected scene produced by each method. GuardMarkGS also achieves the strongest editing defense performance in experiments using GaussianEditor [7].                                              
+
+> Method CLIP CLIP-T CLIP-D Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑Orig. Method ↓Diff. ↑
+> 3DGSW [26] 1.0000 0.9582 0.0418 0.2737 0.2770 -0.0033 0.1293 0.1306 -0.0013 GaussianMarker [27] 0.9643 0.0357 0.2779 -0.0042 0.1449 -0.0156 GuardSplat [28] 0.9777 0.0223 0.2754 -0.0017 0.1362 -0.0069 DEGauss [25] 0.9274 0.0726 0.2711 0.0026 0.1282 0.0011 GuardMarkGS (Ours) 0.9243 0.0757 0.2696 0.0041 0.1196 0.0097 Before Edit After Edit  GE
+> GuardMarkGS DEGauss
+
+Figure 5: Generalization to GaussianEditor: qualitative results. We show qualitative results on GaussianEditor [ 7], a 3D editing method other than DGE [ 6]. After Edit GE denotes results edited with GaussianEditor. The red boxes in the second row show edited results of pretrained 3DGS. These results indicate our method’s edit-deterrence is not limited to the main DGE pipeline. 14 D Additional robustness experiments 
+
+In the main paper, Tab. 1 reports the primary quantitative comparison results. In this section, we present additional experiments to further examine the robustness of the proposed framework. Here, robustness refers to the ability to preserve both ownership tracing and defense against 3D editing even under scenarios where copyright-protection mechanisms may be weakened. 
+
+Robustness of the watermark. In the application scenario of Fig. 1, Alice verifies ownership by recovering the embedded watermark from rendered images of the protected 3DGS model. However, an unauthorized user may attempt to weaken or remove the watermark by applying distortions either to the rendered images or directly to the 3DGS model itself. Tab. 6 reports the watermark recovery results under these image- and model-level distortion scenarios. The results show that the proposed method preserves competitive watermark recovery performance even after such distortions, despite jointly optimizing watermark and adversarial signals. 
+
+Robustness of adversarial noise. In the application scenario of Fig. 1, Bob may attempt unauthorized editing using the acquired 3DGS model. Furthermore, if Bob is aware that adversarial optimization has been applied to deter such editing, he may try to weaken the protection by adding random noise to the Gaussians that compose the scene, or by performing operations such as random Gaussian cloning or random Gaussian pruning. Tab. 7 reports the results under these model-distortion scenarios and evaluates how successfully the proposed method continues to deter editing. The results suggest that the proposed framework preserves its edit-deterrence capability even under such distortions. Table 6: Robustness of watermark recovery. Bit acc. is measured in three settings: no distortion, image-level distortions on rendered images, and model-level distortions on the protected 3DGS.                                                    
+
+> Method Bit Acc. (%) ↑
+> none Model Distortion Image Distortion noise prune clone noise ( σ=0.01) rotation ( ±π/ 6)scaling (75%) blur ( σ=0.1) crop (40%) jpeg ( Q=50) 3DGSW [26] 99.00 97.46 98.69 99.00 98.92 87.02 98.84 99.00 85.36 94.82
+> GaussianMarker [27] 98.51 78.27 92.58 95.24 97.51 81.16 96.42 98.51 72.35 73.58 GuardSplat [28] 98.92 64.49 80.16 89.26 96.73 81.61 94.95 98.92 98.58 67.95 GuardMarkGS (Ours) 97.23 92.94 94.21 97.23 96.73 82.62 96.97 97.23 71.05 87.86
+
+Table 7: Robustness of edit deterrence. We apply model-level distortions to each protected 3DGS representation, perform 3D editing, and report CLIP, CLIP-T, and CLIP-D measured on the edited outputs. For each metric group, Orig. denotes the score measured from edits of the pretrained 3DGS, while Method reports scores measured from edits of the protected scene produced by each method.                                                                               
+
+> Method CLIP ↓CLIP-T ↓CLIP-D ↓
+> Orig. Method Orig. Method Orig. Method none noise prune clone none noise prune clone none noise prune clone 3DGSW [26] 1.0000 0.9629 0.9322 0.9545 0.9602 0.2825 0.2826 0.2761 0.2808 0.2822 0.1476 0.1408 0.1241 0.1330 0.1409 GaussianMarker [27] 0.9731 0.9443 0.9665 0.9710 0.2835 0.2774 0.2820 0.2838 0.1537 0.1396 0.1491 0.1554 GuardSplat [28] 0.9854 0.9521 0.9757 0.9822 0.2819 0.2761 0.2815 0.2830 0.1492 0.1281 0.1452 0.1499 DEGauss [25] 0.9250 0.8965 0.9170 0.9200 0.2713 0.2654 0.2697 0.2706 0.1268 0.1136 0.1233 0.1221 GuardMarkGS (Ours) 0.9093 0.8895 0.9081 0.9063 0.2676 0.2631 0.2659 0.2677 0.1086 0.1035 0.1086 0.1092
+
+E Definition of CLIP-based edit-deterrence metrics 
+
+We use three CLIP-based metrics to quantify edit deterrence: CLIP, CLIP-T, and CLIP-D. All metrics are evaluated on the same novel-view set after applying the editing pipeline. In Tab. 1 of the main paper, the Orig. columns denote scores measured from edits of the original pretrained 3DGS scene, the Method columns denote scores measured from edits of the protected scene produced by each method, and Diff. denotes the gap between them. Let Iedit  
+
+> v
+
+be the edited render of the original scene at view v, and let Iedit  
+
+> i,v
+
+be the edited render of the protected scene produced by method i. We use CLIP image and text encoders, denoted by fI (·) and 
+
+fT (·), with cosine similarity between normalized embeddings. 15 CLIP measures the visual similarity between the edited protected result and the edited original result, with oclip = 1 because the edited original result is compared with itself: 
+
+rclip  
+
+> i
+
+= 1
+
+|V eval |
+
+X
+
+> v∈V eval
+
+cos  fI (Iedit  
+
+> i,v
+
+), f I (Iedit  
+
+> v
+
+) . (14) 
+
+CLIP-T measures how well the edited result matches the target edit prompt ψtgt :
+
+oclipT = 1
+
+|V eval |
+
+X
+
+> v
+
+cos  fI (Iedit  
+
+> v
+
+), f T (ψtgt ) , rclipT  
+
+> i
+
+= 1
+
+|V eval |
+
+X
+
+> v
+
+cos  fI (Iedit  
+
+> i,v
+
+), f T (ψtgt ) .
+
+(15) 
+
+CLIP-D measures whether the image-editing direction aligns with the text-editing direction. Let Isrc 
+
+> v
+
+and Isrc  
+
+> i,v
+
+denote the corresponding pre-edit renders, and let ψsrc and ψtgt be the source and target edit prompts, respectively. We define the text and image directions in CLIP space as 
+
+dt = norm( fT (ψtgt ) − fT (ψsrc )) , dimg  
+
+> v
+
+= norm  fI (Iedit  
+
+> v
+
+) − fI (Isrc  
+
+> v
+
+) , (16) 
+
+dimg  
+
+> i,v
+
+= norm  fI (Iedit  
+
+> i,v
+
+) − fI (Isrc  
+
+> i,v
+
+) , (17) where norm( ·) denotes ℓ2 normalization. The CLIP-D scores are then 
+
+oclipD = 1
+
+|V eval |
+
+X
+
+> v
+
+cos( dimg  
+
+> v
+
+, d t), rclipD  
+
+> i
+
+= 1
+
+|V eval |
+
+X
+
+> v
+
+cos( dimg  
+
+> i,v
+
+, d t). (18) For each metric k ∈ { clip , clipT , clipD }, we report the difference 
+
+∆ki = ok − rki . (19) A lower method score rki indicates that the edited protected result is less aligned with the intended edit. Accordingly, a larger positive difference ∆ki indicates a larger reduction from the edited original result, and therefore stronger edit deterrence. 
+
+F Definition of sUCPS 
+
+To evaluate the effectiveness of copyright-protection methods, we define the soft Unified Copyright Protection Score (sUCPS). This metric jointly reflects practical 3D copyright-protection requirements: ownership traceability, edit deterrence, and rendering fidelity. Rather than evaluating these aspects in isolation, sUCPS rewards methods that maintain balanced performance across all three. The following definitions specify how these aspects are normalized and aggregated into sUCPS. Let i index a protection method. We define three normalized subscores: a traceability score Ti,an edit-deterrence score Ei, and a fidelity score Fi. All subscores are mapped to [0 , 1] , where larger values indicate better performance. For compactness, we use GM( ·) and HM( ·) to denote the geometric and harmonic means, respectively, and clip all normalized values to [0 , 1] .
+
+Traceability score. Let bi ∈ [0 , 1] be the watermark bit accuracy of method i. For example, a bit accuracy of 97 .23% is used as bi = 0 .9723 in the sUCPS computation. For methods that do not provide watermark decoding, we assign the chance-level reference bi = 0 .5. Let bmax be the best bit accuracy among methods that support watermark decoding. We define 
+
+Ti = clip [0 ,1] 
+
+ 12
+
+
+
+1 + bi − 0.5
+
+bmax − 0.5
+
+ 
+
+. (20) This maps chance-level ownership tracing to a neutral reference and assigns higher scores as water-mark recovery improves, with bit accuracy approaching the best observed value. 
+
+Edit-deterrence score. For each CLIP-based edit-deterrence metric, we measure the gap between the edited original scene and the edited protected scene. Let 
+
+∆clip  
+
+> i
+
+= oclip − rclip  
+
+> i
+
+, ∆clipT  
+
+> i
+
+= oclipT − rclipT  
+
+> i
+
+, ∆clipD  
+
+> i
+
+= oclipD − rclipD  
+
+> i
+
+, (21) 16 where o denotes the score of the edited original scene and ri the score of the edited protected result from method i. A larger positive gap indicates stronger suppression of the editing outcome. We normalize each gap, while preserving its sign, by the largest absolute gap among compared methods: 
+
+uki = clip [0 ,1] 
+
+"
+
+12 1 + ∆ki
+
+max j |∆kj |
+
+!# 
+
+, k ∈ { clip , clipT , clipD }. (22) The edit-deterrence score is then defined as 
+
+Ei = GM 
+
+
+
+uclip  
+
+> i
+
+, u clipT  
+
+> i
+
+, u clipD 
+
+> i
+
+
+
+. (23) 
+
+Fidelity score. For rendering fidelity, we use PSNR, SSIM, and LPIPS measured on protected novel-view rendered images. Since higher PSNR and SSIM are better while lower LPIPS is better, we define the normalized fidelity scores as 
+
+pi = PSNR i
+
+max j PSNR j
+
+, qi = SSIM i
+
+max j SSIM j
+
+, ℓi = min j LPIPS j
+
+LPIPS i
+
+. (24) We aggregate them using a geometric mean: 
+
+Fi = GM( pi, q i, ℓ i). (25) Finally, we combine the three subscores using a harmonic mean: 
+
+sUCPS i = HM( Ti, E i, F i). (26) The harmonic mean penalizes methods that perform well in only one or two aspects but fail in the remaining one. Thus, a high sUCPS indicates that a method jointly preserves ownership traceability, edit deterrence, and rendering fidelity. 
+
+G Cross-attention diversion 
+
+In addition to latent-anchor separation and denoising-trajectory diversion introduced in Sec. 4.3.2 of the main paper, our adversarial branch includes a cross-attention diversion term. It aims to disturb how the diffusion editor aligns the edit prompt with the rendered input, while keeping the editor fixed. For a sampled view v, we first render the protected scene and the frozen reference scene, 
+
+Iprot  
+
+> v
+
+= Rv (Gprot ), Iref  
+
+> v
+
+= Rv (Gref ), (27) and encode them into the latent space of the diffusion editor, 
+
+zprot  
+
+> v
+
+= z(Iprot  
+
+> v
+
+), zref  
+
+> v
+
+= z(Iref  
+
+> v
+
+). (28) We then construct noisy latents using the same edit prompt ψ, timestep t, and sampled noise ϵ:
+
+˜zprot  
+
+> v
+
+= αtzprot  
+
+> v
+
++ σtϵ, ˜zref  
+
+> v
+
+= αtzref  
+
+> v
+
++ σtϵ. (29) Here, αt and σt are the standard diffusion noise-schedule coefficients at timestep t. Sharing (ψ, t, ϵ )
+
+ensures that the resulting diversion signal is driven by the scene difference itself, rather than by stochastic variation inside the editor. We compute the cross-attention descriptor from the U-Net mid block. Lying at the denoising U-Net’s bottleneck, the mid block features have a broader receptive field and encode more semantic, prompt-dependent structure than early high-resolution layers [48]. Perturbing the mid-block cross-attention disrupts semantic correspondence between the edit prompt and rendered image, helping divert the intended editing trajectory while reducing reliance on superficial texture-level perturbations. Let 
+
+Qprot mid ,v = W Q
+
+> mid
+
+ Hmid (˜ zprot  
+
+> v
+
+, ψ, t ), Qref mid ,v = W Q
+
+> mid
+
+ Hmid (˜ zref  
+
+> v
+
+, ψ, t ), (30) where Hmid (·) denotes the hidden representation entering the mid-block text-conditioned cross-attention and W Q 
+
+> mid
+
+is its query projection. To summarize this response for each rendered view, we average the Nq query tokens, where Qn, : denotes the feature vector of the n-th token: 
+
+qprot mid ,v = ρ
+
+
+
+Qprot mid ,v 
+
+
+
+, qref mid ,v = ρ Qref mid ,v 
+
+ , ρ(Q) = 1
+
+NqNq
+
+X
+
+> n=1
+
+Qn, :. (31) 17 (a) Same-view image. (b) Reference, protected, and difference maps. 
+
+Figure 6: Visualization of cross-attention diversion. Left: the image from the same viewpoint shown without an attention overlay. Right: visualization of the cross-attention map for statue . The three panels overlay the token attention on the frozen reference render, the protected render, and their absolute difference, respectively. The difference panel shows a large attention change around statue ,indicating that the protected scene changes the editor’s prompt-conditioned spatial focus. We define the cross-attention diversion term for view v as 
+
+S(v)xattn = 1
+
+dmid 
+
+qprot mid ,v − qref mid ,v 
+
+> 22
+
+, (32) where dmid is the query dimension of the mid-block descriptor. Since S(v)xattn is subtracted in Eq. (8) ,maximizing this diversion term encourages the protected render to induce query representations that differ from those of the frozen reference scene under the same prompt and diffusion condition. This perturbs the prompt-to-image alignment used by the editor and helps divert the editing trajectory. Importantly, both the diffusion editor and the reference scene remain frozen throughout optimization. Thus, the gradient of S(v)xattn flows only through the rendered protected image and ultimately updates the selected Gaussian parameters of Gprot .Fig. 6 provides a visualization of the effect of cross-attention diversion. Fig. 6a shows the image from the same viewpoint without an attention overlay. Fig. 6b shows the cross-attention map for the prompt statue . The third panel in Fig. 6b visualizes the difference between the two maps, where red regions indicate areas in which the 3D editing model exhibits larger changes in attention to the given prompt compared with the original image. This reveals a strong change around statue , suggesting that the prompt-to-image alignment pathway used by the diffusion editor has been meaningfully altered. 
+
+H Additional ablation on masking strategy 
+
+In this section, we provide additional ablation results on the Gaussian masking strategy introduced in Sec. 4.3.1 of the main paper. Instruction-driven 3D editing can target not only salient foreground objects, such as changing the identity, color, or appearance of a main subject, but also background regions, such as altering the scene style, atmosphere, or surrounding environment. In the main paper, we describe an update-saliency-motivated Gaussian selection strategy that identifies a mask-selected Gaussian subset and injects stronger adversarial signals into it. However, the mask is implemented in a soft manner rather than as a strict hard mask, allowing Gaussians that fall below the hard selection threshold but still have nonzero mask overlap to receive weaker adversarial updates. Fig. 7 compares the defense performance of hard and soft masking under edits that affect background regions or the surrounding scene context. The comparison shows that, in this setting, soft masking is more effective than hard masking because it avoids strictly confining adversarial perturbations to the selected region. Together with the selection ablation in Tab. 2 of the main paper, this suggests that selecting a Gaussian subset for adversarial noise injection helps balance edit deterrence, watermark recovery, and rendering fidelity, and is better implemented in a soft rather than hard manner. 
+
+I Additional ablation on adversarial parameter groups 
+
+While the update-saliency-motivated Gaussian selection strategy determines which Gaussians should receive adversarial signals, we additionally examine which parameters of the selected Gaussians should be perturbed to achieve effective edit deterrence. Following prior 3DGS watermark fine-tuning practice, we keep the mean-position μi fixed, since directly changing Gaussian centers can easily affect scene geometry and rendering quality [ 26 ]. We therefore focus this ablation on the remaining 18 Turn the ground into a Namibian desert  
+
+> Ours (w/ Soft Mask) Ours (w/ Hard Mask)
+> Before Edit After Edit
+> Vanilla 3DGS
+
+Figure 7: Ablation on hard and soft Gaussian masking. Hard masking confines adversarial updates to the selected region, whereas soft mask concentrates updates on selected Gaussians while retaining adversarial influence on surrounding Gaussians. This design is more suitable for editing prompts that affect not only foreground objects but also background regions, scene style, or atmosphere. geometry parameters, scale si and rotation ri, and the appearance parameters, opacity αi and color 
+
+ci. Tab. 8 reports the resulting parameter-group ablation and shows that effective edit deterrence is achieved when adversarial noise is injected into all of these non-position parameter groups. 
+
+J Watermark recovery after 3D editing 
+
+We further evaluate the watermark recovery performance of existing 3DGS-based watermarking methods after instruction-driven 3D editing [ 6]. For each watermarking baseline, we first protect a pretrained 3DGS scene using the corresponding method, perform editing with DGE [ 6 ], and then render the edited scene from the same novel-view evaluation set used in the main experiments. We decode the watermark from these rendered images and report the resulting bit accuracy in Tab. 9. Table 8: Ablation on adversarial noise injec-tion across Gaussian parameter groups. We ablate the geometry and appearance parameter groups used for noise injection. The results sug-gest that injecting adversarial noise into scale, rotation, opacity, and color achieves the strongest edit deterrence while maintaining competitive wa-termark detectability and rendering quality.                                                     
+
+> Geometry Appearance Bit Acc. (%) ↑CLIP ↓PSNR ↑
+> siriαici
+> ✓✓--97.51 0.9658 31.60 --✓-97.39 0.9734 31.81 ---✓97.54 0.9631 32.03
+> --✓✓97.21 0.9486 31.18
+> ✓✓-✓97.04 0.9322 30.86
+> ✓✓✓-97.63 0.9650 31.03
+> ✓✓✓✓97.23 0.9093 30.36
+
+Table 9: Bit accuracy after 3D editing. We report watermark bit accuracy before and after applying DGE, an instruction-driven 3D editing method. The Drop (pp) is computed as the de-crease from the pre-edit bit accuracy to the post-edit bit accuracy, measured in percentage points.                 
+
+> Drop = Before edit −After edit
+> Method Bit Acc. (%) ↑Drop (pp) ↓
+> Before edit After edit 3DGSW [26] 99.00 89.32 9.68
+> GaussianMarker [27] 98.51 75.02 23.49 GuardSplat [28] 98.92 54.58 44.34
+
+As shown in Tab. 9, existing 3DGS-based watermarking methods exhibit non-negligible drops in bit accuracy after editing. Specifically, 3DGSW, GaussianMarker, and GuardSplat show decreases of 9.68 pp, 23.49 pp, and 44.34 pp, respectively, indicating that the DGE edit-update process can substantially degrade watermark recoverability. However, the point of this experiment is not merely to measure how well a watermark can be recovered after editing. Even if a watermarking method were to maintain nearly unchanged bit accuracy after 3D editing, watermarking would still remain a passive form of protection that only provides post-hoc 19 ownership evidence. Therefore, practical 3DGS copyright protection requires more than ownership tracing alone. This motivates a unified protection framework that jointly optimizes recoverable ownership tracing and active edit deterrence within a single protected 3DGS representation. 
+
+K Additional qualitative results 
+
+Fig. 8 shows additional qualitative results beyond those shown in the main paper. 20 Wear him a glasses 
+
+Turn him into a comic book character 
+
+3DGS GuardMarkGS 3DGSW GaussianMarker GuardSplat 
+
+Turn the bear statue into a panda 
+
+Change the bicycle color to bright red 
+
+Turn the vase into red 
+
+Turn the man into a robot Figure 8: Additional qualitative results. We show the editing results for each scene using DGE [ 6]. 21
