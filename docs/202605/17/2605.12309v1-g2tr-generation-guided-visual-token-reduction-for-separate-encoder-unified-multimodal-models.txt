@@ -1,0 +1,495 @@
+Title: G^2TR: Generation-Guided Visual Token Reduction for Separate-Encoder Unified Multimodal Models
+
+URL Source: https://arxiv.org/pdf/2605.12309v1
+
+Published Time: Wed, 13 May 2026 01:48:50 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# G2TR: Generation-Guided Visual Token Reduction for Separate-Encoder Unified Multimodal Models 
+
+Junxian Li 1, Kai Liu 1, Zizhong Ding 1, Zhixin Wang 2,Zhikai Chen 2, Renjing Pei 2, Yulun Zhang 1∗
+
+> 1
+
+Shanghai Jiao Tong University, 2Huawei Technologies Ltd 
+
+## Abstract 
+
+The development of separate-encoder Unified multimodal models (UMMs) comes with a rapidly growing inference cost due to dense visual token processing. In this paper, we focus on understanding-side visual token reduction for improving the efficiency of separate-encoder UMMs. While this topic has been widely studied for MLLMs, existing methods typically rely on attention scores, text-image similarity and so on, implicitly assuming that the final objective is discriminative reasoning. This assumption does not hold for UMMs, where understanding-side visual tokens must also preserve the model’s capabilities for editing images. We propose G 2TR, a generation-guided visual token reduction framework for separate-encoder UMMs. Our key insight is that the generation branch provides a task-agnostic signal for identifying understanding-side visual tokens that are not only semantically relevant but also important for latent-space image reconstruction and generation. G 2TR estimates token importance from consistency with VAE latent, performs balanced token selection, and merges redundant tokens into retained representatives to reduce information loss. The method is training-free, plug-and-play, and applied only after the understanding encoding stage, making it compatible with existing UMM inference pipelines. Experiments on image understanding and editing benchmarks show that G 2TR substantially reduces visual tokens and prefill computation by 1.94 × while maintaining both reasoning accuracy and editing quality, outperforming baselines on almost all benchmarks. 
+
+## 1 Introduction 
+
+Unified Multimodal Models (UMMs) integrate the capabilities of Multimodal Large Language Models (MLLMs) and image generation models like diffusion or flux models [ 11 , 21 ]. It can understand the tasks better with rich world knowledge from MLLMs, and then overcome complex image understanding, generation and editing tasks [ 14 , 40 , 20 , 12 ]. Modern UMMs can be categorized into two kinds based on their encoders: unified-encoder ones [ 26 , 36 ] (using one encoder for understanding and generation) or separate-encoder ones [ 7 , 32 , 28 ] (using decoupled encoders for them). Prior work [ 32 ] suggests that decoupling visual encoding into separate pathways reduces the conflict between the visual encoder’s roles in understanding and generation. Therefore, scaling up and improving capabilities of separate-encoder UMMs have been largely explored. Given this, a fundamental challenge in UMMs, inference efficiency, is quite emergent for utilizing them. UMMs are typically built with billions, or even tens of billions of parameters, which leads to slow inference and substantial computational cost. This makes real-world deployment difficult, especially in resource-constrained scenarios such as edge devices or latency-sensitive interactive applications. Therefore, improving the inference efficiency of UMMs is increasingly important. Existing efforts [ 18 , 10 ] mainly focus on modifying the internal architecture of UMMs, which often          
+
+> ∗Corresponding author: Yulun Zhang, yulun100@gmail.com Preprint.
+> arXiv:2605.12309v1 [cs.CV] 12 May 2026 Example Task
+> Temporal Editing
+> Draw what it will
+> look like after
+> 30 minutes.
+> Motivation
+> Previous methods
+> may reduce tokens
+> critical for editing +FastV +PDrop +IVC -Prune
+> G2TR
+> Retain visual details
+> needed by editing
+> Using VAE
+> latent
+> for guidance editing 1.0 1.2 1.4 1.6 1.8 2.0
+> Prefill Speedup over Vanilla (×) ↑
+> 95 96 97 98 99 100
+> UMM Relative Average (%) ↑ Better
+> Pareto front
+> Vanilla
+> U 100.0 / E 100.0
+> FastV
+> U 95.8 / E 96.5
+> IVC-Prune
+> U 98.6 / E 94.0
+> G2TR (Ours)
+> U 99.0 / E 98.0
+> Best trade-off
+
+Figure 1: Intuitive view of G 2TR. Left: Our method can preserve visual details crucial for image edit-ing. Right: G 2TR lies on the Pareto frontier, compared with previous SOTA methods. Notably, UMM relative averages are calculated by: (understanding relative averages + editing relative averages)/2. “U” means relative averages, which can be found in Table 2 and Table 4. “E” means efficiency. introduces considerable engineering complexity. In contrast, visual token reduction offers a simple and training-free alternative yet rarely explored. This naturally motivates our research question: 
+
+Can we employ visual token reduction on UMMs to improve the efficiency of them? 
+
+Previous works [ 25 , 3 , 24 , 38 , 39 ] have confirmed the availability of visual token reduction in MLLMs. Regarding them, we simplify the research problem in this paper to reduce understanding-side visual tokens. Thus, we mainly focus on image understanding and editing [ 7]. The mentioned methods, however, are designed for MLLMs, where visual tokens are selected for textual reasoning, e.g., by attention scores or image-text similarity. This assumption does not fully fit UMMs, since understanding-side visual tokens also condition image editing. Tokens that seem to have lower attention or text-similarity scores may still preserve visual details needed for high-quality editing. Additionally, our observation is that once the pruning ratio is fixed, different pruning rules lead to only 
+
+limited differences on understanding tasks . Therefore, instead of pursuing a more complex text-centric method, we focus on reducing visual tokens while preserving generation-related information. Regarding the observations, it becomes our main goal to seek for an effective guidance signal preserving both two mentioned capabilities. Fortunately, the generation branch in UMMs naturally provides such a signal for token importance estimation. During image editing, images are compressed into latent representations that preserve generation-related information. Motivated by this, we argue that understanding-side visual tokens more aligned with these latent representations are more likely to contain visual details critical for image editing. Based on this insight, we propose Generation-
+
+Guided Visual Token Reduction (G 2TR), which leverages latents extracted from the VAE branch to guide visual token reduction on the understanding side. Our pipeline consists of two stages: (1) important token selection and (2) redundant token merging. Considering efficiency, effectiveness, and deployment friendliness, we perform token reduction after the ViT encoder. This design serves as a plug-and-play module that can be easily applied to many separate-encoder UMMs. Consistent with our observations, this strategy may not introduce adverse effects on understanding performance. Extensive experiments are conducted on two separate-encoder UMMs, BAGEL-7B-MoT [ 7] and InternVL-U [ 28 ]. With only 50% visual tokens, G 2TR preserves strong performance on both editing and understanding, and achieves the best relative average among token reduction methods, as Figure 1 shows. On BAGEL-7B-MoT, it further reduces the KV cache by 1.90 × and prefill FLOPs by 1.94 ×,without adding extra decoding overhead. Qualitative results also indicate that G 2TR keeps critical regions for understanding tasks and preserves local visual details needed for editing. These results suggest that G 2TR is a practical way to improve UMM inference efficiency while maintaining both understanding and editing capabilities. We summarize our contributions as follows: 
+
+• We propose G2TR , a training-free and plug-and-play method for understanding-side visual token reduction for UMMs. To our best of knowledge, we first explore UMMs’ visual token reduction. 
+
+• We introduce and analyze the novel generation-guided strategy , which includes multi-stage importance estimation and token merging. This insight can be extended to other UMMs. 
+
+• Extensive experiments suggest that G2TR can both preserve understanding and generation perfor-mance, while improve the efficiency of separate-encoder UMMs as well. 260  70  80  90        
+
+> MMBench (val )
+> MMVP
+> Score (%)
+> Min (across methods) Max (across methods) Spread (Max -Min)
+> 85.7 88.5 2.8
+> 68.0 70.0 2.0
+
+raw  +VSCAN  +IVC -Prune Figure 2: The two observations under this scenario. (1) Left figure indicates that limited difference exists in understanding tasks under different visual token reduction methods. (2) Right figure shows the results under prompt “Edit this image: change the background to be darker”. Using previous visual token reduction methods cause worse editing results. 
+
+## 2 Related Work 
+
+UMMs & separate-encoder UMMs. UMMs refer to models integrating understanding capabilities of MLLMs [ 15 , 30 , 27 , 41 ] and generation capabilities of diffusion or flow models [ 5, 21 , 2 , 11 ]. Recent works on this topic [ 1, 35 , 4, 7, 13 , 28 ] try to develop end-to-end UMMs based on this idea, providing strong multimodal reasoning capabilities benefiting generation. The latest state-of-the-art models, like GPT-Image-1 [ 19 ] and Gemini3-Pro-Image [ 9 ] see a huge improvement in understanding detailed and complex instructions and generating images. Many of the recent open-source UMMs [ 4 , 7, 13 ]choose a separate-encoder architecture, and serve as the focus of this work. 
+
+Efficient UMMs. Currently, efficient UMM is a research field still largely underexplored. Several existing methods focus on techniques modifying architectures, like Mao et al. [ 18 ] proposed a mixture-of-depth method to solve tasks of different difficulties. While He et al. [ 10 ] also utilizes depth pruning and width reduction on UMMs to obtain efficiency. Such methods work well, while often are more costly or not very easy for real-world utilization. In contrast, visual token reduction, serving as a simple training-free method, are rarely tried for UMMs. 
+
+Visual token reduction for multimodal models. Visual token reduction is first developed in MLLMs. Usually it means two techniques: token merging and token pruning [ 23 ]. Earlier methods simply utilize attention scores or image-text feature similarities as guidance to reduce visual tokens [ 3 , 24 ]. Such guidance may fall short in visual redundancy, detailed structure, or task-specific token utility. More recent works [ 39 , 25 , 38 ] utilize techniques like RoPE scores, local-global attention scores and so on to address these issues. Adapting to separate-encoder UMMs, we design unique methods based on generation-branch guidance for better visual token reduction. 
+
+## 3 Preliminaries 
+
+3.1 Separate-Encoder Architecture 
+
+UMMs aim to support both visual understanding and visual generation within a single architecture. Recent designs [ 32 ] suggest that these two capabilities impose different requirements on visual representations: understanding favors semantic and abstract visual features, while generation and editing requires low-level appearance and visual details. (Appendix A better shows the relationship among generation, editing, and understanding-side visual tokens.) Therefore, instead of using a single visual encoder for both tasks, a separate-encoder architecture decomposes this into an understanding branch and a generation branch. Given an input image x, the understanding encoder Eu, typically instantiated as a ViT-style vision encoder, maps x into a sequence of Nu semantic visual tokens: 
+
+U = Eu(x) = {ui}Nu
+
+> i=1
+
+, ui ∈ Rdu , (1) where U denotes the sequence and ui denotes each understanding-side visual token. 3Table 1: Signals for guiding visual token selection of previous methods. Attention score and image-text similarity are often utilized. These designs are not suitable for directly applied in UMMs. Name Visual Token Selection Signal FastV [3] inner LLM attention score W-FastV [31] window mechanism + inner LLM attention score PDrop [37] inner LLM attention score VSCAN [39] ViT attention score + inner LLM image-text similarity IVC-Prune [25] RoPE + image-text similarity These tokens are projected into hidden state ready for inner structures Hu by an MLP projector Pu:
+
+Hu = Pu(U) + Ppos u , (2) where Ppos u denotes visual positional embeddings. This branch mainly preserves high-level semantic cues for recognition, reasoning, and instruction following. In parallel, the generation branch usually employs a VAE-style encoder Eg to obtain Ng compact latent tokens: 
+
+Z = Eg(x) = {zj }Ng
+
+> j=1
+
+, zj ∈ Rdg , (3) where Z denotes the sequence and zj denotes each latent token. The latent tokens are mapped to the same feature hidden space through another MLP projector Pg:
+
+Hg = Pg(Z) + Ppos g + e(t), (4) where Hg is the hidden state and e(t) is a timestep embedding when the model is trained with diffusion [ 21 ] or flow-matching [ 11 ] objectives. The generation branch thus retains information that is essential for reconstructing or synthesizing images. Finally, the unified inner transformer layers consumes text embeddings Htext together with tokens from either or both branches. They interact with each other through shared structures (like LLM decoders [7]). This formulation highlights a useful asymmetry: ViT tokens provide semantically discriminative but often redundant visual evidence, whereas VAE latent tokens provide compact generative signals that preserve image structure. In this work, we build on this separate-encoder paradigm and study how the generation branch can guide the reduction of understanding-side visual tokens without disrupting the unified multimodal interface, thus protecting both image understanding and editing. 
+
+3.2 Observations 
+
+Observation 1: different visual token reduction methods lead to limited difference on understanding capabilities. Seeing Figure 2 left, we select BAGEL-7B-MoT [ 7] and some SOTA (state-of-the-art) text-centric visual token reduction methods [ 3, 39 , 25 ] for MLLMs. Table 1 reports the signals for guiding important visual token selection of the SOTA methods. “Spread” is defined as the maximum - minimum score on a benchmark. Different visual token reduction methods show close performance on understanding benchmarks. On MMBench, the scores range from 85.7 to 88.5, with only a 2.8 spread. On MMVP, the range is also narrow, from 68.0 to 70.0. We also find that no visual token reduction rule shows a clear and consistent advantage. This suggests that developing more complex text-centric methods for UMMs may not be very cost-effective. 
+
+Observation 2: Visual tokens chosen by previous methods are not consistent with image editing importance. Figure 2 right reports the visualization results of InternVL-U [ 28 ] (with or without token reduction methods) on image editing. We discover that, previous methods can finish the task not so well or damage local visual details, even when the instruction is simple. This shows that text-centric token importance is not enough for UMMs, and this becomes our core research problem. 
+
+## 4 Methodology 
+
+4.1 Insight and Method Overview 
+
+Regarding Section 3, our key insight is that a ViT token well aligned with its corresponding VAE latent is more likely to carry information that should be kept for both understanding and generation. Therefore, the generation branch can serve as a natural guide for estimating understanding-side visual token importance and reducing the number of them. Based on this insight, we propose G2TR , a training-free visual token reduction method for separate-encoder UMMs. Given an input image, we first extract full visual tokens from the understanding encoder and latent anchors from the generation-side VAE. Each visual token is then scored by its 4ViT  Encoder (e.g.  SigLIP )  
+
+> Stage II: Full ViT Encoding
+
+…      
+
+> Full ViT tokens
+> Stage I:
+> VAE Latent Anchors Stage III: Latent -Guided Token Selection
+> Full ViT tokens
+> (N)
+> Scoring
+> ( Latent Anchors)
+> Top -K Tokens
+> (Keep)
+
+…
+
+> Input Images
+> Packed
+> Layout
+> Rebuilding
+> Top -K Tokens
+> Merging
+> Dropped Tokens
+> Merged Tokens
+
+… 
+
+> Also fed into the inner LLM for
+> image generation and editing
+> Stage IV: Token Merging
+> …
+> pos ipos i+1
+> VAE
+> Latent
+> Tokens
+> (optional)
+> Describe this
+> image…
+> Add a xxx
+> on…
+> tokenizer
+
+Inner architecture 
+
+(eg : Qwen, etc.) VAE Encoder  
+
+> Patched Latent Tokens
+
+Data flow 
+
+Guidance 
+
+Optional 
+
+Full  ViT  Token 
+
+Latent Token 
+
+Top -K Token 
+
+Dropped Token 
+
+Merged Token 
+
+S/EOI Token 
+
+Position 
+
+Seq length  
+
+> Two women
+> with xxx…
+> A lovely cat… Image
+> Generation
+
+Figure 3: Method Overview. Here we focus on tasks which understanding-side visual tokens are necessary. S/EOI means “start of image” and “end of image”. The whole visual token reduction process consists of four stages: firstly the VAE generates latent tokens (also serving as guidance) and the ViT generate full visual tokens; then the top-K important visual tokens are selected based on the guidance strategy; finally, the dropped visual tokens are merged onto nearest important tokens. consistency with the corresponding latent anchor. To avoid concentrating tokens in a few salient regions, the selection is performed with balanced selection according to latent anchors. The removed tokens are not directly discarded. Instead, they are merged into the most similar retained tokens in feature space, which keeps the token budget low while reducing information loss, according to [ 39 , 22 ]. G 2TR is applied after the ViT encoder and before the inner LLM prefill. This placement keeps the original encoders and attention operators unchanged. 
+
+4.2 Latent-Guided Importance Estimation 
+
+See Figure 3, Stage III. We use the notations following Sec. 3. Before scoring, we map them into the same hidden dimension. For simplicity, we still use ui and zj to denote the aligned features. The sequences of ViT tokens and VAE latent tokens can then be mapped into two 2D grids. For further actions, the VAE latent tokens are specially processed. An operation similar to mean pooling is used, where four adjacent VAE latent tokens on the VAE grid are pooled into one latent anchor. Denote sizes of the ViT grids and the processed VAE grids as Hu × Wu and Hg × Wg . For a visual token ui located at (pi, q i) on the ViT grid, we assign it to the corresponding latent anchor by 
+
+c(i) = 
+
+ piHg
+
+Hu
+
+
+
+,
+
+ qiWg
+
+Wu
+
+ 
+
+, (5) where ⌊⌋ denotes the flooring option. We then compute its importance score as the cosine similarity to the matched VAE latent zc(i):
+
+si = cos( ui, zc(i)) = u⊤ 
+
+> i
+
+zc(i)
+
+∥ui∥2∥zc(i)∥2
+
+. (6) A larger score means that the visual token is more consistent with the local generative latent. Such tokens are more likely to preserve visual factors that matter for image editing. Given a keep ratio ρ, the final token budget is 
+
+K = min ( Nu, max( Kmin , ⌊ρN u⌉)) , (7) where Kmin is the minimum number of retained tokens and ⌊⌉ denotes rounding to the nearest integer. Direct top-K selection may concentrate tokens in a few high-score regions. To keep the overall balance, we first select the best token inside each non-empty latent anchor: 
+
+bc = arg max  
+
+> i:c(i)= c
+
+si, c ∈ { 1, . . . , H g } × { 1, . . . , W g }. (8) This gives a candidate set B = {bc}. We first select the top-K highest-scoring candidates from B:
+
+S0 = TopK ( B, min( K, |B| )) . (9) If |S 0| < K , we fill the remaining budget with highest-scoring tokens from the unselected set only once: 
+
+S = S0 ∪ TopK ( {1, . . . , N u} \ S 0, K − |S 0|) . (10) Otherwise, we set S = S0. The resulting set S contains the retained visual tokens. It favors tokens aligned with generation-side latent while avoiding concentration in a few local regions. 54.3 Redundant Token Merging 
+
+Seeing Figure 3, Stage IV, after obtaining the retained token set S, a simple solution is to discard all redundant tokens calculated in the selection process. However, direct pruning may remove fine-grained visual cues that are not selected by the importance score. To reduce information loss, we merge the removed tokens into the retained ones in feature space. Let ¯S = {1, . . . , N u} \ S denote the redundant token set. For each removed token ui in ¯S, we find its nearest retained token by cosine similarity: 
+
+n(i) = arg max  
+
+> j∈S
+
+cos( ui, uj ), i ∈ ¯S. (11) Each retained token then absorbs the removed tokens assigned to it: 
+
+˜uj = λuj + P  
+
+> i∈¯S:n(i)= j
+
+ui
+
+λ + {i ∈ ¯S : n(i) = j} , j ∈ S . (12) Here, λ controls the weight of the original retained token. Following works like [ 39 ], we set λ just to 1.0. Finally, the final compressed visual sequence is 
+
+˜U = {˜uj | j ∈ S} . (13) We keep the order of the retained indices when forming ˜U. This makes the output sequence shorter while preserving part of the information from removed tokens. With our design, the inner architectures of UMMs receive a much shorter sequence of understanding-side tokens. 
+
+4.4 Layout Rebuilding 
+
+After merging, the shortened visual tokens usually no longer match the original <IMG_CONTEXT> 
+
+span. This alignment is important for UMMs, since the inner LLM hidden states also condition image editing. We therefore rebuild the input before the inner LLM prefill: the original understanding-level visual tokens are replaced by the merged tokens ˜U, while text tokens and image boundary tokens are kept unchanged. The input ids, attention mask, and position ids are updated and padded across the batch. This keeps the inner UMM architecture unchanged, while letting both the inner LLM and the generation decoder work on the same shortened sequence. 
+
+4.5 Flash-Attention Compatibility 
+
+Modern large models are often accelerated through Flash-Attention [ 6]. Given this, a practical advantage of our G 2TR is its strong compatibility with this acceleration support. The implementation of existing methods, such as VScan-like [ 39 ] variants, often need explicit attention maps to estimate token importance, or introduce pruning inside the language model. This may require extra standard attention score computation and complicate KV-cache management under Flash-Attention. This issue happens in common implementations, where Flash-Attention is used for the forward pass but attention weights are separately reconstructed by dense matmul and softmax for token scoring. In contrast, our method performs token reduction only before inner prefilling. The inner architecture therefore only receives a shorter sequence, without changing the attention operator or requesting attention weights. This plug-and-play design for separate-encoder UMMs keeps the original Flash-Attention kernel unchanged while directly reducing computational cost. 
+
+## 5 Experiments 
+
+5.1 Experiment Settings 
+
+The purpose of our experiments is to answer two questions: (1) can our method keep understanding and editing performance; (2) can our method really improve efficiency of UMMS. 
+
+Models. We mainly choose one famous separate-encoder UMM, BAGEL-7B-MoT (BAGEL-7B) [ 7 ]. A very recent separate-encoder UMM, InternVL-U (4B) [ 28 ], is also employed. The evaluation codes are based on their official repository. Scores of InternVL-U are reproduced on our own. 
+
+Benchmarks. We evaluate the performances on tasks where understanding-side visual tokens are necessary: image understanding and image editing. For image understanding, we choose MME [ 8 ], MMBench [ 17 ], MMVP [ 29 ] and RealWorldQA (RWQA) [ 34 ]. Results of BAGEL-7B on MMVP are implemented by ourselves. For image editing, we adopt GEdit-Bench (GEdit, only evaluating English queries) [16], IntelligentBench (Intell.) [7], and RISE-Bench (RISE) [40]. 6Input Vanilla FastV [3] PDrop [37] IVC-Prune [25] G2TR (ours) 
+
+Figure 4: Visualization of Editing results. The instructions of the four groups of images from top to down are: “Draw what it will look like after being frozen.”; “Draw what it will look like after one hour on a hot grill.”; “What does this dish look like after it has been baked?”; “Can I see the appearance of this ring on a finger?”. Generally, G 2TR performs better in UMMs for image editing than compared baselines. 
+
+Baselines. Following IVC-prune [ 25 ] (ICLR’26), we choose some SOTA visual token reduction methods from top-tier venues: FastV [ 3], Window FastV (W-FastV) [ 31 ], PDrop [ 37 ], VSCAN [ 39 ]and IVC-prune [ 25 ] itself. We use the official implementation method and layers for visual token reduction from their official repository. “Vanilla” means the original performance of utilized UMMs. 
+
+Other settings. We test all the models, benchmarks and baselines on one A6000 48G GPU once. The default generation hyper-parameters are chosen. Details of utilized models, benchmarks, and hyper-parameters are in Appendix C. 
+
+5.2 Main Performance Performance on image editing tasks. Figure 4 reveals some image editing results of G 2TR and baselines. Images and instructions are from RISE and Intell. Compared with the original results, several baselines produce blurred details or fail to follow the editing instructions. In more severe cases, the edited images deviate greatly from the input image, such as the result of FastV in the first group and the result of IVC-prune in the third group. In contrast, after applying G 2TR, the model can largely follow the instructions and complete the edits successfully. It also preserves an editing quality comparable to the vanilla model setting. This supports the core claim in Section 4.1. 
+
+Performance on image understanding tasks. Table 2 reports the results on image understanding benchmarks. G 2TR achieves the best relative average among all baselines on both UMMs, reaching 94.9% on InternVL-U and 99.0% on BAGEL-7B while keeping only 50% visual tokens. On BAGEL-7B, G 2TR matches the vanilla performance on MMBench, obtains the best result on MMVP, and gives the smallest drop on RealWorldQA. On InternVL-U, it also achieves the best or tied-best results on three benchmarks among all compared baselines. These results show that our reduction does not sacrifice understanding ability. Instead, the VAE latent guidance may help retain several visual tokens that are useful for both generation and understanding. This may because the generation and understanding branches in UMMs can provide complementary signals. Generally, performances on image understanding and editing provide positive answers to question (1) in Section 5.1. 
+
+Efficiency. Table 3 reports efficiency of our method compared with baselines. G 2TR reduces the average visual tokens to 50%, leading to a 1.90 × KV-cache reduction and a 1.94 × prefill FLOPs speedup over the vanilla model. Compared with FastV, G 2TR further lowers the FLOPs ratio from 55.10% to 51.64%, while using fewer tokens. It also clearly outperforms IVC-Prune under the same token budget, reducing prefill FLOPs from 3.0619T to 2.1341T. The decode latency is slightly 7Table 2: Performance of G 2TR compared with baselines on several understanding benchmarks. “Avg.” means average and “Rel. Avg.” means relative average. We highlight the best performances and underline the second best ones. Generally, G 2TR reaches the best relative average across both UMMs.                                                                                            
+
+> Models Methods Avg. Tokens MME MMBench (dev) MMVP RWQA Rel. Avg. InternVL-U
+> Vanilla 100% 2057 80.5 46.0 48.8 100% FastV [3] [ECCV’24] 54% 2037 77.9 38.0 45.5 92.9% W-FastV [31] [ACL’25] 54% 1926 78.6 39.3 45.2 92.3% PDrop [37] [CVPR’25] 61% 1953 77.7 38.7 45.6 92.0% VSCAN [39] [TMLR’26] 50% 1968 78.1 40.0 43.5 92.2% IVC-Prune [25] [ICLR’26] 50% 2020 78.4 39.0 46.0 93.7%
+> G2TR (ours) 50% 2034 78.8 40.0 46.8 94.9% BAGEL-7B
+> Vanilla 100% 2388 88.5 69.3 60.2 100% FastV [3] [ECCV’24] 54% 2306 85.7 68.0 55.2 95.8% W-FastV [31] [ACL’25] 54% 2287 85.9 67.3 55.4 95.6% PDrop [37] [CVPR’25] 61% 2312 84.0 66.7 53.8 94.1% VSCAN [39] [TMLR’26] 50% 2339 88.5 68.7 48.4 94.4% IVC-Prune [25] [ICLR’26] 50% 2332 88.4 70.0 57.8 98.6%
+> G2TR (ours) 50% 2318 88.5 70.0 59.0 99.0%
+
+Table 3: Efficiency comparison on BAGEL-7B-MoT. Size of KV Cache, average visual tokens (Avg. Tokens), FLOPs ratio, prefill FLOPs and decode latency are evaluated.                                   
+
+> Model Method KV Cache Avg. Tokens FLOPs Ratio Prefill FLOPs Decode Latency (MB) ↓(%) ↓↓(T) ↓(ms/token) ↓
+> BAGEL-7B Vanilla 42.02 (1.00 ×)100% (1.00 ×)100.00% (1.00 ×)4.1325 (1.00 ×)49.60 (1.00 ×)FastV 22.04 (1.91 ×)54% (1.85 ×)55.10 % (1.85 ×)2.2769 (1.82 ×)48.04 (1.03 ×)IVC-Prune 22.06 (1.90 ×)50% (2.00 ×)74.09% (1.37 ×)3.0619 (1.35 ×)49.30 (1.01 ×)
+> G2TR (Ours) 22.06 (1.90 ×)50% (2.00 ×)51.64% (1.94 ×)2.1341 (1.94 ×)47.88 (1.04 ×)
+
+improved to 47.88 ms/token, showing that our method brings consistent efficiency gains without introducing extra decoding overhead, answering question (2) in Section 5.1. 
+
+Quantitative results of image editing. Beyond the direct visual comparisons, we further measure image editing quality with the original evaluation protocols of utilized benchmarks. As shown in Table 4, G 2TR also shows clear numerical advantages over existing token reduction baselines. On GEdit-Bench (EN), our method achieves the best results among compressed variants on all three metrics. It also obtains 44.0 on IntelligentBench, close to the vanilla model while using only half of the visual tokens. Overall, G 2TR reaches a 98.0% relative average, outperforming other baselines. 
+
+Thinking mode. We evaluate the performance when opening the thinking mode of BAGEL-7B-MoT. Following their original report [ 7 ], we evaluate RISE [ 40 ] only when thinking mode is open here. For understanding benchmarks, we set the max response token length to 2048 for avoiding truncation. Table 5 reports the results. We observe no consistent advantage of thinking mode over the non-thinking setting across benchmarks. Under this setting, G 2TR still shows a stable trade-off. It reaches the best relative average among all token reduction methods, preserving 95.6% of the vanilla performance. It also matches the vanilla model on RealworldQA and remains close on IntelligentBench, while keeping competitive results on MMVP. These results indicate that G 2TR is still effective when UMMs use thinking mode, and does not rely on a specific decoding style. 
+
+5.3 Ablation study. 
+
+Table 6: Ablation on guidance sources. We 
+
+highlight the best performances.                   
+
+> Guidance Source MMVP ↑RWQA ↑Intell. ↑
+> Random 65.3 48.2 40.6 Attention-based 68.7 55.8 42.6 Text similarity 68.0 55.2 41.7
+> VAE latent (ours) 70.0 59.0 44.0
+
+To study whether our guidance source is the better choice compared with others, we make this study. In detail, we also employ three selection signals: ran-dom, attention-based importance and image-text fea-ture similarity (text similarity) right after the ViT encoding process. Table 6 reports the results. It can be discovered that using VAE latent as guidance achieves best scores across both understanding and editing tasks. This ablation supports our claim that our proposed guidance plays a core rule in the good performance above, compared with other selection signals. 
+
+5.4 Visualization of retained tokens. 
+
+We further do this to show what tokens are kept after reduction. As shown in Figure 5, our method keeps task-relevant regions for both understanding and editing. In the counting example, the retained 8Table 4: Quantitative results on image editing. We highlight and underline the best and second best performances.                               
+
+> Models Methods GEdit (EN) Intell. Rel. G_SC G_PQ G_O Avg. BAGEL-7B
+> Vanilla 7.36 6.83 6.52 44.9 100% FastV 7.09 6.58 6.35 43.0 96.5% VSCAN 7.03 6.65 6.32 42.6 96.2% IVC-Prune 6.82 6.52 6.27 41.1 94.0%
+> G2TR (ours) 7.18 6.67 6.42 44.0 98.0%
+
+Table 5: Results when opening thinking mode. We highlight and underline the best and second best performances.                                
+
+> Models Methods MMVP RWQA RISE Intell. Rel. Avg. BAGEL-7B
+> Vanilla 64.7 63.4 11.9 55.3 100% FastV 63.3 62.2 9.1 51.9 91.6% VSCAN 66.7 60.2 8.3 53.7 91.2%
+> w/ CoT IVC-Prune 64.0 62.1 7.6 51.4 88.4%
+> G2TR (ours) 66.0 63.4 9.8 54.3 95.6%
+
+Understanding: How many pedestrians are crossing the street? 
+
+Vanilla: 3 ✅ FastV: 1 ❌ PDrop: 3 ✅ IVC-Prune: 1 ❌ Ours 
+
+Editing: Draw what it will look like after 30 minutes. 
+
+Vanilla  FastV  PDrop  IVC-Prune  Ours  +Ours Generated 
+
+Ours: 3 ✅
+
+provide the 
+
+correct 
+
+answer for 
+
+understanding 
+
+Figure 5: Visualization of retained tokens. The first line shows one case of image understanding, and the second line shows one case of image editing. tokens still cover the pedestrians and allow the model to predict the correct answer. In the editing example, our method preserves fine visual details such as the pot. The details are important for following the instructions and producing a well-edited image. This suggests that G 2TR can keep tokens not only effective for textual understanding, but also friendly to image editing. 
+
+## 6 Limitations and Future Work 
+
+This work focuses on visual token reduction for separate-encoder UMMs, where the generation branch can provide a natural guidance signal. As UMM architectures continue to evolve, future models may adopt more native and adaptive interactions between understanding and generation pathways. Extending generation-guided reduction to these broader designs is an interesting future direction, which is not explored in our paper. In addition, this paper studies a fixed token budget for clear comparison. A more dynamic strategy that adjusts the reduction ratio based on task difficulty, image content, or latency constraints may further improve the trade-off between efficiency and performance. We believe such directions will help make UMMs more practical for interactive and resource-constrained applications. 
+
+## 7 Conclusion 
+
+In this work, we propose G 2TR, a training-free and plug-and-play framework that uses the generation branch as guidance for reducing understanding-side visual tokens for UMMs. Different from previous works mainly using text-centric guidance, G 2TR preserves visual tokens that are more consistent with generation-related latent representations. Our design reduces the token budget before inner LLM prefill while keeping the attention operators unchanged. Extensive experiments show that G 2TR improves inference efficiency and maintains strong performance on both understanding and image editing tasks. These results suggest that G 2TR is a simple and effective direction for efficient UMM inference, thereby benefiting UMM deployment and utilization under resource-constraint scenarios. We hope that G 2TR can facilitate the new research trends on UMM efficiency. 9References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. [2] James Betker, Gabriel Goh, Li Jing, Tim Brooks, Jianfeng Wang, Linjie Li, Long Ouyang, Juntang Zhuang, Joyce Lee, Yufei Guo, et al. Improving image generation with better captions. 
+
+Computer Science. https://cdn.openai.com/papers/dall-e-3.pdf , 2023. [3] Liang Chen, Haozhe Zhao, Tianyu Liu, Shuai Bai, Junyang Lin, Chang Zhou, and Baobao Chang. An image is worth 1/2 tokens after layer 2: Plug-and-play inference acceleration for large vision-language models. In ECCV , 2024. [4] Xiaokang Chen, Zhiyu Wu, Xingchao Liu, Zizheng Pan, Wen Liu, Zhenda Xie, Xingkai Yu, and Chong Ruan. Janus-pro: Unified multimodal understanding and generation with data and model scaling. arXiv preprint arXiv:2501.17811 , 2025. [5] Florinel-Alin Croitoru, Vlad Hondru, Radu Tudor Ionescu, and Mubarak Shah. Diffusion models in vision: A survey. TPAMI , 2023. [6] Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. Flashattention: Fast and memory-efficient exact attention with io-awareness. In NeurIPS , 2022. [7] Chaorui Deng, Deyao Zhu, Kunchang Li, Chenhui Gou, Feng Li, Zeyu Wang, Shu Zhong, Weihao Yu, Xiaonan Nie, Ziang Song, Guang Shi, and Haoqi Fan. Emerging properties in unified multimodal pretraining. arXiv preprint arXiv:2505.14683 , 2025. [8] Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Jinrui Yang, Xiawu Zheng, Ke Li, Xing Sun, et al. Mme: A comprehensive evaluation benchmark for multimodal large language models. In NeurIPS Datasets and Benchmarks Track , 2025. [9] Google. Gemini 3 pro image (nano banana pro). https://aistudio.google.com/models/ gemini-3-pro-image , 2025. [10] Shwai He, Chaorui Deng, Ang Li, and Shen Yan. Understanding and harnessing sparsity in unified multimodal models. arXiv preprint arXiv:2512.02351 , 2025. [11] Black Forest Labs. Flux. https://github.com/black-forest-labs/flux , 2024. [12] Junxian Li, Kai Liu, Leyang Chen, Weida Wang, Zhixin Wang, Jiaqi Xu, Fan Li, Renjing Pei, Linghe Kong, and Yulun Zhang. Planviz: Evaluating planning-oriented image generation and editing for computer-use tasks. arXiv preprint arXiv:2602.06663 , 2026. [13] Zijie Li, Henry Li, Yichun Shi, Amir Barati Farimani, Yuval Kluger, Linjie Yang, and Peng Wang. Dual diffusion for unified image generation and understanding. In CVPR , 2025. [14] Yongyuan Liang, Wei Chow, Feng Li, Ziqiao Ma, Xiyao Wang, Jiageng Mao, Jiuhai Chen, Jiatao Gu, Yue Wang, and Furong Huang. Rover: Benchmarking reciprocal cross-modal reasoning for omnimodal generation. arXiv preprint arXiv:2511.01163 , 2025. [15] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. NeurIPS ,2023. [16] Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chunrui Han, et al. Step1x-edit: A practical framework for general image editing. arXiv preprint arXiv:2504.17761 , 2025. [17] Yuan Liu, Haodong Duan, Yuanhan Zhang, Bo Li, Songyang Zhang, Wangbo Zhao, Yike Yuan, Jiaqi Wang, Conghui He, Ziwei Liu, et al. Mmbench: Is your multi-modal model an all-around player? In ECCV , 2024. [18] Weijia Mao, Zhenheng Yang, and Mike Zheng Shou. Unimod: Efficient unified multimodal transformers with mixture-of-depths. arXiv preprint arXiv:2502.06474 , 2025. 10 [19] OpenAI. Introducing our latest image generation model in the api. https://openai.com/ index/image-generation-api/ , 2025. [20] Kaihang Pan, Weile Chen, Haiyi Qiu, Qifan Yu, Wendong Bu, Zehan Wang, Yun Zhu, Juncheng Li, and Siliang Tang. Wiseedit: Benchmarking cognition-and creativity-informed image editing. 
+
+arXiv preprint arXiv:2512.00387 , 2025. [21] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. [22] Kele Shao, TAO Keda, Can Qin, Haoxuan You, Yang Sui, and Huan Wang. Holitom: Holistic token merging for fast video large language models. In NeurIPS , 2025. [23] Kele Shao, TAO Keda, Kejia Zhang, Sicheng Feng, Mu Cai, Yuzhang Shang, Haoxuan You, Can Qin, Yang Sui, and Huan Wang. A survey of token compression for efficient multimodal large language models. TMLR , 2025. [24] Dingjie Song, Wenjun Wang, Shunian Chen, Xidong Wang, Michael X Guan, and Benyou Wang. Less is more: A simple yet effective token reduction method for efficient multi-modal llms. In COLING , 2025. [25] Zhichao Sun, Yidong Ma, Gang Liu, Yibo Chen, Xu Tang, Yao Hu, and Yongchao Xu. Ivc-prune: Revealing the implicit visual coordinates in lvlms for vision token pruning. arXiv preprint arXiv:2602.03060 , 2026. [26] Chameleon Team. Chameleon: Mixed-modal early-fusion foundation models. arXiv preprint arXiv:2405.09818 , 2024. [27] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, Katie Millican, et al. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 , 2023. [28] Changyao Tian, Danni Yang, Guanzhou Chen, Erfei Cui, Zhaokai Wang, Yuchen Duan, Penghao Yin, Sitao Chen, Ganlin Yang, Mingxin Liu, et al. Internvl-u: Democratizing unified multimodal models for understanding, reasoning, generation and editing. arXiv preprint arXiv:2603.09877 ,2026. [29] Shengbang Tong, Zhuang Liu, Yuexiang Zhai, Yi Ma, Yann LeCun, and Saining Xie. Eyes wide shut? exploring the visual shortcomings of multimodal llms. In CVPR , 2024. [30] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, et al. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 , 2024. [31] Zichen Wen, Yifeng Gao, Weijia Li, Conghui He, and Linfeng Zhang. Token pruning in multimodal large language models: Are we solving the right problem? In ACL Findings , 2025. [32] Chengyue Wu, Xiaokang Chen, Zhiyu Wu, Yiyang Ma, Xingchao Liu, Zizheng Pan, Wen Liu, Zhenda Xie, Xingkai Yu, Chong Ruan, et al. Janus: Decoupling visual encoding for unified multimodal understanding and generation. In CVPR , 2025. [33] Yongliang Wu, Zonghui Li, Xinting Hu, Xinyu Ye, Xianfang Zeng, Gang YU, Wenbo Zhu, Bernt Schiele, Ming-Hsuan Yang, and Xu Yang. Kris-bench: Benchmarking next-level intelligent image editing models. In NeurIPS Datasets and Benchmarks Track , 2025. [34] xAI. Announcing grok-1.5. https://x.ai/news/grok-1.5 , 2024. [35] Jinheng Xie, Weijia Mao, Zechen Bai, David Junhao Zhang, Weihao Wang, Kevin Qinghong Lin, Yuchao Gu, Zhijie Chen, Zhenheng Yang, and Mike Zheng Shou. Show-o: One single transformer to unify multimodal understanding and generation. In ICLR , 2025. [36] Jinheng Xie, Zhenheng Yang, and Mike Zheng Shou. Show-o2: Improved native unified multimodal models. In NeurIPS , 2025. 11 [37] Long Xing, Qidong Huang, Xiaoyi Dong, Jiajie Lu, Pan Zhang, Yuhang Zang, Yuhang Cao, Conghui He, Jiaqi Wang, Feng Wu, et al. Conical visual concentration for efficient large vision-language models. In CVPR , 2025. [38] Rui Xu, Yunke Wang, Yong Luo, and Bo Du. Rethinking visual token reduction in lvlms under cross-modal misalignment. In AAAI , 2026. [39] Ce Zhang, Kaixin Ma, Tianqing Fang, Wenhao Yu, Hongming Zhang, Zhisong Zhang, Haitao Mi, and Dong Yu. Vscan: Rethinking visual token reduction for efficient large vision-language models. TMLR , 2026. [40] Xiangyu Zhao, Peiyuan Zhang, Kexian Tang, Xiaorong Zhu, Hao Li, Wenhao Chai, Zicheng Zhang, Renqiu Xia, Guangtao Zhai, Junchi Yan, et al. Envisioning beyond the pixels: Bench-marking reasoning-informed visual editing. In NeurIPS Datasets and Benchmarks Track ,2025. [41] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shenglong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, et al. Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 , 2025. 12 A Relationship among Generation, Editing and Understanding-side Visual Tokens 
+
+Image generation (here “generation” is a task name) and image editing are two sub-tasks in UMMs. Image generation creates an image from an instruction without a given image. Image editing takes a source image and an instruction, and modifies the source image according to the instruction. Both tasks finally rely on the generation branch (here “generation” means a branch name) to produce image results. The key difference lies in the input path. Pure image generation does not involve understanding-side visual tokens, since no source image is encoded by the vision encoder. In contrast, image editing also represents the source image as understanding-side visual tokens, which are then used to condition the generation process. Therefore, among these two tasks, only image editing is directly affected by understanding-side visual token reduction. For simplicity, when we mention “visual tokens”, we are talking about understanding-side visual tokens. 
+
+## B Notations in this paper 
+
+We list all the notations in our main paper in Table 7. Table 7: Notations used in our paper Notations Meanings 
+
+x input image 
+
+Eu understanding encoder (usually ViT) 
+
+U the understanding-side visual token sequence 
+
+Nu the number of understanding-side visual tokens 
+
+ui each visual token 
+
+Hu, Hg hidden states from understanding branch and generation branch 
+
+Pu, P g MLP projectors of the two branches 
+
+Ppos u understanding visual position embeddings 
+
+Eg generation encoder (usually VAE) 
+
+Z the generation-side latent token sequence 
+
+Ng the number of generation-side latent tokens 
+
+zj each latent token 
+
+Ppos g generation-side position embeddings 
+
+e(t) time embeddings 
+
+Htext hidden states from text instructions 
+
+(pi, q i) the position of a visual token 
+
+c(i) the position of a latent anchor corresponding to a visual token 
+
+Hu, W u, H g , W g the height and width of grids 
+
+⌊⌋ floor option 
+
+zc(i) matched VAE latent 
+
+ρ keep ratio 
+
+K token budget 
+
+si importance score 
+
+bc the best token inside each non-empty latent anchor 
+
+B the candidate set 
+
+S, S0 retained tokens 
+
+¯S redundant tokens 
+
+n(i) cosine similarity between redundant tokens and nearest retained tokens 
+
+λ merging weight 
+
+˜uj final retained tokens 
+
+˜U final compressed visual token sequence 13 C Detailed Experiment Settings 
+
+C.1 Model Usage BAGEL. BAGEL is an open-source UMM that supports both multimodal understanding and visual generation. It uses a decoder-only design and is pretrained on large-scale interleaved text, image, video, and web data. The released BAGEL-7B-MoT model has 7B active parameters and 14B total parameters. Its architecture follows a Mixture-of-Transformer-Experts design, with separate experts and visual encoders for understanding and generation, while sharing self-attention over the same token sequence. This design allows BAGEL to handle tasks such as visual question answering, text-to-image generation, image editing, and free-form visual manipulation in a single model. 
+
+InternVL-U. InternVL-U is a lightweight 4B-parameter unified multimodal model for understanding, reasoning, image generation, and image editing. Instead of training a fully native UMM from scratch, it builds on a strong MLLM backbone and adds a specialized MMDiT-based visual generation head. The model follows a unified contextual modeling design with modality-specific modules and decoupled visual encoders. This design aims to preserve the semantic strength of the MLLM while enabling high-quality generation and editing. InternVL-U also uses reasoning data synthesis, including text-rich and scientific tasks, to better align user intent with fine-grained visual outputs. 
+
+C.2 Dataset and Benchmark Usage 
+
+We list the name, the number of samples, and the question types of utilized benchmarks in our main text in Table 8. Table 8: Benchmarks utilized in our main text. Name Num Samples Type MME [8] 2,374 visual question answering MMBench (dev) [17] 4,329 visual question answering MMVP [29] 300 pair-level visual question answering RealWorldQA [34] 765 real-world visual question answering GEdit (EN) [16] 606 image editing RISE-Bench [40] 360 reasoning, logical or spatial image editing IntelligentBench [7] 350 reasoning, logical or spatial image editing 
+
+C.3 Hyper-parameter Choosing 
+
+For all models and baselines, we use the default settings and hyper-parameters described in their original repositories and papers.. Notably, we keep the random seed unchanged (42) for all baselines. For G 2TR, we keep ρ to 0.5 as described in our paper. We then set Kmin to 1. For understanding tasks of BAGEL-7B without thinking and InternVL-U, we set the max response token length to 20. For BAGEL with thinking mode, we set the max response token length to 2048 to avoid truncation. For editing tasks of BAGEL-7B, 
+
+## D Theoretical Analysis 
+
+Let U = {ui}Ni=1 denote the visual tokens from the understanding encoder, and let Z = Evae (x)
+
+denote the latent grid produced by the generation-side VAE. In unified multimodal models, visual tokens need to support both semantic understanding and visual generation. However, these two objectives may prefer different visual granularity. This motivates recent UMM designs that decouple visual pathways for understanding and generation [ 32 , 28 ]. In this view, the VAE latent space provides a compact representation that is directly optimized for image reconstruction and generation. We therefore use the generation-side latent as a guidance signal for understanding-side token reduction. For each ViT token ui, we find its corresponding VAE latent anchor zc(i), where c(i) denotes the 14 token-to-latent-anchor mapping. We define the latent-alignment score as 
+
+si = cos  ui, zc(i)
+
+ . (14) This score should not be interpreted as an exact estimate of mutual information. Instead, it is a simple and training-free surrogate for the shared visual factors between the understanding token and the generation latent. Tokens with larger si are more consistent with the generation-side representation, and are therefore more likely to preserve visual details that matter for image editing and generation. Ideally, the retained subset S should preserve the generation-relevant information in U:
+
+S⋆ = arg max  
+
+> |S|=K
+
+I(US ; Z). (15) Directly optimizing this objective is intractable during inference. We instead optimize a modular surrogate: 
+
+R(S) = X
+
+> i∈S
+
+si, |S| = K. (16) In practice, we further encourage generation-related information over the VAE latent grid, rather than selecting all tokens from a few highly scored regions. This prevents the retained tokens from collapsing to local salient areas and helps preserve the global image layout. After token selection, the removed tokens are not simply discarded. Each removed token is assigned to its nearest retained token in feature space and merged into it. Let ˜US be the compressed token set, and let RS ( ˜US ) denote its expanded approximation in the original token space. The induced token reconstruction error is 
+
+ϵmerge = U − R S ( ˜US ) 2
+
+. (17) This term measures how well the compressed tokens preserve the original visual token set after merging. We can then state a conditional perturbation bound. Suppose the following UMM decoder F (·) is locally L-Lipschitz with respect to its visual-token input. Then 
+
+d
+
+
+
+F (U), F (RS ( ˜US )) 
+
+
+
+≤ L U − R S ( ˜US ) 2
+
+, (18) where d(·, ·) denotes the output discrepancy. This bound shows that the output change is controlled by the token reconstruction error. Moreover, the selection score R(S) controls which information is preserved before merging: VAE-guided selection keeps tokens that are more aligned with the genera-tion latent, while token merging reduces the feature distortion caused by removing the remaining tokens. Therefore, the method provides a generation-aware form of token reduction. Unlike attention-only or text-similarity-based pruning, which mainly preserves tokens useful for language-side prediction, VAE-guided reduction uses the generation branch itself as the relevance signal. This makes the retained tokens more consistent with the visual factors required by image generation, while still reducing the number of understanding-side visual tokens before LLM prefill. 
+
+## E More Visualization Results 
+
+We put more visualizations of image editing results in Figure 6. Images and instructions are from IntelligentBench [ 7] and KRIS-Bench [ 33 ]. Our method still keeps necessary visual details in the edited images, and follow the instructions well, better than compared baselines. 15 Input Vanilla FastV [3] PDrop [37] IVC-Prune [25] G2TR (ours) 
+
+Figure 6: More visualization results. Instructions from top to down are: “What does the item in the box look like when taken out?”; “What is the appearance of these pastries after they have been baked?”; “The fruit in the image is ready for harvest. Could you display how it looks before it is ready?”; “Place Christian classic symbol items on the table.”; “Draw the top view of the object based on its front view.”. Our method still indicates strong performances. 16

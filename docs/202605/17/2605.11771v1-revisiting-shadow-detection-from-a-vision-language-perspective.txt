@@ -1,0 +1,538 @@
+Title: Revisiting Shadow Detection from a Vision-Language Perspective
+
+URL Source: https://arxiv.org/pdf/2605.11771v1
+
+Published Time: Wed, 13 May 2026 01:07:03 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 1
+
+# Revisiting Shadow Detection from a Vision-Language Perspective 
+
+Yonghui Wang, Wengang Zhou, Senior Member, IEEE, Hao Feng, and Houqiang Li, Fellow, IEEE 
+
+Abstract —Shadow detection is commonly formulated as avision-driven dense prediction problem, where models rely pri-marily on pixel-wise visual supervision to distinguish shadows from non-shadow regions. However, this formulation can become unreliable in visually ambiguous cases, where similar dark regions may correspond either to cast shadows or to intrinsically dark surfaces, making visual evidence alone insufficient for establishing a stable decision rule. In this work, we revisit shadow detection from a vision–language perspective and argue that robust prediction benefits from an explicit semantic reference beyond visual cues alone. We propose SVL, a Shadow Vision– Language framework that uses language as an explicit semantic reference to disambiguate shadows from visually similar dark regions. SVL aligns the global image representation with shadow-related text embeddings through a scene-level shadow ratio regression objective, thereby providing image-level guidance on the overall extent of shadows. To transfer this global guidance to dense inference, SVL introduces a global-to-local coupling mechanism that enforces consistency between image-level guid-ance and patch-level predictions. In parallel, SVL applies local patch-level constraints with text embeddings to improve fine-grained discrimination under challenging appearance conditions. Built on a frozen DINOv3 image encoder, the framework learns only lightweight projection and decoding modules, yielding a parameter-efficient design with less than 1% trainable parame-ters. Extensive experiments on multiple shadow detection bench-marks, including dedicated hard-case evaluations, suggest strong overall performance and improved robustness under visually ambiguous conditions. 
+
+Index Terms —Shadow detection, vision–language learning, semantic grounding, consistency learning. 
+
+I. I NTRODUCTION 
+
+# SHADOW detection is a long-standing problem in com-puter vision and plays a critical role in a wide range of applications [1]–[3]. Accurate shadow detection helps reduce illumination-induced uncertainty and enhances the robustness of downstream tasks, including scene understanding [2], [4], autonomous driving [5]–[7], and visual recognition [8]–[11]. Despite substantial progress, shadow detection remains chal-lenging in complex real-world scenes, particularly when cast shadows become difficult to distinguish from intrinsically dark non-shadow regions under ambiguous visual conditions. Mainstream research commonly formulates shadow detec-tion as a vision-centric dense prediction task. Under this paradigm, deep learning–based methods [12]–[15] typically 
+
+Yonghui Wang, Wengang Zhou, Hao Feng, and Houqiang Li are with the CAS Key Laboratory of Technology in Geo-spatial Information Processing and Application System, Department of Electronic Engineering and Informa-tion Science, University of Science and Technology of China, Hefei 230027, China (e-mail: zhwg@ustc.edu.cn). Corresponding author: Wengang Zhou. “a shadow cast     
+
+> by an object”
+> Image
+> Decoder
+> Text
+> Encoder
+> Image
+> Encoder
+> Image
+> Encoder
+> Image
+> Encoder
+> Image
+> Decoder
+> Image
+> Decoder
+> (a) appearance -driven
+> (b) context -driven
+> (c )challenging: visually ambiguous dark regions
+> vision -semantic consistency learning
+> appearance cues
+> context cues
+> context cues
+> semantic embedding
+> (used for semantic anchoring)
+> semantic -aware visual representation
+
+Fig. 1. Progressive ambiguity in shadow detection. (a) Appearance-driven: shadows are separable from nearby objects using clear local appearance cues. (b) Context-driven: dark objects exhibit shadow-like appearance, making local cues unreliable and requiring broader contextual reasoning. (c) Challenging (visually ambiguous dark regions): shadows and intrinsically dark surfaces become highly similar under a single RGB observation, so appearance and context alone may not provide a stable decision criterion. 
+
+adopt encoder–decoder architectures to extract and fuse vi-sual features for pixel-wise inference. Based on how visual information is exploited, existing approaches fall into two categories: appearance-driven and context-driven. The former relies on local cues, such as texture and color variations, whereas the latter leverages multi-scale or hierarchical repre-sentations to incorporate global spatial contexts. Importantly, both categories are built upon the assumption that the input image contains sufficient visual evidence for reliable dis-crimination. This assumption may fail in complex scenes: when visual evidence becomes ambiguous due to illumination, material properties, or occlusion, purely vision-based formu-lations tend to expose their inherent limitations, especially in visually ambiguous regions where shadows closely resemble non-shadow surfaces. Figure 1 illustrates how the limitations of visually driven formulations manifest under increasing levels of visual am-biguity. Figure 1(a) shows an appearance-driven case, where shadows exhibit clear intensity attenuation and well-defined boundaries due to strong contrast with nearby objects (e.g., a red backpack). In this scene, local appearance cues alone are sufficient for reliable shadow detection. Figure 1(b) de-picts a context-driven case, where dark objects (e.g., a black backpack) mimic shadow appearance. Here, local contrast is diminished, so models must rely more on context aggregation  
+
+> arXiv:2605.11771v1 [cs.CV] 12 May 2026 IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 2
+
+and long-range interactions to disambiguate shadows from ob-jects. Figure 1(c) highlights a particularly challenging regime for purely visual reasoning. In this highly ambiguous case, shadow regions and adjacent dark material surfaces exhibit strong visual similarity, making them difficult to distinguish even when contextual cues are considered. Specifically, under a single RGB observation, image evidence from local appear-ance and global context may be insufficient to establish a stable decision rule for a subset of ambiguous cases. In such cases, scaling up training data is a common recourse, yet it does not necessarily resolve the ambiguity in a conceptually grounded manner. Instead, models may overfit dataset-specific correlations rather than learn a stable and transferable notion of “shadow.” These observations suggest that further progress may require not only stronger visual representations, but also an explicit semantic reference that specifies what should be regarded as “shadow” beyond visual cues. Some recent studies have begun to move in this direction by introducing auxiliary cues, such as additional semantic supervision [16] or prompt-based adaptation of foundation models [17]. These cues typically serve as implicit auxiliary signals within a vision-centric pipeline, rather than explicitly specifying the concept of “shadow” in a modality-independent manner. In this work, we introduce language as an explicit semantic reference for shadow detection, with the goal of improving robustness in visually ambiguous cases. We argue that shadow detection can benefit from going beyond purely visual cues and incorporating an explicit semantic specifi-cation of what constitutes “shadow”. Based on this insight, we propose SVL , a Shadow Vision– Language framework that enforces vision–semantic consistency learning for dense shadow prediction. Specifically, we instantiate this framework at both global and local granularities. At the global level, we use shadow-related text embed-dings as an explicit semantic reference to align the global visual representation. This alignment is guided by a scene-level shadow ratio regression objective, which encourages the model to predict the overall extent of shadows at the image level, thereby infusing the global representation with semantic information and yielding a scene-level summary of shadow strength. We then propagate this language-conditioned global representation to dense prediction through global-to-local cou-pling. This coupling imposes a cross-granularity consistency constraint, encouraging patch-wise predictions to align with scene-level semantics rather than rely solely on local cues. While global semantics provides a scene-level prior, it is often insufficient to resolve pixel-level confusions between cast shadows and intrinsically dark materials. Therefore, at the local level, we introduce a local semantic constraint that regularizes pixel-wise features with text embeddings to enable fine-grained disambiguation. This constraint acts as a patch-level semantic regularizer, reducing false positives on visually similar non-shadow regions. The resulting multi-level consistency cues are then fed into a lightweight decoder for dense prediction. To refine shadow boundaries, the decoder additionally incorporates shallow visual features. This design preserves fine-grained boundary details while keeping the trainable modules compact, with less than 1% of the total parameters updated during training. Extensive experiments on several benchmarks show that SVL is particularly effective under visually ambiguous conditions, where cast shadows must be distinguished from visually similar dark non-shadow regions. Our main contributions are summarized as follows:  
+
+> •
+
+We present SVL, a new vision–language framework for shadow detection that enforces vision–semantic consis-tency through global semantic injection and local seman-tic constraint.  
+
+> •
+
+We introduce a scene-level shadow ratio regression ob-jective that provides a global shadow prior for calibrating the language-guided global representation.  
+
+> •
+
+We provide a parameter-efficient implementation with less than 1% trainable parameters, and extensive exper-iments show that it improves robustness under visually ambiguous conditions on multiple benchmarks. II. R ELATED WORK 
+
+A. Shadow Detection Methods 
+
+Shadow detection has been extensively studied over the past decade. Early works rely on physical image formation models and low-level appearance cues to distinguish shadow from non-shadow regions. A seminal model is the dichromatic reflection model proposed by Shafer [18], which decomposes image formation into body and surface reflection components and provides a physical basis for color-invariant shadow anal-ysis. Based on this model, Maxwell et al. [19] extended it to a bi-illuminant setting by explicitly accounting for direct and ambient illumination, thereby exposing the limitations of color-invariant assumptions under complex lighting conditions. Later works integrated handcrafted attributes with learning-based frameworks for shadow detection, including spectral ratio-based color cues [20] and local intensity and texture statistics [21]. Despite these efforts, such approaches remain constrained by physical assumptions and handcrafted feature design, leading to limited robustness in complex scenes. With the rapid development of deep learning, shadow detection is commonly formulated as a vision-driven task, where shadows are inferred from visual cues learned from training data. Existing vision-based approaches to shadow detection primarily rely on visual patterns, often integrating contextual information through architectural innovations. Such methods typically utilize encoder-decoder architectures, multi-scale fusion, and context aggregation to optimize prediction performance [14], [22]–[26]. Recently, the research focus has shifted toward bias-aware modeling. While still grounded in appearance analysis, these newer frameworks aim to mitigate the interference of ambiguous intensity and texture features through strategies such as feature reweighting, decomposition, and targeted dark-region enhancement [27]–[30]. Meanwhile, several works improve shadow detection by ad-dressing data and supervision limitations, including large-scale dataset construction, synthetic shadow generation, and semi-supervised or weakly supervised learning to cope with limited or noisy annotations [31]–[37]. More recently, transformer-based backbones [38] and pretrained foundation models [39] IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 3
+
+have been explored for shadow detection to incorporate global context modeling and enrich feature representations with high-level cues [16], [17], [40]–[44]. Despite these advances, semantic information is still in-ferred implicitly from visual patterns, and most methods re-main vision-driven. Consequently, performance often degrades in visually ambiguous cases, where dark objects, textured regions, or low-contrast non-shadow surfaces resemble cast shadows. This exposes a key limitation: visual evidence alone may be insufficient to reliably disambiguate shadows from visually similar non-shadow regions. Motivated by this limita-tion, we move beyond visual patterns by introducing language as an explicit semantic reference to specify what should be regarded as “shadow”. 
+
+B. Vision–Language Alignment 
+
+Vision–language alignment has emerged as an effective paradigm for learning transferable visual representations by leveraging the synergy between images and natural lan-guage [45], [46]. By pretraining on large-scale image–text pairs, this paradigm constructs a shared embedding space that aligns visual content with semantic concepts, thereby enabling strong zero-shot generalization [45], [47]–[49]. This paradigm has been widely adopted for downstream recognition tasks, ranging from image classification to object detection and segmentation [50]–[54]. Beyond category-level recognition, subsequent work has extended this paradigm toward spatially grounded understanding, where models must resolve reference ambiguity among multiple candidate instances. In such set-tings, language specifies which object or region to localize by providing fine-grained semantic attributes [55]–[58]. With increasing task complexity, language has further evolved from a source of supervision into a unified semantic interface for organizing multimodal representations. This shift has also accelerated the development of multimodal large language models, which couple visual encoders with large lan-guage models. Representative frameworks such as LLaVA [59] project visual features into a language embedding space via a lightweight projection module, enabling the language model to ingest visual inputs as language-aligned tokens. With in-struction tuning on multimodal data, these models learn to interpret visual tokens in the same embedding space as text, thereby enabling language-based understanding and reasoning over visual content. Motivated by these advances, we introduce language into shadow detection as an explicit semantic reference to better handle cases where visual evidence is ambiguous. Unlike physical objects, shadows arise from illumination effects and do not exhibit stable intrinsic shapes, leading to appearance variations across scenes. As a result, relying on visual cues alone may be insufficient when shadows closely resemble dark, non-shadow surfaces. These observations motivate using language as an explicit semantic reference to complement vision-driven modeling in shadow detection. 
+
+C. Semantic Consistency Learning 
+
+Semantic consistency learning is an effective paradigm for improving generalization by aligning latent features or model predictions of the same data under diverse viewing condi-tions [60]–[62]. These approaches encourage the model to produce similar features or predictions for each sample under modest perturbations, thereby suppressing unstable variations and emphasizing reliable cues. Semantic consistency has been explored in a wide range of settings, including supervised and semi-supervised learning, as well as cross-modal repre-sentation learning [63]–[65]. In computer vision, early work primarily focused on classification tasks by enforcing pre-diction consistency across augmentations or complementary branches [60], [61], [66]. This paradigm was later extended to dense prediction (e.g., detection and segmentation) by impos-ing pixel-level spatial or contextual consistency, which often improves structural coherence and boundary quality [67]. Re-latedly, vision–language learning promotes cross-modal agree-ment between images and text in a shared embedding space, enabling effective semantic transfer across modalities [45], [46], [48], [68]. Despite their success, existing consistency-based methods mainly focus on invariance to observational perturbations, often lacking an explicit semantic reference for resolving conceptual ambiguity. Shadow detection highlights this lim-itation: shadows and visually similar non-shadow regions (e.g., dark objects) can be highly similar at the pixel level, rendering purely visual consistency insufficient for reliable dis-ambiguation. To bridge this gap, we propose vision–semantic consistency learning. By aligning visual representations with shadow-related text embeddings, we use language as an ex-plicit semantic reference to regularize dense shadow prediction in ambiguous cases. III. M ETHOD 
+
+A. Overview and Problem Formulation 
+
+Given an input image I ∈ RH×W ×3, shadow detection aims to predict a binary mask M ∈ { 0, 1}H×W indicating whether each pixel belongs to a shadow region. Despite extensive re-search, shadow detection remains challenging in unconstrained scenes, where cast shadows often share similar appearances with intrinsically dark or textured non-shadow regions. Most existing approaches are vision-driven, leveraging appearance cues together with contextual modeling. While these cues are informative, low intensity alone is an ambiguous indicator of shadow, especially in the presence of dark objects or textured surfaces. In such cases, incorporating broader context can help, yet ambiguity may persist under a single RGB observation. To address this limitation, we reformulate shadow detection as a vision–semantic consistency learning problem and propose SVL, a Shadow Vision–Language framework for shadow detection. Our key insight is that shadows are illumination-induced phenomena rather than intrinsic surface properties. Therefore, reliable detection should be guided not only by visual cues but also by an explicit semantic reference that specifies what constitutes a “shadow”. In this work, we use shadow-related text embeddings as an explicit semantic refer-ence and enforce consistency between visual representations and text embeddings, while preserving contextual modeling in the visual encoder. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 4Block1 Block2 Block3 Block4 Low 
+
+Block1 Block4 Block2 
+
+vision encoder 
+
+text encoder 
+
+Block3        
+
+> Linear
+> Linear Linear Linear Linear Linear Linear Linear Linear
+
+Head scene -level shadow 
+
+ratio regression loss 
+
+Upsample 
+
+Upsample 
+
+cls feature 
+
+patch feature 
+
+text feature 
+
+enhanced feature 
+
+> Context/Semantic Learning
+
+𝐼 𝑐 !! 𝑐 !" 𝑐 !# 𝑐 !$𝑃 !! 𝑃 !" 𝑃 !# 𝑃 !$
+
+𝑃 #!̃      
+
+> 𝑐 !!̃𝑐 !!̃𝑐 !!̃𝑐 !!%𝑃 !!%𝑃 !!%𝑃 !!%𝑃 !!
+> 𝑆 "#
+> 𝑆 $%
+> 𝑆 $!&
+> 𝑀 "#
+> 𝑀 $%
+> 𝑀
+> 𝑡 ̃
+> 𝑡
+> Vision -Semantic Consistency Learning
+
+Multi -level 
+
+Feature Fusion Head example prompts:   
+
+> “scene with shadow”
+> “a photo of shadow”
+> Fig. 2. Overall architecture of SVL. A frozen vision encoder extracts multi-level [CLS] and patch tokens, while a frozen text encoder produces shadow-related text embeddings. SVL computes global and patch-wise consistency cues to inject language-guided information into dense prediction, applies auxiliary and scene-level supervision, and uses a lightweight fusion decoder to output the final shadow mask.
+
+Figure 2 illustrates the overall pipeline of our framework. Given an input image, a vision encoder extracts multi-level representations that encode shadow-related cues from different layers. In parallel, a text encoder maps shadow-related prompts to text embeddings. SVL enforces vision–semantic consistency between visual features and text embeddings via global se-mantic injection and a local semantic constraint . To facili-tate optimization, we supervise intermediate predictions with auxiliary losses. We further introduce a scene-level shadow ratio regression objective that estimates image-level shadow strength, providing a global prior for separating cast shadows from visually similar non-shadow regions. Finally, a multi-level feature aggregation module fuses language-guided global representations from deeper layers with shallow local details to produce the final mask. The framework is trained jointly, yielding predictions that better align with the explicit semantic reference provided by text embeddings. We describe each component of SVL and the corresponding training objectives next. 
+
+B. Multi-level Visual Representations for Shadow Modeling 
+
+Shadow detection benefits from exploiting multi-level fea-tures extracted from different layers of a vision backbone. Specifically, shallow layers capture fine boundary details, whereas deeper layers encode global illumination cues and broader scene context. This observation motivates aggregating complementary cues across layers for robust shadow modeling. We adopt a multi-level feature extraction scheme based on a transformer vision backbone. Given an input image, the back-bone produces a set of layer-wise representations {Fl}Ll=1 ,where the selected layers share a consistent token grid (i.e., the same spatial resolution). Each representation Fl consists of a global [CLS] token and a set of patch tokens, and can be written as 
+
+Fl = ( cl, Pl), (1) where the global token cl ∈ RD summarizes image-level context, and the patch tokens Pl = {pli}Ni=1 , pli ∈ RDNorm                          
+
+> Norm
+> Norm ̃
+> 𝑐 !!/̃𝑐 !"/̃𝑐 !#/̃𝑐 !$
+> $𝑃 !!/$𝑃 !"/$𝑃 !#/$𝑃 !$̃
+> 𝑡
+> 𝑆 "#
+> !!/𝑆 "#
+> !"/𝑆 "#
+> !#/𝑆 "#
+> !$
+> 𝑆 $%
+> !!/𝑆 $%
+> !"/𝑆 $%
+> !#/𝑆 $%
+> !$
+> Weighted
+> Weighted
+> Weighted
+> Fig. 3. Overview of the proposed vision–semantic consistency learning. We compute multi-level consistency scores between shadow-related text embeddings, [CLS] tokens, and patch tokens, and fuse them into dense cues for shadow prediction.
+
+preserve spatially localized information for the N image patches. These two token types provide complementary cues for shadow modeling. Specifically, [CLS] tokens cl summa-rize global context, whereas patch tokens Pl retain spatial evidence for shadow localization. Together, these multi-level visual representations serve as the visual inputs to the subse-quent vision–semantic consistency modules. In parallel, a text encoder maps shadow-related prompts to a text embedding 
+
+t ∈ RD , which is used as an explicit semantic reference in the subsequent modules. We select four layers at different depths of the backbone to obtain the multi-level visual features 
+
+{cli , Pli }4
+
+> i=1
+
+. In addition, to preserve boundary details in the final prediction, we incorporate an extra shallow-layer patch feature Pls ∈ RN ×D in the mask fusion stage. This integration is implemented via a skip connection. 
+
+C. Vision-Semantic Consistency Learning 
+
+Building upon the multi-level visual representations, we introduce a vision–semantic consistency learning framework that enforces consistency across modalities and granularities (Figure 3). Specifically, it comprises two complementary path-ways: (i) global semantic injection , which injects scene-level semantic guidance into the global representation to guide dense prediction; and (ii) local semantic constraint , which IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 5
+
+directly constrains pixel-wise features with text embeddings. During training, shadow predictions are jointly regularized by the injected global guidance and the explicit semantic reference provided by the text embeddings. 
+
+1) Global Semantic Injection: Local visual cues alone can be insufficient to distinguish shadows from visually similar non-shadow regions. As shown in Figure 3, we calibrate the global [CLS] token with the text embedding and then transfer the resulting global guidance to patch tokens. A text encoder maps a shadow-related prompt to a text embedding t ∈ RD .We project the text embedding into the visual feature space via a linear transformation: 
+
+˜t = Wtt, (2) where Wt ∈ RD×D is a learnable projection matrix. We apply 
+
+ℓ2 normalization to obtain ˆt ∈ RD . For each selected layer li,we project the global token cli and patch tokens Pli into the same feature space: 
+
+˜cli = Wccli , ˜pli 
+
+> j
+
+= Wppli 
+
+> j
+
+, (3) where Wc, Wp ∈ RD×D are learnable projection matrices. We apply ℓ2 normalization to obtain ˆcli and ˆpli 
+
+> j
+
+. We compute a [CLS] –text consistency score to inject semantic information from the text embedding into the global token: 
+
+sli 
+
+> cls
+
+= β ⟨ˆcli , ˆt⟩. (4) Here, sli 
+
+> cls
+
+∈ R is the scalar consistency score and β is a learnable scaling factor. This score provides an explicit cross-modal semantic signal, and its supervision by the scene-level shadow ratio regression objective encourages the global token 
+
+ˆcli to encode shadow-related semantics consistent with the text reference. We then transfer this semantically calibrated global information to patch tokens by computing patch– [CLS] con-sistency: 
+
+sli 
+
+> j, gi
+
+= α ⟨ˆpli 
+
+> j
+
+, ˆcli ⟩, (5) where sli 
+
+> j, gi
+
+∈ R denotes the patch-wise consistency score and α is a learnable scaling factor. This propagation transfers globally injected semantic information to patch-wise cues, providing global guidance for dense prediction in visually ambiguous regions. 
+
+2) Local Semantic Constraint: While global propagation provides scene-level guidance, it may miss fine boundary details and other localized variations. As shown in Figure 3, we therefore impose a direct patch–text consistency constraint to calibrate local evidence with the text embedding. Concretely, we compute a patch–text consistency score to directly regu-larize patch features with the text embedding. Using the same normalized text embedding ˆt ∈ RD , we measure its similarity to each patch feature: 
+
+sli 
+
+> j, lc
+
+= γ ⟨ˆpli 
+
+> j
+
+, ˆt⟩, (6) where sli 
+
+> j, lc
+
+∈ R denotes the cross-modal consistency score and γ is a learnable scaling factor. Unlike global propaga-tion, which relies on the [CLS] token as an intermediary, this term directly regularizes each patch token against the text embedding. Intuitively, true shadow regions should yield higher patch–text similarity, whereas visually similar dark non-shadow regions should yield lower similarity. As a result, this term acts as a fine-grained regularizer that suppresses shadow-like activations on non-shadow regions. We combine the propagated patch– [CLS] cues ( sli
+
+> j, gi
+
+) with the direct patch– text cues ( sli
+
+> j, lc
+
+) to form complementary consistency cues for dense prediction. 
+
+D. Multi-level Feature Fusion 
+
+Building upon vision–semantic consistency learning, we design a multi-level fusion module that integrates patch-wise consistency maps from multiple layers for predicting the final shadow mask. For each selected layer li, we obtain two patch-wise consistency maps from global semantic injection (patch– 
+
+[CLS] ) and local semantic constraint (patch–text). We denote these patch-level consistency maps as Sli 
+
+> gi
+
+= {sli
+
+> j, gi
+
+}Nj=1 and 
+
+Sli 
+
+> lc
+
+= {sli
+
+> j, lc
+
+}Nj=1 , where Sli
+
+> gi
+
+, Sli 
+
+> lc
+
+∈ RN , and each entry corresponds to one of the N patch locations. To aggregate information across layers, we compute the aggregated consis-tency maps as weighted sums with learnable fusion weights: 
+
+Sgi =
+
+> K
+
+X
+
+> i=1
+
+ωgi  
+
+> i
+
+Sli
+
+> gi
+
+, Slc =
+
+> K
+
+X
+
+> i=1
+
+ωlc  
+
+> i
+
+Sli
+
+> lc
+
+, (7) where K denotes the number of selected layers and ωgi  
+
+> i
+
+, ω lc  
+
+> i
+
+∈
+
+R are learnable scalar weights that control the contribution of each layer. To preserve boundary details, we additionally incorporate a shallow patch feature Pls ∈ RN ×D via a skip connection. We concatenate Sgi , Slc , and Pls and pass them to a refinement head to predict the final mask. This design jointly leverages global guidance and local boundary details for reliable dense prediction. 
+
+E. Training Objective 
+
+The proposed framework is trained end-to-end with auxil-iary dense supervision and a scene-level shadow ratio regres-sion objective. Given an input image, the network outputs two auxiliary logit maps, Mgi and Mlc , and a final fused logit map M. In addition to dense predictions, the network predicts a global scalar s for regressing the image-level shadow ratio. 
+
+1) Class-Balanced Weighted BCE Loss: Following prior work [26], [35], [40], we apply a class-balanced weighted binary cross-entropy loss Lwcp (·, ·) to both auxiliary maps and the final fused prediction. Let Y ∈ { 0, 1}H×W be the ground-truth mask, and let Z ∈ [0 , 1] H×W be the predicted probability map obtained after sigmoid activation. We define 
+
+ω as the non-shadow-to-shadow pixel ratio and apply a global scaling factor βback . The loss is then formulated as 
+
+Lwcp = −βback 
+
+
+
+ω Y log( Z + ε) + (1 − Y) log(1 − Z + ε)
+
+
+
+,
+
+(8) where the loss is computed element-wise and averaged over spatial locations, and ε is a numerical stabilizer. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 6
+
+TABLE I QUANTITATIVE COMPARISON WITH REPRESENTATIVE SHADOW DETECTION METHODS ON THREE BENCHMARKS . “BER” DENOTES THE BALANCED ERROR RATE . “S” AND “NS” DENOTE THE BER VALUES ON SHADOW AND NON -SHADOW REGIONS , RESPECTIVELY . B EST AND SECOND -BEST RESULTS ARE HIGHLIGHTED IN BOLD AND UNDERLINED , RESPECTIVELY . “ ↓” INDICATES LOWER IS BETTER .                                                                                                                                                                                                                                                                      
+
+> Method Year SBU UCF ISTD
+> BER ↓S↓NS ↓BER ↓S↓NS ↓BER ↓S↓NS ↓
+> PSPNet [69] 2017 8.57 --11.75 --4.26 4.51 4.02 SRM [70] 2017 6.51 10.52 2.50 12.51 21.41 3.60 7.92 13.97 1.86 RAS [71] 2018 7.31 12.13 2.48 13.62 23.06 4.18 11.14 19.88 2.41 EGNet [72] 2019 4.49 5.23 3.75 9.20 11.28 7.12 1.85 1.75 1.95 ITSD [73] 2020 5.00 8.65 1.36 10.16 17.13 3.19 2.73 2.05 3.40 Unary-Pairwise [74] 2011 25.03 36.26 13.80 ------scGAN [13] 2018 9.10 8.39 9.69 11.50 7.74 15.30 4.70 3.22 6.18 patched-CNN [12] 2018 11.56 15.60 7.52 ------ST-CGAN [13] 2018 8.14 3.75 12.53 11.23 4.94 17.52 3.85 2.14 5.55 BDRAR [14] 2018 3.64 3.40 3.89 7.81 9.69 5.44 2.69 0.50 4.87 DSC [24] 2018 5.59 9.76 1.42 10.38 11.72 3.04 3.42 3.85 3.00 ADNet [15] 2018 5.37 4.45 6.30 9.25 8.37 10.14 ---DC-DSPF [75] 2019 4.90 4.70 5.10 7.90 6.50 9.30 ---DSD [26] 2019 3.45 3.33 3.58 7.52 9.52 5.53 2.17 1.36 2.98 MTMT [35] 2020 3.15 3.73 2.57 7.47 10.31 4.63 1.75 1.36 2.14 FDRNet [27] 2021 3.04 2.91 3.18 7.28 8.31 6.26 1.55 1.22 1.88 RMLANet [25] 2022 2.97 2.53 3.42 6.41 6.69 6.14 1.01 0.68 1.34 SDCM [28] 2022 2.94 3.54 2.35 6.73 8.15 5.31 1.44 1.19 1.69 R2D [76] 2023 3.15 2.74 3.56 6.96 8.32 5.60 1.69 0.59 2.79 SwinShadow [40] 2024 2.78 2.78 2.79 5.99 6.57 5.40 1.22 1.05 1.40 SaT [16] 2024 3.02 3.68 2.36 7.18 9.14 5.22 1.53 1.24 1.82 UTS [30] 2025 ------1.32 0.96 1.67 STNet [41] 2025 2.74 3.16 2.32 6.36 7.58 5.14 1.15 1.03 1.27 ShadowAdapter [17] 2025 2.80 2.50 3.10 6.24 5.67 6.82 0.86 0.59 1.13
+> Ours -2.43 2.24 2.62 5.69 4.72 6.66 0.91 0.84 0.98
+
+2) Scene-level Shadow Ratio Regression Loss: We intro-duce a scene-level regularizer that regresses the shadow ratio of the input image. Let r ∈ [0 , 1] denote the ground-truth shadow ratio computed from the mask Y. The network pre-dicts a scalar s, from which we obtain ˆr = σ(s) ∈ [0 , 1] . We use the following weighted Smooth-ℓ1 loss: 
+
+Lratio = ( r + δ)κ · Smooth -ℓ1(ˆ r − r), (9) which assigns higher weights to images with larger shadow ratios. We set δ = 0 .05 and κ = 0 .5 in all experiments. 
+
+3) Overall Objective: The overall objective is defined as 
+
+L = Lfinal + λgi (t) Lgi + λlc (t) Llc + λratio Lratio . (10) Here Lfinal denotes the weighted BCE loss on the final pre-diction, while Lgi and Llc denote the corresponding auxiliary losses for the two intermediate maps. The weights of these two auxiliary losses are linearly decayed from 1 to 0 throughout training. The coefficient λratio weights the ratio regression loss, and we set λratio = 0 .25 in all experiments. All terms are optimized jointly in an end-to-end manner. IV. E XPERIMENTS 
+
+In this section, we evaluate SVL on multiple shadow de-tection benchmarks, with particular attention to performance under visually ambiguous conditions. We first describe the datasets, evaluation protocol, and implementation details. We then compare SVL with state-of-the-art methods using both quantitative and qualitative evaluations. Finally, we perform ablation studies and additional analyses to examine the con-tribution of each component. 
+
+A. Datasets and Evaluation Metrics 
+
+Datasets. We evaluate SVL on three standard shadow de-tection benchmarks: SBU [77], UCF [21], and ISTD [13]. SBU [77] is a large-scale dataset with 4,089 training images and 638 test images. It covers diverse outdoor scenes with complex illumination and shadow patterns. We follow the official split for training and evaluation on SBU. To assess cross-dataset generalization, we directly test the model trained on SBU on the UCF test set (110 images), which contains cluttered backgrounds and visually ambiguous shadow regions. ISTD [13] contains 1,330 training images and 540 test images from 135 scenes, with diverse shadow shapes, illumination conditions, and background materials. We follow the official split for training and evaluation. 
+
+Evaluation Metrics. We report Balanced Error Rate (BER) as the primary quantitative metric. This metric explicitly accounts for the severe class imbalance between shadow and non-shadow pixels, making it a standard evaluation metric in shadow detection. It is defined as: 
+
+BER = 
+
+
+
+1 − 12
+
+ T P T P + F N + T N T N + F P 
+
+ 
+
+× 100 , (11) where T P , T N , F P , and F N are the numbers of true positives, true negatives, false positives, and false negatives, respectively. Lower BER is better. 
+
+B. Implementation Details 
+
+We implement SVL in PyTorch, using frozen DINOv3 ViT-L/16 [78] and CLIP ViT-L/14@336px [45] as the image and text encoders, respectively. We extract multi-level features from blocks {5, 11 , 17 , 23 } under 0–23 indexing, sampled at IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 7(b) Zoom (a) Input (d) ADNet (e) DSC (f) FDRNet (h) RMLANet (i) SDCM (j) SwinS (k) SAdapter (l) Ours (c) GT (g) MTMT 
+
+> Fig. 4. Qualitative comparison with representative shadow detection methods. SwinS and SAdapter are short for SwinShadow and ShadowAdapter, respectively.
+
+roughly uniform intervals to cover early, mid-level, and late representations, and additionally use block 2 as a shallow skip feature for boundary refinement. Only lightweight modules are trained, resulting in fewer than 1% trainable parameters. Training is conducted for 10 ,000 iterations with a batch size of 
+
+16 using SGD [79] (momentum 0.9, weight decay 5 × 10 −4). The learning rate is initialized to 5 × 10 −3 and decayed using a polynomial schedule with power 0.9. Training takes approximately 40 minutes on four NVIDIA RTX 3090 GPUs. At inference time, we apply a fully connected Conditional Random Field (CRF) [80] as a post-processing step to improve the spatial smoothness of the predicted shadow score maps. Code will be released at https://github.com/harrytea/SVL. 
+
+C. Comparison with Existing Methods 
+
+Quantitative Results. Table I reports comparisons with exist-ing shadow detection methods on SBU [77], UCF [21], and ISTD [13], including both early baselines and more recent methods with stronger context modeling or auxiliary semantic cues. On SBU [77], SVL achieves the lowest overall BER and the lowest BER on shadow regions, while remaining competitive on non-shadow regions. SVL also outperforms recent baselines such as SwinShadow [40] and STNet [41], as well as methods that incorporate auxiliary semantic cues, including SaT [16] and ShadowAdapter [17]. These results support the hypothesis that using language as an explicit semantic reference improves discrimination when shadows and non-shadow regions exhibit substantial appearance overlap. On UCF [21], a standard benchmark for cross-dataset eval-uation, SVL attains the lowest BER and the lowest shadow-region BER. UCF contains cluttered backgrounds and visually ambiguous dark regions, where distribution shift and local appearance ambiguity make visual cues alone insufficient for shadow discrimination. This result suggests that explicit semantic reference is beneficial when domain shift and ap-pearance ambiguity reduce the reliability of purely visual cues. On ISTD [13], SVL achieves a competitive BER. We observe that ISTD is collected in a relatively controlled setting and exhibits cleaner shadow boundaries, so performance on this benchmark appears to depend more on fine-grained bound-ary localization than on concept-level discrimination. Under this setting, SVL remains competitive with a frozen visual backbone, and the overall results are consistent with the view that its advantage becomes more apparent when semantic ambiguity is the primary challenge. Overall, SVL performs stably across benchmarks, with its advantages most evident in more challenging settings with visual ambiguity or dataset shift, consistent with our analysis that shadow detection can benefit from explicit semantic reference. 
+
+Qualitative Results. Figures 4 and 5 present qualitative com-parisons between SVL and several representative shadow de-tection methods, with Figure 4 showing representative exam-ples from different benchmarks and Figure 5 further organizing ambiguous hard cases into three typical categories. Figure 4 shows representative examples from different benchmarks under diverse scene layouts, materials, and illumination condi-tions, including naturally occurring challenging cases. Across these examples, SVL produces more complete shadow masks while introducing fewer false positives. Its detection results are also more consistent with scene semantics in ambiguous regions. Figure 5 provides a more structured view of these challenging cases by grouping them into three typical sources of shadow–non-shadow ambiguity: intrinsically dark materials, shadow-adjacent dark regions, and textured dark distractors. In such cases, relying on visual appearance often confuses dark IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 8(b) Zoom (a) Input (d) ADNet (e) DSC (f) FDRNet (h) RMLANet (i) SDCM (j) SwinS (k) SAdapter (l) Ours (c) GT (g) MTMT  
+
+> (1) Intrinsically dark materials
+> (2) Shadow -adjacent dark regions
+> (3) Textured dark distractors
+> Fig. 5. Qualitative comparison with representative shadow detection methods on more challenging cases with shadow–non-shadow ambiguity. From top to bottom: (1) intrinsically dark materials, (2) shadow-adjacent dark regions, and (3) textured dark distractors. SwinS and SAdapter are short for SwinShadow and ShadowAdapter, respectively.
+
+non-shadow regions with shadows. By incorporating explicit semantic reference and cross-modal consistency at both global and local levels, SVL better suppresses shadow-like responses in non-shadow areas while preserving the structure of true shadow regions. Together with the quantitative results in Table I, these results suggest that the advantage of SVL is most apparent in visually ambiguous regions, where explicit seman-tic reference helps distinguish true shadows from shadow-like non-shadow areas. 
+
+D. Ablation Studies 1) Component Ablation: Table II presents a component-wise ablation study on SBU [77], UCF [21], and ISTD [13]. The visual-only baseline achieves BERs of 3.65, 7.78, and 1.92 on SBU, UCF, and ISTD, respectively. Adding only global semantic injection reduces the BER to 2.94/6.51/1.61, indi-cating that image-level semantic guidance provides effective semantic grounding beyond appearance cues. Using only the local semantic constraint also yields consistent gains, reaching 2.75/6.14/1.12, suggesting that patch-level semantic guidance helps suppress shadow-like responses in non-shadow regions. On UCF, the two semantic components exhibit complementary behavior: global semantic injection yields a lower shadow-region error, whereas the local semantic constraint achieves the lowest non-shadow-region error. Combining them further reduces the overall BER to 2.58/6.03/1.06 on SBU/UCF/ISTD, confirming that image-level and patch-level semantic guidance are complementary. Adding the scene-level ratio objective yields further gains, most notably on UCF, where the BER decreases from 6.03 to 5.70, highlighting the benefit of incor-porating an explicit scene-level cue. Finally, CRF [80] post-processing further reduces the BER to 2.43, 5.69, and 0.91 on SBU, UCF, and ISTD, respectively, yielding the best overall results. Overall, the ablation results show that global semantic injection, local semantic constraint, and the scene-level ratio objective provide complementary benefits, while CRF offers additional refinement at the final prediction stage. 
+
+2) Low-Level Skip Feature Selection: As described in Sec-tion III-B, besides the four multi-level features, SVL ad-ditionally incorporates an extra shallow-layer patch feature as a low-level skip connection in the mask fusion stage to preserve boundary details. In this paper, layer 2 is used as the default choice for this skip feature. Figure 6 summarizes the relative performance change, measured by ∆BER with respect to layer 2, when this skip feature is extracted from the patch embedding or from different transformer blocks. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 9
+
+TABLE II ABLATION STUDY ON KEY COMPONENTS OF SVL. “BER” DENOTES THE BALANCED ERROR RATE . “S” AND “NS” DENOTE THE BER VALUES ON SHADOW AND NON -SHADOW REGIONS , RESPECTIVELY . B EST RESULTS ARE HIGHLIGHTED IN BOLD . “ ↓” INDICATES LOWER IS BETTER .                                                                               
+
+> Setting Components SBU UCF ISTD Global Local Ratio BER ↓S↓NS ↓BER ↓S↓NS ↓BER ↓S↓NS ↓
+> (1) Visual baseline 3.65 4.92 2.38 7.78 10.28 5.28 1.92 1.00 2.84 (2) + Global only ✓2.94 3.58 2.29 6.51 6.39 6.62 1.61 1.99 1.22 (3) + Local only ✓2.75 3.64 1.86 6.14 7.66 4.62 1.12 1.04 1.20 (4) + Global + Local ✓✓2.58 2.65 2.51 6.03 6.94 5.12 1.06 0.94 1.19 (5) + Scene-level ratio (w/o CRF) ✓✓✓2.46 3.10 1.82 5.70 5.22 6.19 1.04 0.77 1.31 (6) + Scene-level ratio (w/ CRF) ✓✓✓2.43 2.24 2.62 5.69 4.72 6.66 0.91 0.84 0.98
+
+TABLE III HARD -CASE SUBSET EVALUATION . SBU-H ARD AND UCF-H ARD DENOTE THE HARD -CASE SUBSETS CONSTRUCTED FROM SBU AND UCF, 
+
+> RESPECTIVELY
+
+. W E REPORT BER OVER ALL PIXELS (A LL : BER ↓) AND WITHIN THE DARKEST 20% PIXELS OF EACH IMAGE (D20: BER ↓, FPR ↓,PREC ↑). B EST RESULTS ARE HIGHLIGHTED IN BOLD .
+
+Method SBU-Hard UCF-Hard SBU-Hard+UCF-Hard All D20 All D20 All D20 
+
+BER ↓ BER ↓ FPR ↓ Prec ↑ BER ↓ BER ↓ FPR ↓ Prec ↑ BER ↓ BER ↓ FPR ↓ Prec ↑
+
+ADNet [15] 17.04 19.14 13.69 57.81 18.31 23.97 25.94 26.55 17.19 19.94 15.48 52.88 DSC [24] 12.93 14.09 7.93 71.44 17.51 20.94 17.23 34.46 13.65 14.94 9.30 66.26 DSD [26] 6.16 11.43 14.39 61.26 13.30 17.38 26.39 29.45 7.27 12.30 16.15 56.57 FDRNet [27] 5.73 11.57 16.84 58.05 11.22 18.10 29.76 27.43 6.56 12.52 18.73 53.48 MTMT [35] 6.95 10.23 9.13 70.73 11.73 14.69 17.53 37.68 7.70 10.87 10.36 66.29 RMLANet [25] 4.92 10.37 14.63 61.48 10.13 13.16 18.75 37.22 5.74 10.73 15.23 58.59 SDCM [28] 6.70 10.00 9.20 70.69 9.36 13.94 18.48 37.09 7.09 10.63 10.56 66.03 ShadowAdapter [17] 4.79 8.84 8.81 72.01 10.14 15.21 28.07 29.49 5.59 10.00 11.63 64.41 SwinShadow [40] 6.04 9.65 9.57 70.12 8.29 15.90 23.82 31.72 6.33 10.63 11.66 64.06 Ours 3.88 6.71 7.27 76.25 7.64 11.29 11.86 47.50 4.46 7.22 7.94 73.01 P 0 2 4 6 8 10 12 14 16 18 20 22 23 
+
+Feature level 
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> ΔBER (vs. layer 2)
+
+SBU UCF ISTD 
+
+Fig. 6. Sensitivity analysis of the low-level skip feature. We report ∆BER on SBU, UCF, and ISTD when the skip feature is taken from the patch embedding (P) or from different transformer blocks (0–23). ∆BER is computed relative to layer 2, and lower values indicate better performance. 
+
+Most alternative feature levels lead to positive ∆BER on all three benchmarks, with the largest variation observed on UCF, suggesting that cross-dataset generalization is particularly sen-sitive to the choice of low-level skip representation. 
+
+E. Hard-Case Evaluation: Shadow vs. Dark Non-Shadow 
+
+A major challenge in shadow detection lies in semantic ambiguity, as visually dark non-shadow regions may closely resemble cast shadows. To evaluate a model’s ability to resolve this ambiguity, we construct a dedicated hard-case subset and report metrics that explicitly measure the confusion between dark non-shadow regions and true shadows. 
+
+1) Hard-case subset construction: Given an image In with pixel domain Ωn, we denote the shadow region Sn ⊂ Ωn,the non-shadow region ¯Sn = Ω n \ Sn, and the brightness at location x by V (x) ∈ [0 , 1] (HSV-V channel). We compute an image-adaptive darkness threshold τ (p) 
+
+> n
+
+as the p-th percentile of V (x). A smaller p focuses on the darkest pixels. We then quantify the proportion of dark non-shadow pixels as 
+
+r(p) 
+
+> n
+
+=
+
+n
+
+x ∈ ¯Sn : V (x) < τ (p)
+
+> n
+
+o
+
+| ¯Sn| . (12) Intuitively, r(p) 
+
+> n
+
+measures the fraction of the non-shadow region whose brightness falls below τ (p) 
+
+> n
+
+, which captures cases where dark non-shadow areas are most likely to be confused with cast shadows. To reduce sensitivity to the percentile choice, we compute r(p) 
+
+> n
+
+for p ∈ { 5, 10 , 15 } and rank images in descending order of r(p) 
+
+> n
+
+for each p (rank 1 is the hardest case). We use the mean rank across the three percentiles as the selection criterion and construct the hard subset by selecting the 20% images with the smallest mean rank. 
+
+2) Hard-case results: We evaluate all methods on the hard-case subset using BER over all pixels, together with BER, FPR, and precision within the darkest 20% pixels of each image. Table III summarizes the results. On the all-pixel evaluation, SVL achieves the lowest BER on SBU, UCF, and the merged subset, indicating stronger robustness under shadow–dark non-shadow ambiguity. While all-pixel BER reflects overall performance, the darkest-20% subset focuses on the most ambiguous regions, where dark non-IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 10                                                                           
+
+> TABLE IV TEXT -REFERENCE ANALYSIS ON STANDARD AND HARD -CASE EVALUATIONS . “A LL ”AND “D20 BER” DENOTE BER OVER ALL PIXELS AND OVER THE DARKEST 20% PIXELS OF EACH IMAGE ,RESPECTIVELY .BEST RESULTS ARE HIGHLIGHTED IN BOLD .
+> ID Reference SBU UCF SBU-Hard+UCF-Hard All All All D20 BER D20 FPR D20 Prec
+> Semantic specificity
+> T0 Shadow prompts 2.43 5.69 4.46 7.22 7.94 73.01 T1 Dark-region desc. 3.11 7.62 5.48 9.08 10.84 66.28 T2 Illum.-nonshadow desc. 2.88 6.26 5.97 8.35 7.66 72.19 T3 Irrelevant text 2.75 6.35 5.26 8.51 8.00 72.32 T4 Learnable token 3.04 6.88 6.38 9.55 9.87 67.88
+> Prompt robustness
+> P1 Keyword prompts 2.51 5.77 4.65 8.38 9.03 69.13 P2 Definition prompts 2.53 6.01 4.82 8.02 8.90 70.56 P3 Attribute prompts 2.46 5.82 4.91 7.99 6.67 75.77
+
+shadow areas are most likely to be misclassified as shadow. In this setting, FPR and precision are particularly informative for characterizing false-positive suppression. Across SBU, UCF, and the merged subset, SVL achieves the lowest BER and FPR together with the highest precision on the darkest-20% pixels, indicating fewer false positives in visually dark non-shadow regions. Overall, these results suggest that SVL can suppress false positives in visually dark regions more effectively. 
+
+F. Analysis of the Text Reference 
+
+To further understand the role of language in SVL, we analyze the text reference from two perspectives, namely semantic specificity and prompt robustness. Table IV reports results on both the standard SBU and UCF test sets and the more challenging hard-case subset introduced in Section IV-E. Specifically, we report BER on the standard SBU and UCF test sets, and for the merged SBU-Hard+UCF-Hard subset, we report BER over all pixels together with BER, FPR, and precision within the darkest 20% pixels of each image. 
+
+1) Semantic Specificity of the Text Reference: To verify whether SVL benefits from the semantic content of the text reference, we compare the default shadow-related prompts (T0) with four alternative references: generic dark-region de-scriptions (T1), illumination-related but non-shadow descrip-tions (T2), irrelevant text (T3), and a learnable token (T4), as summarized in Table IV. Overall, the default shadow-related prompts (T0) provide the strongest performance across the standard benchmarks and the hard-case evaluation. Replacing them with generic dark-region descriptions (T1) causes the largest degradation, suggesting that these prompts provide a misleading semantic cue by reducing shadow to generic darkness. Illumination-related but non-shadow descriptions (T2) recover part of the performance, but remain inferior to T0 because they do not correctly specify the target concept of cast shadow. Irrelevant text (T3) is in some cases less harmful than T1, suggesting that incorrectly describing dark regions as shadows is more detrimental than using text that is simply unrelated to the task. Replacing the text reference with a learn-able token (T4) further degrades performance, indicating that an auxiliary learnable vector cannot substitute for an explicit Input GT Ours Input GT Ours  
+
+> Fig. 7. Failure cases of SVL on thin or entangled shadow patterns.
+
+semantically grounded reference. Overall, SVL benefits most from text references that are well aligned with cast shadows, especially under shadow–dark non-shadow ambiguity. 
+
+2) Prompt Robustness: We verify whether the model pre-dictions are sensitive to the wording of shadow-related text references. Specifically, we evaluate three prompt variants: keyword prompts (P1), definition prompts (P2), and attribute prompts (P3). The default prompt setting is identical to T0. Overall, SVL exhibits limited sensitivity to prompt wording in terms of overall BER. On SBU, the results remain within a narrow range (2.43–2.53), suggesting that the model is not tied to hand-crafted text. On UCF, the variation is slightly larger (5.69–6.01), suggesting that the choice of prompt wording has a more visible effect under cross-dataset evaluation. A similar trend is observed on the hard-case subset, where the all-pixel BER remains relatively stable across prompt variants, although the default prompts still achieve the best overall BER. The darkest 20% pixels focus on the most ambiguous dark regions. Under this evaluation, different prompt formulations lead to a modest trade-off between false-positive suppression and overall balance. In particular, attribute prompts (P3) achieve the lowest FPR and the highest precision, but the default prompts remain best in overall BER across both the standard and hard-case evaluations. Overall, these two studies show that SVL benefits most from text references with the correct shadow-related semantics, while remaining robust to common wording variations when the semantic content is appropriate. 
+
+G. Failure Cases 
+
+SVL still struggles in highly complex scenarios. As shown in Figure 7, these failure cases arise in thin or entangled shadow patterns, such as intertwined branch shadows, over-lapping projected patterns, and repeated, interleaved small in-stances. In such cases, the model generally captures the overall shadow layout correctly, indicating that the main limitation does not lie in concept-level misrecognition. Rather, when the shadow structure becomes complex, the challenge lies in pre-serving fine-grained components and local structural integrity. Consequently, thin branch-like or narrow line shadows may be missed, adjacent structures may be erroneously merged, and local boundaries may be smoothed. These observations suggest that SVL primarily improves concept-level disambiguation, while extremely thin or entangled shadows remain challenging to delineate precisely. Future work may focus on boundary-IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 11 
+
+aware refinement while preserving the semantic robustness to shadow–dark non-shadow ambiguity. V. C ONCLUSION 
+
+In this paper, we presented SVL, a parameter-efficient vision–language framework for shadow detection that incorpo-rates language as an explicit semantic reference through global semantic injection, local semantic constraint, and scene-level shadow ratio regression. Extensive experiments on multiple benchmarks, including dedicated hard-case evaluations, show that SVL achieves strong overall performance and improved robustness in visually ambiguous regions. The empirical re-sults suggest that the main benefit of SVL lies in concept-level disambiguation, particularly in reducing false positives on visually dark non-shadow regions, while the text-reference analyses further indicate that this gain depends on semantically relevant shadow descriptions rather than merely on adding a text branch. Overall, these findings highlight the value of explicit semantic grounding for shadow detection and suggest that robust prediction requires both concept-level guidance and pixel-level detail preservation. REFERENCES [1] A. Sanin, C. Sanderson, and B. C. Lovell, “Shadow detection: A survey and comparative evaluation of recent methods,” Pattern Recognition ,vol. 45, no. 4, pp. 1684–1695, 2012. [2] X. Hu, Z. Xing, T. Wang, C.-W. Fu, and P.-A. Heng, “Unveiling deep shadows: A survey and benchmark on image and video shadow detection, removal, and generation in the deep learning era,” arXiv preprint arXiv:2409.02108 , 2024. [3] A. Tiwari, P. K. Singh, and S. Amin, “A survey on shadow detection and removal in images and video sequences,” in Proceedings of the IEEE International Conference on Cloud Security and Big Data Engineering ,2016, pp. 518–523. [4] N. Alshammari, S. Akc ¸ay, and T. P. Breckon, “Multi-task learning for automotive foggy scene understanding via domain adaptation to an illumination-invariant representation,” arXiv preprint arXiv:1909.07697 ,2019. [5] T. Zhang, L. Wang, H. Li, Y. Xiao, S. Liang, A. Liu, X. Liu, and D. Tao, “Lanevil: Benchmarking the robustness of lane detection to environmental illusions,” in Proceedings of the ACM International Conference on Multimedia , 2024, pp. 5403–5412. [6] R. Zhang, W. Li, P. Wang, C. Guan, J. Fang, Y. Song, J. Yu, B. Chen, W. Xu, and R. Yang, “Autoremover: Automatic object removal for autonomous driving videos,” in Proceedings of the AAAI Conference on Artificial Intelligence , 2020, pp. 12 853–12 861. [7] H. Yang, O.-H. Choung, and Y. Ban, “Shadow removal for enhanced nighttime driving scene generation.” Applied Sciences , vol. 14, no. 23, p. 10999, 2024. [8] R. Kobayashi, K. Nomoto, Y. Tanaka, G. Tsuruoka, and T. Mori, “Wip: Shadow hack: Adversarial shadow attack against lidar object detection,” in Proceedings of the Symposium on Vehicle Security and Privacy , 2024, pp. 1–7. [9] I. Mikic, P. C. Cosman, G. T. Kogut, and M. M. Trivedi, “Moving shadow and object detection in traffic scenes,” in Proceedings of the International Conference on Pattern Recognition , 2000, pp. 321–324. [10] T. Yu, H. Jin, W.-T. Tan, and K. Nahrstedt, “Skeprid: Pose and illumination change-resistant skeleton-based person re-identification,” 
+
+ACM Transactions on Multimedia Computing, Communications, and Applications , vol. 14, no. 4, pp. 1–24, 2018. [11] J. Guo, P. Zheng, and J. Huang, “An efficient motion detection and tracking scheme for encrypted surveillance videos,” ACM Transactions on Multimedia Computing, Communications, and Applications , vol. 13, no. 4, pp. 1–23, 2017. [12] S. Hosseinzadeh, M. Shakeri, and H. Zhang, “Fast shadow detection from a single image using a patched convolutional neural network,” in 
+
+Proceedings of the International Conference on Intelligent Robots and Systems , 2018, pp. 3124–3129. [13] J. Wang, X. Li, and J. Yang, “Stacked conditional generative adversarial networks for jointly learning shadow detection and shadow removal,” in 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2018, pp. 1788–1797. [14] L. Zhu, Z. Deng, X. Hu, C.-W. Fu, X. Xu, J. Qin, and P.-A. Heng, “Bidirectional feature pyramid network with recurrent attention residual modules for shadow detection,” in Proceedings of the European Con-ference on Computer Vision , 2018, pp. 121–136. [15] H. Le, T. F. Y. Vicente, V. Nguyen, M. Hoai, and D. Samaras, “A+d net: Training a shadow detector with adversarial shadow attenuation,” in Proceedings of the European Conference on Computer Vision , 2018, pp. 662–678. [16] K. Zhou, J.-L. Fang, W. Wu, Y.-L. Shao, X.-Q. Wang, and D. Wei, “Semantic-aware transformer for shadow detection,” Computer Vision and Image Understanding , vol. 240, no. 1, p. 103941, 2024. [17] L. Jie and H. Zhang, “Shadowadapter: Adapting segment anything model with auto-prompt for shadow detection,” Expert Systems with Applications , vol. 273, no. 1, p. 126809, 2025. [18] S. A. Shafer, “Using color to separate reflection components,” Color Research & Application , vol. 10, no. 4, pp. 210–218, 1985. [19] B. A. Maxwell, R. M. Friedhoff, and C. A. Smith, “A bi-illuminant dichromatic reflection model for understanding images,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition ,2008, pp. 1–8. [20] J.-B. Huang and C.-S. Chen, “Moving cast shadow detection using physics-based features,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2009, pp. 2310–2317. [21] J. Zhu, K. G. Samuel, S. Z. Masood, and M. F. Tappen, “Learning to recognize shadows in monochromatic natural images,” in Proceedings of the IEEE Computer Society Conference on Computer Vision and Pattern Recognition , 2010, pp. 223–230. [22] S. H. Khan, M. Bennamoun, F. Sohel, and R. Togneri, “Automatic shadow detection and removal from a single image,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 38, no. 3, pp. 431– 446, 2015. [23] S. Mohajerani and P. Saeedi, “Shadow detection in single rgb images using a context preserver convolutional neural network trained by multiple adversarial examples,” IEEE Transactions on Image Processing ,vol. 28, no. 8, pp. 4117–4129, 2019. [24] X. Hu, L. Zhu, C.-W. Fu, J. Qin, and P.-A. Heng, “Direction-aware spatial context features for shadow detection,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2018, pp. 7454–7462. [25] L. Jie and H. Zhang, “Rmlanet: Random multi-level attention network for shadow detection and removal,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 33, no. 12, pp. 7819–7831, 2023. [26] Q. Zheng, X. Qiao, Y. Cao, and R. W. Lau, “Distraction-aware shadow detection,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2019, pp. 5167–5176. [27] L. Zhu, K. Xu, Z. Ke, and R. W. Lau, “Mitigating intensity bias in shadow detection via feature decomposition and reweighting,” in 
+
+Proceedings of the IEEE International Conference on Computer Vision ,2021, pp. 4702–4711. [28] Y. Zhu, X. Fu, C. Cao, X. Wang, Q. Sun, and Z.-J. Zha, “Single image shadow detection via complementary mechanism,” in Proceedings of the ACM International Conference on Multimedia , 2022, pp. 6717–6726. [29] X.-T. Wu, X.-D. Chen, H. Chen, W. Wu, W. Ma, and H. Song, “Pay more attention to dark regions for faster shadow detection,” Computer Vision and Image Understanding , vol. 263, no. 1, p. 104589, 2026. [30] X. Qiao, K. Xu, X. Yang, R. Dong, X. Xia, and J. Cui, “Under the shadow: Exploiting opacity variation for fine-grained shadow detection,” in Proceedings of the Advances in Neural Information Processing Systems , 2025, pp. 1–13. [31] L. Hou, T. F. Y. Vicente, M. Hoai, and D. Samaras, “Large scale shadow annotation and detection using lazy annotation and stacked cnns,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 43, no. 4, pp. 1337–1351, 2019. [32] X. Hu, T. Wang, C.-W. Fu, Y. Jiang, Q. Wang, and P.-A. Heng, “Revisiting shadow detection: A new benchmark dataset for complex world,” IEEE Transactions on Image Processing , vol. 30, no. 1, pp. 1925–1934, 2021. [33] N. Inoue and T. Yamasaki, “Learning from synthetic shadows for shadow detection and removal,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 31, no. 11, pp. 4187–4197, 2020. [34] Y. Hong, L. Niu, and J. Zhang, “Shadow generation for composite image in real-world scenes,” in Proceedings of the AAAI Conference on Artificial Intelligence , 2022, pp. 914–922. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 12 
+
+[35] Z. Chen, L. Zhu, L. Wan, S. Wang, W. Feng, and P.-A. Heng, “A multi-task mean teacher for semi-supervised shadow detection,” in 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2020, pp. 5611–5620. [36] H. Yang, T. Wang, X. Hu, and C.-W. Fu, “Silt: Shadow-aware iterative label tuning for learning to detect shadows from noisy labels,” in 
+
+Proceedings of the IEEE International Conference on Computer Vision ,2023, pp. 12 687–12 698. [37] J. Li, S. Wen, R. Chen, D. Lu, J. Hu, and H. Zhang, “A self-correction algorithm for transparent object shadow detection,” Applied Intelligence ,vol. 55, no. 4, p. 275, 2025. [38] A. Dosovitskiy, “An image is worth 16x16 words: Transformers for image recognition at scale,” arXiv preprint arXiv:2010.11929 , 2020. [39] Y. Wang, W. Zhou, Y. Mao, and H. Li, “Detect any shadow: Segment anything for video shadow detection,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 34, no. 5, pp. 3782–3794, 2023. [40] Y. Wang, S. Liu, L. Li, W. Zhou, and H. Li, “Swinshadow: Shifted window for ambiguous adjacent shadow detection,” ACM Transactions on Multimedia Computing, Communications, and Applications , vol. 20, no. 11, pp. 1–20, 2024. [41] W. Sun, L. Xiang, and W. Zhao, “Structure-aware transformer for shadow detection,” IET Image Processing , vol. 19, no. 1, p. e70031, 2025. [42] X.-D. Chen, W. Wu, W. Yang, H. Qin, X. Wu, and X. Mao, “Make seg-ment anything model perfect on shadow detection,” IEEE Transactions on Geoscience and Remote Sensing , vol. 61, no. 1, pp. 1–13, 2023. [43] Z. Qian, W. Wu, X.-T. Wu, and X.-D. Chen, “Omni-supervised shadow detection with vision foundation model,” Journal of Visual Communi-cation and Image Representation , vol. 100, no. 1, p. 104146, 2024. [44] H. Wang, W. Wang, H. Zhou, H. Xu, S. Wu, and L. Zhu, “Language-driven interactive shadow detection,” in Proceedings of the ACM Inter-national Conference on Multimedia , 2024, pp. 5527–5536. [45] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark et al. , “Learning transferable visual models from natural language supervision,” in Proceedings of the International Conference on Machine Learning , 2021, pp. 8748–8763. [46] J. Li, D. Li, C. Xiong, and S. Hoi, “Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation,” in Proceedings of the International Conference on Machine Learning ,2022, pp. 12 888–12 900. [47] C. Jia, Y. Yang, Y. Xia, Y.-T. Chen, Z. Parekh, H. Pham, Q. Le, Y.-H. Sung, Z. Li, and T. Duerig, “Scaling up visual and vision-language representation learning with noisy text supervision,” in Proceedings of the International Conference on Machine Learning , 2021, pp. 4904– 4916. [48] J.-B. Alayrac, J. Donahue, P. Luc, A. Miech, I. Barr, Y. Hasson, K. Lenc, A. Mensch, K. Millican, M. Reynolds et al. , “Flamingo: a visual language model for few-shot learning,” in Proceedings of the Advances in Neural Information Processing Systems , 2022, pp. 23 716–23 736. [49] Y. Rao, W. Zhao, G. Chen, Y. Tang, Z. Zhu, G. Huang, J. Zhou, and J. Lu, “Denseclip: Language-guided dense prediction with context-aware prompting,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2022, pp. 18 082–18 091. [50] X. Gu, T.-Y. Lin, W. Kuo, and Y. Cui, “Open-vocabulary object detection via vision and language knowledge distillation,” arXiv preprint arXiv:2104.13921 , 2021. [51] J. Mukhoti, T.-Y. Lin, O. Poursaeed, R. Wang, A. Shah, P. H. Torr, and S.-N. Lim, “Open vocabulary semantic segmentation with patch aligned contrastive learning,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2023, pp. 19 413–19 423. [52] K. Zhou, J. Yang, C. C. Loy, and Z. Liu, “Conditional prompt learning for vision-language models,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2022, pp. 16 816–16 825. [53] L. H. Li, P. Zhang, H. Zhang, J. Yang, C. Li, Y. Zhong, L. Wang, L. Yuan, L. Zhang, J.-N. Hwang et al. , “Grounded language-image pre-training,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2022, pp. 10 965–10 975. [54] H. Ding, C. Liu, S. Wang, and X. Jiang, “Vlt: Vision-language transformer and query generation for referring segmentation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 6, pp. 7900–7916, 2022. [55] R. Hu, M. Rohrbach, and T. Darrell, “Segmentation from natural language expressions,” in Proceedings of the European Conference on Computer Vision , 2016, pp. 108–124. [56] L. Ye, M. Rochan, Z. Liu, and Y. Wang, “Cross-modal self-attention network for referring image segmentation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2019, pp. 10 502–10 511. [57] B. Li, K. Q. Weinberger, S. Belongie, V. Koltun, and R. Ranftl, “Language-driven semantic segmentation,” arXiv preprint arXiv:2201.03546 , 2022. [58] S. Huang, T. Hui, S. Liu, G. Li, Y. Wei, J. Han, L. Liu, and B. Li, “Refer-ring image segmentation via cross-modal progressive comprehension,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2020, pp. 10 488–10 497. [59] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” in 
+
+Proceedings of the Advances in Neural Information Processing Systems ,2023, pp. 34 892–34 916. [60] S. Laine and T. Aila, “Temporal ensembling for semi-supervised learn-ing,” arXiv preprint arXiv:1610.02242 , 2016. [61] A. Tarvainen and H. Valpola, “Mean teachers are better role mod-els: Weight-averaged consistency targets improve semi-supervised deep learning results,” in Proceedings of the Advances in Neural Information Processing Systems , 2017, pp. 1195–1204. [62] Y. Lin, Y. Gou, X. Liu, J. Bai, J. Lv, and X. Peng, “Dual contrastive prediction for incomplete multi-view representation learning,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 4, pp. 4447–4461, 2022. [63] G. French, M. Mackiewicz, and M. Fisher, “Self-ensembling for visual domain adaptation,” arXiv preprint arXiv:1706.05208 , 2017. [64] Y. Zhou, Q. Zheng, S. Bai, and J. Zhu, “Semantically consistent multi-view representation learning,” Knowledge-Based Systems , vol. 278, no. 1, p. 110899, 2023. [65] P. Hu, Z. Huang, D. Peng, X. Wang, and X. Peng, “Cross-modal retrieval with partially mismatched pairs,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 8, pp. 9595–9610, 2023. [66] X. Chen, Y. Yuan, G. Zeng, and J. Wang, “Semi-supervised semantic segmentation with cross pseudo supervision,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2021, pp. 2613–2622. [67] H. Xu, L. Liu, Q. Bian, and Z. Yang, “Semi-supervised semantic segmentation with prototype-based consistency regularization,” in Pro-ceedings of the Advances in Neural Information Processing Systems ,2022, pp. 26 007–26 020. [68] J. Zhang, J. Huang, S. Jin, and S. Lu, “Vision-language models for vision tasks: A survey,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 8, pp. 5625–5644, 2024. [69] H. Zhao, J. Shi, X. Qi, X. Wang, and J. Jia, “Pyramid scene parsing network,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2017, pp. 2881–2890. [70] T. Wang, A. Borji, L. Zhang, P. Zhang, and H. Lu, “A stagewise refinement model for detecting salient objects in images,” in Proceedings of the IEEE International Conference on Computer Vision , 2017, pp. 4019–4028. [71] S. Chen, X. Tan, B. Wang, and X. Hu, “Reverse attention for salient ob-ject detection,” in Proceedings of the European Conference on Computer Vision , 2018, pp. 234–250. [72] J.-X. Zhao, J.-J. Liu, D.-P. Fan, Y. Cao, J. Yang, and M.-M. Cheng, “Eg-net: Edge guidance network for salient object detection,” in Proceedings of the IEEE International Conference on Computer Vision , 2019, pp. 8779–8788. [73] H. Zhou, X. Xie, J.-H. Lai, Z. Chen, and L. Yang, “Interactive two-stream decoder for accurate and fast saliency detection,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition ,2020, pp. 9141–9150. [74] R. Guo, Q. Dai, and D. Hoiem, “Single-image shadow detection and removal using paired regions,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2011, pp. 2033–2040. [75] Y. Wang, X. Zhao, Y. Li, X. Hu, K. Huang, and N. CRIPAC, “Densely cascaded shadow detection network via deeply supervised parallel fu-sion.” in Proceedings of the International Joint Conferences on Artificial Intelligence , 2018, p. 6. [76] J. M. J. Valanarasu and V. M. Patel, “Fine-context shadow detection using shadow removal,” in Proceedings of the IEEE Winter Conference on Applications of Computer Vision , 2023, pp. 1705–1714. [77] T. F. Y. Vicente, L. Hou, C.-P. Yu, M. Hoai, and D. Samaras, “Large-scale training of shadow detectors with noisily-annotated shadow exam-ples,” in Proceedings of the European Conference on Computer Vision ,2016, pp. 816–832. [78] O. Sim´ eoni, H. V. Vo, M. Seitzer, F. Baldassarre, M. Oquab, C. Jose, V. Khalidov, M. Szafraniec, S. Yi, M. Ramamonjisoa et al. , “Dinov3,” 
+
+arXiv preprint arXiv:2508.10104 , 2025. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 1, NO. 1, APRIL 2026 13 
+
+[79] S. Ruder, “An overview of gradient descent optimization algorithms,” 
+
+arXiv preprint arXiv:1609.04747 , 2016. [80] P. Kr¨ ahenb¨ uhl and V. Koltun, “Efficient inference in fully connected crfs with gaussian edge potentials,” in Proceedings of the Advances in Neural Information Processing Systems , 2011, pp. 109–117.
