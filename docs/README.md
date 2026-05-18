@@ -6,80 +6,65 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-17
-- 运行时间：2026-05-17 21:22:04 UTC
+- 最新运行日期：2026-05-18
+- 运行时间：2026-05-18 21:54:49 UTC
 - 运行状态：成功
-- 本次总论文数：19
+- 本次总论文数：14
 - 精读区：7
-- 速读区：12
+- 速读区：7
 
 ### 今日简报（AI）
-- 今日共生成 19 篇推荐（精读 7 篇，速读 12 篇）
-- 精读：《EDGER: EDge-Guided with HEatmap Refinement for Generalizable Image Forgery Localization》（10.0/10）, 《Backbone is All You Need: Assessing Vulnerabilities of Frozen Foundation Models in Synthetic Image Forensics》（9.0/10）
-- 速读：《MiVE: Multiscale Vision-language features for reference-guided video Editing》（8.0/10）, 《AtteConDA: Attention-Based Conflict Suppression in Multi-Condition Diffusion Models and Synthetic Data Augmentation》（7.0/10）, 《Vector Scaffolding: Inter-Scale Orchestration for Differentiable Image Vectorization》（7.0/10）
+- 今日共生成 14 篇推荐（精读 7 篇，速读 7 篇）
+- 精读：《ReAlign: Generalizable Image Forgery Detection via Reasoning-Aligned Representation》（10.0/10）, 《EDGER: EDge-Guided with HEatmap Refinement for Generalizable Image Forgery Localization》（9.0/10）
+- 速读：《VAGS: Velocity Adaptive Guidance Scale for Image Editing and Generation》（8.0/10）, 《Leveraging Multimodal Large Language Models for All-in-One Image Restoration via a Mixture of Frequency Experts》（7.0/10）, 《Early Semantic Grounding in Image Editing Models for Zero-Shot Referring Image Segmentation》（7.0/10）
 - 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202605/17/README](/202605/17/README)
+- 详情：[/202605/18/README](/202605/18/README)
 
 ### 精读区论文标签
-1. [EDGER: EDge-Guided with HEatmap Refinement for Generalizable Image Forgery Localization](/202605/17/2605.12002v1-edger-edge-guided-with-heatmap-refinement-for-generalizable-image-forgery-localization)  
+1. [ReAlign: Generalizable Image Forgery Detection via Reasoning-Aligned Representation](/202605/18/2605.16080v1-realign-generalizable-image-forgery-detection-via-reasoning-aligned-representation)  
    标签：评分：10.0/10、query:imgfor
-   evidence：直接图像伪造定位方法
-2. [Backbone is All You Need: Assessing Vulnerabilities of Frozen Foundation Models in Synthetic Image Forensics](/202605/17/2605.13381v1-backbone-is-all-you-need-assessing-vulnerabilities-of-frozen-foundation-models-in-synthetic-image-forensics)  
+   evidence：直接针对基于LLM推理的图像伪造检测
+2. [EDGER: EDge-Guided with HEatmap Refinement for Generalizable Image Forgery Localization](/202605/18/2605.12002v1-edger-edge-guided-with-heatmap-refinement-for-generalizable-image-forgery-localization)  
+   标签：评分：9.0/10、query:img-f
+   evidence：提出EDGER框架用于通用图像伪造定位
+3. [From Image Hashing to Scene Change Detection](/202605/18/2605.12259v1-from-image-hashing-to-scene-change-detection)  
+   标签：评分：9.0/10、query:img-f
+   evidence：基于块哈希的变化检测与定位
+4. [PROVE: A Perceptual RemOVal cohErence Benchmark for Visual Media](/202605/18/2605.14534v1-prove-a-perceptual-removal-coherence-benchmark-for-visual-media)  
    标签：评分：9.0/10、query:imgfor
-   evidence：评估合成图像取证中的漏洞
-3. [Hypergraph-Enhanced Training-Free and Language-Free Few-Shot Anomaly Detection](/202605/17/2605.10628v1-hypergraph-enhanced-training-free-and-language-free-few-shot-anomaly-detection)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：少样本异常检测框架，适用于图像编辑检测和篡改识别。
-4. [Revisiting Shadow Detection from a Vision-Language Perspective](/202605/17/2605.11771v1-revisiting-shadow-detection-from-a-vision-language-perspective)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：阴影检测方法定位图像区域用于视觉分析
-5. [From Image Hashing to Scene Change Detection](/202605/17/2605.12259v1-from-image-hashing-to-scene-change-detection)  
-   标签：评分：8.0/10、query:img-f
-   evidence：基于补丁的哈希实现变化检测与定位
-6. [Edit-Compass & EditReward-Compass: A Unified Benchmark for Image Editing and Reward Modeling](/202605/17/2605.13062v1-edit-compass--editreward-compass-a-unified-benchmark-for-image-editing-and-reward-modeling)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：提出用于评估图像编辑模型和奖励建模的基准。
-7. [Drag within Prior Distribution: Text-Conditioned Point-Based Image Editing within Distribution Constraints](/202605/17/2605.13349v1-drag-within-prior-distribution-text-conditioned-point-based-image-editing-within-distribution-constraints)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：提出了一种基于扩散的点编辑方法，用于在分布约束下的图像编辑。
+   evidence：评估图像中对象移除一致性的指标
+5. [Self-Prompting Diffusion Transformer for Open-Vocabulary Scene Text Editing via In-Context Learning](/202605/18/2605.15523v1-self-prompting-diffusion-transformer-for-open-vocabulary-scene-text-editing-via-in-context-learning)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：提出了一种场景文本编辑方法
+6. [AdaEraser: Training-Free Object Removal via Adaptive Attention Suppression](/202605/18/2605.15921v1-adaeraser-training-free-object-removal-via-adaptive-attention-suppression)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：AdaEraser 提出了一种无需训练的物体移除技术，直接涉及图像编辑方法。
+7. [GenShield: Unified Detection and Artifact Correction for AI-Generated Images](/202605/18/2605.16122v1-genshield-unified-detection-and-artifact-correction-for-ai-generated-images)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：AI生成图像的统一检测和校正，与图像篡改检测相关
 
 ### 速读区论文标签
-1. [MiVE: Multiscale Vision-language features for reference-guided video Editing](/202605/17/2605.14664v1-mive-multiscale-vision-language-features-for-reference-guided-video-editing)  
+1. [VAGS: Velocity Adaptive Guidance Scale for Image Editing and Generation](/202605/18/2605.15661v1-vags-velocity-adaptive-guidance-scale-for-image-editing-and-generation)  
    标签：评分：8.0/10、query:imgfor
-   evidence：用于视频编辑的多尺度视觉语言特征
-2. [AtteConDA: Attention-Based Conflict Suppression in Multi-Condition Diffusion Models and Synthetic Data Augmentation](/202605/17/2605.09425v1-atteconda-attention-based-conflict-suppression-in-multi-condition-diffusion-models-and-synthetic-data-augmentation)  
+   evidence：自适应引导尺度改进扩散模型中的图像编辑
+2. [Leveraging Multimodal Large Language Models for All-in-One Image Restoration via a Mixture of Frequency Experts](/202605/18/2605.11444v2-leveraging-multimodal-large-language-models-for-all-in-one-image-restoration-via-a-mixture-of-frequency-experts)  
    标签：评分：7.0/10、query:imgfor
-   evidence：用于数据增强的条件图像生成
-3. [Vector Scaffolding: Inter-Scale Orchestration for Differentiable Image Vectorization](/202605/17/2605.11913v1-vector-scaffolding-inter-scale-orchestration-for-differentiable-image-vectorization)  
+   evidence：利用多模态大语言模型进行图像退化修复
+3. [Early Semantic Grounding in Image Editing Models for Zero-Shot Referring Image Segmentation](/202605/18/2605.13122v1-early-semantic-grounding-in-image-editing-models-for-zero-shot-referring-image-segmentation)  
    标签：评分：7.0/10、query:imgfor
-   evidence：用于图像编辑的可微矢量化技术
-4. [Watermarking Should Be Treated as a Monitoring Primitive](/202605/17/2605.13095v2-watermarking-should-be-treated-as-a-monitoring-primitive)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：水印作为监控技术用于归属和检测，与取证分析相关。
-5. [GeoVista: Visually Grounded Active Perception for Ultra-High-Resolution Remote Sensing Understanding](/202605/17/2605.14475v1-geovista-visually-grounded-active-perception-for-ultra-high-resolution-remote-sensing-understanding)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：用于超高分辨率图像区域定位的主动感知框架
-6. [Easy to use and low cost leaf disease quantification workflow using Ilastik](/202605/17/biorxiv-10-64898-2026-05-14-719059-v1-easy-to-use-and-low-cost-leaf-disease-quantification-workflow-using-ilastik)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：使用机器学习分割定位图像中的疾病症状区域。
-7. [Increasing the Efficiency of DETR for Maritime High-Resolution Images](/202605/17/2605.10269v1-increasing-the-efficiency-of-detr-for-maritime-high-resolution-images)  
+   evidence：展示了使用图像编辑模型定位图像区域的技术，与取证定位目标一致。
+4. [M$^4$-SAM: Multi-Modal Mixture-of-Experts with Memory-Augmented SAM for RGB-D Video Salient Object Detection](/202605/18/2605.11760v1-m4-sam-multi-modal-mixture-of-experts-with-memory-augmented-sam-for-rgb-d-video-salient-object-detection)  
    标签：评分：6.0/10、query:imgfor
-   evidence：用于高分辨率图像中区域定位的目标检测技术
-8. [Portable Active Learning for Object Detection](/202605/17/2605.10349v1-portable-active-learning-for-object-detection)  
+   evidence：增强SAM用于视频中显著对象定位
+5. [Does Synthetic Layered Design Data Benefit Layered Design Decomposition?](/202605/18/2605.15167v1-does-synthetic-layered-design-data-benefit-layered-design-decomposition)  
    标签：评分：6.0/10、query:imgfor
-   evidence：物体检测的主动学习提供可迁移的区域定位方法
-9. [Anomaly-Aware Vision-Language Adapters for Zero-Shot Anomaly Detection](/202605/17/2605.12069v1-anomaly-aware-vision-language-adapters-for-zero-shot-anomaly-detection)  
+   evidence：研究合成数据用于图形设计分解，辅助区域定位。
+6. [Learning Dynamic Structural Specialization for Underwater Salient Object Detection](/202605/18/2605.15535v1-learning-dynamic-structural-specialization-for-underwater-salient-object-detection)  
    标签：评分：6.0/10、query:imgfor
-   evidence：通过视觉-语言适配器进行零样本异常检测，可用于伪造检测。
-10. [G$^2$TR: Generation-Guided Visual Token Reduction for Separate-Encoder Unified Multimodal Models](/202605/17/2605.12309v1-g2tr-generation-guided-visual-token-reduction-for-separate-encoder-unified-multimodal-models)  
+   evidence：水下图像中显著物体区域定位技术
+7. [Robust Prior-Guided Segmentation for Editable 3D Gaussian Splatting](/202605/18/2605.16065v1-robust-prior-guided-segmentation-for-editable-3d-gaussian-splatting)  
    标签：评分：6.0/10、query:imgfor
-   evidence：效率改进支持图像编辑的模型
-11. [Deep Image Segmentation via Discriminant Feature Learning](/202605/17/2605.14609v1-deep-image-segmentation-via-discriminant-feature-learning)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：引入判别分析损失改进图像分割
-12. [From Scenes to Elements: Multi-Granularity Evidence Retrieval for Verifiable Multimodal RAG](/202605/17/2605.15019v1-from-scenes-to-elements-multi-granularity-evidence-retrieval-for-verifiable-multimodal-rag)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：提出多粒度元素检测用于检索系统中的视觉定位。
+   evidence：用于编辑3D场景的分割，可转移到图像定位
 
 
 <div class="dpr-home-promo-card">
