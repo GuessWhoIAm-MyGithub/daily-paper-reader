@@ -1,0 +1,692 @@
+Title: Spectral Tail Auxiliary Learning for AI-Generated Image Detection
+
+URL Source: https://arxiv.org/pdf/2605.22751v1
+
+Published Time: Fri, 22 May 2026 01:28:27 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Spectral Tail Auxiliary Learning for AI-Generated Image Detection 
+
+Xingyi Li 1 Jiahui Zhang 1 Yiheng Li 2
+
+Yun Cao 1∗ Wenhao Wang 3∗
+
+> 1
+
+Institute of Information Engineering, Chinese Academy of Sciences, Beijing, China 
+
+> 2
+
+Institute of Automation, Chinese Academy of Sciences, Beijing, China 
+
+> 3
+
+Vast Intelligence Lab, Sydney, Australia 
+
+{lixingyi, zhangjiahui, caoyun}@iie.ac.cn liyiheng2024@ia.ac.cn wangwenhao@vastilab.com 
+
+Abstract 
+
+As generative image models evolve rapidly, the perceptual gap between gener-ated and real images continues to narrow, making AI-generated image detection increasingly challenging. Many existing methods exploit frequency-domain cues for detection, typically described as frequency-domain artifacts or high-frequency discrepancies. However, the specific and recurring spectral regularities remain in-sufficiently understood and characterized. In this paper, we systematically analyze the one-dimensional radial log-power spectra of real and generated images. We find that generated images do not necessarily exhibit higher or lower energy across the entire spectrum or high-band range. Instead, their spectra deviate from the power-law decay and show an anomalous uplift in the ultra-high-frequency tail. We term this phenomenon spectral tail uplift . We further attribute this phenomenon to nonlinear harmonic accumulation in trained generative models, suggesting that it can serve as a structural cue across generative architectures. Based on this obser-vation, we propose Spectral Tail Auxiliary Learning (STAL), a frequency-domain auxiliary supervision framework for generalizable AI-generated image detection. STAL transfers spectral-tail cues from a tail-aware frequency teacher to a spatial detector during training, while all frequency-domain modules are discarded at inference time. Consequently, STAL introduces no inference overhead. Extensive experiments on 9 public datasets show that STAL achieves strong generalization and stability across generators, data distributions, and real-world scenarios. 
+
+1 Introduction 
+
+As generative image models continue to advance rapidly [ 15 , 22 , 29 , 34 ], AI-generated images have become increasingly photorealistic, raising growing concerns about their potential misuse and creating an urgent need for detectors that generalize across generators and real-world conditions. Prior work has extensively used frequency-domain cues, which become an important line of evidence for generated-image detection. However, the specific form of such discrepancies can vary with generators, and previous studies [ 9, 14 , 24 , 42 ] often describe the frequency-domain difference between real and generated images using broad notions such as high-frequency abnormalities or frequency-domain artifacts, but a unified characterization remains lacking. This raises a more fundamental question: 
+
+beyond treating frequency information as a generic detection cue, is there a stable and interpretable spectral regularity across real and generated images? 
+
+To answer this question, we systematically analyze the one-dimensional radial log-power spectra of real and generated images. We observe a phenomenon that has not been sufficiently characterized                  
+
+> ∗Corresponding authors. Preprint.
+> arXiv:2605.22751v1 [cs.CV] 21 May 2026 0.0 0.2 0.4 0.6 0.8 1.0
+> Normalized radial frequency
+> 10 2
+> 10 4
+> 10 6
+> 10 8
+> Power (log scale)
+> 0.7 0.8 0.9 1.0
+> Normalized radial frequency
+> 10 1
+> 10 2
+> Power (log scale)
+> 0.7 0.8 0.9 1.0
+> Normalized radial frequency
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> log 10  (P/P = 0.7 )
+> Real SD-VAE rec Biggan SDv1.5 Midjourney FLUX SDXL
+
+Figure 1: Radial FFT [ 10 ] power spectra of real images and fakes from BigGAN [ 4], SD-v1.5 [ 34 ], SDXL [ 31 ], Midjourney [ 29 ], FLUX [ 22 ], and SD-VAE [ 34 ] reconstructions. Left: spectra over the full radial frequency range. Middle: spectral tail over the local frequency range ρ ∈ [0 .7, 1] . Right: 
+
+normalized tail curves anchored at ρ = 0 .7 to expose shape differences. Across generators, fakes show consistent spectral-tail deviations, revealing spectral tail uplift across architectures. in prior work: as shown in Fig. 1, while real images typically follow an approximate power-law decay [13, 36] in the radial spectrum, generated images deviate from this behavior in the ultra-high-frequency tail. Specifically, their spectra depart from the power-law decay and exhibit an anomalous uplift shape. This deviation is not a uniform change over the entire frequency range. Instead, it appears as a localized departure from the power-law trend in the ultra-high-frequency tail. We refer to this phenomenon as spectral tail uplift .We observe similar spectral-tail deviations across GANs [ 4], diffusion models [ 29 , 31 , 34 ], and VAE-reconstructed images [ 34 ]. Through controlled experiments, we further show that this phenomenon is closely tied to nonlinear activations in trained generative models and explain it from the perspective of harmonic accumulation. Pointwise nonlinear activations generate new harmonic components, and trained convolutional filters determine how these components are preserved and propagated through the generative cascade. These results suggest that spectral tail uplift is not an incidental bias of a particular dataset or generator, but is instead associated with a common mechanism in image synthesis, making it a cross-generator spectral signature. Based on this observation, we propose Spectral Tail Auxiliary Learning ( STAL ), a frequency-domain auxiliary supervision framework for generated-image detection. STAL leverages spectral tail uplift as a discriminative signal through training-time auxiliary supervision, enabling the detector to benefit from spectral-tail cues while maintaining robustness to post-processing operations at inference time. During training, STAL constructs a tail-aware frequency teacher and transfers spectral-tail cues to the representation of a spatial detector through auxiliary supervision. At inference time, all frequency-domain modules are discarded, and only the spatial detector is retained. In this way, STAL leverages tail uplift to improve detector generalization without introducing any additional inference cost. Our main contributions are summarized as follows: • We identify and characterize spectral tail uplift , a local spectral regularity in the ultra-high-frequency tail that has not been explicitly defined in prior work. • We conduct a systematic analysis of spectral tail uplift and explain it from the perspective of harmonic accumulation induced by nonlinear activations in trained generative models. • We propose Spectral Tail Auxiliary Learning, a training-time auxiliary supervision framework based on spectral tail uplift, and validate its effectiveness on multiple public AI-generated image datasets, showing significant improvements over state-of-the-art methods. 
+
+2 Related Works 
+
+2.1 Generative Image Models 
+
+Image synthesis technologies [ 15 , 17 , 29 , 31 , 34 ] have advanced rapidly over the past few years. Early generative adversarial networks (GANs) [ 8, 15 , 20 , 44 ] were already capable of producing photorealistic images, but they still suffered from issues such as mode collapse and training instability. Subsequently, Ho et al. [ 17 ] proposed Denoising Diffusion Probabilistic Models (DDPMs), which have since become the dominant paradigm in this field. Diffusion models generate high-quality images by simulating a thermodynamic diffusion process, starting from Gaussian noise and progressively 2recovering images through iterative denoising. Rombach et al. [ 34 ] further introduced Latent Diffusion Models (LDMs), which map the diffusion process into a low-dimensional latent space and employ a variational autoencoder (VAE) [ 21 ] as the encoder and decoder between pixel space and latent space, thereby substantially reducing computational costs while preserving generation quality. Many mainstream generative models [ 3, 12 , 31 ] developed thereafter have also adopted this paradigm, using VAEs for encoding and decoding. 
+
+2.2 Frequency-based Generated Image Detection 
+
+Many studies [ 9, 14 , 24 , 26 , 28 , 37 , 41 , 42 ] in AI-generated image detection have explored improving performance from a frequency-domain perspective. Zhang et al. [ 42 ] showed that up-sampling operations in GANs introduce distinctive periodic artifacts in the frequency domain. Tan et al. [ 37 ]proposed FreqNet to improve generalizability of the detector through frequency-space learning. MaskSim [ 24 ] learns a spectral mask to identify the most discriminative frequency regions. Besides methods that directly exploit spectral features, a number of researchs have adopted strategies that fuse frequency-domain and spatial-domain features to improve both accuracy and generalizability. Luo et al. [ 28 ] noted that reconstruction errors are concentrated in high-frequency regions and proposed LaRE 2. FIRE [ 9 ] focuses on mid-band frequency information that generative models struggle to reconstruct. In addition, other studies [ 26 , 41 ] employ pretrained CLIP [ 32 ] as a backbone and incorporate frequency-domain cues for detection. Although these works leverage frequency-domain information from different perspectives, most of them largely treat the frequency-domain discrepancy between real and generated images as an overall statistical cue. However, existing studies have yet to accurately characterize and exploit the specific spectral regularities involved. 
+
+3 Method 
+
+3.1 Spectral Tail Uplift 
+
+Frequency-domain signals have been widely exploited as important cues for AI-generated image detection, yet most existing researchs rely on broad descriptions such as high-frequency discrepancies to motivate their design. We therefore turn to a more specific question: do the spectra of real and generated images exhibit a stable, interpretable, and explicitly measurable different pattern? To probe this question, we compute the azimuthally averaged 1D radial power spectrum of real images and of generated images from a range of generative models [ 4, 22 , 29 , 31 , 34 ], and compare them. As shown in Fig. 1, we observe the following pattern. The spectrum of natural images approximately follows a power-law decay, 
+
+S(ρ) ∝ ρ−α. (1) Generated images do not exhibit a unified tendency to have either higher or lower energy than real images across the specific frequency ranges, but in the ultra high-frequency tail their spectra stop declining and instead turn upward, showing a departure from the trend of the power-law decay. We term this localized non-monotonic shape at the spectral tail as spectral tail uplift .Across the GANs, diffusion models, and VAE-reconstruction settings we evaluate, the same shape recurs, whereas real-image spectra processed under the same pipeline do not exhibit a coherent tail-uplift pattern, which suggests that tail uplift is a structural signature of the image synthesis process rather than a dataset-level confound. 
+
+3.2 Analysis 
+
+The observation above raises a natural question: where does the extra energy at the extreme high-frequency tail come from? We abstract a typical generative decoder as an L-layer cascade, in which each layer applies a trained convolution followed by a pointwise nonlinear activation, 
+
+xℓ = ϕ(Hℓ ∗ xℓ−1) , ℓ = 1 , . . . , L, (2) where Hℓ denotes the convolution at layer ℓ, and ϕ is a pointwise nonlinear activation. Other modules, such as attention, normalization, residual connections, and upsampling do not alter the basic harmonic-generation mechanism we analyze below, and we therefore omit them from this simplified model. Within this cascade, the linear convolution can only rescale the amplitude of frequencies 30.7 0.8 0.9 1.0               
+
+> Normalized radial frequency
+> 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> log 10  (P/P = 0.7 )
+> Pink Noise VAE
+> 0.7 0.8 0.9 1.0
+> Normalized radial frequency
+> 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> log 10  (P/P = 0.7 )
+> Real Images VAE
+> SiLU Identity ReLU Leaky
+> ReLU
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Tail uplift  log 10  P
+> 0.11
+> 0.01
+> 0.32 0.33
+> 0.23
+> 0.00
+> 0.32 0.32
+> Tail Uplift by Activation
+> Pink noise
+> Real images
+> Input (pink noise / real images) SiLU (original) Identity (no activation) ReLU LeakyReLU(0.01)
+
+Figure 2: Activation nonlinearity drives the spectral tail uplift. We replace every SiLU in SD-VAE with Identity, ReLU, or LeakyReLU, then pass pink noise ( left ) and real images ( middle ) through the modified VAE. Normalized Curves show spectra on ρ ∈ [0 .7, 1] . Right: tail uplift ∆ log 10 P , the rise from the tail’s minimum to ρ = 1 . Identity collapses the uplift to ≈ 0. ReLU and LeakyReLU strengthen it. The uplift originates from the activation nonlinearity, not the convolutional weights. already present in its input, but cannot create new frequencies. The pointwise nonlinear activation, in contrast, introduces frequency components that were absent from its input. We now analyze how these two ingredients jointly produce and accumulate high-frequency harmonics. 
+
+Harmonic generation. Consider a bandlimited input 
+
+x(t) = 
+
+> M
+
+X
+
+> m=−M
+
+ˆxm eimt , (3) of bandwidth M , with Fourier coefficients ˆxm and a nonzero top component ˆxM̸ = 0 . Let ϕ(z) = 
+
+Pdq=0 aq zq be a degree-d polynomial activation with ad̸ = 0 and d ≥ 2.
+
+Theorem 1 (Harmonic generation). The highest positive frequency of ϕ(x) is extended from M to 
+
+dM , and the Fourier coefficient at frequency dM is exactly 
+
+dϕ(x)dM = ad (ˆ xM )d. (4) This follows from the fact that xd corresponds to a d-fold self-convolution in the Fourier domain. The full proof is given in Appendix B.1. In other words, each nonlinear activation layer introduces new frequency components beyond those present in the input, extending the signal toward higher frequencies. Natural images may also undergo nonlinear operations inside the camera image signal processing (ISP) pipeline, including gamma correction and denoising. The key difference is that these operations are constrained by optical imaging, sensor sampling and camera processing, and are not organized as a learned convolution-activation cascade. As a result, the spectra of natural images retain an approximate power-law decay. A generative decoder, by contrast, repeatedly interleaves trained convolutions with pointwise nonlinear activations. Each pointwise activation can generate new har-monic components, and the learned convolutional filters carry these harmonics toward progressively higher frequencies. This repeated synthesis provides the conditions for sustained accumulation of high-frequency harmonics, which we identify as the principal source of the extra tail energy in generated images. 
+
+Harmonic propagation through the cascade. In the polynomial model above, each nonlinearity extends the accessible top frequency by a factor of d. Let the initial frequency be k0, there exists a highest-order harmonic path that evolves as k0 → dk 0 → d2k0 → · · · → dLk0.
+
+Theorem 2 (Harmonic-chain propagation). For a single-tone input x0(t) = A cos( k0t) of amplitude A and frequency k0, if the filter responses along this path are nonzero, i.e., Hℓ(dℓ−1k0)̸ = 0 
+
+for all ℓ = 1 , . . . , L , the power at the top harmonic dLk0 at layer L is 
+
+ˆxL(dLk0) 2 = |ad| 2( dL−1) 
+
+> d−1
+
+ A
+
+2
+
+2dL LY
+
+> ℓ=1
+
+Hℓ
+
+ dℓ−1k0
+
+ 2dL−ℓ+1 
+
+. (5) 4---   
+
+> Spatial view
+> 𝐀 𝐀
+> Spatial detector
+> 𝐀 𝐀
+> Spatial representation
+> 𝐀 𝐀 Spatial classifier
+> 𝐀 𝐀
+> Prediction
+> ŷ𝐀
+> Training-only auxiliary supervision
+> Frequency
+> view
+> 𝐀 𝐀
+> Tail-aware frequency teacher
+> Projection head
+> 𝐀 𝐀
+> Projected spatial
+> feature 𝐀 𝐀
+> Representation
+> alignment
+> Teacher
+> representation
+> 𝐀 𝐀
+> FFT
+> branch
+> DCT
+> branch
+> Tail Head
+> 𝐀 𝐀
+> Tail-aware cue
+> 𝐀 𝐀
+> Frequency-domain
+> context ℎ𝐀
+> Auxiliary supervision
+> Add & N orm
+
+Figure 3: Overview of STAL. A tail-aware frequency teacher extracts spectral-tail cues from a frequency-preserving view and aligns them with the projected spatial feature. At inference time, all frequency modules and the projection head are discarded, leaving only the spatial detector. The proof is given in Appendix B.2. The top-harmonic power thus depends jointly on the nonlinearity strength |ad|, the input amplitude A, and the filter gains |Hℓ| evaluated along the harmonic chain. Taking logarithms exposes the per-layer contributions more clearly: 
+
+log ˆxL(dLk0) 2 = C0 +
+
+> L
+
+X
+
+> ℓ=1
+
+2 dL−ℓ+1 log Hℓ
+
+ dℓ−1k0
+
+ , (6) where C0 absorbs the contributions of |ad| and A. The weights 2dL−ℓ+1 scale exponentially with the remaining depth, so the top-harmonic path is highly sensitive to the filter gain of every layer along the chain. The nonlinearity injects new high-frequency content at each layer, and the cascaded convolutions propagate this content along the harmonic chain toward progressively higher frequencies, where it emerges as the dominant contribution at the extreme high-frequency tail and produces the uplift we observe. Our controlled experiments support the above analysis: tail uplift consistently appears in trained generative models, while it is almost completely eliminated by removing nonlinear activations as shown in Fig. 2, and substantially suppressed when the model uses untrained random weights. Complete experiment results are provided in Appendix A. Since nearly all mainstream generative models, including diffusion models, GANs, and autoregressive models with visual decoders, are trained and incorporate nonlinear activations, we argue that tail uplift can persist stably across generators and has the potential to serve as a generator-agnostic cue for detecting generated images. 
+
+3.3 Spectral Tail Auxiliary Learning 
+
+Motivated by the observations and analysis above, we seek to leverage spectral tail uplift to improve detector generalization. A straightforward approach is to use this frequency-domain signal directly as an inference-time feature. However, such a strategy would make the detector depend on spectral statistics that are sensitive to common post-processing operations, including compression, cropping, resampling and so on. Since these operations can easily alter frequency-domain characteristics, di-rectly relying on spectral tail uplift may reduce robustness under real-world perturbations. To address this issue, we propose Spectral Tail Auxiliary Learning (STAL), which uses spectral-tail information only as training-time supervision. Specifically, STAL uses a spectral-tail-aware frequency teacher during training to transfer spectral-tail cues to the spatial detector through auxiliary supervision. At inference time, all frequency-domain modules are removed, and detection is performed solely by the spatial branch. The overview of STAL is shown in Fig. 3. 
+
+Tail-aware frequency teacher. STAL centers on a tail-aware frequency teacher that is used only during training. Given an input image x, we construct a frequency-preserving view xf , which follows 5the same geometric transformations as the main detection view while excluding augmentations that may substantially distort the spectral shape. This view enables more reliable extraction of spectral-tail cues. We first transform xf into the YCbCr [ 19 ] color space and compute its channel-wise radial log-power spectrum Srad (xf ) which represents the log-power distribution over radial frequencies, capturing the overall spectral profile and the behavior of its high-frequency tail. A lightweight frequency encoder Fψ then encodes the radial spectrum together with local DCT [ 1]statistics Dloc (xf ) to produce a compact frequency context representation: 
+
+hf = Fψ
+
+ Srad (xf ), D loc (xf ). (7) Rather than relying solely on the network to implicitly discover tail-related patterns from the spectrum, we introduce an explicit tail head Tω , which encodes statistics associated with spectral tail uplift into a structured supervisory signal: 
+
+et, ˆyt = Tω (Srad (xf )) . (8) Here, et denotes a tail-aware embedding used to construct the frequency teacher, and ˆyt is an auxiliary prediction from the tail head that encourages this branch to learn tail structures relevant to generated-image detection. Finally, we combine the frequency context representation with the tail-aware embedding to form the frequency supervisory target: 
+
+tf = LN( hf + βet) . (9) Here, tf denotes the frequency supervisory target, LN( ·) denotes layer normalization, and β controls the strength of the injected tail-aware embedding. 
+
+Frequency-to-spatial auxiliary learning. The frequency teacher is designed to transfer tail-aware frequency cues to the spatial representation through training-time auxiliary supervision. The main spatial branch extracts an image representation from the spatial view xs and produces the classification prediction: 
+
+vs = Eθ (xs), ˆys = Cs(vs), (10) where Eθ denotes the visual encoder of the spatial detector, vs is the spatial image representation, and Cs is the spatial binary classifier. To receive supervision from the frequency teacher, we use a projection head gη to map the spatial representation into the teacher feature space: 
+
+ps = gη (vs). (11) The projected spatial feature ps is used only for training-time representation alignment and is discarded at inference time. We then align ps with the stop-gradient frequency teacher target: 
+
+Lalign = 12
+
+X
+
+> c∈{ 0,1}
+
+Ei:yi=c [1 − cos( ps,i , sg( tf,i ))] . (12) Here, yi ∈ { 0, 1} denotes the authenticity label of the i-th sample, Ei:yi=c denotes averaging over samples of class c in the current mini-batch, and sg( ·) denotes stop-gradient operation. This loss computes the alignment error separately for real and generated images and assigns equal weight to the two classes, preventing the alignment from being dominated by one class. The stop-gradient operation fixes the teacher-side target and prevents the alignment loss from modifying the frequency supervisory signal. By imposing this representation constraint only during training, STAL transfers spectral-tail cues to the spatial detector without requiring any frequency-domain input or teacher branch at inference time. In addition to representation alignment, we apply auxiliary classification losses to the frequency teacher to ensure that it remains discriminative: 
+
+ˆyf = Cf (hf ), Lfreq = BCE(ˆ yf , y ), Ltail = BCE(ˆ yt, y ). (13) Here, Cf is an auxiliary classifier applied to the frequency context representation, and ˆyf is the prediction from the frequency context branch. Lfreq encourages hf to preserve task-relevant frequency context, while Ltail encourages the tail head to learn spectral-tail structures that are useful for generated-image detection. The frequency auxiliary objective is defined as 
+
+Laux = λfreq Lfreq + λalign Lalign + λtail Ltail , (14) where λfreq , λalign , and λtail are the corresponding loss weights. 6The spatial branch is optimized with a classification loss and a supervised contrastive loss, following the loss configuration as DDA [7]: 
+
+Lcls = BCE(ˆ ys, y ), Lspatial = λcls Lcls + λcon Lcon , (15) where Lcon denotes the supervised contrastive loss, and λcls and λcon are the corresponding loss weights. The overall training objective is 
+
+L = Lspatial + waux (τ )Laux , (16) where waux (τ ) is a curriculum weight that controls the strength of the frequency auxiliary terms according to the training progress τ . The frequency auxiliary supervision primarily shapes the spatial representation in the early and middle stages of training. As training proceeds, its weight gradually decreases, reducing the risk that the final detector becomes overly dependent on the training-time teacher. 
+
+Inference. At inference time, we discard the frequency branch, the tail head, and the projection head used for representation alignment. The final prediction is produced solely by the spatial detector: 
+
+ˆy = Cs(Eθ (x)) . (17) Thus, STAL uses spectral tail uplift only as a training-time auxiliary supervisory signal, introducing no frequency-domain input, teacher branch, or additional computational cost at inference time. 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets. We evaluate STAL on nine public benchmarks, including six standard benchmarks (GenImage [ 45 ], DRCT-2M [ 6], Synthbuster [ 2], EvalGEN [ 7 ], AIGCDetectionBenchmark [ 43 ], and ForenSynths [ 40 ]) and three in-the-wild datasets (Chameleon [ 41 ], SynthWildx [ 11 ], and WildRF [ 5]). These datasets cover diverse real image sources and synthetic images produced by GANs, diffusion models, and autoregressive models, while the in-the-wild datasets are collected from open-world scenarios, which involve unknown generators and post-processing. 
+
+Evaluation Metrics and Comparative Methods. We report balanced accuracy (BAL), defined as the average of real image and generated image accuracies. For benchmarks with multiple subsets, we report the arithmetic mean over subsets. We compare STAL with existing representative methods, including NPR [ 38 ], UnivFD [ 30 ], FatFormer [ 26 ], C2P-CLIP [ 39 ], SAFE [ 23 ], AIDE [ 41 ], DRCT [ 6], AlignedForensics [ 33 ], and DDA [ 7], using their publicly released model weights. We also include DDA*, a DDA variant trained under the same setting as STAL with DINOv3-H+ [ 35 ] as the backbone. 
+
+Implementation Details. During training, we use real images from MSCOCO [ 25 ] and their reconstructed images as the training data. For the spatial input, we follow DDA [ 7] to construct aligned training samples. In parallel, we keep the original input view for the frequency auxiliary branch to avoid disrupting frequency-domain characteristics. We train the model for one epoch with a batch size of 16 per GPU. The spatial detector uses DINOv3-H+ [ 35 ] as the backbone and adopts LoRA [ 18 ] with a rank of 8 and α = 1 .0 for parameter-efficient fine-tuning. The input resolution is 
+
+336 × 336 . We use AdamW [ 27 ] with a learning rate of 1 × 10 −4 and a weight decay of 0.005. More implementation details are provided in Appendix C. 
+
+4.2 Cross-Dataset Comparison Overall Comparison on 9 Benchmarks. Table 1 presents the results on nine benchmarks. Com-pared with existing methods, STAL achieves the best average BAL of 97.0% , ranks first on 7 out of 9 datasets, and shows stronger stability across datasets. Compared with DDA*, STAL improves the average BAL by 2.8 percentage points and reduces the cross-dataset standard deviation from 5.8 to 2.6. The gains are especially clear on ForenSynths, AIGCDetectionBenchmark, and SynthWildx, suggesting that the improvement is not merely due to a stronger backbone. 7Table 1: Overall comparison across 9 benchmarks. Balanced accuracy (%) is reported. DDA* denotes DDA [ 7 ] with DINOv3-H+ [ 35 ] backbone. The best and second-best results are highlighted in bold 
+
+and underline . Numbers below each dataset name indicate the number of generators, where G, D, and AR denote GANs, diffusion models, and auto-regressive models, respectively. 
+
+Method Standard Benchmarks In-the-Wild Datasets Avg GenImage DRCT-2M EvalGEN Synthbuster ForenSynths AIGCDetection Benchmark Chameleon SynthWildx WildRF 
+
+1G + 7D 13D 3D + 2AR 9D 11G 7G + 10D Unknown 3D Unknown NPR (CVPR’24) [38] 51.5 ± 6.3 30.4 ± 2.7 2.9 ± 2.7 50.0 ± 2.6 47.9 ± 22.6 53.1 ± 12.2 59.9 49.8 ± 10.0 63.5 ± 13.6 45.4 ± 18.4 UnivFD (CVPR’23) [30] 64.1 ± 10.8 62.6 ± 9.5 15.4 ± 14.2 67.8 ± 14.4 77.7 ± 16.1 72.5 ± 17.3 50.7 52.3 ± 11.3 55.3 ± 5.7 57.6 ± 18.2 FatFormer (CVPR’24) [26] 62.8 ± 10.4 50.1 ± 3.6 45.6 ± 33.1 56.1 ± 10.7 90.0 ± 11.8 85.0 ± 14.9 51.2 52.1 ± 8.2 58.9 ± 8.0 61.3 ± 15.7 SAFE (KDD’25) [23] 50.3 ± 1.2 50.4 ± 1.3 1.1 ± 0.6 46.5 ± 20.8 49.7 ± 2.7 50.3 ± 1.1 59.2 49.1 ± 0.7 57.2 ± 18.5 46.0 ± 17.3 C2P-CLIP (AAAI’25) [39] 74.4 ± 8.4 58.9 ± 10.8 38.9 ± 31.2 68.5 ± 11.4 92.0 ± 10.1 81.4 ± 15.6 51.1 57.1 ± 4.2 59.6 ± 7.7 64.7 ± 16.2 AIDE (ICLR’25) [41] 61.2 ± 11.9 61.2 ± 8.6 19.1 ± 11.1 53.9 ± 18.6 59.4 ± 24.6 63.6 ± 13.9 63.1 48.8 ± 0.8 58.4 ± 12.9 54.3 ± 14.0 DRCT (ICML’24) [6] 84.7 ± 2.7 94.4 ± 1.8 77.8 ± 5.4 84.8 ± 3.6 73.9 ± 13.4 81.4 ± 12.2 56.6 55.1 ± 1.8 50.6 ± 3.5 73.3 ± 15.5 AlignedForensics (ICLR’25) [33] 79.0 ± 22.7 95.1 ± 6.5 68.0 ± 20.7 77.4 ± 25.0 53.9 ± 7.1 66.6 ± 21.6 71.0 78.8 ± 17.8 80.1 ± 10.3 74.4 ± 11.4 DDA (NeurIPS’25) [7] 91.7 ± 7.8 98.0 ± 1.4 97.2 ± 4.2 90.1 ± 5.6 81.4 ± 13.9 87.8 ± 12.6 82.4 90.9 ± 3.1 90.3 ± 3.5 90.0 ± 5.7 DDA* 97.4 ± 0.4 99.7 ± 0.1 99.3 ± 0.8 99.8 ± 0.1 83.8 ± 6.7 87.1 ± 7.5 92.1 92.0 ± 0.3 96.3 ± 0.7 94.2 ± 5.8 
+
+STAL (ours) 98.6 ± 0.9 99.8 ± 0.1 98.9 ± 1.8 99.7 ± 0.4 94.7 ± 5.0 96.0 ± 3.1 92.2 95.2 ± 0.4 97.9 ± 1.0 97.0 ± 2.6 
+
+Table 2: Comparison on AIGCDetectionBenchmark. Balanced accuracy (%) is reported.                                                                                                                                                                                                                               
+
+> Method ADM DALL ·E 2 GLIDE Midjourney VQDM BigGAN CycleGAN GauGAN ProGAN SDXL SD14 SD15 StarGAN StyleGAN StyleGAN2 WFR Wukong Avg
+> NPR (CVPR’24) [38] 43.8 20.0 41.2 53.4 48.4 53.1 76.6 42.2 58.7 59.6 55.1 55.0 67.4 57.9 54.6 58.8 57.4 53.1 ±12.2 UnivFD (CVPR’23) [30] 62.5 50.0 61.3 55.1 76.9 87.5 96.9 98.8 99.4 58.2 55.6 55.7 95.1 80.0 69.4 69.2 61.1 72.5 ±17.3 FatFormer (CVPR’24) [26] 80.2 68.5 91.1 54.4 88.0 99.2 99.5 99.1 98.5 71.7 67.5 67.2 99.4 98.0 98.8 88.3 75.6 85.0 ±14.9 SAFE (KDD’25) [23] 49.5 49.5 53.0 49.0 50.2 52.2 51.9 50.0 50.0 49.8 49.7 49.8 50.1 50.0 50.0 49.8 50.3 50.3 ±1.1 C2P-CLIP (AAAI’25) [39] 71.6 52.3 73.5 56.6 73.7 98.4 96.8 98.8 99.3 62.3 77.5 76.9 99.6 93.1 79.4 94.8 79.4 81.4 ±15.6 AIDE (ICLR’25) [41] 52.9 51.1 60.2 49.8 69.3 70.1 93.6 60.6 89.0 49.6 51.6 51.0 72.1 66.5 59.0 80.6 54.5 63.6 ±13.9 DRCT (ICML’24) [6] 79.9 89.2 89.2 85.5 88.6 81.4 91.0 93.8 71.1 88.3 91.4 91.0 53.0 62.7 63.8 73.9 90.8 81.4 ±12.2 AlignedForensics (ICLR’25) [33] 51.6 52.0 55.6 96.2 72.1 51.2 49.5 50.8 50.7 95.1 99.7 99.6 53.8 52.7 51.6 50.0 99.6 66.6 ±21.6 DDA (NeurIPS’25) [7] 89.5 94.6 89.6 95.6 76.6 91.0 72.5 92.7 92.8 99.4 98.7 98.6 72.7 87.8 90.2 52.1 98.8 87.8 ±12.6 DDA* 97.0 98.8 97.5 96.8 97.9 91.3 90.8 90.9 81.8 98.8 97.8 97.7 75.2 83.5 86.2 91.8 97.8 92.4 ±7.0
+> STAL (ours) 97.3 98.4 98.0 98.2 99.4 97.7 95.9 97.8 95.3 99.8 99.5 99.3 81.7 95.9 96.7 96.4 99.4 96.9 ±4.2
+
+Table 3: Comparison on SynthWildx and WildRF. Balanced accuracy (%) is reported. 
+
+Method SynthWildx WildRF DALL ·E 3 Firefly Midjourney Avg. Facebook Reddit Twitter Avg. 
+
+NPR (CVPR’24) [38] 43.6 61.3 44.5 49.8 ± 10.0 78.1 61.0 51.3 63.5 ± 13.6 UnivFD (CVPR’23) [30] 45.4 65.3 46.2 52.3 ± 11.3 49.1 60.2 56.5 55.3 ± 5.7 FatFormer (CVPR’24) [26] 46.5 61.6 48.3 52.1 ± 8.2 54.1 68.1 54.4 58.9 ± 8.0 SAFE (KDD’25) [23] 49.4 48.2 49.6 49.1 ± 0.7 50.9 74.1 37.5 57.2 ± 18.5 C2P-CLIP (AAAI’25) [39] 56.9 61.4 53.0 57.1 ± 4.2 54.4 68.4 55.9 59.6 ± 7.7 AIDE (ICLR’25) [41] 63.4 48.8 51.9 48.8 ± 0.8 57.8 71.5 45.8 58.4 ± 12.9 DRCT (ICML’24) [6] 58.3 56.4 50.5 55.1 ± 1.8 46.6 53.1 55.2 50.6 ± 3.5 AlignedForensics (ICLR’25) [33] 85.5 58.5 92.2 78.8 ± 17.8 89.4 69.1 81.8 80.1 ± 10.3 DDA (NeurIPS’25) [7] 92.3 87.3 93.1 90.9 ± 3.1 93.1 86.4 91.5 90.3 ± 3.5 DDA* 92.3 91.7 92.0 92.0 ± 0.3 96.6 95.5 96.9 96.3 ± 0.7 
+
+STAL (ours) 95.6 94.8 95.4 95.2 ± 0.4 98.4 96.7 98.6 97.9 ± 1.0 
+
+Detailed Results on AIGCDetectBenchmark, SynthWildx and WildRF. Table 2 reports results on AIGCDetectBenchmark, covering various GAN-based and diffusion-based generators. It provides a comprehensive evaluation of detector generalization across different generator architectures. STAL achieves the best overall performance with an accuracy of 96.9%, outperforming the second-best method by 4.5%. In addition, Table 3 reports the results on two in-the-wild datasets, SynthWildx and WildRF. STAL achieves a balanced accuracy of 95.2% on SynthWildx and 97.9% on WildRF. These results indicate that STAL also achieves strong performance in real-world scenarios. 
+
+4.3 Robustness Analysis 
+
+Fig. 4 evaluates robustness on GenImage under JPEG compression, resizing, and Gaussian blur. STAL ranks first across all perturbation settings. Its balanced accuracy drops by only 2.38 points when JPEG quality decreases from Q = 100 to Q = 60 , by 1.35 points under strong downsampling (α = 0 .5), and by at most 3.10 points under Gaussian blur. The margins over the second-best method remain large under severe perturbations, reaching 7.73 points at Q = 60 , 9.84 points at α = 0 .5, and 10.73 points at σ = 2 .0.8100 90 80 70 60                  
+
+> JPEG Quality
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Balanced Accuracy (%)  JPEG Compression
+> 0.5 0.75 11.5 2
+> Resize Ratio
+> Resizing
+> 00.5 11.5 2
+> Blur Sigma
+> Gaussian Blur
+> NPR SAFE AIDE UnivFD FatFormer C2P-CLIP DRCT AlignedForensics DDA STAL
+
+Figure 4: Robustness analysis on GenImage. We evaluate STAL and competing methods under JPEG compression, resizing, and Gaussian blur with increasing perturbation strengths. 
+
+4.4 Ablation Analysis 
+
+Table 4 shows the impact of frequency-cue usage, frequency-band selection for auxiliary supervision, and backbone choice. Using the frequency branch only for training-time auxiliary supervision achieves 97.0%, outperforming both the spatial-only baseline and the dual-branch inference setting. For frequency-band selection, the teacher without the tail band yields 94.4%, the tail-only teacher reaches 96.1%, and using all bands achieves the best performance of 97.0%. Under matched backbones, STAL outperforms the corresponding DDA variants. The larger gain with DINOv3-H+ indicates better compatibility with our frequency auxiliary supervision. These results validate both the auxiliary-supervision design and the contribution of spectral-tail modeling. Additional results. 
+
+More detailed experiment results, including more cross-dataset comparisons, robustness analysis, and visualizations, are provided in Appendix D. 
+
+5 Conclusion 
+
+Table 4: Ablation studies on 9 benchmarks. (a) Frequency usage: how spectral information is used; (b) Frequency bands: which frequency ranges are used to construct the auxiliary teacher; (c) Backbone: comparison under differ-ent spatial detector backbones. Results show the impact of each design choice on overall balanced accuracy. 
+
+Configuration BAL (%) ∆
+
+(a) Frequency usage 
+
+Spatial-only baseline 94.2 –Direct spatial-frequency inference 96.0 +1.8 
+
+Auxiliary frequency supervision (STAL) 97.0 +2.8 
+
+(b) Frequency bands for auxiliary supervision 
+
+Spatial-only baseline 94.2 –Without-tail teacher 94.4 +0.2 Tail-only teacher 96.1 +1.9 
+
+All-band teacher (STAL) 97.0 +2.8 Method BAL (%) ∆
+
+(c) Backbone 
+
+DDA (DINOv2-L) [7] 90.0 –STAL (DINOv2-L) 91.2 +1.2 DDA* (DINOv3-H+) 94.2 –
+
+STAL (DINOv3-H+) 97.0 +2.8 
+
+We identify and systematically charac-terize spectral tail uplift, a phenomenon in which AI-generated images exhibit a pronounced uplift in the ultra-high-frequency tail of the spectrum, and ex-plain it from the perspective of nonlinear harmonic accumulation in trained gen-erative models. Based on this observa-tion, we propose Spectral Tail Auxiliary Learning (STAL), a framework for gen-eralizable AI-generated image detection that uses spectral-tail cues as auxiliary supervision during training. This design injects tail-related information into the spatial detector while keeping inference free from frequency-domain inputs or additional branches. Extensive experi-ments on multiple public benchmarks spanning diverse scenarios show that STAL achieves superior performance across generators and data distributions, highlighting its strong generalization ability and stability. 
+
+Limitations. Although STAL shows strong performance, its frequency aux-iliary branch primarily relies on radial spectrum statistics and local DCT statis-tics to capture frequency-domain information. While simple and effective, this design may not 9fully capture fine-grained spectral variations across different generative models. In future work, we would explore more adaptive frequency-band selection mechanisms and more lightweight forms of training-time frequency supervision. 
+
+References 
+
+[1] N. Ahmed, T. Natarajan, and K.R. Rao. Discrete cosine transform. IEEE Transactions on Computers ,C-23(1):90–93, 1974. doi: 10.1109/T-C.1974.223784. [2] Quentin Bammey. Synthbuster: Towards detection of diffusion model generated images. IEEE Open Journal of Signal Processing , 5:1–9, 2024. doi: 10.1109/OJSP.2023.3337714. [3] Black Forest Labs. Flux.1 [dev]. Hugging Face model card, 2024. URL https://huggingface.co/ black-forest-labs/FLUX.1-dev . Model card, accessed 2026-03-30. [4] Andrew Brock, Jeff Donahue, and Karen Simonyan. Large scale GAN training for high fidelity natural image synthesis. In International Conference on Learning Representations , 2019. URL https:// openreview.net/forum?id=B1xsqj09Fm .[5] Bar Cavia, Eliahu Horwitz, Tal Reiss, and Yedid Hoshen. Real-time deepfake detection in the real world, 2024. URL https://openreview.net/forum?id=kkE7jlqKae .[6] Baoying Chen, Jishen Zeng, Jianquan Yang, and Rui Yang. DRCT: Diffusion reconstruction contrastive training towards universal detection of diffusion generated images. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 7621–7639. PMLR, 21–27 Jul 2024. [7] Ruoxin Chen, Junwei Xi, Zhiyuan Yan, Ke-Yue Zhang, Shuang Wu, Jingyi Xie, Xu Chen, Lei Xu, Isabel Guan, Taiping Yao, and Shouhong Ding. Dual data alignment makes AI-generated image detector easier generalizable. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. URL https://openreview.net/forum?id=C39ShJwtD5 .[8] Yunjey Choi, Minje Choi, Munyoung Kim, Jung-Woo Ha, Sunghun Kim, and Jaegul Choo. Stargan: Unified generative adversarial networks for multi-domain image-to-image translation. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 8789–8797, 2018. [9] Beilin Chu, Xuan Xu, Xin Wang, Yufei Zhang, Weike You, and Linna Zhou. Fire: Robust detection of diffusion-generated images via frequency-guided reconstruction error. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 12830–12839, 2025. [10] James W. Cooley and John W. Tukey. An algorithm for the machine calculation of complex fourier series. 
+
+Mathematics of Computation , 19(90):297–301, 1965. doi: 10.1090/S0025-5718-1965-0178586-1. [11] Davide Cozzolino, Giovanni Poggi, Riccardo Corvi, Matthias Nießner, and Luisa Verdoliva. Raising the bar of ai-generated image detection with clip. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 4356–4366, June 2024. [12] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, Dustin Podell, Tim Dockhorn, Zion English, and Robin Rombach. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first Interna-tional Conference on Machine Learning , 2024. [13] David J. Field. Relations between the statistics of natural images and the response properties of cortical cells. J. Opt. Soc. Am. A , 4(12):2379–2394, Dec 1987. doi: 10.1364/JOSAA.4.002379. URL https: //opg.optica.org/josaa/abstract.cfm?URI=josaa-4-12-2379 .[14] Joel Frank, Thorsten Eisenhofer, Lea Schönherr, Asja Fischer, Dorothea Kolossa, and Thorsten Holz. Leveraging frequency analysis for deep fake image recognition. In Hal Daumé III and Aarti Singh, editors, 
+
+Proceedings of the 37th International Conference on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pages 3247–3258. PMLR, 13–18 Jul 2020. URL https://proceedings. mlr.press/v119/frank20a.html .[15] Ian J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. In Advances in Neural Information Processing Systems , volume 27, 2014. 
+
+10 [16] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Delving deep into rectifiers: Surpassing human-level performance on imagenet classification. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , December 2015. [17] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In Advances in Neural Information Processing Systems , volume 33, pages 6840–6851, 2020. [18] Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations , 2022. URL https://openreview.net/forum?id=nZeVKeeFYf9 .[19] ITU-R. Studio encoding parameters of digital television for standard 4:3 and wide-screen 16:9 aspect ratios. Recommendation ITU-R BT.601, 2011. Formerly CCIR Recommendation 601. [20] Tero Karras, Samuli Laine, and Timo Aila. A style-based generator architecture for generative adversarial networks. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4401–4410, 2019. [21] Diederik P. Kingma and Max Welling. Auto-encoding variational bayes. In 2nd International Conference on Learning Representations (ICLR) , 2014. URL http://arxiv.org/abs/1312.6114 .[22] Black Forest Labs. Flux. https://github.com/black-forest-labs/flux , 2024. [23] Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Fuli Feng. Improving synthetic image detection towards generalization: An image transformation perspective. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V.1 , KDD ’25, page 2405–2414. Association for Computing Machinery, 2025. ISBN 9798400712456. [24] Yanhao Li, Quentin Bammey, Marina Gardella, Tina Nikoukhah, Jean-Michel Morel, Miguel Colom, and Rafael Grompone Von Gioi. Masksim: Detection of synthetic images by masked spectrum similarity analysis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 3855–3865, June 2024. [25] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C. Lawrence Zitnick. Microsoft coco: Common objects in context. In David Fleet, Tomas Pajdla, Bernt Schiele, and Tinne Tuytelaars, editors, Computer Vision – ECCV 2014 , pages 740–755, Cham, 2014. Springer International Publishing. [26] Huan Liu, Zichang Tan, Chuangchuang Tan, Yunchao Wei, Jingdong Wang, and Yao Zhao. Forgery-aware adaptive transformer for generalizable synthetic image detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10770–10780, June 2024. [27] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2019. URL https://openreview.net/forum?id=Bkg6RiCqY7 .[28] Yunpeng Luo, Junlong Du, Ke Yan, and Shouhong Ding. Lare^2: Latent reconstruction error based method for diffusion-generated image detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 17006–17015, 2024. [29] Midjourney, Inc. Midjourney. https://www.midjourney.com/home .[30] Utkarsh Ojha, Yuheng Li, and Yong Jae Lee. Towards universal fake image detectors that generalize across generative models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 24480–24489, 2023. [31] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun, editors, International Conference on Learning Representations , volume 2024, pages 1862–1874, 2024. URL https://proceedings.iclr.cc/paper_ files/paper/2024/file/081b08068e4733ae3e7ad019fe8d172f-Paper-Conference.pdf .[32] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Proceedings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pages 8748–8763. PMLR, 18–24 Jul 2021. 
+
+11 [33] Anirudh Sundara Rajan, Utkarsh Ojha, Jedidiah Schloesser, and Yong Jae Lee. Aligned datasets improve detection of latent diffusion-generated images. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=doBkiqESYq .[34] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10684–10695, 2022. [35] Oriane Siméoni, Huy V. Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, Francisco Massa, Daniel Haziza, Luca Wehrstedt, Jianyuan Wang, Timothée Darcet, Théo Moutakanni, Leonel Sentana, Claire Roberts, Andrea Vedaldi, Jamie Tolan, John Brandt, Camille Couprie, Julien Mairal, Hervé Jégou, Patrick Labatut, and Piotr Bojanowski. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. URL https://arxiv.org/abs/ 2508.10104 .[36] Eero P Simoncelli and Bruno A Olshausen. Natural image statistics and neural representation. Annual review of neuroscience , 24(1):1193–1216, 2001. [37] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. Frequency-aware deepfake detection: Improving generalizability through frequency space domain learning. Proceedings of the AAAI Conference on Artificial Intelligence , 38(5):5052–5060, Mar. 2024. [38] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. Rethinking the up-sampling operations in cnn-based generative network for generalizable deepfake detection. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 28130–28139, June 2024. [39] Chuangchuang Tan, Renshuai Tao, Huan Liu, Guanghua Gu, Baoyuan Wu, Yao Zhao, and Yunchao Wei. C2p-clip: Injecting category common prompt in clip to enhance generalization in deepfake detection. 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , 39(7):7184–7192, Apr. 2025. doi: 10.1609/ aaai.v39i7.32772. [40] Sheng-Yu Wang, Oliver Wang, Richard Zhang, Andrew Owens, and Alexei A. Efros. Cnn-generated images are surprisingly easy to spot... for now. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020. [41] Shilin Yan, Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Weidi Xie. A sanity check for AI-generated image detection. In The Thirteenth International Conference on Learning Representations ,2025. [42] Xu Zhang, Svebor Karaman, and Shih-Fu Chang. Detecting and simulating artifacts in gan fake images. In 
+
+2019 IEEE International Workshop on Information Forensics and Security (WIFS) , pages 1–6, 2019. [43] Nan Zhong, Yiran Xu, Zhenxing Qian, and Xinpeng Zhang. Patchcraft: Exploring texture patch for efficient ai-generated image detection. arXiv preprint arXiv:2311.12397 , 2023. [44] Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A Efros. Unpaired image-to-image translation using cycle-consistent adversarial networks. In Proceedings of the IEEE international conference on computer vision , pages 2223–2232, 2017. [45] Mingjian Zhu, Hanting Chen, Qiangyu YAN, Xudong Huang, Guanyu Lin, Wei Li, Zhijun Tu, Hailin Hu, Jie Hu, and Yunhe Wang. Genimage: A million-scale benchmark for detecting ai-generated image. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 77771–77782. Curran Associates, Inc., 2023. 
+
+12 A Controlled Experiments of Spectral Tail Uplift 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> Normalized radial frequency
+> 10 2
+> 10 4
+> 10 6
+> 10 8
+> Power (log scale)
+
+Spectrum under JPEG Compression        
+
+> Real
+> SD-VAE rec
+> VAE+JPEG90
+> VAE+JPEG80
+> VAE+JPEG70
+> VAE+JPEG60
+> P2.21
+> 0.70 0.75 0.80 0.85 0.90 0.95 1.00
+> Normalized radial frequency
+> 10 1
+> Power (log scale)
+
+Spectral Tail 
+
+Figure 5: Effect of JPEG compression on the spectral tail. We apply JPEG compression with different quality factors to SD-VAE [ 34 ] reconstructed images and compare their radial FFT power spectra with real images. The yellow curve denotes the power-law decay fitted from the data of real images and serves as a reference. Left: spectra over the full radial frequency range. Right: spectral tail over the local frequency range ρ ∈ [0 .7, 1] .0.7 0.8 0.9 1.0       
+
+> Normalized radial frequency
+> 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> log 10  (P/P = 0.7 )
+> Pink Noise -> VAE
+> 0.7 0.8 0.9 1.0
+> Normalized radial frequency
+> 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> log 10  (P/P = 0.7 )
+> Real Images -> VAE
+> Trained Random
+> init
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> tail uplift  log 10  P
+> 0.12
+> 0.04
+> 0.14
+> 0.06
+> Tail Uplift
+> Pink noise
+> Real images
+> Input Trained VAE Random-init VAE
+
+Figure 6: Comparison of spectral-tail under trained and random VAE weights. We keep the SD-VAE [34 ] architecture fixed and compare trained weights with random-initialized weights using pink noise (left ) and real images ( middle ) as inputs. Normalized curves show spectra on ρ ∈ [0 .7, 1] . Right: 
+
+tail uplift ∆ log 10 P , the rise from the tail’s minimum to ρ = 1 .
+
+A.1 Spectral Tail Uplift under JPEG Compression 
+
+Due to the loss of high-frequency information caused by JPEG compression, we evaluate how JPEG compression affects spectral tail uplift. We first reconstruct real images with the VAE decoder of Stable Diffusion 2.1 (SD2.1 VAE) [ 34 ] to obtain fake samples while reducing semantic bias. We then apply JPEG compression to the SD-VAE reconstructions with quality factors of 90, 80, 70, and 60, and compare them with real images and uncompressed SD-VAE reconstructions. The spectra are computed using the same pipeline as in the main spectral analysis. The yellow dashed curve shows the power-law decay fitted from real-image data as a reference. As shown in Fig. 5, JPEG compression reduces the high-frequency energy of VAE reconstructions, and lower quality factors lead to lower overall energy in the tail region. However, even at JPEG quality 60, the tail uplift in VAE-reconstructed spectra is still not fully suppressed. A clear anomalous upward trend remains visible in the spectral tail. This suggests that spectral tail uplift is not limited to lossless reconstruction settings, but remains an identifiable structural spectral cue after common post-processing, providing useful evidence for generated-image detection. 
+
+A.2 Effects of Nonlinear Activations and Trained Weights 
+
+The spectra above show that the VAE reconstruction process introduces additional high-frequency energy and produces spectral tail uplift in the reconstructed samples. We therefore conduct controlled experiments to investigate how tail uplift arises. We hypothesize that tail uplift is related to harmonic 13 accumulation induced by nonlinear activations in generative models. To verify our hypothesis, we study the effects of nonlinear activations and trained weights on spectral tail uplift. We use both pink-noise inputs and real-image inputs, and reconstruct them with SD2.1 VAE, ensuring that each output is paired with its corresponding input to reduce semantic bias. 
+
+Effect of nonlinear activations. To isolate the effect of nonlinear activations on tail uplift, we keep the trained SD-VAE weights fixed and replace the original SiLU activations with different alternatives. We consider four settings: the original SiLU, Identity, ReLU, and LeakyReLU with negative slope 0.01 . Here, Identity denotes the identity mapping, which is equivalent to completely removing nonlinear activations and reducing the network to a purely linear transformation. As shown in the Fig. 2, replacing SiLU with Identity reduces the tail uplift to 0.01 for pink-noise inputs and 
+
+0.00 for real-image inputs, almost eliminating the effect. It indicates that nonlinear activations are crucial for producing spectral tail uplift. In contrast, replacing SiLU with ReLU or LeakyReLU substantially strengthens the uplift, suggesting that different nonlinear activations induce harmonic generation with different strengths. These results suggest that tail uplift is closely related to harmonic accumulation caused by nonlinear activations in generative models. 
+
+Effect of trained weights. We further examine the role of generative-model weights by comparing trained weights with random weights. In the random-weight setting, we load the same SD-VAE architecture but reset all learnable weights using Kaiming random initialization [ 16 ]. This keeps the architecture, activation functions, depth, channel dimensions, normalization layers, residual connections, and upsampling modules the same as those of the trained SD-VAE. The only difference is whether the weights have undergone generative-model training. As shown in the Fig. 6, the trained SD-VAE produces tail uplift values of +0 .12 and +0 .14 for pink-noise and real-image inputs, respectively. Under random weights, the same architecture produces much weaker uplift values of 
+
++0 .04 and +0 .06 . The pink-noise input itself does not exhibit tail uplift, with an input baseline of 
+
++0 .00 . Therefore, the output uplift directly reflects how the network transforms the input spectrum. For pink-noise inputs, the +0 .04 uplift under random weights can be attributed to weak harmonics generated by convolutions and nonlinear activations under random initialization. The trained VAE further amplifies this effect to +0 .12 , a three-fold increase. This suggests that training shapes the layer-wise frequency responses of the network, causing harmonic energy to accumulate across layers and become systematically concentrated in the spectral tail. The results on real-image inputs show the same trend. Taken as a whole, these controlled experiments indicate that tail uplift depends on two factors. Nonlinear activations provide the ability to generate new frequency components, while trained weights make these components accumulate across layers and align with the spectral tail. Removing either factor substantially weakens or even suppresses tail uplift. Only when both factors are present does harmonic accumulation produce a clear tail uplift. These results suggest that spectral tail uplift arises from harmonic accumulation induced by the joint effect of nonlinear activations and trained weights in generative models. 
+
+B Formal Analysis of Spectral Tail Uplift 
+
+This appendix provides the formal statements and proofs used in the main text to analyze spectral tail uplift. The analysis is intentionally based on a minimal signal model: a one-dimensional periodic signal, a linear convolutional filter represented by its frequency response, and a pointwise nonlinear activation. This simplified model is not intended to describe every architectural detail of modern generators. Instead, it isolates the mechanism needed by the main text: pointwise nonlinear activations generate new harmonics, and cascaded filters modulate whether these harmonics survive along the decoder. 
+
+B.1 Harmonic Generation by Pointwise Nonlinearity Theorem 1 (Harmonic generation). Let x : R → R be a real-valued 2π-periodic signal with finite bandwidth M ,
+
+x(t) = 
+
+> M
+
+X
+
+> m=−M
+
+ˆxmeimt , ˆxM̸ = 0 , ˆx−m = ˆ xm. (18) 14 Let ϕ : R → R be a degree-d polynomial activation, 
+
+ϕ(z) = 
+
+> d
+
+X
+
+> q=0
+
+aq zq , ad̸ = 0 , d ≥ 2. (19) Then ϕ(x) has highest positive frequency dM , and the Fourier coefficient at this frequency is 
+
+dϕ(x)dM = ad(ˆ xM )d, dϕ(x)dM  
+
+> 2
+
+= |ad|2|ˆxM |2d. (20) 
+
+Proof. Since ϕ is a polynomial, we can write 
+
+ϕ(x(t)) = 
+
+> d
+
+X
+
+> q=0
+
+aq [x(t)] q . (21) For each q, the Fourier coefficient of [x(t)] q at frequency k is the q-fold convolution of the Fourier coefficients of x: d[x]q k = X  
+
+> m1+··· +mq=k
+> |mj|≤ M
+
+ˆxm1 ˆxm2 · · · ˆxmq . (22) Because each mj lies in [−M, M ], the support of [x]q is contained in [−qM, qM ]. Therefore, any term with q < d cannot contribute to frequency dM .For q = d and k = dM , the constraint m1 + · · · + md = dM with mj ≤ M has only one feasible solution: m1 = · · · = md = M . Hence 
+
+d[x]ddM = (ˆ xM )d. (23) Combining this with Eq. (21) gives 
+
+dϕ(x)dM =
+
+> d
+
+X
+
+> q=0
+
+aq d[x]q dM = ad(ˆ xM )d. (24) Since ad̸ = 0 and ˆxM̸ = 0 , this coefficient is nonzero, so the highest positive frequency is exactly 
+
+dM . Taking the squared magnitude gives Eq. (20). 
+
+B.2 Harmonic-Chain Propagation in a Decoder Cascade Theorem 2 (Harmonic-chain propagation). Consider the L-layer cascade 
+
+yℓ = Hℓ ∗ xℓ−1, xℓ = ϕ(yℓ), ℓ = 1 , . . . , L, (25) where Hℓ is a linear convolutional filter with frequency response Hℓ(k), and ϕ is the degree-d
+
+polynomial activation in Eq. (19). Let the input be a single-tone signal 
+
+x0(t) = A cos( k0t), ˆx0,k 0 = ˆ x0,−k0 = A/ 2. (26) Assume the filters are non-degenerate along the highest-order harmonic chain, i.e., 
+
+Hℓ(dℓ−1k0)̸ = 0 , ℓ = 1 , . . . , L. (27) Then the output power at the top harmonic dLk0 is 
+
+ˆxL(dLk0) 2 = |ad| 2( dL−1) 
+
+> d−1
+
+ A
+
+2
+
+2dL LY
+
+> ℓ=1
+
+Hℓ(dℓ−1k0) 2dL−ℓ+1 
+
+. (28) 
+
+Proof. We prove the result by induction along the highest-order harmonic chain. A linear convolution does not change the frequency support; in the Fourier domain it only rescales each coefficient: 
+
+ˆyℓ(k) = Hℓ(k)ˆ xℓ−1(k). (29) For L = 1 , the pre-activation coefficient at frequency k0 is 
+
+ˆy1(k0) = H1(k0) A
+
+2 . (30) 15 Applying Theorem 1 to y1 gives 
+
+ˆx1(dk 0) = ad
+
+
+
+H1(k0) A
+
+2
+
+d
+
+. (31) Thus 
+
+|ˆx1(dk 0)|2 = |ad|2|H1(k0)|2d
+
+ A
+
+2
+
+2d
+
+, (32) which is Eq. (28) when L = 1 .Now assume that after layer ℓ − 1 the contribution of the highest-order harmonic chain satisfies 
+
+ˆxℓ−1(dℓ−1k0) 2 = |ad| 2( dℓ−1−1) 
+
+> d−1
+
+ A
+
+2
+
+2dℓ−1 ℓ−1Y
+
+> j=1
+
+Hj (dj−1k0) 2dℓ−j
+
+. (33) The next linear filter gives 
+
+ˆyℓ(dℓ−1k0) 2 = Hℓ(dℓ−1k0) 2 ˆxℓ−1(dℓ−1k0) 2. (34) Along the highest-order chain, the degree-d term contributes to frequency dℓk0 by combining the component at dℓ−1k0 exactly d times. Other lower-frequency components cannot reach this top frequency through the degree-d term. Therefore, the chain contribution obeys 
+
+ˆxℓ(dℓk0) 2 = |ad|2 ˆyℓ(dℓ−1k0) 2d. (35) Substituting Eqs. (33) and (34) into Eq. (35) yields 
+
+ˆxℓ(dℓk0) 2 = |ad| 2( dℓ−1) 
+
+> d−1
+
+ A
+
+2
+
+2dℓ ℓY
+
+> j=1
+
+Hj (dj−1k0) 2dℓ−j+1 
+
+. (36) This is the desired expression for the highest-order chain at layer ℓ, so the induction is complete. 
+
+B.3 Scope of the Formal Model 
+
+Theorems 1 and 2 are used as a mechanism-level explanation rather than a complete generative model. Several points are important for avoiding over-interpretation. Theorem 1 is stated for polynomial activations because this setting gives an exact closed-form coefficient. For smooth activations used in modern decoders, a finite Taylor approximation on the bounded activation range leads to the same type of local harmonic-generation mechanism. For piecewise linear activations, harmonics can also be introduced when the input crosses nonlinear kink regions, although the exact coefficients differ. We therefore use the polynomial model as an analytically tractable abstraction of the pointwise activation layer. Theorem 2 does not claim that arbitrary filters necessarily amplify the harmonic chain. It shows explicitly where the filter gains enter the top-harmonic power. If a gain Hℓ(dℓ−1k0) is close to zero, the corresponding harmonic path is suppressed; if the learned filters preserve or amplify these frequencies, the path can survive to the spectral tail. Thus, convolutional weights should be interpreted as a modulation and propagation factor rather than as an unconditional source of high-frequency energy. 
+
+Connection to controlled observations. The formal results above identify a mechanism by which decoder pointwise nonlinear activations can create harmonics and by which convolutional filters can modulate their propagation. This mechanism is supported by our controlled SD-VAE experiments. Under the same measurement protocol, real images follow the expected decaying spectral profile and do not exhibit a tail-uplift pattern. After SD-VAE reconstruction, the reconstructed fake images show a clear uplift shape at the spectral tail. To isolate the role of pointwise activations, we fix the trained VAE weights and replace all SiLU activation functions with identity mappings. The tail uplift is then almost completely suppressed, while replacing SiLU with other nonlinear activations restores or strengthens the effect. These observations support our interpretation that pointwise activations inject additional harmonics, while learned convolutional filters modulate how these harmonics propagate through the decoder. 16 C Implementation Details 
+
+C.1 Training Data and View Construction 
+
+During training, we use real images from MSCOCO [ 25 ] and their reconstructed counterparts to construct training data. For the spatial branch, we follow DDA [ 7 ] to build aligned training pairs, mitigating reconstruction-induced low-level pixel biases and encouraging the detector to learn more generalizable cues. Different from the spatial branch, the auxiliary frequency branch uses a frequency-preserving view. This view shares the necessary geometric transformations with the spatial view, but avoids augmentations that substantially alter the spectral shape, such as strong compression, resampling, or other operations that may distort spectral-tail cues. This design allows the training-time frequency teacher to capture spectral tail uplift consistently, rather than learning spectral perturbations caused by data augmentation. 
+
+C.2 More Training Details 
+
+We train STAL for 1 epoch on 8 NVIDIA V100 32GB GPUs with a batch size of 16 per GPU. The spatial detector uses DINOv3 ViT-H+/16 [ 35 ] with LoRA [ 18 ] fine-tuning, where the input resolution is 336 × 336 , the LoRA rank is 8, and α = 1 .0. We use AdamW [ 27 ] with a learning rate of 1 × 10 −4 and a weight decay of 0.005. The frequency-related losses follow a curriculum schedule and are discarded together with the frequency branch at inference time, so STAL introduces no additional inference cost. The frequency-related losses follow a lightweight curriculum schedule: the weight is linearly warmed up in the first 800 steps, kept at full strength in early training, and then cosine-annealed to zero between 15% and 45% of the estimated training steps. This encourages the spatial detector to absorb spectral-tail cues during training while avoiding dependence on the auxiliary frequency branch. 
+
+C.3 Evaluation Protocol 
+
+All experiments report balanced accuracy, defined as the average of real-image accuracy and generated-image accuracy to mitigate the effect of class imbalance. For datasets with multiple subsets, we report the arithmetic mean and standard deviation of balanced accuracy across subsets. All methods [ 6, 7 , 23 , 26 , 30 , 33 , 38 , 39 , 41 ]are evaluated using their official model weights. DDA* denotes a DDA variant using the same DINOv3-H+ [ 35 ] backbone as STAL, which provides a controlled comparison under matched backbone. DDA* and our method are trained under the same setting with fixed random seeds, and the best checkpoint is selected for evaluation to ensure fairness. 
+
+D More Experiment Results 
+
+D.1 More Comparison Results 
+
+Table 5: Comparison on EvalGEN. Balanced accuracy (%) is reported.                                                                                          
+
+> Method Flux GoT Infinity NOVA OmniGen Avg
+> NPR (CVPR’24) [38] 0.7 0.2 6.5 4.7 2.2 2.9 ±2.7 UnivFD (CVPR’23) [30] 4.0 9.2 15.7 8.3 39.6 15.4 ±14.2 FatFormer (CVPR’24) [26] 9.9 47.9 44.7 98.3 27.3 45.6 ±33.1 SAFE (KDD’25) [23] 1.0 0.5 1.9 0.6 1.6 1.1 ±0.6 C2P-CLIP (AAAI’25) [39] 8.7 49.6 35.3 86.4 14.5 38.9 ±31.2 AIDE (ICLR’25) [41] 17.9 24.7 3.4 16.3 33.4 19.1 ±11.1 DRCT (ICML’24) [6] 72.5 81.4 77.9 84.6 72.5 77.8 ±5.4 AlignedForensics (ICLR’25) [33] 32.0 72.3 74.0 84.8 77.0 68.0 ±20.7 DDA (NeurIPS’25) [7] 89.9 99.5 97.8 99.5 99.5 97.2 ±4.2 DDA* 97.9 99.6 99.8 99.8 99.7 99.3 ±0.8 STAL (ours) 95.7 99.5 99.9 99.9 99.5 98.9 ±1.8
+
+In this section, we provide complete de-tailed results on five benchmarks [ 2 , 6,7, 40 , 45 ] that are not fully reported in the Section 4.2, as a supplement. Ta-bles 6 and 7 present detailed results on GenImage and DRCT-2M, respec-tively, covering a wide range of gen-erative models and variants, including GAN- and diffusion-based generators. Table 8 further evaluates STAL on Syn-thbuster, which includes images from di-verse commercial and open-source gen-erative models. Table 9 reports results on ForenSynths, focusing on generaliza-tion to early GAN-based generators and image synthesis methods. Finally, Table 5 reports detection performance on EvalGEN, which contains recent generative models. These complete results show that STAL maintains stable detection performance across diverse generative architectures and data sources, and outperform other competing methods on most benchmarks. Across these detailed benchmarks, 17 Table 6: Comparison on GenImage. Balanced accuracy (%) is reported. 
+
+Method Midjourney SDv1.4 SDv1.5 ADM GLIDE Wukong VQDM BigGAN Avg 
+
+NPR (CVPR’24) [38] 53.4 55.1 55.0 43.8 41.2 57.4 48.4 57.7 51.5 ± 6.3 UnivFD (CVPR’23) [30] 55.1 55.6 55.7 62.5 61.3 61.1 76.9 84.4 64.1 ± 10.8 FatFormer (CVPR’24) [26] 52.1 53.6 53.8 61.4 65.5 60.9 72.5 82.2 62.8 ± 10.4 SAFE (KDD’25) [23] 49.0 49.7 49.8 49.5 53.0 50.3 50.2 50.9 50.3 ± 1.2 C2P-CLIP (AAAI’25) [39] 56.6 77.5 76.9 71.6 73.5 79.4 73.7 85.9 74.4 ± 8.4 AIDE (ICLR’25) [41] 58.2 77.2 77.4 50.4 54.6 70.5 50.8 50.6 61.2 ± 11.9 DRCT (ICML’24) [6] 82.4 88.3 88.2 76.9 86.1 87.9 85.4 87.0 84.7 ± 2.7 AlignedForensics (ICLR’25) [33] 97.5 99.7 99.6 52.4 57.6 99.6 75.0 50.6 79.0 ± 22.7 DDA (NeurIPS’25) [7] 95.6 98.7 98.6 89.5 89.6 98.7 76.5 86.5 91.7 ± 7.8 DDA* 96.8 97.8 97.7 97.0 97.5 97.8 97.9 97.0 97.4 ± 0.4 
+
+STAL (ours) 98.2 99.5 99.3 97.3 98.0 99.4 99.4 97.9 98.6 ± 0.9 
+
+Table 7: Comparison on DRCT-2M. Balanced accuracy (%) is reported..                                                                                                                                                                                   
+
+> Method LDM SDv1.4 SDv1.5 SDv2 SDXL SDXL-Refiner SD-Turbo SDXL-Turbo LCM-SDv1.5 LCM-SDXL SDv1-Ctrl SDv2-Ctrl SDXL-Ctrl Avg
+> NPR (CVPR’24) [38] 33.0 29.1 29.0 35.1 33.2 28.4 27.9 27.9 29.4 30.2 28.4 28.3 34.7 30.4 ±2.7 UnivFD (CVPR’23) [30] 85.4 56.8 56.4 58.2 63.2 55.0 56.5 53.0 54.5 65.9 68.0 65.4 75.9 62.6 ±9.5 FatFormer (CVPR’24) [26] 55.9 48.2 48.2 48.2 48.2 48.3 48.2 48.2 48.3 50.6 49.7 49.9 59.8 50.1 ±3.6 SAFE (KDD’25) [23] 50.3 50.1 50.0 50.0 49.9 50.1 50.0 50.0 50.1 50.0 49.9 50.0 54.7 50.4 ±1.3 C2P-CLIP (AAAI’25) [39] 83.0 51.7 51.7 52.9 51.9 64.6 51.7 50.6 52.0 66.1 56.9 54.7 77.8 58.9 ±10.8 AIDE (ICLR’25) [41] 64.4 74.9 75.1 58.5 53.5 66.3 52.8 52.8 70.0 54.3 65.9 53.6 53.9 61.2 ±8.6 DRCT (ICML’24) [6] 96.7 96.3 96.3 94.9 96.2 93.5 93.4 92.9 91.2 95.0 95.6 92.7 92.0 94.4 ±1.8 AlignedForensics (ICLR’25) [33] 99.9 99.9 99.9 99.6 90.2 81.3 99.7 89.4 99.7 90.0 99.9 99.2 87.6 95.1 ±6.5 DDA (NeurIPS’25) [7] 99.2 98.9 99.0 98.3 98.0 96.8 97.9 94.8 95.9 98.2 98.7 99.0 99.4 98.0 ±1.4 DDA* 99.8 99.5 99.5 99.7 99.7 99.7 99.8 99.8 99.8 99.8 99.8 99.8 99.8 99.7 ±0.1
+> STAL (ours) 99.9 99.7 99.6 99.8 99.8 99.7 99.9 99.9 99.9 99.9 99.9 99.9 99.9 99.8 ±0.1
+
+Table 8: Comparison on Synthbuster. Balanced accuracy (%) is reported. 
+
+Method DALL ·E 2 DALL ·E 3 Firefly GLIDE Midjourney SD 1.3 SD 1.4 SD 2 SDXL Avg 
+
+NPR (CVPR’24) [38] 51.1 49.3 46.5 48.5 52.8 51.4 51.8 46.0 52.8 50.0 ± 2.6 UnivFD (CVPR’23) [30] 83.5 47.4 89.9 53.3 52.5 70.4 69.9 75.7 68.0 67.8 ± 14.4 FatFormer (CVPR’24) [26] 59.4 39.5 60.3 72.7 44.4 53.7 54.0 52.3 69.1 56.1 ± 10.7 SAFE (KDD’25) [23] 58.0 9.9 10.3 52.2 56.7 59.4 59.1 53.0 59.5 46.5 ± 20.8 C2P-CLIP (AAAI’25) [39] 55.6 63.2 59.5 86.7 52.9 75.2 76.7 69.2 77.7 68.5 ± 11.4 AIDE (ICLR’25) [41] 34.9 33.7 24.8 65.0 57.5 74.1 73.7 53.2 68.4 53.9 ± 18.6 DRCT (ICML’24) [6] 77.2 86.6 84.1 82.6 73.7 86.6 86.6 83.2 71.3 84.8 ± 3.6 AlignedForensics (ICLR’25) [33] 50.2 48.9 51.7 53.5 98.7 98.8 98.8 98.6 97.3 77.4 ± 25.0 DDA (NeurIPS’25) [7] 86.3 90.0 91.9 76.5 93.5 92.9 92.7 93.3 93.5 90.1 ± 5.6 DDA* 99.8 99.9 99.9 99.5 99.9 99.9 99.9 99.9 99.9 99.8 ± 0.1 STAL (ours) 99.6 99.9 99.8 98.6 99.9 99.9 99.9 99.9 99.9 99.7 ± 0.4 
+
+Table 9: Comparison on ForenSynths. Balanced accuracy (%) is reported. 
+
+Method BigGAN CRN CycleGAN DeepFake GauGAN IMLE ProGAN SAN SeeingDark StarGAN StyleGAN StyleGAN2 WFR Avg 
+
+NPR (CVPR’24) [38] 53.1 0.4 76.6 35.7 42.2 5.3 58.7 48.4 63.6 67.4 57.9 54.6 58.8 47.9 ± 22.6 UnivFD (CVPR’23) [30] 87.5 55.7 96.9 69.4 98.8 68.1 99.4 58.2 62.2 95.1 80.0 69.4 69.2 77.7 ± 16.1 FatFormer (CVPR’24) [26] 99.3 72.1 99.5 93.0 99.3 72.1 98.4 70.8 81.9 99.4 98.1 98.9 88.3 90.0 ± 11.8 SAFE (KDD’25) [23] 52.2 50.0 51.9 50.1 50.0 50.0 50.0 50.9 41.1 50.1 50.0 50.0 49.8 49.7 ± 2.7 C2P-CLIP (AAAI’25) [39] 98.4 93.3 96.8 92.6 98.8 93.2 99.3 63.2 94.7 99.6 93.1 79.4 94.8 92.0 ± 10.1 AIDE (ICLR’25) [41] 70.1 12.2 93.6 53.2 60.6 15.9 89.0 55.3 44.2 72.1 66.5 59.0 80.6 59.4 ± 24.6 DRCT (ICML’24) [6] 81.4 78.4 91.0 51.5 93.8 82.6 71.1 84.9 72.2 53.0 62.7 63.8 73.9 73.9 ± 13.4 AlignedForensics (ICLR’25) [33] 51.2 50.4 49.5 71.7 50.8 49.7 50.7 67.6 51.4 53.8 52.7 51.6 50.0 53.9 ± 7.1 DDA (NeurIPS’25) [7] 91.0 87.0 72.5 76.5 92.7 89.7 92.8 94.7 58.6 72.7 87.8 90.2 52.1 81.4 ± 13.9 DDA* 91.4 70.5 90.8 74.2 90.9 70.5 81.9 94.3 83.9 75.2 83.6 86.2 91.8 83.5 ± 8.5 
+
+STAL (ours) 97.7 96.9 95.9 70.8 97.8 96.8 95.3 97.0 84.4 81.7 95.9 96.7 96.4 92.6 ± 8.3 
+
+STAL achieves the best or near-best average performance in most cases, with particularly strong results on GenImage, DRCT-2M, and ForenSynths. On Synthbuster and EvalGEN, several strong baselines already reach high accuracy on many subsets, while STAL remains consistently competitive and near-saturated on most generators. These results suggest that the proposed auxiliary frequency supervision improves cross-generator generalization across both classical and recent generative architectures. 
+
+D.2 More Robustness Analysis 
+
+In addition to cross-dataset generalization, we further evaluate the stability of STAL under common image post-processing operations. All experiments are conducted on GenImage [ 45 ], where we apply three types of perturbations, including JPEG compression, resizing, and Gaussian blur, and 18 report balanced accuracy. Figure 4 shows the robustness results under these three post-processing operations. 
+
+JPEG compression. Under JPEG compression, when the quality factor decreases from Q = 100 to 
+
+Q = 60 , the balanced accuracy of STAL drops from 98.62% to 96.24%, corresponding to only a 2.38 percentage point decrease. More importantly, as the compression becomes stronger, the advantage of STAL over the second-best method does not shrink: STAL leads by 3.04 percentage points at 
+
+Q = 100 and by 7.73 percentage points at Q = 60 . This shows that STAL performs better not only on uncompressed or mildly compressed images, but also under stronger JPEG recompression. 
+
+Resizing. For resizing, using α = 1 .0 as the reference point, STAL still reaches 97.27% at α = 0 .5,with a decrease of 1.35 percentage points. At α = 0 .75 , 1.5, and 2.0, it obtains 98.36%, 98.52%, and 98.50%, respectively, which are nearly unchanged from the result at α = 1 .0. Across all resize ratios, STAL outperforms the second-best method by at least 3.11 percentage points. Under the most challenging strong downsampling setting, i.e., α = 0 .5, the margin further increases to 9.84 percentage points. 
+
+Gaussian blur. Under Gaussian blur, blur is the most challenging perturbation for STAL among the three types in terms of performance drop, but the maximum decrease remains within 3.10 percentage points. In terms of comparison with other methods, STAL ranks first at all blur strengths and exceeds the second-best method by 10.73 percentage points at σ = 2 .0.Overall, STAL exhibits the strongest robustness across all perturbation settings, and its advantage becomes larger under more challenging conditions such as strong JPEG compression, strong down-sampling, and strong blur. These results indicate that using frequency-domain information as auxiliary supervision for the spatial detector improves cross-generator generalization while maintaining strong adaptability to common image post-processing operations. 
+
+D.3 Heatmap Visualization Original 
+
+> spatial-only
+> STAL
+
+Figure 7: Visualization of model attention. From top to bottom, the three rows show the original images, heatmaps generated by the spatial-only model, and heatmaps generated by STAL, respectively. Colors from yellow to purple indicate attention values from high to low. 19

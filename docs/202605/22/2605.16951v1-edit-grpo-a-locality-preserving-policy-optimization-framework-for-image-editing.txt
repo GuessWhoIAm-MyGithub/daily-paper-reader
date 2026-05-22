@@ -1,0 +1,802 @@
+Title: Edit-GRPO: A Locality-Preserving Policy Optimization Framework for Image Editing
+
+URL Source: https://arxiv.org/pdf/2605.16951v1
+
+Published Time: Tue, 19 May 2026 00:54:00 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Edit-GRPO: A Locality-Preserving Policy Optimization Framework for Image Editing 
+
+Shaodong Xu Zexian Li Zhendong Wang Litong Gong Tiezheng Ge Wengang Zhou Bo Zheng Houqiang Li 
+
+Alibaba Group 
+
+Abstract 
+
+A fundamental challenge in image editing lies in preserving spatial locality: edits should improve targeted content without inadvertently altering surrounding regions. However, most optimization-based editing approaches treat images as holistic entities, causing global policy updates that undermine locality and introduce unde-sired context changes. We observe that this issue stems from a mismatch between localized editing intent and globally applied optimization signals. Motivated by this insight, we propose Edit-GRPO, preserving Locality while optimizing image editing, a locality-preserving policy optimization framework that explicitly decou-ples editing and preservation objectives. By assigning region-specific optimization signals to edit and non-edit areas, Edit-GRPO aligns policy updates with the spatial structure of editing tasks, enabling localized improvements while maintaining global visual coherence. This design effectively suppresses common artifacts such as context distortion and boundary inconsistency. Extensive experiments across diverse image editing scenarios demonstrate that Edit-GRPO significantly improves locality preservation while maintaining strong editing performance compared to existing optimization-based methods, validating the generality and effectiveness of the proposed framework. 
+
+1 Introduction 
+
+Recent advances in generative models, particularly diffusion models [ 12 , 26 , 24 ] and flow models [ 17 ,20 , 8] have significantly improved visual content creation, enabling high-quality instruction-guided image editing [ 13 , 34 ], which requires both precise semantic control and faithful context preservation. Inspired by the success of reinforcement learning from human feedback (RLHF) in LLMs [ 23 , 11 , 28 ], recent work has explored integrating RL with visual generative models [ 3, 9]. Recently, one line of work [ 18 , 40 , 14 ] introduces GRPO-style policy optimization to diffusion models by converting the ODE sampling into an equivalent SDE. Another line of work [ 46 , 15 ] performs policy optimization directly on the forward diffusion process via flow matching objectives, enabling more efficient training. Despite their differences in policy optimization, these RL-based approaches share a common design: reward signals are computed at image level and used to guide policy updates globally .While this global optimization paradigm works well for general image generation, it becomes problematic when applied to image editing. Unlike generation, editing is inherently a localized task: only the target regions should be modified, while the remaining content should remain unchanged . However, we observe that existing optimization-based approaches [ 18 , 40 , 14 , 46 ,15 ] typically treat images as holistic entities and use image-level rewards to update the policy, which conflicts with the localized nature of editing. More importantly, a single global reward can 
+
+not explicitly distinguish where the model should edit and where it should preserve, making the editing model struggle to achieve precise semantic modification and faithful context preservation simultaneously. When the model is encouraged to perform stronger semantic edits, unintended   
+
+> Preprint.
+> arXiv:2605.16951v1 [cs.CV] 16 May 2026 Turn the cat
+> into a Tiger
+> Global Evaluation
+
+(a ) Standard Editing Training (b) Edit -GRPO: Locality -Preserving Editing  
+
+> Region -wise Evaluation
+> Reward Function
+> Optimization
+> Image Editing
+> Models
+
+🔥    
+
+> Turn the cat
+> into a Tiger Reward Function
+> Image Editing
+> Models
+
+🔥      
+
+> Optimization
+> Region Segmentation
+> Decoupled region -wise evaluation.
+> Accurate edit with faithful preservation.
+> Edit and preservation are entangled.
+> Prone to context distortion .
+> ✅
+> ✅
+
+Figure 1: Overview of the proposed Edit-GRPO framework compared to standard editing post-training. Edit-GRPO performs region-wise evaluation to better preserve non-edit content. distortion beyond the editing areas arises inadvertently (such as background drift and boundary inconsistency), degrading the final editing quality. This observation suggests that, in image editing, 
+
+locality preservation should not be treated as a byproduct of semantic editing, but as an explicit optimization objective during post-training . Consequently, reward signals should be region-specific rather than globally defined: semantic following reward should be evaluated in the target regions, while locality preservation reward should be evaluated individually in the non-edit regions. This insight motivates us to explore a decoupled reward mechanism that assesses semantic editing and locality preservation separately, which remains underexplored in image editing post-training. In this work, we propose Edit-GRPO , a policy optimization framework that preserves locality while optimizing image editing . The core idea is to decouple the reward design based on the spatial regions of the edited images. Specifically, we partition the images into edit regions and non-edit regions, and design different rewards separately. For edit regions, we apply a semantic following reward to encourage precise editing that follows the instruction. Meanwhile, we introduce a locality preservation reward for the non-edit regions that explicitly encourages the model to retain the original visual content in areas unrelated to the edit. Based on the decoupled reward mechanism, we further propose a region-decoupled optimization framework to mitigate the interference between editing and preservation objectives. By decoupling optimization objectives in this way, Edit-GRPO enables joint policy optimization for improving both semantic editing and locality preservation, encouraging the model to produce more visually coherent and realistic editing results. To validate Edit-GRPO, we apply our method to FLUX.1-Kontext [Dev] [ 13 ] and Qwen-Image-Edit [2509] [ 34 ]. Extensive experimental results demonstrate that Edit-GRPO consistently improves locality preservation, effectively suppressing unintended changes in non-edit regions. Importantly, Edit-GRPO achieves comparable or even better semantic editing performance relative to the base models, indicating that the locality-preserving improvements do not compromise edit capability. Together, these results show that Edit-GRPO improves editing precision and locality preservation simultaneously, highlighting the effectiveness of the proposed framework. The main contributions of this work are summarized as follows: • We identify a fundamental mismatch between localized editing intent and globally applied optimization signals in existing optimization-based image editing methods. • We propose Edit-GRPO, a locality-preserving policy optimization framework that decouples editing and preservation objectives through region-specific optimization signals. • Extensive experiments demonstrate that Edit-GRPO consistently improves both editing fidelity and context preservation over the base models. 22 Related Work 
+
+2.1 Instruction-Based Image Editing 
+
+Diffusion and flow models [ 12 , 29 , 26 , 30 , 17 , 20 ] have significantly advanced text-to-image gener-ation and instruction-based image editing, allowing users to manipulate visual content through natural language instructions. Early works [ 22 , 4, 32 , 43 ] demonstrate that diffusion models can acquire instruction-following editing capabilities through supervised fine-tuning. Recent works [ 13 , 34 , 19 , 5, 7] further improve editing performance by scaling model capacity and training data. However, these Supervised Fine-Tuning (SFT) approaches often lead to shortcut learning and overfitting to large-scale datasets [ 15 ], limiting the generalization and controllability of editing models. To this end, post-training alignment methods based on reinforcement learning (RL) have emerged as a promising solution. 
+
+2.2 Policy Optimization for Generative Models 
+
+Inspired by the success of reinforcement learning from human feedback in LLMs [ 23 , 11 , 28 ], recent efforts have extended RL to visual generative models. Pioneer works like DDPO [ 3 ] and ReFL [ 38 ]apply PPO [27] to fine-tune diffusion models for human preference alignment. Diffusion-DPO [31] adapts Direct Preference Optimization (DPO) [ 25 ] to directly optimize diffusion models from paired data, bypassing the need for explicit reward models. Subsequent studies such as Flow-GRPO [ 18 ]and Dance-GRPO [ 40 ] enable GRPO-style policy updates by converting the ODE sampling into an equivalent SDE. MixGRPO [ 14 ] further improves training efficiency through a hybrid ODE-SDE sampling approach. More recently, DiffusionNFT [ 46 , 15 ] directly optimizes diffusion models along the forward process via flow matching objectives, leading to better generation performance. Despite these advances, existing optimization methods typically treat images as holistic entities and rely on image-level rewards to update the policy, which works well for generic image generation but becomes problematic when applied to image editing, where edits are expected to occur only in specific regions without altering surrounding content. Achieving the balance between precise semantic editing and faithful locality preservation remains an open challenge in complex image editing tasks. 
+
+3 Preliminaries 
+
+In this section, we briefly review the formulation of flow matching [17, 20] and Flow-GRPO [18]. 
+
+Flow Matching. Let x0 ∼ X0 denote a clean image sample and x1 ∼ X1 denote a Gaussian noise sample. Following rectified flow, the interpolated sample at time t ∈ [0 , 1] is defined as: 
+
+xt = (1 − t)x0 + tx 1, (1) with target velocity field v = x1 − x0. A neural network vθ (xt, t, c ) conditioned on instruction c is trained to regress the target velocity by minimizing the flow matching objective: 
+
+LFM (θ) = Et,x 0∼X0,x 1∼X1
+
+∥v − vθ (xt, t, c )∥22
+
+ . (2) At inference time, edited images are generated by solving the deterministic ODE conditioned on the source image I and editing instruction c.
+
+Flow-GRPO. Our approach is built upon Flow-GRPO, which formulates the denoising process as a Markov Decision Process. Specifically, given a prompt c, the flow model πθ first samples a group of 
+
+G images {xi
+
+> 0
+
+}Gi=1 and their corresponding reverse-time trajectories {(xiT , x iT −1, . . . , x i
+
+> 0
+
+)}Gi=1 . Then the group-relative advantage ˆAit is computed by normalizing the rewards within the group: 
+
+ˆAit = R(xi
+
+> 0
+
+, c ) − mean ({R(xj
+
+> 0
+
+, c )}Gj=1 )
+
+std ({R(xj
+
+> 0
+
+, c )}Gj=1 ) . (3) The policy is optimized by maximizing the following objective: 
+
+JFlow-GRPO (θ) = E
+
+h 1
+
+G
+
+> G
+
+X
+
+> i=1
+
+1
+
+T 
+
+> T−1
+
+X
+
+> t=0
+
+min 
+
+
+
+rit(θ) ˆAit, clip (rit(θ), 1 ± ϵ) ˆAit
+
+
+
+− βD KL (πθ ∥πref )
+
+i
+
+, (4) where rit(θ) = pθ (xit−1|xit,c )  
+
+> pθold (xit−1|xit,c )
+
+denotes the probability ratio. 34 Method 
+
+In this section, we present Edit-GRPO, a novel policy optimization framework that preserves locality while optimizing image editing. We begin by analyzing the limitations of existing optimization-based image editing approaches in Section 4.1; then we show how to identify and decompose edit regions and design region-specific rewards in Section 4.2 and Section 4.3; finally, in Section 4.4 we propose a region-decoupled training framework. The overall pipeline of Edit-GRPO is illustrated in Figure 3. 
+
+4.1 Mismatch Between Localized Editing and Global Optimization Signal ❌ Failed Editing ❌ Bad Preservation ✅ Good Preservation   
+
+> Original Editing Model Decoupled Optimization Global Optimization
+> Make him look serious .
+
+Figure 2: Visual comparison between global and decoupled optimization. Please zoom in for details. Image editing is fundamentally different from general image generation, as it requires not only precise semantic control over the target content, but also faithful context preservation 
+
+of the background. However, as illustrated in Figure 1, existing optimization-based ap-proaches treat images as holistic entities and conduct global evaluation over the whole im-age, omitting the inherently localized nature of editing. While such a holistic optimization strategy works well for image generation, it becomes problematic when applied to image editing tasks. As shown in Figure 2, while global optimization successfully encourages the model to follow the editing instruction, it induces undesired background distortions, leading to a suboptimal editing result. This phenomenon reveals a fundamental mismatch between localized editing intent and globally applied optimization signals, as global optimization cannot precisely localize the editing region, causing gradients to inevitably affect the background pixels. Motivated by this observation, we argue that reward design in image editing should be region-specific rather than globally defined . To this end, we propose a novel locality-preserving policy optimization framework that separates the preservation objective from the editing one. By assigning region-specific reward signals to the edit and non-edit regions, the model can improve semantic following within the target area while penalizing undesired modifications elsewhere. As shown in Figure 2, the region-decoupled optimization strategy better preserves surrounding context while achieving the intended edit, resulting in more faithful and spatially consistent image editing. 
+
+4.2 Language-Grounded Region Decoupling Module 
+
+To achieve accurate decoupling for the edit and non-edit regions without manual annotations, we propose a Language-Grounded Region Decoupling Module that bridges free-form editing instructions and spatial segmentation of edited images. Specifically, given an input image I and an editing instruction c, we first use an LLM to parse the instruction and extract structured descriptions of the target content. These descriptions and images are then fed into a segmentation model to generate high-resolution segmentation masks for the edit target. To acquire robust segmentation in diverse editing scenarios, we apply region decoupling to the original image I and the edited image ˆI, obtaining two individual masks. The final mask M is computed as the union of the two masks: 
+
+M = S(I, c ) ∪ S ( ˆI, c ), (5) where S denotes the language-grounded region decoupling module. The remaining areas are defined as the non-edit areas ¯M = 1 − M . By grounding editing instructions into precise spatial masks, our approach eliminates the need for expensive user annotations, automatically generating precise masks for the edit regions in instruction-based image editing tasks. 
+
+4.3 Region-Specific Reward Design 
+
+Based on the segmentation masks, we further design a region-specific reward mechanism that decomposes the optimization objective into two distinct components: a semantic following reward ,which evaluates the precision of the intended edit, and a locality preservation reward , which measures the preservation of the non-edit background. We detail our reward design as follows: 4Group Rollout Generation Language -Grounded Region                                       
+
+> Decoupling Region -Aware Reward Design Region -Decoupled GRPO Update
+> Input Image
+> Editing Policy
+> 𝜋 !!"#
+> Edited Samples 𝐼 #"
+> "#$
+> %
+> Instruction cLLM parser
+> Target Description
+> Original Image 𝐼 Edited Image 𝐼 #
+> segmentation
+> Edit Mask
+> 𝑀 =𝑀 &∪𝑀 &'
+> Edit Region MLLM
+> Evaluator
+> CLIP
+> Directional
+> Locality Preservation Reward
+> Non -edit
+> Region
+> Pixel
+> Consistency
+> Structural
+> Consistency
+> Perceptual
+> Similarity
+> Rewards
+> Group Norm
+> A!"#
+> Token -Level Decoupling
+> Edit tokens log 𝜋 ()* ,𝜌 ()* ℒ()*
+> Preserve tokens log 𝜋 +,)( ,𝜌 +,)( ℒ()*
+> ℒ=𝜆 !"# ℒ!"# +𝜆 $%"! ℒ$%"! +𝛽ℒ &'
+> Update Policy 𝜋 !
+> A$%"!
+> r!"# r$%"!
+> Input Instruction c
+> Turn the apple into an orange.
+> 𝑀 &𝑀 &'
+> Non -edit Mask
+> 𝑀 =1−𝑀
+
+…
+
+> Semantic Following Reward
+> r-.*
+> r/.0+
+> r!"#
+> r$%"!
+> r1022
+> r((0*
+> r.+0+(
+> Locality Preservation Reward
+
+🔥 
+
+> segmentation
+
+Figure 3: Overview of the proposed Edit-GRPO pipeline. 
+
+Semantic Following Reward. This reward assesses how accurately the edited image reflects the semantic intent of the editing instruction. Recent studies [ 33 , 39 , 10 , 36 , 15 ] have revealed that MLLMs demonstrate superior capability in evaluating image quality due to their strong visual understanding and human preference alignment. In Edit-GRPO, we leverage a pretrained MLLM as a training-free reward model to evaluate editing quality. Specifically, given the original image I,the edited image ˆI and the editing instruction c, instead of using discrete output scores, we utilize 
+
+logit-based scores calculated from the score token probability to obtain fine-grained continuous reward signal [35, 44, 15]. Formally, we define the MLLM reward as: 
+
+rvlm = X
+
+s∈M 
+
+s · p(s|I, ˆI, c ), (6) where M is the set of predefined numerical score tokens, s is the numerical value of a score token, and p(s|· ) is the softmax probability of that token. In addition, to ensure the edit aligns well with the instruction, we further incorporate a CLIP-based directional reward: 
+
+rclip = cos 
+
+
+
+fCLIP ( ˆI) − fCLIP (I), f CLIP (c)
+
+
+
+. (7) The final semantic following reward is defined as the weighted sum of the two rewards above: 
+
+rsem = λvlm rvlm + λclip rclip . (8) where λvlm and λclip are coefficients balancing the contributions of the MLLM-based semantic reward and the CLIP-based directional reward, respectively. 
+
+Locality Preservation Reward. To alleviate unintended changes outside the target regions, we design a locality preservation reward based on the non-edit regions to measure visual consistency. Specifically, we propose a reconstruction-based reward to capture pixel-level consistency between original image I and edited image ˆI:
+
+rdiff = 1 − L1 
+
+
+
+I ⊙ ¯M , ˆI ⊙ ¯M
+
+
+
+, (9) This term enforces strict pixel-level consistency in the non-edit regions. Additionally, to preserve structural consistency and perceptual similarity of the edited images, we further introduce a SSIM-based structural reward and a LPIPS-based perceptual reward: 
+
+rssim = SSIM 
+
+
+
+I ⊙ ¯M , ˆI ⊙ ¯M
+
+
+
+, r lpips = − LPIPS 
+
+
+
+I ⊙ ¯M , ˆI ⊙ ¯M
+
+
+
+(10) The overall locality preservation reward in Edit-GRPO is formulated as the weighted sum of pixel-level reward rdiff , structural reward rssim and perceptual reward rlpips :
+
+rpres = λdiff rdiff + λssim rssim + λlpips rlpips , (11) The scalar λdiff , λssim and λlpips govern the relative importance of the three preservation rewards. 5Algorithm 1 Region-Decoupled GRPO Training ( Edit-GRPO ). 
+
+Require: Editing policy πθ , dataset {(I, c )}, region inference module S, semantic evaluator Esem ,preservation evaluator Epres , group size G.
+
+Initialize: Reference policy πθold ← πθ . 
+
+> 1:
+
+for each training iteration do  
+
+> 2:
+
+for each sampled pair (I, c ) do ▷ Rollout Step  
+
+> 3:
+
+Sample edited images { ˆIi}Gi=1 ∼ πθold (·| I, c ). 
+
+> 4:
+
+M i ← S (I, c ) ∪ S ( ˆIi, c ). 
+
+> 5:
+
+r i 
+
+> sem
+
+← E sem ( ˆIi, c, M i), r i 
+
+> pres
+
+← E pres ( ˆIi, I, ¯M i). 
+
+> 6:
+
+log πsem ,i θold ← Mean k∈M i
+
+ log π(k)
+
+> θold
+
+, log πpres ,i θold ← Mean k∈ ¯M i
+
+ log π(k)
+
+> θold
+
+. 
+
+> 7:
+
+end for  
+
+> 8:
+
+for each training mini-batch do ▷ Policy Update  
+
+> 9:
+
+Asem , A pres ← GroupNorm (rsem , r pres ). 
+
+> 10:
+
+log πsem  
+
+> θ
+
+← Mean k∈M
+
+ log π(k)
+
+> θ
+
+, log πpres  
+
+> θ
+
+← Mean k∈ ¯M
+
+ log π(k)
+
+> θ
+
+. 
+
+> 11:
+
+ρsem = exp(log πsem  
+
+> θ
+
+− log πsem  
+
+> θold
+
+), ρpres = exp(log πpres  
+
+> θ
+
+− log πpres  
+
+> θold
+
+). 
+
+> 12:
+
+Lsem = ClipPG (Asem , ρ sem ), Lpres = ClipPG (Apres , ρ pres ). 
+
+> 13:
+
+θ ← θ − λ∇θ
+
+ λsem Lsem + λpres Lpres + βLKL 
+
+. 
+
+> 14:
+
+end for  
+
+> 15:
+
+πθold ← πθ . 
+
+> 16:
+
+end for Output: Optimized policy πθ .
+
+4.4 Region-Decoupled Policy Optimization 
+
+To mitigate interference between editing and preservation objectives, we further propose a region-decoupled policy gradient optimization framework. The core idea is to apply each reward signal only to the corresponding spatial region, rather than mixing them as one reward and conducting global policy updates. Specifically, during training iterations, we first sample a mini-batch of image-instruction pairs (I, c ) and generate a group of G edited samples { ˆIi}Gi=1 ∼ πθ (· | I, c ) from the current policy. Then, for each sample ˆIi, we infer the editing mask M and compute editing reward 
+
+rsem and preservation reward rpres , respectively. Instead of combining them into a single scalar, we feed them into group normalization independently to obtain their corresponding advantages: 
+
+Asem = rsem − mean  {r i
+
+> sem
+
+}Gi=1 
+
+
+
+std  {r i
+
+> sem
+
+}Gi=1 
+
+ , A pres = rpres − mean  {r i
+
+> pres
+
+}Gi=1 
+
+
+
+std  {r i
+
+> pres
+
+}Gi=1 
+
+ . (12) To ensure the editing reward supervises the edit regions while the preservation reward supervises the non-edit regions, we further decouple the policy gradient at token level. Let π(k) 
+
+> θ
+
+denote the generation probability of the k-th image token, we partition the token set with editing mask M and compute region-aggregated log probabilities: 
+
+log πsem  
+
+> θ
+
+= 1
+
+|M |
+
+X
+
+> k∈M
+
+log π(k) 
+
+> θ
+
+, log πpres  
+
+> θ
+
+= 1
+
+| ¯M |
+
+X 
+
+> k∈¯M
+
+log π(k) 
+
+> θ
+
+. (13) Similarly, we define the corresponding log probabilities under the old policy, denoted by log πsem  
+
+> θold
+
+and 
+
+log πpres  
+
+> θold
+
+. Based on these quantities, we construct two independent optimization objectives: 
+
+Lsem = ClipPG (Asem , ρ sem ), Lpres = ClipPG (Apres , ρ pres ), (14) where ClipPG (·) denotes the GRPO-style clipped policy gradient objective, ρsem = exp(log πsem  
+
+> θ
+
+−
+
+log πsem  
+
+> θold
+
+) and ρpres = exp(log πpres  
+
+> θ
+
+− log πpres  
+
+> θold
+
+) are the region-specific policy ratios. Finally, the overall training objective is defined as the weighted combination of the two region-level losses together with a KL regularization term: 
+
+L = λsem Lsem + λpres Lpres + βLKL , (15) where λsem and λpres balance the relative importance of editing and preservation during optimization. The overall optimization framework is summarized in Algorithm 1. 6Table 1: Quantitative comparison on GEdit-Bench [ 19 ]. Best scores are in bold , second-best in underlined.                                                                               
+
+> Model Preservation GEdit-Bench-EN
+> UR ↑PSNR ↑SSIM ↑LPIPS ↓G_SC ↑G_PQ ↑G_O ↑
+> Instruct-Pix2Pix [4] ----3.58 5.49 3.68 UniWorld-V1 [16] ----4.93 7.43 4.85 OmniGen [37] ----5.96 5.89 5.06 FLUX.1-Kontext [Dev] 57.56 22.36 0.639 0.201 6.58 7.43 6.04 + Edit-R1 [15] 52.01 19.53 0.589 0.236 7.32 7.54 6.84 + Edit-GRPO(Ours) 60.30 22.91 0.663 0.185 6.81 7.56 6.34 Qwen-Image-Edit [2509] 56.69 21.61 0.616 0.208 8.23 7.98 7.70 + Edit-R1 [15] 50.97 20.53 0.597 0.229 8.34 7.88 7.77
+> + Edit-GRPO(Ours) 63.04 23.07 0.657 0.182 8.40 7.94 7.83
+
+Table 2: Quantitative comparison on ImgEdit [ 42 ]. Best scores are in bold , second-best in underlined .                                                                                                                                        
+
+> Model Preservation ImgEdit
+> UR ↑PSNR ↑SSIM ↑LPIPS ↓Add Adjust Extract Replace Remove Background Style Hybrid Action Overall
+> Instruct-Pix2Pix [4] ----2.45 1.83 1.44 2.01 1.50 1.44 3.55 1.20 1.46 1.88 OmniGen [37] ----3.47 3.04 1.71 2.94 2.43 3.21 4.19 2.24 3.38 2.96 UniWorld-V1 [16] ----3.82 3.64 2.27 3.47 3.24 2.99 4.21 2.96 2.74 3.26 FLUX.1 Kontext [Dev] 56.67 22.92 0.690 0.163 3.67 3.81 2.10 4.18 3.01 3.75 4.42 2.61 3.92 3.52 + Edit-R1 [15] 45.84 18.82 0.581 0.221 3.86 3.90 2.67 4.40 3.39 4.07 4.59 3.04 4.12 3.82 + Edit-GRPO(Ours) 59.65 23.25 0.706 0.161 3.68 3.88 2.47 4.31 3.33 3.85 4.35 2.78 3.92 3.65 Qwen-Image-Edit [2509] 47.70 19.68 0.567 0.220 4.31 4.37 3.33 4.60 4.42 4.26 4.81 3.61 4.27 4.26 + Edit-R1 [15] 38.18 17.91 0.528 0.256 4.34 4.21 3.86 4.66 4.48 4.20 4.88 3.42 4.47 4.34 + Edit-GRPO(Ours) 51.81 20.65 0.608 0.204 4.27 4.40 3.42 4.66 4.43 4.26 4.85 3.55 4.56 4.30
+
+5 Experiment 
+
+5.1 Setup Dataset. We adopt HumanEdit [ 1] as our training dataset where each sample consists of an input image and a natural language editing instruction describing the expected modification. The dataset covers diverse editing types, including object addition, removal, replacement, action modification, and counting-based edits, providing a broad range of editing scenarios. 
+
+Implementation Details. We use FLUX.1-Kontext [Dev] [ 13 ] and Qwen-Image-Edit [2509] [ 34 ] as our base models. For editing mask generation, we employ Qwen2.5-14B-Instruct [ 41 ] as the object prompt extractor and SAM3 [ 6] as the segmentation model. We employ Qwen3-VL-32B-Instruct [ 2]as the MLLM-based score evaluator. More implementation details are provided in the Appendix A. 
+
+Semantic Editing Evaluation. For quantitative semantic editing evaluation, we employ two repre-sentative benchmarks: GEdit-Bench [ 19 ], which evaluates image editing through diverse language instructions, and ImgEdit [42], which unifies multiple tasks into a common comparison framework. 
+
+Locality Preservation Evaluation. We introduce several locality-aware metrics to quantify locality preservation. First, we introduce Unchanged Ratio (UR) , defined as the proportion of pixels in non-edit regions whose absolute difference falls below a small threshold before and after editing. In addition, we further report PSNR, SSIM and LPIPS to measure low-level fidelity, structural consis-tency, and perceptual similarity, respectively. More evaluation details are provided in Appendix A.2. 
+
+5.2 Main Results 
+
+We evaluate Edit-GRPO on both semantic editing and locality preservation. Quantitative results are reported in Table 1 and Table 2. Qualitative comparisons are shown in Figure 4. We further visualize the smoothed reward trajectory during training in Figure 5. 
+
+Global reward optimization improves editing scores at the expense of locality preservation. 
+
+As shown in Table 1 and Table 2, the global optimization method Edit-R1 [ 15 ] improves semantic editing scores while substantially harming locality preservation. On GEdit-Bench, applying Edit-R1 to FLUX.1-Kontext [Dev] increases G_O to 6.84, but causes clear degradation in all preservation metrics (UR: 57.56% → 52.01%, PSNR: 22.36 → 19.53, SSIM: 0.639 → 0.589, LPIPS: 0.201 →
+
+7Replace the background with a sunny landscape, ensuring the        
+
+> person's appearance and posture remain unchanged, with
+> golden sunlight shining on trees and grass. Reshape the kitten using clay.
+> Add a young Chinese woman next to the character in the image,
+> with a bright smile and a pure, natural look, without altering the
+> original character.
+> FLUX -Kontext
+> [dev]
+> Alter the color of plane to pink. Remove the red dumbbell. Turn the rice into a hamburger and draw an avatar eating a
+> burger.
+> Change the color of horses to violet. Adjust the background to a garden. Remove the pizza.
+> Change the bird's action to flapping its wings and flying high. Add a face mask to the chef's face. Make the child pout.
+> Edit -GRPO -FLUX -
+> Kontext  [dev ]
+> FLUX -Kontext
+> [dev]
+> Edit -GRPO -FLUX -
+> Kontext  [dev ]
+> Edit -GRPO -Qwen -
+> Image -Edit [2509]
+> Qwen -Image -
+> Edit  [2509 ]
+> Edit -GRPO -Qwen -
+> Image -Edit [2509]
+> Qwen -Image -
+> Edit  [2509 ]
+
+Figure 4: Qualitative comparison of editing capabilities before and after policy optimization. Our approach demonstrates superior semantic editing and locality preservation over the base models. 0.236). Similar experimental results are observed for Qwen-Image-Edit [2509] and on the ImgEdit benchmark. These results indicate that global optimization tends to encourage aggressive edits, introducing substantial content modifications outside the target regions. 0.66 
+
+0.70 
+
+0.74 
+
+0 50 100 150 200 
+
+Step 
+
+0.46 
+
+0.50 
+
+0.54 
+
+0.58 
+
+Semantic Reward 
+
+Preservation Reward 
+
+> Reward
+
+Figure 5: Training reward curves on FLUX.1-Kontext [Dev]. 
+
+Edit-GRPO consistently improves locality preservation while retaining competitive editing performance. On GEdit-Bench (Table 1), Edit-GRPO increases UR from 57.56% to 60.30% for FLUX.1-Kontext [Dev] and from 56.69% to 63.04% for Qwen-Image-Edit [2509]. Mean-while, semantic editing performance is preserved or im-proved relative to the base models, with G_O increasing from 6.04 to 6.34 for FLUX.1-Kontext [Dev] and from 7.70 to 7.83 for Qwen-Image-Edit [2509]. Similar trends are observed on ImgEdit (Table 2), where Edit-GRPO improves all preservation metrics while maintaining com-petitive overall editing scores. These results demonstrate that Edit-GRPO effectively improves locality preservation while retaining competitive editing performance, mitigat-ing the preservation-editing trade-off in prior approaches. 8Table 3: Ablation on optimization objectives. Best scores are in bold , second-best in underlined.                                                  
+
+> Loss Design UR ↑PSNR ↑SSIM ↑LPIPS ↓G_SC ↑G_PQ ↑G_O ↑
+> FLUX.1-Kontext [Dev] 57.56 22.36 0.639 0.201 6.58 7.43 6.04 Semantic-Only 52.54 21.23 0.624 0.214 7.02 7.29 6.44
+> Preservation-Only 64.10 24.49 0.700 0.176 5.42 7.76 5.09 Combined Optimization 57.90 22.80 0.658 0.191 6.63 7.54 6.15 Decoupled Optimization 60.30 22.91 0.663 0.185 6.81 7.56 6.34
+
+Table 4: Ablation on semantic reward designs.                      
+
+> Reward Design G_SC ↑G_PQ ↑G_O ↑
+> FLUX.1-Kontext [Dev] 6.58 7.43 6.04 Preservation-Only 5.42 7.76 5.09 + CLIP reward 6.35 7.50 5.94 + MLLM (discrete) reward 6.67 7.39 6.14 + MLLM (logit) reward 6.81 7.56 6.34
+
+Table 5: Ablation on preservation reward designs.                             
+
+> Reward Design UR ↑PSNR ↑SSIM ↑LPIPS ↓
+> FLUX.1-Kontext [Dev] 57.56 22.36 0.639 0.201 Semantic-Only 52.54 21.23 0.624 0.214 +LPIPS reward 53.09 21.66 0.638 0.202 +SSIM reward 53.47 22.08 0.653 0.192 + L1 reward 60.30 22.91 0.663 0.185
+
+Qualitative results. As illustrated in Figure 4, Edit-GRPO produces edits that are more localized to the target regions and better preserve surrounding content compared to the base models, further demonstrating that our method can improve locality preservation while maintaining editing precision. 
+
+5.3 Ablation Study 
+
+In this section, we conduct a systematic analysis to evaluate the contribution of each component in Edit-GRPO. All experiments are trained on FLUX.1-Kontext [Dev] and evaluated on GEdit-Bench. 
+
+Decoupled Optimization vs. Global Optimization. We first study different objective designs. As shown in Table 3, Semantic-Only optimization achieves the highest editing score (G_O 6.44) but substantially degrades locality preservation (UR: 57.56% → 52.54%), while Preservation-Only optimization yields the best preservation metrics (UR 64.10%) but significantly hurts editing perfor-mance (G_O: 6.04 → 5.09). This phenomenon indicates a clear conflict between the two objectives when optimized alone. In contrast, our decoupled optimization improves preservation metrics (UR 60.30%) while maintaining a strong editing score (G_O 6.34), enabling simultaneous optimization of semantic editing and locality preservation. Notably, while mixing the two rewards into a scalar for global optimization yields slight improvements (G_O: 6.04 → 6.15, UR: 57.56% → 57.90%), decoupled optimization achieves stronger improvements (G_O: 6.34, UR: 60.30%), demonstrating the effectiveness of the proposed decoupled optimization framework. 
+
+Semantic Reward Design. We ablate different semantic reward designs in Table 4. Without semantic reward, the model suffers from a clear performance degradation in semantic following (G_O: 6.04 
+
+→ 5.09). Adding the CLIP-based directional reward improves G_O to 5.94 and incorporating the MLLM-based discrete reward further improves G_O to 6.14. Replacing the MLLM-based discrete reward with logit reward further improves G_O from 6.14 to 6.34, suggesting that the logit reward can provide more fine-grained signals for instruction-compliant editing. 
+
+Preservation Reward Design. We further ablate preservation reward design in Table 5. Without preservation reward, locality preservation degrades substantially compared to the base model (UR: 57.56% → 52.54%). Adding the LPIPS reward improves perceptual preservation, reducing LPIPS from 0.214 to 0.202. Further incorporating the SSIM reward strengthens structural consistency, achieving SSIM of 0.653. Finally, adding the pixel-level L1 reward achieves the largest improvement in locality preservation, increasing UR from 53.47% to 60.30%. These results suggest that perceptual, structural, and pixel-level rewards provide complementary preservation signals, with the L1 reward playing a crucial role in suppressing unintended modifications in non-edit regions. 
+
+6 Conclusion 
+
+In this paper, we present Edit-GRPO, a general locality-preserving policy optimization framework for image editing. By explicitly aligning optimization signals with the spatial structure of editing tasks, Edit-GRPO enables targeted improvements in editing quality while effectively preserving surrounding context. Extensive experiments demonstrate that region-decoupled optimization is a principled and effective solution to the long-standing locality challenge in image editing. We hope this work inspires future research on spatially aware optimization strategies for generative models. 9References 
+
+[1] Jinbin Bai, Wei Chow, Ling Yang, Xiangtai Li, Juncheng Li, Hanwang Zhang, and Shuicheng Yan. Humanedit: A high-quality human-rewarded dataset for instruction-based image editing. arXiv preprint arXiv:2412.04280 , 2024. [2] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhifang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, Mei Li, Kaixin Li, Zicheng Lin, Junyang Lin, Xuejing Liu, Jiawei Liu, Chenglong Liu, Yang Liu, Dayiheng Liu, Shixuan Liu, Dunjie Lu, Ruilin Luo, Chenxu Lv, Rui Men, Lingchen Meng, Xuancheng Ren, Xingzhang Ren, Sibo Song, Yuchong Sun, Jun Tang, Jianhong Tu, Jianqiang Wan, Peng Wang, Pengfei Wang, Qiuyue Wang, Yuxuan Wang, Tianbao Xie, Yiheng Xu, Haiyang Xu, Jin Xu, Zhibo Yang, Mingkun Yang, Jianxin Yang, An Yang, Bowen Yu, Fei Zhang, Hang Zhang, Xi Zhang, Bo Zheng, Humen Zhong, Jingren Zhou, Fan Zhou, Jing Zhou, Yuanzhi Zhu, and Ke Zhu. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. [3] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforcement learning. arXiv preprint arXiv:2305.13301 , 2023. [4] Tim Brooks, Aleksander Holynski, and Alexei A Efros. Instructpix2pix: Learning to follow image editing instructions. arXiv preprint arXiv:2211.09800 , 2022. [5] Qi Cai, Jingwen Chen, Yang Chen, Yehao Li, Fuchen Long, Yingwei Pan, Zhaofan Qiu, Yiheng Zhang, Feng Gao, Peihan Xu, Yimeng Wang, Kai Yu, Wenxuan Chen, Ziwei Feng, Zi-Qiang Gong, Jia-Wern Pan, Yingzhi Peng, Rui Tian, Siyu Wang, Bo Zhao, Ting Yao, and Tao Mei. Hidream-i1: A high-efficient image generative foundation model with sparse diffusion transformer. ArXiv , abs/2505.22705, 2025. URL 
+
+https://api.semanticscholar.org/CorpusID:278996234 .[6] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, Jie Lei, Tengyu Ma, Baishan Guo, Arpit Kalla, Markus Marks, Joseph Greer, Meng Wang, Peize Sun, Roman Rädle, Triantafyllos Afouras, Effrosyni Mavroudi, Katherine Xu, Tsung-Han Wu, Yu Zhou, Liliane Momeni, Rishi Hazra, Shuangrui Ding, Sagar Vaze, Francois Porcher, Feng Li, Siyuan Li, Aishwarya Kamath, Ho Kei Cheng, Piotr Dollár, Nikhila Ravi, Kate Saenko, Pengchuan Zhang, and Christoph Feichtenhofer. Sam 3: Segment anything with concepts, 2025. URL https://arxiv.org/abs/2511.16719 .[7] Chaorui Deng, Deyao Zhu, Kunchang Li, Chenhui Gou, Feng Li, Zeyu Wang, Shu Zhong, Weihao Yu, Xiao-Ping Nie, Ziang Song, Shi Guang, and Haoqi Fan. Emerging properties in unified multimodal pretraining. 
+
+ArXiv , abs/2505.14683, 2025. URL https://api.semanticscholar.org/CorpusID:278768720 .[8] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. [9] Ying Fan, Olivia Watkins, Yuqing Du, Hao Liu, Moonkyung Ryu, Craig Boutilier, P. Abbeel, Mohammad Ghavamzadeh, Kangwook Lee, and Kimin Lee. Dpok: Reinforcement learning for fine-tuning text-to-image diffusion models. ArXiv , abs/2305.16381, 2023. URL https://api.semanticscholar.org/ CorpusID:258947323 .[10] Yuan Gong, Xionghui Wang, Jie Wu, Shiyin Wang, Yitong Wang, and Xinglong Wu. Onereward: Unified mask-guided image generation via multi-task human preference learning. arXiv preprint arXiv:2508.21066 ,2025. [11] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. [12] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. [13] Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, et al. Flux. 1 kontext: Flow matching for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 , 2025. [14] Junzhe Li, Yutao Cui, Tao Huang, Yinping Ma, Chun Fan, Yiming Cheng, Miles Yang, Zhao Zhong, and Liefeng Bo. Mixgrpo: Unlocking flow-based grpo efficiency with mixed ode-sde. arXiv preprint arXiv:2507.21802 , 2025. 
+
+10 [15] Zongjian Li, Zheyuan Liu, Qihui Zhang, Bin Lin, Feize Wu, Shenghai Yuan, Zhiyuan Yan, Yang Ye, Wangbo Yu, Yuwei Niu, et al. Uniworld-v2: Reinforce image editing with diffusion negative-aware finetuning and mllm implicit feedback. arXiv preprint arXiv:2510.16888 , 2025. [16] Bin Lin, Zongjian Li, Xinhua Cheng, Yuwei Niu, Yang Ye, Xianyi He, Shenghai Yuan, Wangbo Yu, Shaodong Wang, Yunyang Ge, Yatian Pang, and Li Yuan. Uniworld-v1: High-resolution semantic encoders for unified visual understanding and generation. ArXiv , abs/2506.03147, 2025. URL https: //api.semanticscholar.org/CorpusID:279119654 .[17] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. [18] Jie Liu, Gongye Liu, Jiajun Liang, Yangguang Li, Jiaheng Liu, Xintao Wang, Pengfei Wan, Di Zhang, and Wanli Ouyang. Flow-grpo: Training flow matching models via online rl. arXiv preprint arXiv:2505.05470 ,2025. [19] Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chunrui Han, et al. Step1x-edit: A practical framework for general image editing. arXiv preprint arXiv:2504.17761 , 2025. [20] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. [21] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. [22] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. Sdedit: Guided image synthesis and editing with stochastic differential equations. In International Conference on Learning Representations , 2021. URL https://api.semanticscholar.org/CorpusID:245704504 .[23] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems , 35:27730–27744, 2022. [24] William S. Peebles and Saining Xie. Scalable diffusion models with transformers. 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 4172–4182, 2022. URL https://api. semanticscholar.org/CorpusID:254854389 .[25] Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. ArXiv , abs/2305.18290, 2023. URL https://api.semanticscholar.org/CorpusID:258959321 .[26] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. [27] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. ArXiv , abs/1707.06347, 2017. URL https://api.semanticscholar.org/ CorpusID:28695052 .[28] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. [29] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. ArXiv ,abs/2010.02502, 2020. URL https://api.semanticscholar.org/CorpusID:222140788 .[30] Yang Song, Jascha Narain Sohl-Dickstein, Diederik P. Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. ArXiv , abs/2011.13456, 2020. URL https://api.semanticscholar.org/CorpusID:227209335 .[31] Bram Wallace, Meihua Dang, Rafael Rafailov, Linqi Zhou, Aaron Lou, Senthil Purushwalkam, Stefano Ermon, Caiming Xiong, Shafiq R. Joty, and Nikhil Naik. Diffusion model alignment using direct preference optimization. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 8228–8238, 2023. URL https://api.semanticscholar.org/CorpusID:265352136 .[32] Qian Wang, Biao Zhang, Michael Birsak, and Peter Wonka. Instructedit: Improving automatic masks for diffusion-based image editing with user instructions. ArXiv , abs/2305.18047, 2023. URL https: //api.semanticscholar.org/CorpusID:258959425 .
+
+11 [33] Yibin Wang, Yuhang Zang, Hao Li, Cheng Jin, and Jiaqi Wang. Unified reward model for multimodal understanding and generation. arXiv preprint arXiv:2503.05236 , 2025. [34] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng-ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, et al. Qwen-image technical report. arXiv preprint arXiv:2508.02324 , 2025. [35] Jie Wu, Yu Gao, Zi-Nuo Ye, Ming Li, Liang Li, Hanzhong Guo, Jie Liu, Zeyue Xue, Xiaoxia Hou, Wei Liu, Yangyang Zeng, and Weilin Huang. Rewarddance: Reward scaling in visual generation. ArXiv ,abs/2509.08826, 2025. URL https://api.semanticscholar.org/CorpusID:281247213 .[36] Keming Wu, Sicong Jiang, Max Ku, Ping Nie, Minghao Liu, and Wenhu Chen. Editreward: A human-aligned reward model for instruction-guided image editing. arXiv preprint arXiv:2509.26346 , 2025. [37] Shitao Xiao, Yueze Wang, Junjie Zhou, Huaying Yuan, Xingrun Xing, Ruiran Yan, Chaofan Li, Shuting Wang, Tiejun Huang, and Zheng Liu. Omnigen: Unified image generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13294–13304, 2025. [38] Jiazheng Xu, Xiao Liu, Yuchen Wu, Yuxuan Tong, Qinkai Li, Ming Ding, Jie Tang, and Yuxiao Dong. Imagereward: Learning and evaluating human preferences for text-to-image generation. ArXiv ,abs/2304.05977, 2023. URL https://api.semanticscholar.org/CorpusID:258079316 .[39] Jiazheng Xu, Yu Huang, Jiale Cheng, Yuanming Yang, Jiajun Xu, Yuan Wang, Wenbo Duan, Shen Yang, Qunlin Jin, Shurun Li, et al. Visionreward: Fine-grained multi-dimensional human preference learning for image and video generation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pages 11269–11277, 2026. [40] Zeyue Xue, Jie Wu, Yu Gao, Fangyuan Kong, Lingting Zhu, Mengzhao Chen, Zhiheng Liu, Wei Liu, Qiushan Guo, Weilin Huang, et al. Dancegrpo: Unleashing grpo on visual generation. arXiv preprint arXiv:2505.07818 , 2025. [41] Qwen An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Guanting Dong, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxin Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yi-Chao Zhang, Yunyang Wan, Yuqi Liu, Zeyu Cui, Zhenru Zhang, Zihan Qiu, Shanghaoran Quan, and Zekun Wang. Qwen2.5 technical report. ArXiv ,abs/2412.15115, 2024. URL https://api.semanticscholar.org/CorpusID:274859421 .[42] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A unified image editing dataset and benchmark. ArXiv , abs/2505.20275, 2025. URL https: //api.semanticscholar.org/CorpusID:278911803 .[43] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A manually annotated dataset for instruction-guided image editing. ArXiv , abs/2306.10012, 2023. URL https://api.semanticscholar. org/CorpusID:259187796 .[44] Qihui Zhang, Munan Ning, Zheyuan Liu, Yanbo Wang, Jiayi Ye, Yue Huang, Shuo Yang, Xiao Chen, Yibing Song, and Li Yuan. Upme: An unsupervised peer review framework for multimodal large language model evaluation. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 9165–9174, 2025. URL https://api.semanticscholar.org/CorpusID:277113471 .[45] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 586–595, 2018. [46] Kaiwen Zheng, Huayu Chen, Haotian Ye, Haoxiang Wang, Qinsheng Zhang, Kai Jiang, Hang Su, Stefano Ermon, Jun Zhu, and Ming-Yu Liu. Diffusionnft: Online diffusion reinforcement with forward process. 
+
+arXiv preprint arXiv:2509.16117 , 2025. 
+
+12 A Implementation Details 
+
+A.1 Training Details 
+
+In our implementation, we use FLUX.1-Kontext [Dev] [ 13 ] and Qwen-Image-Edit [2509] [ 34 ] as our base models. For editing mask generation, we employ Qwen2.5-14B-Instruct [ 41 ] as the object prompt extractor and SAM3 [ 6] as the segmentation model. We employ Qwen3-VL-32B-Instruct [ 2]as the MLLM-based score evaluator for the edited images. All images are resized to a resolution of 
+
+512 × 512 during training. To improve memory efficiency, we adopt Fully Sharded Data Parallelism (FSDP) for the text encoder and enable gradient checkpointing when training Qwen-Image-Edit [2509]. All training experiments are conducted in bfloat16 mixed precision. We use the AdamW [ 21 ] optimizer with a learning rate of 3 × 10 −4, β1 = 0 .9, β2 = 0 .999 , and a weight decay of 10 −4. We apply a KL regularization term with coefficient β = 1 × 10 −4 to constrain the policy from deviating excessively from the reference model. We maintain an exponential moving average (EMA) of model parameters with decay 0.9. We adopt per-prompt normalization with global standard deviation across the group to reduce variance. For the reward function, we set the semantic reward weights to λvlm = 4 .0 and λclip = 1 .0, and the preservation reward weights to λdiff = 4 .0,
+
+λssim = 2 .0, and λlpips = 1 .0. The region-decoupled loss weights are set to λsem = 0 .5 for the semantic branch and λpres = 1 .0 for the preservation branch. 
+
+A.2 Evaluation Details 
+
+The evaluation experiments consists of two distinct components: semantic editing evaluation and locality preservation evaluation. For semantic editing evaluation, we strictly follow the GEdit-Bench [ 19 ] and the ImgEdit [ 42 ] benchmarks, using GPT4.1 for the semantic score evaluation. For locality preservation evaluation, we design an auto mask-based evaluation pipeline. Specifically, we first use Qwen2.5-14B-Instruct [ 41 ] to parse the editing instruction and extract structured descriptions of the target content. These descriptions and images are then fed into the SAM3 [ 6 ] model to generate high-resolution masks for the edit target. To acquire robust segmentation in diverse editing scenarios, we apply region decoupling to both the original image and the edited image, obtaining two editing masks accordingly. The final segmentation mask is computed as the union of the two masks. All the remaining areas are treated as the non-edit regions. Based on the region segmentation masks, we compute the following locality preservation metrics exclusively in non-edit regions: 
+
+Unchanged Ratio (UR). This metric measures the proportion of pixels in non-edit regions that remain nearly unchanged after editing. For each pixel p in non-edit regions ¯M , we compute the L1 distance across RGB channels between the original image I and the edited image ˆI. A pixel is considered unchanged if the distance falls below a threshold τ . In our implementation, we set τ = 20 
+
+in RGB pixel space. Formally, the UR metric is defined as: 
+
+UR = 
+
+n
+
+p ∈ ¯M : ∥I(p) − ˆI(p)∥1 < τ 
+
+o
+
+| ¯M | . (16) 
+
+PSNR. Peak Signal-to-Noise Ratio measures pixel-level reconstruction fidelity in non-edit regions. We compute the mean squared error (MSE) between the original image I and the edited image ˆI over pixels in the non-edit regions ¯M across all RGB channels: 
+
+PSNR = 10 log 10 
+
+ 255 2
+
+MSE 
+
+
+
+, (17) where MSE = 13| ¯M |
+
+P  
+
+> p∈¯M
+
+∥I(p) − ˆI(p)∥22.
+
+SSIM. Structural Similarity Index (SSIM) evaluates the structural consistency between the original and edited images. Following the standard protocol, we convert both images to grayscale and compute SSIM within the non-edit regions ¯M .
+
+LPIPS. Learned Perceptual Image Patch Similarity (LPIPS) measures perceptual similarity using deep visual features. Following the standard LPIPS implementation, images are first normalized to 13 Table 6: Hyperparameter settings for Edit-GRPO. We report the configurations for both FLUX.1-Kontext [Dev] and Qwen-Image-Edit [2509] backbones.                                                          
+
+> Hyperparameter FLUX.1-Kontext [Dev] Qwen-Image-Edit [2509]
+> Training Settings
+> Batch Size (per device) 11
+> Gradient Accumulation Steps 24 24
+> Learning Rate 3×10 −43×10 −4
+> Adam ( β1,β2)0.9,0.999 0.9,0.999
+> Weight Decay 1×10 −41×10 −4
+> EMA Decay 0.9-
+> Sampling Settings
+> Image Resolution 512 ×512 512 ×512
+> Sampling Inference Steps 610
+> Images Per Prompt 88
+> Noise Level 0.9 0.7
+> Reward Weights
+> MLLM Semantic Score 4.04.0
+> CLIP Directional Score 1.01.0
+> L1 Preservation Score 4.04.0
+> SSIM Preservation Score 2.02.0
+> LPIPS Preservation Score 1.01.0
+> Loss Coefficients
+> Semantic Loss 0.50.5
+> Preservation Loss 1.01.0
+> KL Divergence ( β)1×10 −41×10 −4
+
+the range [−1, 1] and then passed through a pretrained VGG-based network [ 45 ]. The perceptual distance is computed in non-edit regions ¯M , where lower LPIPS values indicate better perceptual preservation. In practice, when conducting locality preservation evaluation, we explicitly exclude samples whose task type belongs to style_change , text_change and tone_transfer as these editing categories involve global or diffuse transformations where SAM3 [ 6 ] cannot accurately segment a well-defined local edit region, making the mask-based locality evaluation unreliable. We further apply two filtering criteria to handle cases where the generated segmentation masks are inaccurate: (i) samples where the non-edit regions cover less than 5% of the image are discarded, as they likely represent near-global edits for which mask-based evaluation is not meaningful; (ii) samples where the edit regions cover less than 1% of the image are also discarded, as this typically indicates that SAM3 fails to localize the edited object and generate a meaningful segmentation mask. 
+
+A.3 Hyperparameters and Computation Resources 
+
+We report the key hyperparameters of Edit-GRPO in Table 6. All training and evaluation experiments are conducted on a single machine with 8 NVIDIA H20 96 GB GPUs. 
+
+B Prompt Template 
+
+We provide the prompt template used for MLLM-based semantic score evaluation in Figure 6. 
+
+C Limitations 
+
+Despite the improvements achieved by our method, several limitations remain to be addressed. First, the effectiveness of our Edit-GRPO relies on the quality of the segmentation masks used to separate edit and non-edit areas. However, in practice, the quality of automatically generated masks can vary 14 Template for MLLM-based Semantic Score Evaluation: 
+
+> You are an image editing evaluator. Evaluate how well the edited image follows the instruction.
+> Original Image : [First image]
+> Edited Image : [Second image]
+> Instruction : {instruction} You need to rate the editing result from 0 to 5 based on the accuracy and quality of the edit.
+> Scoring Rules:
+> 0: The wrong object was edited, or the edit completely fails to meet the requirements. 5: The correct object was edited, the requirements were met, and the visual result is high quality.
+> Response Format:
+> Directly output the score number (0–5).
+
+Figure 6: Prompt template used for MLLM-based semantic score evaluation. depending on the complexity of the editing scenario. Imperfect masks may lead to inaccurate region assignments, which can affect the stability and effectiveness of the optimization process. Second, although our region-decoupled optimization framework can alleviate the conflict between semantic editing and locality preservation objectives, this conflict is not eliminated completely. Future work could explore more advanced collaborative optimization strategies to better balance editing strength and background preservation, further improving the robustness of instruction-based image editing systems. 
+
+D Societal Impacts 
+
+D.1 Positive Impacts 
+
+The proposed Edit-GRPO framework improves the controllability and reliability of instruction-based image editing by explicitly optimizing both semantic editing and locality preservation without requir-ing additional manual annotations. By decoupling editing and preservation objectives during policy optimization, our method encourages models to perform targeted modifications while maintaining the surrounding visual context. This improvement can benefit a range of applications such as digital content creation, photo retouching, graphic design, and e-commerce visualization, where localized edits are often required while the rest of the image should remain unchanged. Beyond professional applications, improved locality-aware editing can also make visual editing tools more accessible to non-expert users. With natural language instructions, users can perform targeted edits without extensive experience in professional editing software, potentially lowering the barrier to creative workflows and improving productivity. In addition, explicitly optimizing preservation objectives promotes more predictable editing behavior, which helps reduce unintended visual artifacts and improve user trust in AI-assisted editing systems. 
+
+D.2 Negative Impacts 
+
+Despite these benefits, the proposed method may also introduce potential societal risks. More precise and realistic image editing capabilities could be misused to manipulate visual content in subtle ways while preserving most of the original scene. Such edits may become harder to detect and could facilitate the creation of misleading or deceptive visual media, including manipulated photographs or visual disinformation. Furthermore, more precise and realistic image editing may also be used to modify personal or sensitive images, raising privacy and ethical concerns. 
+
+E Declaration of LLM usage 
+
+In this work, LLMs were employed for language-related tasks, including grammar correction, spelling checks, and word choice refinement, to improve the writing fluency of the paper. All scientific content, analyses, and conclusions were conceived, validated, and interpreted by the authors. 15 Change the background to a cozy library with bookshelves . Replace the background with a cityscape view. Change the background to a summer fair in town. 
+
+Change the color of the dress on the left child to pink. Change the color of the gloves to blue. Change the color of couch to yellow. 
+
+Transform the tablet material into wood. Craft the sweater from soft alpaca wool. Change the couch material from fabric to leather. 
+
+Change the action from pointing to waving. Add a book -reading action to the child sitting on the floor 
+
+without changing the original setting. Make the person in the image smile. 
+
+Cut the hair into a loose ponytail with some strands framing the 
+
+face. Clean -shave the face by removing all facial hair Make him grow a beard .
+
+Add a small wooden picnic basket next to the blanket. Add a briefcase next to the person on the left. Add a microphone stand next to the man playing the keyboard. 
+
+Remove the person from the bar area. 
+
+Dress the person in the image in a traditional Chinese qipao. Replace the tomato with an apple. Replace the necklace with a silver chain. 
+
+Remove the laptop. Remove the red envelopes from the image. Figure 7: The visualization results of Edit-GRPO-FLUX-Kontext [dev]. 
+
+F More Visualization Results 
+
+We present more visualization results of Edit-GRPO-FLUX-Kontext [dev] and Edit-GRPO-Qwen-Image-Edit [2509] in Figure 7 and Figure 8. 16 Change the background to a busy urban street with tall buildings. Adjust the background to a serene garden with blooming flowers . Change the background to an outdoor park scene. 
+
+Alter the color of the dress to light blue. Change the color of the Christmas tree decorations to blue. Change the color of the spice powder to green. 
+
+Transform the shoe material into leather. Change the book's material to glass. Change the statue's material to marble. 
+
+Make the person in the image run. Dye his hair black. 
+
+Add a small bouquet of flowers on the table to the left of the girl. Add a pair of headphones around her neck. Add a small campfire next to the dog. 
+
+Add a picnic blanket on the grass near the woman. 
+
+Make his nose higher. 
+
+Change the person's hairstyle to have short, curly hair. Enhance the woman's eyes. 
+
+Remove the freediver from the image. Remove the person at the bottom of the climbing wall . Remove the sunglasses. 
+
+Change the woman on the left's hairstyle to a short, curly bob. Replace the drone with a bird. Replace the motorcycle with a bicycle. Figure 8: The visualization results of Edit-GRPO-Qwen-Image-Edit [2509]. 17

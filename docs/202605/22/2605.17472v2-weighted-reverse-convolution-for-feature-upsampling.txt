@@ -1,0 +1,757 @@
+Title: Weighted Reverse Convolution for Feature Upsampling
+
+URL Source: https://arxiv.org/pdf/2605.17472v2
+
+Published Time: Thu, 21 May 2026 00:38:49 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> VISUAL COMPUTING LAB
+> POLYU VCLAB •PREPRINT 2026
+
+# Weighted Reverse Convolution for Feature Upsampling 
+
+Wentong Li ★1 Zhiyuan Qi ★1,2 Zichen Zhao 1 Kai Zhang 3 Lei Zhang †2 
+
+> 1
+
+Nanjing University of Aeronautics and Astronautics 2 The Hong Kong Polytechnic University 3 Nanjing University     
+
+> ★Equal contribution (liwentong95@gmail.com,zhi-yuan.qi@polyu.edu.hk). †Corresponding author (cslzhang@comp.polyu.edu.hk).
+> arXiv:2026.17472 Code
+
+Abstract. Pre-trained vision foundation models (VFMs) provide strong semantic representations, yet their patch-level features are inherently coarse, limiting their effectiveness on tasks requiring fine-grained localization, dense prediction, and point-wise correspondence. In this work, we revisit feature upsampling for VFMs from the perspective of inverse problem and propose Weighted Reverse Convolution (WRC), a spatially adaptive inverse operator for densifying high-level visual descriptors. Specifically, we formulate feature upsampling as a weighted Tikhonov-regularized least-squares problem, where spatially varying weights modulate both data fidelity and prior strength at each spatial location. This allows WRC to adapt the reconstruction to spatially varying feature characteristics, thereby preserving critical structures while mitigating over-smoothing. Moreover, WRC retains an efficient, fully differentiable closed-form FFT solution, making it a practical drop-in upsampling operator. Integrated into a lightweight self-supervised densification framework, WRC consistently improves dense feature quality across various downstream benchmarks, including segmentation, depth estimation, video object segmentation, object discovery, and keypoint correspondence, while maintaining high computational efficiency. 
+
+# 1 Introduction 
+
+Pre-trained vision foundation models (VFMs) have emerged as the primary source of transferable visual representations in computer vision [ 1 –5 ]. Models such as DINO [ 6 –8 ] and CLIP [ 9 , 10 ], trained on a large scale, provide rich semantic or language-aligned features generalizable across various downstream tasks. However, most VFMs tokenize an image into a coarse patch grid ( e.g. , with stride 14/16), resulting in spatially low-resolution feature maps. This coarseness becomes a practical bottleneck for tasks that require precise localization, fine spatial delineation, and reliable point-wise correspondence. A straightforward solution is to increase the token density, either by feeding higher-resolution inputs or by reducing the patch size. However, both options are expensive: self-attention scales quadratically with token count, and architectural changes often require large-scale re-training or substantial fine-tuning. Moreover, such approaches may introduce artifacts into feature maps, ultimately degrading performance [11, 12]. These limitations motivate a promising alternative solution: feature upsampling for pre-trained VFMs, where the backbone is frozen and a lightweight module is employed to reconstruct higher-resolution features that are better suited to downstream tasks. An effective upsampler should satisfy several key requirements: ( i) preserve geometric fidelity, so that boundaries and point-wise correspondences can be accurately represented; ( ii )maintain semantic-space fidelity, so that downstream heads can be transferred without substantial re-adaptation; (iii ) remain efficient and plug-and-play, so that it can be seamless integrated with different VFMs. Recent approaches have explored different routes, including image-guided decoders [ 13 , 14 ], implicit coordinate-based prediction [ 13 ], and cross-attention interpolation [ 15 , 16 ]. Although these methods achieve strong performance, they typically face a trade-off between fine spatial detail recovery and inference efficiency. To address this challenge, we explore a novel perspective by treating feature upsampling as an inverse problem . Instead of learning an unconstrained decoder, we seek to restore high-resolution feature maps from        
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 1 / 18
+> arXiv:2605.17472v2 [cs.CV] 20 May 2026 (a) 050 100 150
+> Inference Time (ms)
+> Ours
+> LiFT
+> AnyUp
+> JAFAR
+> LoftUp
+> FeatUp
+> 9.45
+> 6.79
+> 61.55
+> 59.35
+> 134.73
+> 65.13 (b)
+
+Figure 1. Quantitative Evaluation and Efficiency Comparison. (a) Average performance on linear probing semantic segmentation (mIoU), linear probing depth estimation (RMSE), video object segmentation ( J &F mean), object discovery (CorLoc), and keypoint correspondence (PCK). We compare our method with recent feature upsampling approaches, including AnyUp [ 15 ], JAFAR [ 16 ], LoftUp [ 14 ], FeatUp [ 13 ], and LiFT [ 17 ]. (b) Wall-clock inference time (ms) measured under the same hardware and input setting. 
+
+their observed low-resolution counterparts. Reverse convolution [ 18 ] provides a principled foundation for this formulation by casting low-level image recovery as a regularized inverse problem with an efficient closed-form solution computable via FF. This perspective is also well aligned with the structure of ViT-based VFMs, whose self-attention maps often exhibit approximately block-circulant patterns, suggesting a convolution-like and Fourier-friendly structure [ 19 ]. However, directly applying such image restoration-oriented inverses to VFM features is suboptimal. Dense transformer features in VFMs are different from the restoration features in natural images: they encode high-level semantics structures across space and channels, and uniform least-squares fidelity with a global regularizer tends to over-smooth discriminative cues that downstream tasks rely on. In this work, we propose Weighted Reverse Convolution (WRC), a spatially adaptive inverse operator tailored for feature upsampling in pre-trained VFMs. In contrast to standard reverse convolution, WRC formulates feature upsampling as a spatially weighted, Tikhonov-regularized inverse problem, where data fidelity and prior regularization are adaptively modulated at each location. Specifically, we introduce positive, input-adaptive per-location weights into both the reconstruction and regularization terms, allowing the operator to adjust the strength of data fitting and prior enforcement. This design helps preserve correspondence-critical structures and mitigate over-smoothing in ambiguous regions. Moreover, we drive an efficient closed-form FFT solution, making WRC practical as a drop-in upsampling operator. We integrate WRC into a lightweight densification framework for frozen VFM features. A lightweight CNN enriches low-resolution descriptors with image details, and WRC reconstructs denser features with improved spatial precision and semantic stability, guided by global reconstruction, local crop reconstruction, and self-consistency losses. As shown in Fig. 1, extensive experiments across diverse downstream benchmarks, including linear probing segmentation and depth estimation, video object segmentation, unsupervised object discovery, and keypoint correspondence, demonstrate the consistent improvement of WRC over recent feature upsampling approaches while maintaining high computational efficiency. Our contributions are summarized as follows: 
+
+• We revisit feature upsampling for VFMs from an inverse-problem perspective, providing a principled formulation to recover dense high-level representations from coarse features. 
+
+• We propose Weighted Reverse Convolution (WRC), a spatially adaptive inverse upsampler that modulates both data fidelity and Tikhonov regularization with input-adaptive weights, enabling finer and more stable descriptors reconstruction. 
+
+• We derive an efficient closed-form FFT solution for WRC, making it practical as a fully differentiable drop-in upsampling operator within lightweight densification frameworks. 
+
+• We demonstrate that WRC consistently improves dense feature quality across diverse downstream tasks while maintaining high computational efficiency.    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 2 / 18
+
+# 2 Related Work 
+
+# 2.1 Feature Upsampling 
+
+Feature upsampling for VFMs aims to increase the spatial resolution of intermediate representations to better support dense prediction and correspondence, without incurring the quadratic cost by increasing the token count of pre-trained ViT models [ 19 , 20 ]. An effective upsampler should not only recover fine spatial detail, but also preserve the semantics and distribution of the original feature space. General feature upsampling methods [ 21 – 23 ] directly operate on the low-resolution feature using interpolation [ 24 ] or learnable upsampling blocks such as transposed&resized convolution [ 25 ]. These approaches are efficient and modular, but they often struggle to recover sharp boundaries and correspondence-critical details. Recent work increasingly conditions upsampling on the high-resolution input image to inject fine-grained structure. LiFT [ 17 ] employs a transposed decoder to densify frozen ViT features. FeatUp [ 26 ] combines an image-guided operator based on Joint Bilateral Upsampling (JBU), and employs an implicit formulation to parameterize high-resolution features. LoftUp [ 14 ]and JAFAR [ 16 ] instead pursue coordinate-/attention-based reconstruction to mitigate the cumulative artifacts from multi-stage upsampling. AnyUp [ 15 ] argues that upsampled features should remain in the same space as the original features, and formalizes this route as feature space preservation. 
+
+# 2.2 Deconvolution 
+
+In deep networks, deconvolution often refers to transposed convolution [ 25 ], which is not the true inverse of convolution; it can be interpreted as inserting zeros between feature-map elements, followed by a standard convolution. In classical signal and image processing, deconvolution refers to inverting a known convolutional operation to recover a sharp signal. Wiener deconvolution [ 27 ] provides a canonical closed-form approach based on inverse filtering with regularization when the blur kernel is known, while multi-step solutions such as deep unfolding [ 28 , 29 ], unroll iterative optimization into trainable networks. However, these methods are typically designed for natural images and cannot be directly translated to the high-dimensional semantic feature maps produced by vision foundation models. Recently, reverse convolution [ 18 ] bridges these perspectives by formulating inversion as a regularized least-squares problem, enabling a closed-form operator that enforces data consistency. Its FFT-based solution for inverting depthwise convolution provides an efficient alternative to heuristic upsampling blocks and provides a natural foundation for our weighted reverse convolution design. 
+
+# 3 Preliminary 
+
+# 3.1 Reverse Convolution 
+
+Transposed Convolution is a standard upsampling operator in encoder-decoder architectures [ 25 ]. Consider a single-channel feature map X ∈ R𝐻 ×𝑊 and a convolution kernel K ∈ R𝑘 𝐻 ×𝑘 𝑊 , where 𝐻 and 𝑊 denote the spatial height and width of the feature map, and 𝑘 𝐻 and 𝑘 𝑊 denote the kernel size. A corresponding strided convolution can be formulated as: 
+
+Y = (X ⊗ K) ↓ 𝑠 , (1) where ⊗ denotes the convolution operator, ↓𝑠 denotes downsampling with stride 𝑠 . The output feature map is Y ∈ R𝐻 ′ ×𝑊 ′
+
+, with 𝐻 ′ and 𝑊 ′ determined by the kernel size, stride and padding. Transposed convolution aims to recover an upsampled feature bX from low-resolution Y. This is an ill-posed problem that serves as a learnable heuristic upsampling rather than a mathematically exact inverse of Eq. (1). 
+
+Reverse Convolution [ 18 ] explicitly models feature upsampling as a regularized inverse problem. It explicitly recovers a high-resolution feature map X by minimizing the discrepancy between the observed output Y and the forward model (X ⊗ K) ↓ 𝑠 , defining the optimization problem as: 
+
+X∗ = arg min 
+
+> X
+
+∥Y − ( X ⊗ K) ↓ 𝑠 ∥2 
+
+> 𝐹
+
++ 𝜆 ∥X − X0 ∥2 
+
+> 𝐹
+
+, (2) where 𝜆 > 0 controls the regularization strength. X0 is an initial estimate of X such as a zero map or an interpolation-based upsampling of Y. ∥·∥ 𝐹 denotes the Frobenius norm.         
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 3 / 18 Figure 2. Per-layer attention maps averaged over all heads in DINOv2 [ 30 ]. The self-attention modules in Vision Transformer naturally exhibit near BCCB patterns. Additional visualizations for DINOv3 [ 8] are provided in Appendix A ,where similar patterns can be observed.
+
+Under the assumption of circular boundary conditions, reverse convolution drives a closed-form solution to Eq. (2): 
+
+X∗ = F −1
+
+ 1
+
+𝜆 
+
+
+
+L − F K ⊙𝑠 
+
+(F K ⊙ L) ⇓ 𝑠 
+
+|F K |2 ⇓𝑠 +𝜆 
+
+ 
+
+, (3) where L = FKFY↑𝑠 + 𝜆 FX0 . Here, F (·) denotes the fast Fourier transform (FFT) and F −1 (·) denotes its inverse; 
+
+FK is the complex conjugate of FK; ⊙𝑠 is element-wise multiplication applied to 𝑠 × 𝑠 distinct blocks; ⇓𝑠 is the distinct block downsampling operator that averages each 𝑠 × 𝑠 block; ↑𝑠 is the standard 𝑠 -fold upsampling operator that inserts zeros. This operator can serve as a modular block within deep neural networks, enhancing their capacity to reconstruct complex spatial structures, which has achieved strong performance on image restoration tasks [18]. 
+
+# 3.2 BCCB Patterns in Attention 
+
+Recent evidence [ 19 ] shows that self-attention in Vision Transformers often learns near Block Circulant with Circulant Blocks (BCCB) patterns without explicitly imposing such constraints. Intuitively, this means that the attention distribution of one query patch is approximately a shifted version of the distributions of nearby query patches, resembling the translation-sharing behavior of convolution. We observe a similar pattern in DINOv2 [ 30 ], as shown in Fig. 2. By visualizing its patch-to-patch attention maps, we find that many heads exhibit clear block-wise circular structures and can be approximated by their nearest BCCB matrices. This provides structural motivation for applying reverse convolution to VFM ( e.g. , DINOv2 [ 30 ], DINOv3 [ 8 ]) features: the backbone attention itself behaves in a convolution-like, Fourier-friendly manner. At the same time, the residual between the raw attention and its BCCB approximation suggests that this structure is spatially varying, which further motivates the weighted formulation in our WRC. 
+
+# 4 Method 
+
+We present a feature upsampling method tailored to ViT-based VMFs, aiming to recover high-resolution, dense ViT descriptors that are spatially precise for downstream tasks that require fine-grained spatial understanding, while keeping the pre-trained backbone frozen. We build upon a lightweight densification framework, and introduce a novel feature upsampler, Weighted Reverse Convolution (WRC) . In the following section, we first ( i) introduce the overall framework, then ( ii ) formulate WRC as a weighted, Tikhonov-regularized inverse problem and provide an efficient closed-form solution, and finally ( iii ) describe the training objectives that combine global and local self-supervision.      
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 4 / 18 WRC
+> Upsampler
+> Pre -trained VFM
+> (e.g., DINOv2)
+> CNN
+> crop
+> downsample
+> Pre -trained VFM
+> (e.g., DINOv2)
+
+Figure 3. Overview of Architecture. Given a high-resolution image, a frozen VFM extracts supervision features, while a lightweight CNN encodes image details to fuse with the low-resolution VFM features. The fused representation is then upsampled by our WRC upsampler to produce dense descriptors. Training is self-supervised via global reconstruction 
+
+L𝑔𝑙𝑜𝑏𝑎𝑙 and local crop reconstruction L𝑙𝑜𝑐𝑎𝑙 .
+
+# 4.1 Framework Overview 
+
+As illustrated in Fig. 3, given a high-resolution RGB image Iℎ𝑖 ∈ R𝑀 × 𝑁 ×3, a pre-trained VFM encoder 𝜙 (·) 
+
+is used to produce a feature tensor at a lower spatial resolution. A feature upsampling operator G lifts these low-resolution features to a higher-resolution feature map to better support dense, pixel-wise or point-wise reasoning tasks. Let I𝑙𝑜 denote a 2 × downsampled version of Iℎ𝑖 . Specifically, a frozen pre-trained backbone 
+
+𝜙 (·) (e.g. , DINOv2) extracts features from both Iℎ𝑖 and I𝑙𝑜 . The framework encodes image details from I𝑙𝑜 
+
+using downsampling CNN and fuses them with the backbone feature z𝑙𝑜 to form a joint representation. This fused feature is subsequently passed to the upsampling operation. Our WRC upsampler is designed to better preserve the discriminative structure of high-level descriptors while recovering spatial details. The entire model is trained in a self-supervised manner by matching the predicted feature ˆzℎ𝑖 to the teacher feature zℎ𝑖 extracted from Iℎ𝑖 using global and local reconstruction losses. 
+
+# 4.2 Weighted Reverse Convolution as Upsampler 
+
+4.2.1 Problem Formulation 
+
+A key limitation of directly applying restoration-style inverse objectives, e.g. , uniform MSE to high-level descriptors, is that they implicitly treat all spatial locations and channels as equally important. In contrast, dense ViT descriptors are spatial heterogeneous: boundary regions, thin structures, and ambiguous textures contribute disproportionately to downstream dense prediction and correspondence performance. Enforcing uniform fidelity across all positions can bias the solution toward over-smoothed features, diminishing the discriminative cues that high-level downstream tasks rely on. To address this, we introduce a weighted data-fidelity term and formulate feature restoration as a weighted least-square optimization problem to adaptively preserve the discriminative structure of the feature map: 
+
+X∗ = arg min 
+
+> X
+
+∥W (Y − ( X ⊗ K) ↓ 𝑠 )∥ 2 
+
+> 𝐹
+
+, (4) where W ∈ R 𝑀    
+
+> 2×𝑁
+> 2
+
+contains positive weights. W modulates the contribution of each spatial location to the inversion, allowing the model to down-weight uncertain regions while emphasizing correspondence-critical structures. 
+
+4.2.2 Semantic Prior via Tikhonov Regularization 
+
+Converse2D [ 18 ] stabilizes inversion with an isotropic ℓ2 penalty, which can be overly restrictive for high-level semantic descriptors: it penalizes all feature magnitudes uniformly and could oversmooth spatial details that are important for semantic delineation. We generalize the regularization to a Tikhonov form [31]: 
+
+∥𝚪 (X − X0)∥ 2 
+
+> 𝐹
+
+, (5) where 𝚪 is a data-driven adaptive matrix for linear operator and X0 is a prior estimate of X. When 𝚪 = √𝜆 I, this reduces to the standard ℓ2 regularization. This generalization allows the inversion to dynamically reconstruct the spatial semantics with reference to the prior X0.   
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 5 / 18
+
+By jointly introducing a weighted data-fidelity term and a weighted Tikhonov prior, we arrive at the WRC objective: 
+
+X∗ = arg min 
+
+> X
+
+∥W (Y − ( X ⊗ K) ↓ 𝑠 )∥ 2 
+
+> 𝐹
+
++ ∥ W𝜆 (X − X0)∥ 2 
+
+> 𝐹
+
+, (6) where W𝜆 ∈ R𝑀 × 𝑁 also contains positive weights. 
+
+4.2.3 Closed-form Solution 
+
+Following [ 32 ], we vectorize X and Y under the assumption of circular boundary conditions to simplify the problem solving process. By solving the vectorized optimization problem and reverting the solution to its matrix representation, we derive the closed-form solution for X:
+
+X∗ = F −1
+
+"
+
+1
+
+|W𝜆 |2
+
+
+
+L′ − F K ⊙𝑠 Q
+
+#
+
+, Q =
+
+|W|2 ⊙
+
+ FK ⊙ L′ ⇓𝑠 
+
+
+
+|W|2 ⊙
+
+
+
+|F K |2 ⇓𝑠 
+
+
+
++ | W𝜆 |2 ⇓𝑠 
+
+, (7) 
+
+where L′ = FKF( | W|2 ⊙Y)↑ 𝑠 + | W𝜆 |2 ⊙ F X0 . This formulation is a strict generalization of Converse2D. In particular, when W = I and W𝜆 = √𝜆 I, Eq. (7) reduces to the Converse2D solution (Eq. (3) ). When 𝑠 = 1, it further simplifies to the standard inverse filtering form: 
+
+X∗ = F −1 FK ⊙ F Y + 𝜆 FX0
+
+|F K |2 + 𝜆 
+
+!
+
+. (8) Overall, our WRC provides a more general and flexible inverse formulation by allowing spatially varying fidelity and regularization weights, while retaining an efficient FFT-based closed-form solution. The detailed derivation process can be found in Appendix B .
+
+4.2.4 Implementation of WRC 
+
+Weights Initialization and Parameterization. WRC introduces two weights W and W𝜆 , which govern the data-fidelity and regularization terms, respectively. Inspired by dynamic parameterization [ 33 ], we generate both weights dynamically using lightweight convolutional predictors conditioned on the input features, rather than learning a single global weight matrix. This design makes the weights input-adaptive and improves robustness across diverse inputs. To ensure positivity and numerical stability, we apply monotone re-parameterizations. Empirically, 𝑙𝑜𝑔 1𝑝 provides strong numerical stability and performance in our setting. A PyTorch-like implementation is provided in Algorithm 1 of Appendix C .
+
+CUDA Implementation. To make WRC more practical as a drop-in upsampling operator, we implement its closed-form solver efficiently on GPU. The computation is dominated by batched FFTs and element-wise complex arithmetic, which map well to CUDA primitives. The entire operator is differentiable and supports end-to-end training via autograd, while maintaining low overhead compared to previous upsampling blocks. 
+
+# 4.3 Training Objective 
+
+We train the upsampler by integrating global self-supervision and local self-supervision, which together provide coarse-to-fine constraints. 
+
+Global Self-supervision. We use the pre-trained VFM encoder 𝜙 to extract z𝑙𝑜 = 𝜙 (I 𝑙𝑜 ) from the 2×
+
+downsampled image I𝑙𝑜 and predict ˆzℎ𝑖 = G( z𝑙𝑜 , I𝑙𝑜 ) by upsampler G. We then align ˆzℎ𝑖 with the teacher feature zℎ𝑖 = 𝜙 (I ℎ𝑖 ) using cosine similarity and an ℓ2 reconstruction term: 
+
+L𝑔𝑙𝑜𝑏𝑎𝑙 = 1 − cos (zℎ𝑖 , ˆzℎ𝑖 ) + ∥ zℎ𝑖 − ˆzℎ𝑖 ∥2 , (9) where cos (· , ·) is computed by averaging the cosine similarity over spatial locations. 
+
+Local Self-supervision. To enforce fine-grained, spatially consistent reconstruction, we randomly crop a high-resolution view I𝑐 ∈ R𝑀 ′ × 𝑁 ′ ×3 from Iℎ𝑖 and construct a matched low-resolution view I′ ∈ R𝑀 ′ × 𝑁 ′ ×3 by appropriately downsampling Iℎ𝑖 . Let z𝑐 = 𝜙 (I 𝑐 ) and z′ = 𝜙 (I ′) be the corresponding features. We upsample 
+
+z′ to obtain z′′ = G( z′, I′) and align the crop feature z𝑐 with the corresponding region ˜z in z′′ :
+
+L𝑙𝑜𝑐𝑎𝑙 = 1 − cos (z𝑐 , ˜z) + ∥ z𝑐 − ˜z∥2 . (10) Following AnyUp [ 15 ], we further include a self-consistency regularizer L𝑠𝑒𝑙 𝑓 to improve robustness of the upsampling process using the same cosine and ℓ2 terms. Finally, the total training objective is: 
+
+L = L𝑔𝑙𝑜𝑏𝑎𝑙 + L 𝑙𝑜𝑐𝑎𝑙 + L 𝑠𝑒𝑙 𝑓 . (11)    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 6 / 18
+
+Table 1. Performance comparisons on linear probing semantic segmentation on Cityscapes, video object segmentation on DAVIS, and unsupervised object discovery on COCO20K. For semantic segmentation, we report results with default upsampling of each method, while DAVIS and COCO20K are evaluated across different input resolutions using 2×
+
+upsampling for all methods because evaluating JAFAR [ 16 ] and AnyUP [ 15 ] at higher upsampling ratios causes OOM 
+
+errors on an NVIDIA A100 (80G) GPU for both DAVIS and COCO20K. 
+
+Method Semantic Segmentation Video Object Segmentation Object Discovery 
+
+Cityscapes J &F Mean ( ↑) CorLoc ( ↑)mIoU ( ↑) Acc ( ↑) 448 504 560 672 784 448 504 560 672 784 DINOv2 [30] – – 54.16 58.29 61.12 65.03 67.53 39.74 40.94 41.64 43.21 43.99 Bilinear 59.74 92.55 53.13 55.67 59.37 62.52 64.99 36.08 37.42 38.48 40.35 41.50 FeatUp [13] 60.41 93.16 – – – – – – – – – –LoftUp [14] 61.94 93.51 – – – – – – – – – –LiFT [17] 60.08 92.90 59.25 63.06 65.76 68.86 69.78 39.46 40.62 41.32 42.47 43.07 JAFAR [16] 61.87 93.51 60.37 63.06 64.01 63.59 65.05 25.20 25.34 25.48 25.91 26.33 AnyUp [15] 61.45 93.44 65.55 67.17 69.03 71.21 72.44 26.59 27.15 27.86 28.89 30.23 Ours 62.02 93.51 66.09 69.28 71.35 73.57 74.39 41.34 42.52 43.47 44.87 45.65 
+
+# 5 Experiments 
+
+We evaluate our method against FeatUp [ 13 ], LiFT [ 17 ], LoftUp [ 14 ], JAFAR [ 16 ] and AnyUp [ 15 ] across a diverse set of downstream tasks, including linear probing semantic segmentation, video object segmentation, object discovery, and keypoint correspondence. Additional results are provided in the Appendix .
+
+# 5.1 Experimental Settings 
+
+Following prior work [ 15 – 17 ], we train our model on ImageNet dataset for 100K steps using the AdamW optimizer [ 34 ]. Unless otherwise specified, we use a batch size of 4 and a learning rate of 1e-3. For the local part of self-supervised training paradigm, we randomly crop 4 local images for each training image. All experiments are conducted on a single NVIDIA A100 GPU. By default, we adopt DINOv2-ViT-S/14 [ 7] as the frozen pre-trained VFM. 
+
+# 5.2 Main Results 
+
+Linear Probing Semantic Segmentation. Following the linear probe scheme adopted in prior works [ 15 , 16 ]for semantic segmentation, we train a linear projection head to predict the semantic class labels. Before the head, features extracted by the pre-trained encoder are upsampled to the input resolution by the upsampler. As shown in Table 1, our framework achieves competitive results with a lower upsampling factor ( 2×) on these datasets. Comparing with 14 × upsampling methods (JAFAR [ 16 ], and AnyUp [ 15 ]), our method achieves superior performance. 
+
+Table 2. Comparison results on the keypoint cor-respondence task on SPair-71k [ 35 ], we report PCK@0.01 metric at multiple input resolutions.                                    
+
+> Method 56 112 224 448 560 DINOv2 [30] 0.03 0.15 0.96 2.94 4.52 Bilinear 0.01 0.37 0.98 3.52 4.34 LiFT [17] 0.03 0.50 1.46 4.32 5.60 JAFAR [16] 0.02 0.43 1.30 2.58 2.64 AnyUp [15] 0.01 0.42 1.28 4.05 4.50 Ours 0.07 0.47 1.87 5.21 6.51
+
+Video Object Segmentation. We validate our model on video object segmentation, where the ground-truth mask of the first frame is propagated to subsequent frames for mask generation via dense feature matching. Upsampler is used to upsample the features extracted by the pre-trained VFM encoder. Table 1 presents the J &F mean metric on the DAVIS [ 36 ] dataset across various resolutions. Due to the high computational cost of directly upsampling to the input resolution, all methods perform 2× upsampling. Under this setting, our method demon-strates superior performance compared to existing methods. Notably, our method surpasses AnyUp by a margin of 2.36% at 672 resolution, highlighting its superior adaptability to high-resolution inputs. 
+
+Unsupervised Object Discovery. We validate our method on unsupervised object discovery. TokenCut [ 37 ]is utilized to perform Graph Cut on features. We report the Correct Localization (CorLoc) metric, which is             
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 7 / 18 Image DINOv2 Transposed
+> Convolution Converse2D WRC (Ours) Image DINOv2 Transposed
+> Convolution Converse2D WRC (Ours)
+
+Figure 4. Qualitative comparison of feature upsampling operators. We visualize similarity maps at two input resolutions, comparing the DINOv2 features with features upsampled by Transposed Convolution, Converse2D, and our WRC. WRC yields sharper, more localized activations around the queried point (red dot). 
+
+Table 3. Comparison of upsampling operators, including Transposed Convolution, Converse2D, and our Weighted Reverse Convolution (WRC), within the same framework for a fair comparison. In addition to results on DAVIS and COCO20K, we include open-vocabulary segmentation evaluated with MaskCLIP [ 39 ] using CLIP-ViT-B/16 [ 9] as VFM. 
+
+Method Video Object Seg. Object Discovery Open-Voc. Seg. 
+
+J &F Mean ( ↑) CorLoc ( ↑) mIoU ( ↑) aAcc ( ↑)448 560 672 448 560 672 Transposed Convolution [25] 61.35 66.73 69.68 41.04 42.51 43.70 56.98 72.99 Converse2D [18] 61.37 66.60 68.93 39.38 40.99 41.93 58.18 73.34 WRC (Ours) 62.73 68.25 70.71 42.30 44.58 46.13 59.21 73.72 
+
+defined as the fraction of images where at least one predicted bounding box has an IoU greater than 0.5 with the ground truth-box, on COCO20K [38] across various resolutions. As shown in Table 1, WRC outperforms existing methods. 
+
+Keypoint Correspondence. We evaluate our method on the keypoint matching task, which involves extracting features via a backbone, upsampling them with an upsampler, and resizing to the input resolution using Lanczos interpolation before performing keypoint matching between image pairs. As shown in Table 2, our method consistently outperforms existing works on the PCK@0.01 metric, which demonstrates the effectiveness of our method. Notably, it achieves a 2.27% improvement over DINOv2 at 448 input resolution. 
+
+# 5.3 Comparison with Other Upsampling Operators 
+
+Table 4. Efficiency and overhead on DINOv2-ViT-S/14 with 2× feature upsampling and 448 × 448 inputs. We report the frozen-backbone baseline and the additional 
+
+overhead introduced by each upsampler in parameters and MACs. Inference time is measured with single-image inference on single NVIDIA A100 GPU. Bold indicates the best result and underline indicates the second best.                         
+
+> Method Param (M) MACs (G) Time (ms)
+> DINOv2 [30] 22.06 31.79 5.99 FeatUp [13] +0.17 +51.12 65.13 LoftUp [14] +4.30 +1066.20 134.73 JAFAR [16] +0.63 +51.35 59.35 AnyUp [15] +0.88 +50.79 61.55 LiFT [17] +1.19 +3.90 6.79 Ours +3.98 +10.34 9.45
+
+Table 3 shows the comparison results between our WRC and other upsampling operators. We keep the same setting for different methods to make a fair comparison. In the open-vocabulary semantic segmentation task, pixel-wise predictions are generated by selecting the class label with the highest similarity score between the textual class embeddings and the image features as in [ 39 ]. We utilize the CLIP-ViT-B/16 backbone and upsample its output features using our proposed method. Our WRC outperforms the Transposed Convolution [ 25 ] by +2.43% on the object discovery task at the resolution of 672. Fig. 4 further provides qualitative comparisons on similarity maps obtained from features at different input resolutions. 
+
+# 5.4 Efficiency and Overhead 
+
+Table 4 reports the efficiency of different feature upsampling approaches in terms of parameter count, computational cost (MACs), and wall-clock inference latency. For a fair comparison, all methods use the same    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 8 / 18
+
+2× upsampling setting and the same 448 ×448 input resolution, and all timing results are measured on the same single NVIDIA A100 GPU. Compared with universal high-capacity upsamplers ( e.g. , FeatUp, JAFAR, AnyUp, and especially LoftUp), WRC introduces substantially lower computational overhead and runs markedly faster at inference, while delivering stronger dense features in downstream evaluations. At the same time, compared to LiFT, our approach remains highly efficient yet consistently improves performance across tasks. These results indicate that incorporating a closed-form inverse operator with lightweight learned weighting can provide practical gains without sacrificing efficiency. 
+
+# 5.5 Ablation Study 
+
+Table 5. Implementation ablations of WRC. We evaluate weight initialization and positive weight pa-rameterization across multiple input resolutions.                                         
+
+> Setting Video Object Seg. Object Discovery
+> J&FMean ( ↑)CorLoc ( ↑)448 560 672 448 560 672
+> Weight Initialization
+> Matrix 65.77 69.95 72.42 40.61 42.56 44.02 Convolution 65.71 70.68 73.07 40.94 42.78 44.13
+> Weight Parameterization
+> None 65.71 70.68 73.07 40.94 42.78 44.13 Softplus 65.66 70.40 72.65 40.66 42.51 43.53 Log1p 66.09 71.35 73.57 41.34 43.47 44.87
+
+We conduct ablations using DINOv2-ViT-S/14 on DAVIS video object segmentation and COCO20K unsupervised object discovery, evaluated across multiple input resolutions. 
+
+Weight Initialization and Parameterization. We analyze key implementation choices of WRC on two representative dense benchmarks. As discussed in Sec. 4.2.4, we focus on two factors: how the spatial weight fields are generated (initialization ) and how positivity is enforced ( parameter-ization ). We compare matrix-based, input-agnostic weights with convolution-based, input-adaptive weight predictors. Convolution-based initialization consistently improves per-formance on both tasks, yielding higher J &F at 560/672 and better CorLoc at all resolutions. Besides, we evaluate different positivity schemes for the weights: none, softplus, and log1p. Log1p achieves the best and most consistent results across both tasks and input resolutions, outperforming the unregularized variant and softplus. 
+
+Table 6. Training objective ablations of WRC. We evaluate three training objectives across input resolutions. Bold indicates the best result and underline indicates the second best.                                        
+
+> Setting Video Object Seg. Object Discovery
+> J&FMean ( ↑)CorLoc ( ↑)
+> L𝑔𝑙𝑜𝑏𝑎𝑙 L𝑙𝑜𝑐𝑎𝑙 L𝑠𝑒𝑙 𝑓 448 672 448 672
+> ✓63.28 71.22 41.19 44.88
+> ✓66.64 73.69 39.37 42.57
+> ✓20.63 26.31 1.27 0.98
+> ✓✓65.81 73.05 40.21 43.65
+> ✓✓62.85 70.58 41.05 44.44
+> ✓✓✓66.09 73.57 41.34 44.87
+
+Effects of Training Objectives. Table 6 ab-lates the three loss terms L𝑔𝑙𝑜𝑏𝑎𝑙 , L𝑙𝑜𝑐𝑎𝑙 , and 
+
+L𝑠𝑒𝑙 𝑓 . L𝑔𝑙𝑜𝑏𝑎𝑙 alone yields strong object dis-covery but weaker segmentation, whereas L𝑙𝑜𝑐𝑎𝑙 
+
+alone improves segmentation yet hurts object dis-covery, showing the two signals are complemen-tary. L𝑠𝑒𝑙 𝑓 by itself performs poorly, indicating it mainly acts as a regularizer. Combining all three losses produces the most balanced and con-sistent results, achieving the best (or tied-best) CorLoc while maintaining near-top segmentation performance across resolutions. 
+
+# 5.6 Qualitative Analysis 
+
+Figure 4 visualizes similarity maps obtained from DINOv2 features at different input resolutions. We compare the original coarse descriptors with features densified by transposed convolution, Converse2D, and our WRC. Across all examples, the raw DINOv2 maps exhibit blocky activations and limited spatial precision. In contrast, our approach consistently produces fine-grained, high-contrast peaks centered on the queried point, with clearer object extent. Besides, we further provide qualitative results for linear probing semantic segmentation in Figure D.2 in Appendix . The section D.3 in Appendix provides more qualitative results . Overall, these visualizations show: the proposed adaptive, weighted inversion better preserves correspondence-critical structures while maintaining stable feature distributions. 
+
+# 6 Conclusion and Limitations 
+
+This paper revisited feature upsampling for vision foundation models through an inverse-problem formulation. We proposed Weighted Reverse Convolution (WRC), a principled inverse operator that generalizes reverse    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 9 / 18
+
+convolution with spatially adaptive data fidelity and Tikhonov regularization via positive, learned per-location weights. WRC admitted an efficient, fully differentiable closed-form FFT solution, making it a practical drop-in replacement for conventional upsampling blocks. Across a broad range of downstream benchmarks, including linear probing segmentation, video object segmentation, object discovery, and keypoint correspondence, our method consistently improved dense feature quality while maintaining high efficiency. 
+
+Limitations . Although WRC achieves competitive inference efficiency among recent feature upsampling methods, it remains slightly less efficient than very simple operators such as transposed convolution, due to its FFT-based solving and adaptive weight prediction. Further lightweight optimization remains an important direction for future work. 
+
+# References 
+
+[1] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. Advances in neural information processing systems , 36:34892–34916, 2023. [2] Yanwei Li, Yuechen Zhang, Chengyao Wang, Zhisheng Zhong, Yixin Chen, Ruihang Chu, Shaoteng Liu, and Jiaya Jia. Mini-gemini: Mining the potential of multi-modality vision language models. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [3] Alaaeldin El-Nouby, Michal Klein, Shuangfei Zhai, Miguel Angel Bautista, Alexander Toshev, Vaishaal Shankar, Joshua M Susskind, and Armand Joulin. Scalable pre-training of large autoregressive image models. arXiv preprint arXiv:2401.08541 , 2024. [4] Yuqian Yuan, Wentong Li, Jian Liu, Dongqi Tang, Xinjie Luo, Chi Qin, Lei Zhang, and Jianke Zhu. Osprey: Pixel understanding with visual instruction tuning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 28202–28211, 2024. [5] Daniel Bolya, Po-Yao Huang, Peize Sun, Jang Hyun Cho, Andrea Madotto, Chen Wei, Tengyu Ma, Jiale Zhi, Jathushan Rajasegaran, Hanoona Bangalath, et al. Perception encoder: The best visual embeddings are not at the output of the network. Advances in Neural Information Processing Systems , 38:60884–60937, 2026. [6] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In IEEE/CVF International Conference on Computer Vision , pages 9650–9660, 2021. [7] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 , 2023. [8] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. [9] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International Conference on Machine Learning , pages 8748–8763. PmLR, 2021. [10] Michael Tschannen, Alexey Gritsenko, Xiao Wang, Muhammad Ferjad Naeem, Ibrahim Alabdulmohsin, Nikhil Parthasarathy, Talfan Evans, Lucas Beyer, Ye Xia, Basil Mustafa, et al. Siglip 2: Multilingual vision-language encoders with improved semantic understanding, localization, and dense features. arXiv preprint arXiv:2502.14786 ,2025. [11] Jiawei Yang, Katie Z Luo, Jiefeng Li, Congyue Deng, Leonidas Guibas, Dilip Krishnan, Kilian Q Weinberger, Yonglong Tian, and Yue Wang. Denoising vision transformers. In European Conference on Computer Vision , pages 453–469. Springer, 2024. [12] Qihang Fan, Quanzeng You, Xiaotian Han, Yongfei Liu, Yunzhe Tao, Huaibo Huang, Ran He, and Hongxia Yang. Vitar: Vision transformer with any resolution. arXiv preprint arXiv:2403.18361 , 2024. [13] Stephanie Fu, Mark Hamilton, Laura E. Brandt, Axel Feldmann, Zhoutong Zhang, and William T. Freeman. Featup: A model-agnostic framework for features at any resolution. In International Conference on Learning Representations ,2024.    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 10 / 18
+
+[14] Haiwen Huang, Anpei Chen, Volodymyr Havrylov, Andreas Geiger, and Dan Zhang. Loftup: Learning a coordinate-based feature upsampler for vision foundation models. In IEEE/CVF International Conference on Computer Vision ,pages 9913–9923, 2025. [15] Thomas Wimmer, Prune Truong, Marie-Julie Rakotosaona, Michael Oechsle, Federico Tombari, Bernt Schiele, and Jan Eric Lenssen. Anyup: Universal feature upsampling. In International Conference on Learning Representations ,2026. [16] Paul Couairon, Loick Chambon, Louis Serrano, Jean-Emmanuel Haugeard, Matthieu Cord, and Nicolas Thome. Jafar: Jack up any feature at any resolution. In Annual Conference on Neural Information Processing Systems , 2025. [17] Saksham Suri, Matthew Walmer, Kamal Gupta, and Abhinav Shrivastava. Lift: A surprisingly simple lightweight feature transform for dense vit descriptors. In European Conference on Computer Vision , pages 110–128, 2024. [18] Xuhong Huang, Shiqi Liu, Kai Zhang, Ying Tai, Jian Yang, Hui Zeng, and Lei Zhang. Reverse convolution and its applications to image restoration. In IEEE/CVF International Conference on Computer Vision , pages 10507–10516, 2025. [19] Dongchen Han, Tianyu Li, Ziyi Wang, and Gao Huang. Vision transformers are circulant attention learners. In 
+
+AAAI Conference on Artificial Intelligence , volume 40, pages 21549–21557, 2026. [20] Wentong Li, Yuqian Yuan, Jian Liu, Dongqi Tang, Song Wang, Jie Qin, Jianke Zhu, and Lei Zhang. Tokenpacker: Efficient visual projector for multimodal llm. International Journal of Computer Vision , 133(10):6794–6812, 2025. [21] Jiaqi Wang, Kai Chen, Rui Xu, Ziwei Liu, Chen Change Loy, and Dahua Lin. Carafe: Content-aware reassembly of features. 2019 IEEE/CVF International Conference on Computer Vision , pages 3007–3016, 2019. [22] Hao Lu, Wenze Liu, Zixuan Ye, Hongtao Fu, Yuliang Liu, and Zhiguo Cao. Sapa: Similarity-aware point affiliation for feature upsampling. ArXiv , abs/2209.12866, 2022. [23] Wenze Liu, Hao Lu, Hongtao Fu, and Zhiguo Cao. Learning to upsample by learning to sample. 2023 IEEE/CVF International Conference on Computer Vision , pages 6004–6014, 2023. [24] Robert Keys. Cubic convolution interpolation for digital image processing. IEEE Transactions on Acoustics, Speech, and Signal Processing , 29(6):1153–1160, 2003. [25] Hyeonwoo Noh, Seunghoon Hong, and Bohyung Han. Learning deconvolution network for semantic segmentation. In IEEE International Conference on Computer Vision , pages 1520–1528, 2015. [26] Johannes Kopf, Michael F Cohen, Dani Lischinski, and Matt Uyttendaele. Joint bilateral upsampling. ACM Transactions on Graphics , 26(3):96–es, 2007. [27] Norbert Wiener. Extrapolation, interpolation, and smoothing of stationary time series: with engineering applications .The MIT press, 1949. [28] Kai Zhang, Wangmeng Zuo, Yunjin Chen, Deyu Meng, and Lei Zhang. Beyond a gaussian denoiser: Residual learning of deep cnn for image denoising. IEEE Transactions on Image Processing , 26(7):3142–3155, 2017. [29] Chong Mou, Qian Wang, and Jian Zhang. Deep generalized unfolding networks for image restoration. In IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 17399–17410, 2022. [30] Maxime Oquab, Timothée Darcet, Theo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Russell Howes, Po-Yao Huang, Hu Xu, Vasu Sharma, Shang-Wen Li, Wojciech Galuba, Mike Rabbat, Mido Assran, Nicolas Ballas, Gabriel Synnaeve, Ishan Misra, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. Dinov2: Learning robust visual features without supervision, 2023. [31] Andre-i Nikolaevich Tikhonov, Alexander V Goncharsky, Vâčeslav Vasil’evič Stepanov, and Anatoli ˘ı Grigor’evich Yagola. Numerical methods for the approximate solution of ill-posed problems on compact sets. In Numerical Methods for the Solution of Ill-posed Problems , pages 65–79. Springer, 1995. [32] Ningning Zhao, Qi Wei, Adrian Basarab, Nicolas Dobigeon, Denis Kouamé, and Jean-Yves Tourneret. Fast single image super-resolution using a new analytical solution for ℓ2-ℓ2 problems. IEEE Transactions on Image Processing ,25(8):3683–3697, 2016. [33] Xu Jia, Bert De Brabandere, Tinne Tuytelaars, and Luc V Gool. Dynamic filter networks. Advances in Neural Information Processing Systems , 29, 2016.    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 11 / 18
+
+[34] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. [35] Juhong Min, Jongmin Lee, Jean Ponce, and Minsu Cho. Spair-71k: A large-scale benchmark for semantic correspondence. arXiv preprint arXiv:1908.10543 , 2019. [36] Jordi Pont-Tuset, Federico Perazzi, Sergi Caelles, Pablo Arbeláez, Alexander Sorkine-Hornung, and Luc Van Gool. The 2017 davis challenge on video object segmentation. arXiv:1704.00675 , 2017. [37] Yangtao Wang, Xi Shen, Yuan Yuan, Yuming Du, Maomao Li, Shell Xu Hu, James L Crowley, and Dominique Vaufreydaz. Tokencut: Segmenting objects in images and videos with self-supervised transformer and normalized cut. IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(12):15790–15801, 2023. [38] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European Conference on Computer Vision ,pages 740–755. Springer, 2014. [39] Chong Zhou, Chen Change Loy, and Bo Dai. Extract free dense labels from clip. In European Conference on Computer Vision , pages 696–712. Springer, 2022. [40] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick. Mask r-cnn. In IEEE International Conference on Computer Vision , pages 2961–2969, 2017.    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 12 / 18
+
+# Appendix 
+
+In this appendix, we provide the following materials: 
+
+• A. BCCB Patterns in DINOv3 
+
+• B. Proof of Closed-form Solution for WRC 
+
+• C. Additional PyTorch-like Implementation Details 
+
+• D. More Experimental Results 
+
+# A BCCB Patterns in DINOv3 
+
+Figure A.1. Per-layer attention maps averaged over all heads in DINOv3 [ 8]. Without handcrafted constraints, the self-attention module in Vision Transformer learns near BCCB patterns. 
+
+We also observe near BCCB patterns in DINOv3, as shown in Fig. A.1. Its patch-to-patch attention maps often exhibit clear block-wise circulant structures, suggesting that such convolution-like behavior is not unique to DINOv2 but commonly appears across different VFM backbones. This provides broader motivation to apply reverse convolution to VFM features: the backbone’s attention itself already behaves in a translation-sharing and Fourier-friendly manner. 
+
+# B Proof of Closed-form Solution for WRC 
+
+# B.1 General Case: 𝑠 > 1
+
+Consider the following optimization problem: 
+
+min  
+
+> x
+
+𝜙 (x) = ∥W (y − SKx )∥ 22 + ∥ W𝜆 (Fx − Fx 0)∥ 22 , (B.1) where: 
+
+• 𝑁 𝑙 = ℎ × 𝑤 and 𝑁 ℎ = 𝐻 × 𝑊 denote the dimensions, with the scaling relation 𝑁 ℎ = 𝑁 𝑙 · 𝑠 2 (where 𝑠 is the scale factor). 
+
+• y ∈ R𝑁 𝑙 is the observed low-resolution feature, and x ∈ R𝑁 ℎ is the high-resolution feature to be estimated. 
+
+• x0 ∈ R𝑁 ℎ is the prior reference feature. 
+
+• S ∈ R𝑁 𝑙 × 𝑁 ℎ represents the down-sampling matrix. 
+
+• K ∈ R𝑁 ℎ × 𝑁 ℎ is the convolution kernel matrix.    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 13 / 18
+
+• F ∈ C𝑁 ℎ × 𝑁 ℎ denotes the unitary Fourier transform matrix. 
+
+• W ∈ R𝑁 𝑙 × 𝑁 𝑙 and W𝜆 ∈ R𝑁 ℎ × 𝑁 ℎ are positive-definite diagonal weight matrices. Exploiting the property that the circular convolution matrix K is diagonalizable by the Fourier transform, we have: 
+
+K = F𝐻 𝚲 F, (B.2a) 
+
+K𝐻 = F𝐻 𝚲 𝐻 F, (B.2b) where 𝚲 = diag (Fk ) ∈ R𝑁 ℎ × 𝑁 ℎ .Setting the derivative of 𝜙 (x) with respect to x to zero yields: 
+
+𝜕𝜙 𝜕 x = −2K𝐻 S𝐻 W𝐻 (Wy − WSKx ) + 2F𝐻 W𝐻 𝜆 (W𝜆 Fx − W𝜆 Fx 0) (B.3a) 
+
+= −2(K𝐻 S𝐻 W𝐻 Wy + F𝐻 W𝐻 𝜆 W𝜆 Fx 0) + 2(K𝐻 S𝐻 W𝐻 WSKx + F𝐻 W𝐻 𝜆 W𝜆 Fx ) (B.3b) 
+
+= −2(K𝐻 S𝐻 |W|2y + F𝐻 |W𝜆 |2Fx 0) + 2(K𝐻 S𝐻 |W|2SKx + F𝐻 |W𝜆 |2Fx ) (B.3c) 
+
+= 0. (B.3d) Rearranging the terms, we obtain the normal equation: 
+
+K𝐻 S𝐻 |W|2SKx + F𝐻 |W𝜆 |2Fx = K𝐻 S𝐻 |W|2y + F𝐻 |W𝜆 |2Fx 0 (B.4a) 
+
+=
+
+
+
+F𝐻 𝚲 𝐻 F
+
+
+
+S𝐻 |W|2y + F𝐻 |W𝜆 |2Fx 0 (B.4b) 
+
+= F𝐻 
+
+𝚲 𝐻 FS 𝐻 |W|2y + | W𝜆 |2Fx 0
+
+
+
+. (B.4c) Let G = 𝚲 𝐻 FS 𝐻 |W|2y + | W𝜆 |2Fx 0. Solving for x, we derive: 
+
+x =
+
+
+
+K𝐻 S𝐻 |W|2SK + F𝐻 |W𝜆 |2F
+
+ −1
+
+F𝐻 G, (B.5a) 
+
+= F𝐻 
+
+FK 𝐻 S𝐻 |W|2SKF 𝐻 + | W𝜆 |2 −1
+
+G (B.5b) 
+
+= F𝐻 h
+
+FK 𝐻 F𝐻 
+
+FS 𝐻 |W|2SF 𝐻 
+
+FKF 𝐻 + | W𝜆 |2i −1
+
+G (B.5c) 
+
+= F𝐻 h
+
+𝚲 𝐻 
+
+FS 𝐻 |W|2SF 𝐻 
+
+𝚲 + | W𝜆 |2i −1
+
+G. (B.5d) Let |W|2 = diag (| 𝑊 1 |2, . . . , |𝑊 𝑁 𝑙 |2) ∈ R𝑁 𝑙 × 𝑁 𝑙 . The up-sampled weight matrix in the spatial domain is: 
+
+S𝐻 |W|2S = diag  |𝑊 1 |2, 0, . . . , 0, |𝑊 2 |2, 0, . . . , 0, |𝑊 𝑁 𝑙 |2, 0, . . . , 0 ∈ R𝑁 ℎ × 𝑁 ℎ . (B.6) Then, we have: 
+
+FS 𝐻 |W|2SF 𝐻 = 1
+
+𝑑 J𝑑 ⊗
+
+
+
+F|W|2F𝐻 
+
+, (B.7) where 𝑑 = 𝑠 2, J𝑑 ∈ R𝑑 ×𝑑 is a matrix of ones, and ⊗ denotes the Kronecker product. Substituting this into the bracketed term of Eq. (B.5d): 
+
+𝚲 𝐻 
+
+FS 𝐻 |W|2SF 𝐻 
+
+𝚲 = diag 
+
+
+
+𝚲 𝐻  
+
+> 1
+
+, . . . , 𝚲 𝐻 𝑑 
+
+  1
+
+𝑑 J𝑑 ⊗
+
+
+
+F|W|2F𝐻 
+
+diag (𝚲 1, . . . , 𝚲 𝑑 ) (B.8a) 
+
+= 1
+
+𝑑 
+
+
+
+𝚲 𝐻 
+
+> 1
+
+...
+
+𝚲 𝐻 𝑑 
+
+
+
+F|W|2F𝐻  𝚲 1 · · · 𝚲 𝑑 
+
+ , (B.8b) where 𝚲 𝑖 ∈ C𝑁 𝑙 × 𝑁 𝑙 represents the 𝑖 -th sub-block of the diagonal kernel matrix 𝚲 .Let 𝚲 = 𝚲 1 · · · 𝚲 𝑑 
+
+ ∈ C𝑁 𝑙 × 𝑁 ℎ and let C = 1 
+
+> 𝑑
+
+F|W|2F𝐻 . Eq. (B.5d) can be reformulated as: 
+
+x = F𝐻 |W𝜆 |2 + 𝚲 𝐻 C𝚲  −1 G. (B.9)    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 14 / 18
+
+Applying the Woodbury matrix identity (Sherman-Morrison-Woodbury formula), Eq. (B.9) becomes: 
+
+x = F𝐻 
+
+
+
+D−1 − D−1𝚲 𝐻 
+
+C−1 + 𝚲 D−1𝚲 𝐻  −1
+
+𝚲 D−1
+
+
+
+G, (B.10) where D = |W𝜆 |2.Finally, the matrix representation of Eq. (B.10) is: 
+
+X = F −1
+
+ 1
+
+|W𝜆 |2
+
+
+
+L′ − F K ⊙𝑠 
+
+|W|2 ⊙ ((F K ⊙ L′) ⇓ 𝑠 )|W|2 ⊙  |F K |2 ⇓𝑠 
+
+ + | W𝜆 |2 ⇓𝑠 
+
+ 
+
+, (B.11) where: 
+
+• L′ = FK ⊙ F ( | W|2 ⊙Y)↑ 𝑠 + | W𝜆 |2 ⊙ F X0 .
+
+• ⊙ denotes element-wise multiplication. 
+
+• ⊙𝑠 and ⇓𝑠 denote element-wise multiplication applied to 𝑠 × 𝑠 distinct blocks and the distinct block down-sampling operator that averages over these 𝑠 × 𝑠 blocks. 
+
+# B.2 Special Case: 𝑠 = 1
+
+When 𝑠 = 1, the problem simplifies to: 
+
+min  
+
+> X
+
+𝜙 (F X) = ∥W ⊙ (F Y − F K ⊙ F X)∥ 2 
+
+> 𝐹
+
++ W𝜆 ⊙  FX − F X0
+
+ 2 
+
+> 𝐹
+
+. (B.12) The closed-form solution is derived directly as: 
+
+𝜕𝜙 𝜕 FX
+
+= −2|W|2 ⊙
+
+
+
+FK ⊙ F Y − |F K |2 ⊙ F X
+
+
+
++ | W𝜆 |2 ⊙  FX − F X0
+
+ = 0, (B.13) Thus, the estimate is: 
+
+X = F −1 |W|2 ⊙ F K ⊙ F Y + | W𝜆 |2 ⊙ F X0
+
+|W|2 ⊙ |F K |2 + | W𝜆 |2
+
+!
+
+. (B.14) 
+
+# B.3 Degenerate Case: ConverseNet 
+
+By setting W = I𝑁 𝑙 , C = I𝑁 𝑙 , and W𝜆 = √𝜆 I𝑁 ℎ , the proposed solution reduces to the formulation presented in [18]. In this case, Eq. (B.10) simplifies to: 
+
+x = F𝐻 
+
+
+
+I − 𝚲 𝐻 
+
+𝜆 I + 𝚲𝚲 𝐻  −1
+
+𝚲 
+
+
+
+G′, (B.15) where G′ = 𝚲 𝐻 FS 𝐻 y + 𝜆 Fx 0. Consequently, its matrix representation can be formulated as: 
+
+X = F −1
+
+ 1
+
+𝜆 
+
+
+
+L − F K ⊙𝑠 
+
+(F K ⊙ L) ⇓ 𝑠 
+
+|F K |2 ⇓𝑠 +𝜆 
+
+ 
+
+, (B.16) where L = FKFY↑𝑠 + 𝜆 FX0 .For the special case of 𝑠 = 1, the equation further simplifies to: 
+
+X = F −1 FK ⊙ F Y + 𝜆 FX0
+
+|F K |2 + 𝜆 
+
+!
+
+. (B.17)    
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 15 / 18
+
+Algorithm 1 Code of WRC in a PyTorch-like style. 
+
+> # X: input feature map # K: kernel # S: stride or upscaling factor # p2o: convert point-spread function (PSF) to optical transfer function (OTF) # splits: divide a tensor of shape [..., H, W] into [..., H/S, W/S, S^2] distinct blocks # upsample: s-fold upsampling operator that inserts zeros # conv_W, conv_W_lam: convolutions for obtaining W and W_lam B, C, H, W = X.shape # X: B, C, H, W biaseps = nn.functional.softplus(bias) + 1e-5 # W: regularization parameter W = torch.log1p(torch.pow(conv_W(X), 2)) # upsample X: B, C, HxS, WxS Y_S = upsample(W*X, scale=S) # interpolate X: B, C, HxS, WxS X_0 = nn.functional.interpolate(X, scale_factor=S, mode=’bilinear’, align_corners=True) # W_lam: regularization parameter W_lam = torch.log1p(torch.pow(conv_W_lam(X_0), 2)) # FFT kernel: B, C, HxS, WxS FK = p2o(K, (H*S, W*S)) # complex conjugate FK_conj = torch.conj(FK) # element-wise squared magnitude FK_2 = torch.pow(torch.abs(FK), 2) FKY = FK_conj*torch.fft.fftn(Y_S, dim=(-2, -1)) # L: B, C, HxS, WxS L = FKY + torch.fft.fftn((W_lam+biaseps)*X_0, dim=(-2, -1)) FKL = FK.mul(L) # split and calculate mean: B, C, H, W FKL_S = W * torch.mean(splits(FKL, S), dim=-1, keepdim=False) FK2_S = W * torch.mean(splits(FK_2, S), dim=-1, keepdim=False) Fdiv = FKL_S.div(FK2_S + torch.mean(splits(W_lam, S), dim=-1, keepdim=False) + biaseps) # element-wise multiplication Fmul = FK_conj*Fdiv.repeat(1, 1, S, S) Fout = (L-Fmul)/(W_lam+biaseps) # inverse FFT output: B, C, HxS, WxS out = torch.real(torch.fft.ifftn(Fout, dim=(-2, -1))) return out
+
+# C Additional PyTorch-like Implementation Details 
+
+Algorithm 1 summarizes the practical implementation of our WRC in a PyTorch-like form. Given an input feature map 𝑋 , we first predict two positive, spatially varying weight maps: 𝑊 for the data-fidelity term (from 
+
+𝑋 ) and 𝑊 𝜆 for the regularization term (from the interpolated prior 𝑋 0). Positivity and stability are enforced via a log (1 + 𝑥 ) re-parameterization. We then compute the closed-form solution in the Fourier domain: the kernel 𝐾 is converted to its frequency response, and the main operations are batched FFT/IFFT and element-wise complex arithmetic. The distinct-block averaging required by the ⇓𝑠 operator is implemented via splits . A small 𝜖 is added to denominators to prevent numerical issues, and the inverse FFT yields the final high-resolution output. 
+
+# D More Experimental Results 
+
+# D.1 More Results on DINOv3 
+
+Table D.1 reports DAVIS video object segmentation results using DINOv3-ViT-S/16 [ 8 ] features across input resolutions. DINOv3 adopts a larger patch size, which yields fewer tokens and a coarser feature grid at a fixed input solution, making high-resolution densification more challenging. Under this setting, prior upsampling methods (JAFAR, AnyUp, and LiFT) provide gains mainly at lower resolutions, while their performance saturates or drops as the input resolution increases ( e.g. , 672/784), suggesting limited robustness when scaling to finer spatial details. In contrast, our method consistently improves with resolution and delivers the strongest results at high resolutions, achieving clear gains at 560/672/784. This trend indicates that WRC better preserves discriminative structures and remains stable when upsampling dense foundation-model features at higher input resolutions, highlighting its effectiveness and scalability. 
+
+# D.2 Applying WRC to Feature Pyramid Network 
+
+Table D.2 evaluates whether our feature upsampling operator benefits a standard detection and segmentation framework. Specially, we replace the default feature upsampling operation in the Feature Pyramid Network (FPN) 
+
+Visual Computing Lab · The Hong Kong Polytechnic University 16 / 18 Table D.1. DAVIS Video Object Segmentation results using DINOv3-ViT-S/16 [ 8] reported with the J &F mean, evaluated across input resolutions. Note that evaluating JAFAR [ 16 ] and AnyUP [ 15 ] at higher upsampling ratios triggers 
+
+OOM errors with an NVIDIA A100 (80G); therefore, we use 2× upsampling for all methods. 
+
+Method 448 560 672 784 DINOv3 [8] 56.69 63.79 67.89 69.64 Bilinear 50.35 54.92 59.30 62.44 LiFT [17] 57.31 61.13 66.00 68.24 JAFAR [16] 61.31 64.61 67.12 67.91 AnyUp [15] 57.57 60.45 62.43 64.20 Ours 61.30 65.17 69.10 70.77 Table D.2. COCO2017 results for detection and instance segmentation with Mask R-CNN [ 40 ]. We replace the default feature upsampling operator in FPN with Converse2D and our WRC, respectively, while keeping the remaining architecture and training protocol unchanged. 
+
+Mask R-CNN Detection Segmentation 
+
+mAP mAP 50 mAP 75 mAP 𝑠 mAP 𝑚 mAP 𝑙 mAP mAP 50 mAP 75 mAP 𝑠 mAP 𝑚 mAP 𝑙 
+
+Baseline 38.2 58.9 41.6 22.0 41.9 49.4 34.8 55.8 37.0 16.3 37.4 50.4 
+
+w. Converse2D 38.3 58.9 41.8 22.6 41.5 49.2 34.7 55.8 36.9 16.7 37.4 50.1 
+
+w. WRC 38.8 60.1 42.2 23.7 42.3 49.1 35.0 56.7 37.0 17.2 37.6 50.2 
+
+of Mask R-CNN [ 40 ] (typically interpolation-based sampling) with Converse2D and our WRC, respectively, while keeping the rest of the architecture and training protocol unchanged. As shown in Table D.2, both inverse-operator variants improve upon the baseline, and WRC yields the most consistent gains. In particular, WRC substantially increases mAP 50 for both detection and instance segmentation, indicating better localization and mask quality. The improvements are especially pronounced for small objects (mAP 𝑠 ), suggesting that WRC better preserves fine spatial details during multi-scale feature upsampling, which is critical for detecting and segmenting small instances. 
+
+# D.3 More Qualitative Results 
+
+Here we provide additional qualitative results on unsupervised object discovery on COCO20K. We apply TokenCut [ 37 ], which performs a graph cut on the feature affinity graph, to qualitatively assess different upsampling operators. Figure D.3 compares LiFT, JAFAR, AnyUp, and our method. For each method, we visualize the TokenCut heatmap (left) used to derive the object region, and the resulting predicted bounding box (right). Blue boxes denote ground truth, and red boxes denote predictions. Our method produces heatmaps that are more compact and object-centric, with clearer separation from the background. This leads to tighter and more accurate bounding boxes, particularly in challenging cases involving thin structures, cluttered backgrounds, or low-contrast objects. In contrast, competing upsamplers often yield diffuse responses, which can cause over-extended boxes or missed parts of the target.        
+
+> Visual Computing Lab ·The Hong Kong Polytechnic University 17 / 18 Original Image Ours Ground Truth AnyUp JAFAR FeatUp LoftUp LiFT
+
+Figure D.2. Qualitative comparison of linear probing semantic segmentation on Cityscapes. We visualize predictions from representative methods (LiFT, FeatUp, LoftUp, JAFAR, AnyUp) against ground truth. Our method produces cleaner region boundaries and more coherent class assignments, and remains robust in challenging conditions such as low-light scenes. AnyUp JAFAR LiFT Ours 
+
+Figure D.3. Qualitative comparison of unsupervised object discovery on COCO20K. For each method, we show the eigen-attention (TokenCut) heatmap in the left panel and the resulting detection (predicted bounding box) in the right panel. Blue and red boxes denote the ground-truth and predicted bounding boxes, respectively.

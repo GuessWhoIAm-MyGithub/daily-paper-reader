@@ -1,0 +1,335 @@
+Title: HierEdit: Region-Aware Hierarchical Diffusion for Efficient High-Resolution Editing
+
+URL Source: https://arxiv.org/pdf/2605.17294v1
+
+Published Time: Tue, 19 May 2026 01:26:42 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# HierEdit : Region-Aware Hierarchical Diffusion for Efficient High-Resolution Editing 
+
+# Yuyao Zhang Dartmouth College Alexander Huang-Menders Dartmouth College Yu-Wing Tai Dartmouth College 
+
+Figure 1. Demo of HierEdit . Our method enables efficient, high-fidelity local editing at ultra-high resolution (2K and 4K here) without the need of 4K data for training. We support both instruction editing and both text- and image-guided inpainting. On commodity resolution (1K) we are much faster. 
+
+# Abstract 
+
+High-resolution image editing is essential for professional and creative applications, yet existing multimodal diffusion-based editors remain computationally inefficient and con-strained to relatively low resolutions. Current approaches redundantly process the entire image canvas or rely on large-scale high-resolution datasets, resulting in substan-tial training and inference costs. We introduce HierEdit , a region-aware hierarchical diffusion framework designed for efficient and scalable high-resolution image editing. Our method first performs edits on a low-resolution proxy using an off-the-shelf editing model to generate a reference and to localize the modified regions. A hierarchical local-window diffusion model ( Local-Window MMDiT ) that refines only edited regions within the original high-res image, while reusing the unaltered regions as conditioning inputs. The low-resolution proxy further provides structural guidance and intermediate denoising supervision ( Inference Accel-eration ) , ensuring consistent global semantics and sta-ble generation without the need for full-resolution attention computation. This targeted and hierarchical design enables fast, high-fidelity editing of images up to 4K resolution with-out any specialized high-resolution training data. Extensive experiments demonstrate that HierEdit achieves competi-tive visual quality on commodity-resolution datasets while significantly accelerating inference and extending seam-lessly to ultra-high-resolution 4K editing. Please check our 
+
+Project Page .
+
+# 1. Introduction 
+
+Text-guided image editing has become a powerful tool for creative expression and content manipulation, enabling users to modify images with precise semantic control [4, 39, 43]. However, the computational cost of dense atten-
+
+> arXiv:2605.17294v1 [cs.CV] 17 May 2026
+
+tion [11, 12] scales quadratically with resolution, limiting their use in high-resolution workflows. Most state-of-the-art techniques remain constrained to standard resolutions, typically below 1K × 1K, which restricts their applicabil-ity in professional domains such as digital advertising, cin-ematography, and high-fidelity visualization, where ultra-high-resolution (UHR) outputs (4K and above) are essen-tial. Image editing tasks can be broadly categorized into 
+
+global edits, like applying a new artistic style, which re-quire processing the entire image, and local edits, which tar-get specific objects or regions, such as “Remove the right-most person.” or “Replace an apple with an orange.” Many practical applications fall into the latter category, yet exist-ing models handle them inefficiently. Some re-render the entire image for minor changes, wasting computation on untouched regions, while others rely on inpainting, which ignores interactions with external areas and often produces border artifacts. The key challenge is not just scaling to higher resolutions, but enabling targeted local edits effi-ciently. Recent hierarchical local attention architectures show promise for efficient generation [38], but their use in editing remains largely unexplored. In this work, we introduce HierEdit , a novel frame-work for efficient, high-resolution local image editing. To avoid costly dense attention across the entire image, we em-ploy Local-Window MMDiT , which performs hierarchi-cal local-window attention and surgically targets only re-gions requiring modification. The pipeline begins by down-sampling the high-resolution input to a standard-resolution proxy (e.g., 1K → 256 ), where an off-the-shelf editing model [3] generates edits. This low-resolution proxy serves two roles: (1) providing semantic guidance and a refined edit mask to localize modifications accurately, and (2) serv-ing as an intermediate initialization to skip early denoising steps. Guided by the proxy, the Local-Window MMDiT then re-synthesizes only the masked patches in the orig-inal high-resolution image, preserving global consistency and pixel fidelity. Finally, inference acceleration tech-niques, including intermediate flow initialization and kernel optimizations, further reduce runtime while enabling ultra-high-resolution editing. This targeted methodology achieves substantial gains in computational efficiency, memory usage, and inference speed, particularly for common local editing tasks. By restricting expensive dense attention operations to sparse local-window attention on a small subset of the image, Hi-erEdit decouples performance from image resolution, en-abling rapid, iterative edits that would be impractical with dense-attention models. A direct benefit of this efficiency is high scalability, allowing precise editing of ultra-high-resolution (UHR) images such as 4K. Our framework thus provides a practical and generalizable solution for high-fidelity local editing. 
+
+Our main contributions are summarized as follows: 
+
+• We introduce a low-resolution edited proxy to guide high-resolution local editing, providing semantic guidance, a refined edit mask, and an intermediate initialization for skipping early denoising steps, achieving up to > 6×
+
+faster performance in 1K resolution (more gains at higher resolutions) with state-of-the-art quality. • We propose Local-Window MMDiT , a hierarchical dif-fusion model that replaces dense attention with sparse local-window attention, operating only on regions requir-ing modification, dramatically improving computational efficiency. • We incorporate Inference Acceleration techniques, in-cluding intermediate flow initialization and kernel-level optimizations, further reducing runtime for high-resolution editing. • Our framework enables fast, high-fidelity editing on ultra-high-resolution (4K) images without requiring 4K train-ing data, making practical UHR editing feasible for pro-fessional workflows. 
+
+# 2. Related Work 
+
+Controllable Image Generation. 
+
+Text-to-image (T2I) generation has advanced rapidly with diffusion models, progressing from pixel-space meth-ods such as GLIDE [37] and Imagen [45] to efficient latent-space frameworks such as Stable Diffusion [43] and Raphael [63]. Improvements in multimodal alignment, e.g., DALLE-2 [41] and Playground [25], and in architecture design, e.g., Diffusion Transformers [38], PixArt [8], and FLUX [3], have further improved image fidelity and diver-sity. Recent systems [4, 6, 8, 9, 14, 17, 25, 27, 38, 39, 43, 59, 60, 63] adopt cross-attention and diffusion transformer (DiT) architectures to achieve near-photorealistic synthesis at resolutions up to 1K × 1K, forming a strong foundation for controllable generation. Despite this progress, fine-grained spatial and seman-tic control remains challenging. Personalization meth-ods [16, 44] enable subject-specific generation but typically require instance-level fine-tuning. Structured control meth-ods such as ControlNet [74] and GLIGEN [26] provide spa-tial conditioning through edge maps or bounding boxes, but rely on detailed external guidance and offer limited holis-tic scene reasoning. Domain-specialized methods such as Raphael [63] improve fidelity at high computational cost, while lightweight adapters such as Attend [7] reduce over-head but remain limited on complex compositions. Au-toregressive frameworks, including LlamaGen [51], Show-O [61], and Janus-Pro [10], support prompt-driven synthesis but often suffer from weaker spatial consistency. Overall, most existing approaches are still constrained by quadratic Figure 2. Schematic of the HierEdit framework. We employ editing of a downsampled input image and region bounding to identify the edited patches and obtain the low-resolution proxy. We then proceed to input concatenation, re-permutation, and positional encoding. Finally, we pass this input to our hierarchical local-window MMDiT model, which generates the high resolution edited results with less denoising steps as upsampled low-resolution proxy can serve as intermediate denosing result. 
+
+attention and limited high-resolution training data, hin-dering scalable ultra-high-resolution synthesis and region-aware editing. 
+
+High-Resolution Image Synthesis. Real-world applica-tions increasingly demand 4K or higher resolutions, driv-ing research beyond the 1K × 1K barrier. Works such as PixArt-Σ and SANA 1.5 [60] achieve near-4K synthesis via extensive high-resolution pretraining, while others [20, 29, 42, 55, 58, 66, 70, 79] rely on fine-tuning or training-from-scratch with curated datasets. For instance, [70] employs wavelet supervision to enhance detail clarity, and [66] in-troduces lightweight fine-tuning for higher-resolution adap-tation. Despite their effectiveness, these methods remain limited by the scarcity of high-quality high-resolution data and high GPU requirements. One work [76] demonstrates a promising direction by leveraging scaled RoPE embed-dings and window-permuted global-local attention to scale pretrained diffusion models beyond their pretrained resolu-tions; we build on this idea in the architecture design of our method. More recent training-free strategies [5, 15, 18, 21, 23, 31, 40, 49, 56] avoid data collection by leveraging pretrained models directly. While promising, these approaches often inherit significant runtime and memory overhead, limiting accessibility for broader use. 
+
+Attention Acceleration. As image and video resolutions grow, quadratic attention becomes the main bottleneck. Linear-attention variants like the SANA series [59, 60, 80] reduce complexity but suffer from non-injective mappings and lower attention spikiness [19, 36, 75], often causing local detail inconsistencies. System-level optimizations such as FlashAttention [11, 12, 46], quantization [69, 71], and sparsity-based methods [13, 28] improve efficiency via hardware-aware acceleration. Architectures like Long-Former [2] and SwinFormer [32] use local windows but still process the full image with static attention. Recent works [24, 57, 62, 64, 67, 68, 72] employ block-sparse or compressed attention in diffusion transformers, achiev-ing moderate speedups ( 1.5–1.8×) at some cost to fine-grained fidelity. Complementary methods like OminiCon-trol2 [52, 53] speed up conditional diffusion by restrict-ing computation to masked regions but still rely on user-provided masks and predefined edit scopes. In contrast, our approach automatically localizes editable regions us-ing low-resolution proxies and applies content-aware sparse attention, enabling efficient ultra-high-resolution editing without manual masks or retraining. 
+
+# 3. Method 
+
+Figure 2 presents an overview of the proposed HierEdit 
+
+framework, which leverages low-resolution edits to guide high-resolution image editing efficiently. Given a high-resolution input image, a text prompt, and optional control inputs, we first downsample the image and apply edits using a state-of-the-art (SOTA) image editing model. Compar-ing the edited low-resolution output with the original im-age produces a refined mask that accurately localizes the edited regions. These refined regions, together with the low-resolution edits, serve as references for high-resolution, region-aware generation. In Section 3.1, we review the foundational preliminaries, including rectified flow models and the Multi-Modal Diffu-sion Transformer (MMDiT) backbone with RoPE position encoding. Section 3.2 describes low-resolution guided re-gion refinement, where the refined mask and edited low-resolution image are computed to guide subsequent high-resolution editing. Section 3.3 introduces Local-Window MMDiT, which combines efficient local-window attention, joint denoising of integrated token sequences, and low-resolution anchors to maintain global semantic coherence while reducing computation. Finally, Section 3.4 presents inference acceleration technique with intermediate flow ini-tialization to further speed up high-resolution generation. 
+
+## 3.1. Preliminaries 
+
+Rectified Flow Models [30]. Flow-based generative mod-els learn a continuous transformation between a data sample 
+
+X0 and a simple reference distribution X1 by integrating an ODE dZ t
+
+dt = V (Zt, t ),
+
+where V is a learned velocity field. Sampling is performed by drawing Z1 ∼ N (0 , I ) and solving the ODE backwards to obtain Z0. Rectified flows constrain the intermediate states to follow a linear path, 
+
+Zt = (1 − t)X0 + tX 1,
+
+which produces straight and stable trajectories that require only a small number of integration steps. 
+
+MMDiT with RoPE Position Encoding. The Multi-Modal Diffusion Transformer (MMDiT) is the standard backbone of recent text-to-image models [3, 6, 17]. It processes a text token sequence CT and a noisy image token se-quence X, which are concatenated as [CT ; X] and jointly encoded through a unified Multi-Modal Attention (MMA) layer. Spatial structure in image tokens is represented us-ing Rotary Position Embeddings (RoPE) [50], applying a position-dependent rotation Rot( i, j ) to each spatial token: 
+
+Xi,j = Xi,j · Rot( i, j ).
+
+The MMA mechanism performs standard self-attention over the combined sequence: 
+
+MMA([ CT ; X]) = Softmax 
+
+ QK ⊤
+
+√d
+
+
+
+V, 
+
+where Q, K, V denote the projection matrices for both text and image tokens. This formulation enables dense bidirec-tional interaction across modalities. The usage of RoPE en-ables the model to generate image of sizes within a pre-trained range, regardless of where it is on the latent grid. 
+
+## 3.2. Low-Resolution Guided Region Refinement 
+
+Given a high-resolution input image XHr , a text prompt, and an optional control image XControl , we first downsam-ple XHr to XLr (e.g., 1K × 1KK → 256 × 256 ). We then  
+
+> Figure 3. The illustration of jointly denoising the integrated to-ken sequence via Local-Window MMDiT. We prune the tokens from 2N to N by the edit mask and only denoise the edited region. All tokens are concatenated together while conditions and low-resolution reference are processed via finetuned layers, and orig-inal weights for the image latent. ”Fire” and ”Snowflake” signs means LoRA finetuning and frozen weights.
+
+feed XLr , together with the prompt and optional control in-put, into a unified image generation and editing model [3] to perform text-guided or multimodal conditional editing, producing an edited low-resolution image X′ 
+
+> Lr
+
+that guides the subsequent high-resolution editing branch. Since user-provided masks M are often imperfect for complex effects such as reflections, shadows, and occlu-sions, we derive a refined mask ˜M by comparing X′ 
+
+> Lr
+
+with 
+
+XLr at the pixel level to better localize the edited regions. Overall, the pipeline downsamples XHr to XLr , obtains 
+
+X′ 
+
+> Lr
+
+through low-resolution editing, and computes ˜M for precise high-resolution editing. This refined mask ensures better alignment between the final high-resolution edits and the intended semantic and contextual modifications. 
+
+## 3.3. Local-Window MMDiT 
+
+Efficient Local Window Attention. DiT-based generative models rely heavily on self-attention, whose quadratic com-putational cost becomes prohibitive as image size increases. For an image of size H × W after encoder downsampling, the number of spatial tokens is N = H · W , resulting in 
+
+O(N 2) complexity. To address this, we partition the high-resolution latent X ∈ RH×W into non-overlapping win-dows xi of size l, bounded by the pretrained resolution (e.g., 1024), with i = Hl × Wl windows in total. Attention is computed only within each window, reducing complexity to O  Hl · Wl · (l2)2 = O(N · l2). For example, scaling from 1024 × 1024 to 4096 × 4096 reduces computation by 
+
+256 ×.In practice, we set l = 16 , corresponding to 256 pixels in the original image, balancing accuracy and efficiency: smaller windows speed up attention but overly small win-dows underutilize GPU kernels. Importantly, while this analysis assumes processing all windows, in practice we compute attention only for masked local windows requir-ing edits. As a result, runtime scales linearly with the num-ber of local windows being processed, further accelerating high-resolution generation. Because each local window has a fixed positional embedding range, the model can reliably generate content within each block, enabling ultra-high-resolution synthesis. To prevent block artifacts introduced by the non-overlapping windows, we allow each window to attend to boundary tokens of adjacent windows, enabling in-formation flow among them without breaking the linearized computational burden. 
+
+Jointly Denoising Integrated Token Sequence. In text- or image-guided editing tasks, the model typically processes two input sequences of equal length: the masked source image Xorigin and its corresponding noisy latent Xnoise .Naively concatenating these doubles the sequence length and quadruples attention memory cost. To address this, we construct a unified token sequence by assigning each spatial location a single role. Unmasked regions from Xorigin , denoted Cmask =0 , serve as condition tokens that provide static contextual information and are not denoised, while masked regions from Xmask =1  
+
+> noise
+
+are noisy to-kens that undergo iterative denoising. Combining these into a single sequence Xintegrated = [ Cmask =0 ; Xmask =1  
+
+> noise
+
+] reduces the total length to that of a single image, preserving compu-tational efficiency. Because condition tokens remain fixed across diffusion steps, their Key and Value projections can be cached and reused after one single forward pass(Feature Caching), significantly accelerating inference. To prevent noise contamination, condition tokens attend only to other condition tokens and not to the noisy tokens or text to-kens. To better preserve the details in the condition images, our framework incorporates additional guidance signals by concatenating them as extra tokens along the sequence di-mension. All conditions interact with the generation tokens through the self-attention layers of the pretrained DiT, al-lowing us to leverage the original model weights without architectural modification; only lightweight LoRA modules are fine-tuned to adapt the model to the new conditioning scheme. Figure 3 illustrates the overall architecture. Speed improvements are demonstrated in the ablation study. 
+
+Maintaining Global Semantics via Low-Res Anchors. 
+
+Partitioning a high-resolution image into independent local windows can introduce discontinuities and disrupt global semantic coherence. We observe that long-range depen-dencies primarily govern global structure and spatial lay-out, while fine-grained details depend on local interactions. To preserve global consistency, we leverage a pre-edited low-resolution image X′ 
+
+> Lr
+
+∈ Rh×w, which encapsulates holistic contextual information. Pixel positions in this im-age are indexed as (m, n ) with m ∈ 0, . . . , h − 1 and 
+
+n ∈ 0, . . . , w − 1.We define a scaling ratio ρ = Hh (empirically set to 4) and map low-resolution coordinates to high-resolution space as ( ˜ m, ˜n) = ( ρ · m, ρ · n). Each projected token 
+
+X′ 
+
+> Lr
+
+[ ˜ m, ˜n] provides contextual cues for the corresponding high-resolution region. Reference image tokens are simi-larly scaled and shifted, (m′, n ′) = ρ′ · (( m′, n ′) + ∆) ,where ρ′ is the size ratio and ∆ the position offset. We then construct a unified token sequence 
+
+[CT , X integrated , X ′ 
+
+> Lr
+
+, X control , . . . ] and process all con-ditions with the standard DiT encoders the base model use. After scaling and shifting position embeddings, LoRA only adapts the attention projection layers to the new features. To prevent noisy latents from affecting conditions, only self-attention is applied to the condition tokens. Training uses a standard flow-matching loss, which aims at teaching model about the new attention pattern. This design provides three key benefits: (1) training efficiency by updating only a compact set of LoRA parameters; (2) adaptation using commodity-resolution data (1K resolu-tion); and (3) seamless extension to ultra-high-resolution generation (e.g., 4K) since local-window attention focuses on pretrained-size regions, making it resolution-invariant. 
+
+## 3.4. Inference Acceleration 
+
+Intermediate Flow Initialization. As we already have the low-resolution reference, which has the same structure as the high resolution results, the only difference is the high frequency details. Therefore we first resize the low-resolution reference to the same size as the target image, sharpen it, and scale noise to the intermediate timestep t
+
+to obtain Xt
+
+> ref
+
+. For a given flow, the sampling of high-resolution generation starts from the noisy variant of Xt
+
+> ref
+
+,which can be expressed as: 
+
+Xt 
+
+> hr
+
+= αX 1 
+
+> hr
+
++ (1 − α)Xt
+
+> ref
+
+,
+
+where Xt 
+
+> hr
+
+is the initialization of the high-resolution sam-pling, X1 
+
+> hr
+
+is Gaussian noise, and α ∈ (0 , 1) is the noise addition ratio. Such initialization allows skipping the early stage in high-resolution generation by providing the low-frequency components. Thus we facilitate faster inference Figure 4. Qualitative comparison for instructional editing. The asterisk * indicates that the model does not take a control image. We demonstrate more accurate subject integration by not only preserving subject identity, but also integrating it more naturally with the scene context. We also match the best lighting preservation. 
+
+> Figure 5. Qualitative comparison of inpainting-based editing methods. The proposed HierEdit demonstrates better performance in preserv-ing unmodified regions while maintaining natural integration of edited content.
+
+by reducing redundant denoising steps from T to T ′, empir-ically T = 28 and T ′ = 10 .
+
+# 4. Experiments 
+
+## 4.1. Comparison with State-of-the-Art Methods 
+
+We compare HierEdit with baselines from two different categories of editing, (1) instructional editing and (2) in-painting based editing. Instructional editing methods in-cludes GPT Image 1 [1], Gemini 2.5 Flash Image [54], FLUX.1 Kontext [4] and SDEdit [35]. For inpainting based editing we compare our method with FLUX-Fill [3], Omini-Control2 [53], ACE++ [34], EasyControl [78]. 1
+
+Qualitative Results and Comparisons. Figure 1 show-cases HierEdit ’s performance on diverse editing tasks at ultra-high resolutions (2K and 4K), demonstrating high vi-sual fidelity and significant speed advantages over prior methods. Figure 4 presents comparisons on instruction-
+
+> 1See supplementary materials for evaluation metrics, benchmarks, and implementation details.
+
+based edits using text-only or text–image prompts. In the first row, guided by both text and image, GPT Image 1 pro-duces an object at the wrong scale, while FLUX.1 Kontext and SDEdit fail to generate the correct object, with SDEdit also introducing background distortions. In the second row for text-only edits, GPT Image 1 and FLUX Kontext fail to preserve the couch lighting, and Gemini and SDEdit signif-icantly alter the global scene. Figure 5 shows inpainting-based editing. In the first row, EasyControl fails to place the control image correctly, and ACE++ adds a window with incorrect color and pattern. We did not compare with OminiControl2 as their check-points are unavailable for subject-driven inpainting. In the second row, FLUX.1 Fill generates two glasses instead of one, EasyControl produces off-colored wine with shadow artifacts, and OminiControl2 and ACE++ place the lemon incorrectly inside the glass rather than beside it. 
+
+Quantitative Comparison. Table 1 reports quantita-tive results for instruction-based editing, where HierEdit 
+
+achieves competitive performance across all benchmarks. Table 2 summarizes mask-guided and inpainting-based Figure 6. Comparison at 4K resolution for text guided editing, text-guided inpainting, and subject-guided inpainting. GPT-Image-1 was incapable of generating resolutions higher than 1K by design and ACE++ was unable to run 4K inference with 96GB of GPU memory. Our method succeeded in generating the results while the rest of others failed.                                    
+
+> CompBench EmuEdit ImgEdit I2EBench Task Method CLIP ↑SSIM ↑CLIP dir ↑DINO ↑Composite ↑SSIM ↑
+> Text-guided editing SDEDIT 18.5 0.351 0.053 0.159 1.46 0.355 FLUX.1 Kontext 20.8 0.954 0.116 0.840 3.45 0.501 GPT-Image-1 18.9 0.191 0.132 0.697 4.45 0.478
+> Ours 20.6 0.949 0.117 0.833 3.51 0.508
+> Table 1. Quantitative comparison of text guided image editing methods across CompBench, EmuEdit, ImgEdit, and I2EBench benchmarks.
+
+editing, showing that our approach consistently matches or outperforms baselines while offering substantial efficiency gains. Table 3 presents average inference times for inpaint-ing at different resolutions and edit ratios. HierEdit is the fastest across all configurations, with OminiControl2 con-sistently second. Notably, other methods often produce noisy or malformed outputs at high resolutions, making them inadequate for realistic edits. We provide full high-resolution stress tests in the supplementals, demonstrating that HierEdit is the only model capable of high-quality editing at these scales. 
+
+# 5. High-Resolution Comparison 
+
+We compare our high-resolution generation results with those of other models, which fail to produce meaningful outputs. As shown in Figure 6, our method successfully generates high-quality 4K images, whereas the baselines ei-ther produce no content within the mask or fail entirely due to out-of-memory errors. 
+
+Efficiency Comparison. Table 3 compares inference speed across methods. At 1K resolution, our approach is up to 
+
+6.0× faster than competing models, with even larger mar-gins at higher resolutions. When varying the proportion of the edited region, our method remains highly efficient because computation is restricted to the modified areas, whereas competing approaches exhibit nearly constant run-time regardless of edit extent. 
+
+# 6. Ablation Study 
+
+We conduct a series of ablation experiments to evaluate the contribution of key components in our pipeline, the need for the bounding box refinement, and the effect of step reduc-tion during inference (see supplementary materials). 
+
+Impact of Acceleration Components. Table 4 reports the effect of removing different acceleration modules. LWA de-Task Method FID ↓ PSNR ↑ CLIP-T ↑ CLIP-I ↑ Latency ↓ Time/iter ↓
+
+Text-guided inpainting FLUX-Fill 56.1 19.23 0.338 0.923 21.4s 0.42s OminiControl2* 39.2 19.11 0.339 0.921 8.25s 0.29s ACE++ 37.2 18.81 0.342 0.929 22.5s 0.80s EasyControl 108.6 15.38 0.331 0.887 14.5s 0.55s 
+
+Ours 39.5 19.31 0.340 0.926 6.97s 0.24s 
+
+Image-guided inpainting ACE++ 42.5 16.21 0.346 0.959 52.9s 1.9s EasyControl 108.3 14.89 0.342 0.932 17.3s 0.65s 
+
+Ours 41.9 15.82 0.349 0.939 7.84s 0.26s 
+
+Table 2. Quantitative comparison of text-guided and image-guided FLUX-based inpainting methods across fidelity, perceptual, and effi-ciency metrics on 1K × 1K resolution. 
+
+Edit % Method 1K 2K 3K 4K 
+
+25% 
+
+OminiControl2 5.98s 21.5s 63.3s 155s FLUX-Fill 21.4s 113s 383s 1064s ACE++ 25.1s 424s — —EasyControl 27.5s 69.2s 222s 590s 
+
+Ours 4.51s 15.6s 35.6s 91.4s 
+
+50% 
+
+OminiControl2 8.47s 35.8s 113s 286s FLUX-Fill 21.5s 113s 383s 1065s ACE++ 25.0s 425s — —EasyControl 29.0s 69.3s 224s 597s 
+
+Ours 6.74s 19.2s 55.7s 173s 
+
+75% 
+
+OminiControl2 11.0s 53.8s 164s 408s FLUX-Fill 21.2s 112s 383s 1052s ACE++ 25.0s 426s — —EasyControl 29.2s 69.4s 221s 587s 
+
+Ours 8.32s 23.0s 84.1s 227s 
+
+Table 3. Speed comparison of different methods across varying edit ratios and resolutions. Results marked by “—” were unable to run on 96GB of GPU memory with expandable segments. 
+
+Method Speed ↓ PSNR ↑ CLIP-T ↑ CLIP-I ↑
+
+Ours 2.34 19.01 0.339 0.931 
+
+-LWA 4.98 (×2.13 ) 18.84 0.336 0.922 -LWA-FC 9.32 ( ×3.98 ) 18.96 0.338 0.923 -LWA-FC-TI 29.12( ×12 .4) 19.03 0.339 0.923 Table 4. Ablation of speed (without low-res denoising part) differ-ence on design components of our method on 1K × 1K resolution with 50% edited region. LWA denotes local window attention with Flash Sparse Attention Kernel. The number in the () means how much slower comparing to the full pipeline. 
+
+notes the local window attention implemented with a Flash Sparse Attention kernel; TI refers to the joint integration of conditional and noisy image tokens (as illustrated in the upper portion of Figure 3); and FC represents feature caching, which avoids redundant projections for unchanged regions. We evaluate four configurations: the full model, the model without LWA, without both LWA and FC, and without LWA, TI, and FC. Experiments are conducted at 
+
+1K resolution with 50% of the image edited. The results show that the complete system delivers the best trade-off between speed and fidelity, while progressive removal of components leads to notable degradation in both aspects. 
+
+The Need for Bounding Box Refinement. Figure 7 demonstrates the importance of bounding box refinement. In models like EasyControl, the direct usage of the given bounding box causes incorrect shadowing while ours solve this problem. 
+
+Figure 7. The inappropriate bounding box will lead to issues in correct shadowing or other artifacts, therefore we need to refine the bounding box. 
+
+# 7. Conclusion 
+
+We presented HierEdit , a region-aware hierarchical diffu-sion framework for efficient high-resolution image editing, without requiring ultra-high-resolution training data. Our approach leverages low-resolution proxy guidance, local-window MMDiT, and inference acceleration to process only modified regions with sparse local-window attention, achieving substantial speedups over state-of-the-art meth-ods while preserving visual fidelity. By decoupling compu-tational cost from image resolution, HierEdit enables 4K
+
+editing that was previously impractical without dense atten-tion or costly high-resolution data. These results demon-strate that combining multi-scale guidance, sparse attention, and targeted acceleration provides a practical and scalable solution for professional workflows demanding ultra-high-resolution outputs. References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 6 [2] Iz Beltagy, Matthew E Peters, and Arman Cohan. Long-former: The long-document transformer. arXiv preprint arXiv:2004.05150 , 2020. 3 [3] Black Forest Labs. Flux. Black Forest Labs GitHub reposi-tory, 2024. Model release. 2, 4, 6, 1 [4] Black Forest Labs. Flux.1 kontext: Flow matching for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 , 2025. 1, 2, 6 [5] Jiazi Bu, Pengyang Ling, Yujie Zhou, Pan Zhang, Tong Wu, Xiaoyi Dong, Yuhang Zang, Yuhang Cao, Dahua Lin, and Ji-aqi Wang. Hiflow: Training-free high-resolution image gen-eration with flow-aligned guidance. In Advances in Neural Information Processing Systems (NeurIPS) , 2025. 3 [6] Qi Cai, Yehao Li, Yingwei Pan, Ting Yao, and Tao Mei. Hidream-i1: An open-source high-efficient image genera-tive foundation model. In ACM International Conference on Multimedia (ACM MM) , page 13636–13639, New York, NY, USA, 2025. Association for Computing Machinery. 2, 4 [7] Hila Chefer, Yuval Alaluf, Yael Vinker, Lior Wolf, and Daniel Cohen-Or. Attend-and-excite: Attention-based se-mantic guidance for text-to-image diffusion models. ACM Transactions on Graphics (TOG) , 42(4):1–10, 2023. 2 [8] Junsong Chen, Yue Wu, Simian Luo, Enze Xie, Sayak Paul, Ping Luo, Hang Zhao, and Zhenguo Li. Pixart-δ: Fast and controllable image generation with latent consistency mod-els. arXiv preprint arXiv:2401.05252 , 2024. 2 [9] Junsong Chen, Jincheng YU, Chongjian GE, Lewei Yao, Enze Xie, Zhongdao Wang, James Kwok, Ping Luo, Huchuan Lu, and Zhenguo Li. Pixart-$ \alpha$: Fast train-ing of diffusion transformer for photorealistic text-to-image synthesis. In International Conference on Learning Repre-sentations (ICLR) , 2024. 2 [10] Xiaokang Chen, Zhiyu Wu, Xingchao Liu, Zizheng Pan, Wen Liu, Zhenda Xie, Xingkai Yu, and Chong Ruan. Janus-pro: Unified multimodal understanding and generation with data and model scaling. arXiv preprint arXiv:2501.17811 ,2025. 2 [11] Tri Dao. Flashattention-2: Faster attention with better par-allelism and work partitioning. In International Conference on Learning Representations (ICLR) , 2024. 2, 3 [12] Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher R´ e. Flashattention: Fast and memory-efficient exact attention with io-awareness. In Advances in Neural Information Processing Systems (NeurIPS) , pages 16344– 16359, 2022. 2, 3 [13] Yichuan Deng, Zhao Song, Jing Xiong, and Chiwun Yang. How sparse attention approximates exact atten-tion? your attention is naturally nc-sparse. arXiv preprint arXiv:2404.02690 , 2025. 3 [14] Ming Ding, Zhuoyi Yang, Wenyi Hong, Wendi Zheng, Chang Zhou, Da Yin, Junyang Lin, Xu Zou, Zhou Shao, Hongxia Yang, and Jie Tang. Cogview: mastering text-to-image generation via transformers. In Conference on Neural Information Processing Systems (NeurIPS) , Red Hook, NY, USA, 2021. Curran Associates Inc. 2 [15] Ruoyi Du, Dongyang Liu, Le Zhuo, Qin Qi, Hongsheng Li, Zhanyu Ma, and Peng Gao. I-max: Maximize the resolu-tion potential of pre-trained rectified flow transformers with projected flow. arXiv preprint arXiv:2410.07536 , 2024. 3 [16] Rinon Gal, Yuval Alaluf, Yuval Atzmon, Or Patashnik, Amit H Bermano, Gal Chechik, and Daniel Cohen-Or. An image is worth one word: Personalizing text-to-image gen-eration using textual inversion. In International Conference on Learning Representations (ICLR) , 2023. 2 [17] Yu Gao, Lixue Gong, Qiushan Guo, Xiaoxia Hou, Zhichao Lai, Fanshi Li, Liang Li, Xiaochen Lian, Chao Liao, Liyang Liu, et al. Seedream 3.0 technical report. arXiv preprint arXiv:2504.11346 , 2025. 2, 4 [18] Lanqing Guo, Yingqing He, Haoxin Chen, Menghan Xia, Xi-aodong Cun, Yufei Wang, Siyu Huang, Yong Zhang, Xintao Wang, Qifeng Chen, et al. Make a cheap scaling: A self-cascade diffusion model for higher-resolution adaptation. In 
+
+European Conference on Computer Vision (ECCV) , pages 39–55. Springer, 2024. 3 [19] Dongchen Han, Yifan Pu, Zhuofan Xia, Yizeng Han, Xu-ran Pan, Xiu Li, Jiwen Lu, Shiji Song, and Gao Huang. Bridging the divide: Reconsidering softmax and linear atten-tion. In Advances in Neural Information Processing Systems (NeurIPS) , pages 79221–79245, 2024. 3 [20] Emiel Hoogeboom, Jonathan Heek, and Tim Salimans. sim-ple diffusion: End-to-end diffusion for high resolution im-ages. In International Conference on Machine Learning (ICML) , pages 13213–13232. PMLR, 2023. 3 [21] Linjiang Huang, Rongyao Fang, Aiping Zhang, Guanglu Song, Si Liu, Yu Liu, and Hongsheng Li. Fouriscale: Afrequency perspective on training-free high-resolution im-age synthesis. In European Conference on Computer Vision (ECCV) , pages 196–212. Springer, 2024. 3 [22] Bohan Jia, Wenxuan Huang, Yuntian Tang, Junbo Qiao, Jincheng Liao, Shaosheng Cao, Fei Zhao, Zhaopeng Feng, Zhouhong Gu, Zhenfei Yin, Lei Bai, Wanli Ouyang, Lin Chen, Fei Zhao, Zihan Wang, Yuan Xie, and Shaohui Lin. Compbench: Benchmarking complex instruction-guided im-age editing. arXiv preprint arXiv:2505.12200 , 2025. 1 [23] Younghyun Kim, Geunmin Hwang, Junyu Zhang, and Eun-byung Park. Diffusehigh: Training-free progressive high-resolution image synthesis through structure guidance. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 4338–4346, 2025. 3 [24] Xunhao Lai, Jianqiao Lu, Yao Luo, Yiyuan Ma, and Xun Zhou. Flexprefill: A context-aware sparse attention mecha-nism for efficient long-sequence inference. In International Conference on Learning Representations (ICLR) , 2025. 3 [25] Daiqing Li, Aleks Kamko, Ehsan Akhgari, Ali Sabet, Lin-miao Xu, and Suhail Doshi. Playground v2. 5: Three in-sights towards enhancing aesthetic quality in text-to-image generation. arXiv preprint arXiv:2402.17245 , 2024. 2 [26] Yuheng Li, Haotian Liu, Qingyang Wu, Fangzhou Mu, Jian-wei Yang, Jianfeng Gao, Chunyuan Li, and Yong Jae Lee. Gligen: Open-set grounded text-to-image generation. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22511–22521, 2023. 2 [27] Zhimin Li, Jianwei Zhang, Qin Lin, Jiangfeng Xiong, Yanxin Long, Xinchi Deng, Yingfang Zhang, Xingchao Liu, Minbin Huang, Zedong Xiao, et al. Hunyuan-dit: A powerful multi-resolution diffusion transformer with fine-grained chi-nese understanding. arXiv preprint arXiv:2405.08748 , 2024. 2[28] Liu Liu, Zheng Qu, Zhaodong Chen, Fengbin Tu, Yufei Ding, and Yuan Xie. Dynamic sparse attention for scalable transformer acceleration. IEEE Transactions on Computers (TC) , 71(12):3165–3178, 2022. 3 [29] Songhua Liu, Weihao Yu, Zhenxiong Tan, and Xinchao Wang. Linfusion: 1 gpu, 1 minute, 16k image. arXiv preprint arXiv:2409.02097 , 2024. 3 [30] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In International Conference on Learning Rep-resentations (ICLR) , 2023. 4 [31] Xinyu Liu, Yingqing He, Lanqing Guo, Xiang Li, Bu Jin, Peng Li, Yan Li, Chi-Min Chan, Qifeng Chen, Wei Xue, et al. Hiprompt: Tuning-free higher-resolution gen-eration with hierarchical mllm prompts. arXiv preprint arXiv:2409.02919 , 2024. 3 [32] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 10012–10022, 2021. 3 [33] Yiwei Ma, Jiayi Ji, Ke Ye, Weihuang Lin, Zhibin Wang, Yonghan Zheng, Qiang Zhou, Xiaoshuai Sun, and Rongrong Ji. I2ebench: A comprehensive benchmark for instruction-based image editing. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , pages 41494–41516. Curran As-sociates, Inc., 2024. 1 [34] Chaojie Mao, Jingfeng Zhang, Yulin Pan, Zeyinzi Jiang, Zhen Han, Yu Liu, and Jingren Zhou. Ace++: Instruction-based image creation and editing via context-aware content filling. arXiv preprint arXiv:2501.02487 , 2025. 6 [35] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jia-jun Wu, Jun-Yan Zhu, and Stefano Ermon. SDEdit: Guided image synthesis and editing with stochastic differential equa-tions. In International Conference on Learning Representa-tions (ICLR) , 2022. 6 [36] Weikang Meng, Yadan Luo, Xin Li, Dongmei Jiang, and Zheng Zhang. Polaformer: Polarity-aware linear attention for vision transformers. In International Conference on Learning Representations (ICLR) , 2025. 3 [37] Alexander Quinn Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob Mcgrew, Ilya Sutskever, and Mark Chen. Glide: Towards photorealis-tic image generation and editing with text-guided diffusion models. In International Conference on Machine Learning (ICML) , pages 16784–16804. PMLR, 2022. 2 [38] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pages 4195–4205, 2023. 2 [39] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis. In International Con-ference on Learning Representations (ICLR) , pages 1862– 1874, 2024. 1, 2 [40] Haonan Qiu, Shiwei Zhang, Yujie Wei, Ruihang Chu, Hangjie Yuan, Xiang Wang, Yingya Zhang, and Ziwei Liu. Freescale: Unleashing the resolution of diffusion models via tuning-free scale fusion. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 16893– 16903, 2025. 3 [41] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image gener-ation with clip latents. arXiv preprint arXiv:2204.06125 , 1 (2):3, 2022. 2 [42] Jingjing Ren, Wenbo Li, Haoyu Chen, Renjing Pei, Bin Shao, Yong Guo, Long Peng, Fenglong Song, and Lei Zhu. Ultrapixel: Advancing ultra high-resolution image synthesis to new peaks. In Advances in Neural Information Process-ing Systems (NeurIPS) , pages 111131–111171. Curran As-sociates, Inc., 2024. 3 [43] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10684–10695, 2022. 1, 2 [44] Nataniel Ruiz, Yuanzhen Li, Varun Jampani, Yael Pritch, Michael Rubinstein, and Kfir Aberman. Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22500– 22510, 2023. 2 [45] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kamyar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, et al. Photorealistic text-to-image diffusion models with deep language understanding. Advances in Neural Information Processing Systems (NeurIPS) , 35:36479–36494, 2022. 2 [46] Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, and Tri Dao. Flashattention-3: Fast and accurate attention with asynchrony and low-precision. In Ad-vances in Neural Information Processing Systems (NeurIPS) ,pages 68658–68685, 2024. 3 [47] Shelly Sheynin, Adam Polyak, Uriel Singer, Yuval Kirstain, Amit Zohar, Oron Ashual, Devi Parikh, and Yaniv Taigman. Emu edit: Precise image editing via recognition and gen-eration tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8871– 8879, 2024. 1 [48] Jingze Shi, Yifan Wu, Bingheng Wu, Yiran Peng, Liangdong Wang, Guang Liu, and Yuyu Luo. Trainable dynamic mask sparse attention. arXiv preprint arXiv:2508.02124 , 2025. 1 [49] Shuwei Shi, Wenbo Li, Yuechen Zhang, Jingwen He, Biao Gong, and Yinqiang Zheng. Resmaster: Mastering high-resolution image generation via structural and fine-grained guidance. In Proceedings of the AAAI Conference on Artifi-cial Intelligence , pages 6887–6895, 2025. 3 [50] Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. 4 [51] Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 , 2024. 2 [52] Zhenxiong Tan, Songhua Liu, Xingyi Yang, Qiaochu Xue, and Xinchao Wang. Ominicontrol: Minimal and univer-sal control for diffusion transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 14940–14950, 2025. 3 [53] Zhenxiong Tan, Qiaochu Xue, Xingyi Yang, Songhua Liu, and Xinchao Wang. Ominicontrol2: Efficient conditioning for diffusion transformers. arXiv preprint arXiv:2503.08280 ,2025. 3, 6 [54] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, Katie Millican, et al. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 , 2023. 6 [55] Jiayan Teng, Wendi Zheng, Ming Ding, Wenyi Hong, Jian-qiao Wangni, Zhuoyi Yang, and Jie Tang. Relay diffusion: Unifying diffusion process across resolutions for image syn-thesis. In International Conference on Learning Representa-tions (ICLR) , 2024. 3 [56] Haoning Wu, Shaocheng Shen, Qiang Hu, Xiaoyun Zhang, Ya Zhang, and Yanfeng Wang. Megafusion: Extend dif-fusion models towards higher-resolution image generation without further tuning. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision ,pages 3944–3953. IEEE, 2025. 3 [57] Haocheng Xi, Shuo Yang, Yilong Zhao, Chenfeng Xu, Muyang Li, Xiuyu Li, Yujun Lin, Han Cai, Jintao Zhang, Dacheng Li, et al. Sparse videogen: Accelerating video diffusion transformers with spatial-temporal sparsity. In In-ternational Conference on Machine Learning (ICML) , pages 68208–68224, 2025. 3 [58] Enze Xie, Lewei Yao, Han Shi, Zhili Liu, Daquan Zhou, Zhaoqiang Liu, Jiawei Li, and Zhenguo Li. Difffit: Un-locking transferability of large diffusion models via sim-ple parameter-efficient fine-tuning. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 4230–4239, 2023. 3 [59] Enze Xie, Junsong Chen, Junyu Chen, Han Cai, Haotian Tang, Yujun Lin, Zhekai Zhang, Muyang Li, Ligeng Zhu, Yao Lu, and Song Han. SANA: Efficient high-resolution text-to-image synthesis with linear diffusion transformers. In International Conference on Learning Representations (ICLR) , 2025. 2, 3 [60] Enze Xie, Junsong Chen, Yuyang Zhao, Jincheng YU, Ligeng Zhu, Yujun Lin, Zhekai Zhang, Muyang Li, Junyu Chen, Han Cai, Bingchen Liu, Daquan Zhou, and Song Han. SANA 1.5: Efficient scaling of training-time and inference-time compute in linear diffusion transformer. In Interna-tional Conference on Machine Learning (ICML) , 2025. 2, 3[61] Jinheng Xie, Weijia Mao, Zechen Bai, David Junhao Zhang, Weihao Wang, Kevin Qinghong Lin, Yuchao Gu, Zhijie Chen, Zhenheng Yang, and Mike Zheng Shou. Show-o: One single transformer to unify multimodal understanding and generation. In International Conference on Learning Rep-resentations (ICLR) , 2025. 2 [62] Ruyi Xu, Guangxuan Xiao, Haofeng Huang, Junxian Guo, and Song Han. Xattention: Block sparse attention with an-tidiagonal scoring. In International Conference on Machine Learning (ICML) , pages 69819–69831, 2025. 3 [63] Zeyue Xue, Guanglu Song, Qiushan Guo, Boxiao Liu, Zhuo-fan Zong, Yu Liu, and Ping Luo. Raphael: text-to-image generation via large mixture of diffusion paths. In Confer-ence on Neural Information Processing Systems (NeurIPS) ,Red Hook, NY, USA, 2023. Curran Associates Inc. 2 [64] Shuo Yang, Haocheng Xi, Yilong Zhao, Muyang Li, Jintao Zhang, Han Cai, Yujun Lin, Xiuyu Li, Chenfeng Xu, Kelly Peng, et al. Sparse videogen2: Accelerate video generation with sparse attention via semantic-aware permutation. In Ad-vances in Neural Information Processing Systems (NeurIPS) ,2025. 3 [65] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A uni-fied image editing dataset and benchmark. In Neural Infor-mation Processing Systems Datasets and Benchmarks Track (NeurIPS D&B) , 2025. 1 [66] Ruonan Yu, Songhua Liu, Zhenxiong Tan, and Xinchao Wang. Ultra-resolution adaptation with ease. In Interna-tional Conference on Machine Learning (ICML) , 2025. 3 [67] Zhihang Yuan, Hanling Zhang, Lu Pu, Xuefei Ning, Lin-feng Zhang, Tianchen Zhao, Shengen Yan, Guohao Dai, and Yu Wang. Ditfastattn: Attention compression for diffusion transformer models. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , pages 1196–1219, 2024. 3 [68] Hanling Zhang, Rundong Su, Zhihang Yuan, Pengtao Chen, Mingzhu Shen, Yibo Fan, Shengen Yan, Guohao Dai, and Yu Wang. Ditfastattnv2: Head-wise attention compression for multi-modality diffusion transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 16399–16409, 2025. 3 [69] Jintao Zhang, Haofeng Huang, Pengle Zhang, Jia Wei, Jun Zhu, and Jianfei Chen. Sageattention2: Efficient attention with thorough outlier smoothing and per-thread int4 quan-tization. In International Conference on Machine Learning (ICML) , 2025. 3 [70] Jinjin Zhang, Qiuyu Huang, Junjie Liu, Xiefan Guo, and Di Huang. Diffusion-4k: Ultra-high-resolution image syn-thesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 23464–23473, 2025. 3 [71] Jintao Zhang, Jia Wei, Pengle Zhang, Jun Zhu, and Jianfei Chen. Sageattention: Accurate 8-bit attention for plug-and-play inference acceleration. In International Conference on Learning Representations (ICLR) , 2025. 3 [72] Jintao Zhang, Chendong Xiang, Haofeng Huang, Jia Wei, Haocheng Xi, Jun Zhu, and Jianfei Chen. Spargeattn: Accu-rate sparse attention accelerating any model inference. In In-ternational Conference on Machine Learning (ICML) , pages 76397–76413, 2025. 3 [73] Kai Zhang, Jingyun Liang, Luc Van Gool, and Radu Timo-fte. Designing a practical degradation model for deep blind image super-resolution. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4791– 4800, 2021. 1 [74] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 3836–3847, 2023. 2 [75] Michael Zhang, Kush Bhatia, Hermann Kumbong, and Christopher R´ e. The hedgehog & the porcupine: Expres-sive linear attentions with softmax mimicry. In International Conference on Learning Representations (ICLR) , 2024. 3 [76] Yuyao Zhang and Yu-Wing Tai. Scale-dit: Ultra-high-resolution image generation with hierarchical local attention. 
+
+arXiv preprint arXiv:2510.16325 , 2025. 3 [77] Yuyao Zhang, Jinghao Li, and Yu-Wing Tai. Layercraft: En-hancing text-to-image generation with cot reasoning and lay-ered object integration. In Advances in Neural Information Processing Systems (NeurIPS) , 2025. 1 [78] Yuxuan Zhang, Yirui Yuan, Yiren Song, Haofan Wang, and Jiaming Liu. Easycontrol: Adding efficient and flexible control for diffusion transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 19513–19524, 2025. 6 [79] Qingping Zheng, Yuanfan Guo, Jiankang Deng, Jianhua Han, Ying Li, Songcen Xu, and Hang Xu. Any-size-diffusion: Toward efficient text-driven synthesis for any-size hd images. In Proceedings of the AAAI Conference on Arti-ficial Intelligence , pages 7571–7578, 2024. 3 [80] Lianghui Zhu, Zilong Huang, Bencheng Liao, Jun Hao Liew, Hanshu Yan, Jiashi Feng, and Xinggang Wang. Dig: Scal-able and efficient diffusion models with gated linear atten-tion. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 7664–7674, 2025. 3 HierEdit : Region-Aware Hierarchical Diffusion for Efficient High-Resolution Editing 
+
+# Supplementary Material 
+
+# 8. Comparison with Upscaler Baselines. 
+
+Here we present a qualitative (Figure 8) example where the lady’s facial expression and posture totally changed. Both upscalers show artifacts (eyelash discontinuity and blurriness), while ours does not. We will add complete quantitative comparisons in the final version. 
+
+# 9. Example on Full Editing 
+
+Figure 9 further illustrates our ability to edit entire images, even though our focus is on local editing. 
+
+# 10. More Ablation Study 
+
+Ablation on Denoising Step Reduction. We further ex-amine how aggressively denoising steps may be skipped while preserving output quality. Figure 10 presents results obtained by skipping {0, 10 , 14 , 18 , 22 , 24 } out of 28 total steps. Skipping 18 steps offers the best balance between visual quality and efficiency. 
+
+# 11. Implementation Details 
+
+## 11.1. Experimental Setup. 
+
+We adopt FLUX.1-dev [3] as our base model. The net-work is fine-tuned using LoRA with a rank of 16, trained for 10,000 steps with a batch size of 6 on six NVIDIA RTX A6000 Ada GPUs (48 GB each). All evaluations are performed on a NVIDIA RTX 6000 Ada Pro GPU (96 GB) server. For training, we employ the IPA300K dataset [77], which provides paired source and target im-ages along with textual prompts and bounding-box anno-tations on 1024 × 1024 resolution. For the off the shelf low-resolution model selection, we choose either FLUX-Kontext.dev or OminiControl2. For kernel adaptation, we permute the token sequence to a ”window-first” way, so that the tokens within one local window will stick to each other in the sequence and we also adapt our code to Flash Sparse Attention [48], to skip the masked blocks for speeding up 
+
+## 11.2. Instructional Editing Benchmarks 
+
+We provide additional details regarding the quanitative comparisons in Table 1 in the main paper. We evaluate on I2EBench [33], ImgEdit [65], CompBench [22], and EmuEdit [47]. For the composite benchmarks (those mea-suring multiple subtasks), we average the scores of the local editing tasks. The details for each benchmark are listed be-low. 
+
+I2EBench. The I2EBench benchmark, which encompasses 16 diverse image editing tasks spanning both low-level restoration and high-level semantic modifications. We eval-uate on the the first category includes 9 low-level tasks: Deblurring, HazeRemoval, Lowlight, NoiseRemoval, Rain-Removal, ShadowRemoval, SnowRemoval, WatermarkRe-moval, and RegionAccuracy. We evaluate using the Struc-tural Similarity Index (SSIM), comparing edited images against ground truth references. 
+
+CompBench. We evaluate on the local subset of the Comp-Bench benchmark, which includes add, remove, and replace tasks. We report the average scores across those three tasks. For each task, we measure text-image alignment through the CLIP Score and structural similarity in background regions using SSIM. 
+
+EmuEdit. For the EmuEdit benchmark, we utilize the test split of the facebook/emu edit test set dataset from Hug-gingFace, and report two metrics. The CLIP dir assesses di-rectional alignment of the edit. The DINO score measures feature-level preservation. 
+
+ImgEdit. We evaluate our method on the ImgEdit bench-mark using its basic suite, which consists of single-turn edit-ing tasks. The primary evaluation relies on a GPT-4 judge. The judge model receives three inputs (the original image, the edited image, and the textual instruction) and produces three integer scores ranging from 1 to 5 for different aspects of the edit. These scores are averaged. We report these averages across a range of local editing tasks: add, adjust, compose, extract, remove, and replace. 
+
+# 12. More Examples 
+
+We present additional qualitative examples in Figures 12. The original images are upsampled using the BSRGAN super-resolution model [73]. For each example, the low-resolution edited result is displayed inside the black box located at the lower-left corner. We also include 4K (Fig-ure 13) and 2K (Figure 14) editing results on synthetic data. Figure 8. Comparison with low-resolution editing followed by upscaling. 
+
+Figure 9. Our model also supports full image editing by removing the mask although we focus on local editing. 
+
+Figure 10. Ablation on the number of timesteps skipped. Results shows 18 steps yields an optimal solution balancing the generation quality and speed. Numbers in red are PSNR values. 
+
+Figure 11. The inappropriate bounding box will lead to issues in correct shadowing or other artifacts, therefore we need to refine the bounding box. Figure 12. More examples on 4K in-the-wild data. Figure 13. More examples on 4K synthetic data. Figure 14. More examples on 2K synthetic data.

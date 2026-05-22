@@ -1,0 +1,669 @@
+Title: RIDE: Retinex-Informed Decoupling for Exposing Concealed Objects
+
+URL Source: https://arxiv.org/pdf/2605.15450v1
+
+Published Time: Mon, 18 May 2026 00:17:16 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# RIDE: Retinex-Informed Decoupling for Exposing Concealed Objects 
+
+Chunming He 1 , Rihan Zhang 1 , Dingming Zhang 1 , Chengyu Fang 2 ,Longxiang Tang 3 , Jingjia Feng 1 , Fengyang Xiao 1,∗ , Sina Farsiu 1,∗
+
+> 1
+
+Duke University, 2Tsinghua University, 3Harvard University 
+
+∗ Corresponding Author, Contact: chunming.he@duke.edu 
+
+Abstract 
+
+Concealed Object Segmentation (COS) encompasses a family of dense-prediction tasks, including camouflaged object detection, polyp segmentation, transparent ob-ject detection, and industrial defect inspection, where targets are visually entangled with their surroundings through different physical mechanisms. Existing methods either operate directly on RGB images or employ heterogeneous decompositions (e.g. , Fourier, wavelet) that redistribute spatial evidence across scale/frequency coefficients, making pixel-aligned cues less direct. We introduce a fundamentally different perspective: homogeneous image decomposition via Retinex theory, which factorizes an image into illumination and reflectance components within the same spatial domain. Our key insight is that visual entanglement enforces appearance matching in the composite space, but this does not necessitate simul-taneous matching in both component spaces, a phenomenon we formalize as the 
+
+Discriminability Gap Theorem . Crucially, we show that across diverse COS sub-tasks, the underlying physical processes systematically anti-correlate illumi-nation and reflectance differences, yielding theoretical guarantees that Retinex decomposition preserves or strictly improves total foreground–background dis-criminability across the full physical regime, with anti-correlation maximizing the gain. Building on this, we propose RIDE comprising: (i) a Task-Driven Retinex Decomposition module that learns segmentation-optimal factorizations end-to-end; (ii) a Discriminability Gap Attention mechanism that adaptively exploits where decomposition helps; and (iii) a Camouflage-Breaking Contrastive loss operating in reflectance feature space. Extensive experiments across four COS tasks and six broader segmentation settings demonstrate consistent improvements over estab-lished baselines. Comprehensive analyses validate our theoretical predictions and reveal interpretable patterns. Code will be released. 
+
+1 Introduction 
+
+Concealed Object Segmentation (COS) aims to identify objects that are visually blended into their surroundings through natural or artificial camouflage [ 1 , 2]. This makes COS fundamentally more challenging and has attracted growing attention due to its broad applications [2, 3, 4, 5]. Unlike standard segmentation where targets exhibit clear visual contrast, camouflaged objects exploit texture matching, color assimilation, and structural mimicry, tissue homogeneity, transparency, or subtle material defects to achieve near-perfect visual homogeneity with their environments. Existing methods mainly focus on architectural engineering, such as multi-scale feature aggregation [ 6], attention mechanisms [ 7], or edge-guided refinement [ 8], yet overlook a fundamental bottleneck: these approaches fundamentally search for discriminative signals within the same composite image space where camouflage is designed to eliminate such signals. 
+
+> Preprint.
+> arXiv:2605.15450v1 [cs.CV] 14 May 2026
+
+Y(a) Two -Stage Pipeline MY
+
+(b) Coupled Unfolding (RUN) Y
+
+(c) Nested Unfolding (NUN) 
+
+Restore X
+
+Restore kX Segment kM
+
+Shared Parameter Space 
+
+Partial isolation but no inter -task feedback 
+
+Gradient conflict from shared optimization 
+
+Degradation isolation with controlled mutual refinement KMKX
+
+Segment  Outer Loop ( ×K)
+
+> Inner Loop ( ×N)
+
+Restore ,k n X Guide 
+
+> Refine k
+
+MKMKXY
+
+> : Degraded data
+
+X : Restored data M : Segmentation mask 
+
+Segment   
+
+> No Feedback
+> Loop ( ×K)
+> (a) Composite Space
+
+IˆMIˆM  
+
+> Vulnerable to composite -space camouflage.
+> (b) Heterogeneous Decomposition
+
+I/ /FFT DWT DCT ˆM     
+
+> Diffuses spatial cues into frequency coefficients.
+> (c) Homogeneous Decomposition
+> Segmentor
+> Faithful spatial locality, principled material exposure.
+
+ITRD &L RˆM
+
+> Seg.
+
+I    
+
+> : Concealed Image ˆM: Segmentation Mask : Fast Foutier Transform FFT DWT FFT DWT
+> : Discrete Wavelet Transform DCT DCT : Discrete Cosine Transform : Task -driven Retinex Decomposition TRD TRD
+
+Figure 1: Heterogeneous vs. homogeneous decomposition for COS. Heterogeneous methods (left) transform images to different representation spaces (frequency domain), scattering spatial information. Our homogeneous approach (right) decomposes within the same spatial domain via Retinex theory, preserving locality while exposing concealed material differences. A natural strategy to handle such visual entanglement is image decomposition, and frequency-domain methods (Fourier [ 9 ], wavelet [ 10 ], DCT [ 11 ]) represent this direction. However, we argue that such 
+
+heterogeneous decompositions are suboptimal for COS. By mapping images from the spatial domain to scale/frequency coefficients, they redistribute spatial evidence in ways that make pixel-aligned cues less direct, weakening locality crucial for spatially-defined targets. We instead advocate for 
+
+homogeneous decomposition that factorizes images within the same spatial domain, preserving spatial correspondence while exposing hidden discriminative signals (Fig. 1). To this end, we propose RIDE (Retinex-Informed Decomposition for Exposing concealed objects), grounded in Retinex theory [ 12 ], which models image formation as I = L ⊙ R with illumination 
+
+L and reflectance R. Our key insight is that across diverse COS sub-tasks, visual entanglement achieves composite appearance matching ( Ifg ≈ Ibg ) without requiring simultaneous matching of both components. The physical processes governing each sub-task often produce anti-correlated 
+
+illumination–reflectance differences: (i) in COD, organisms select habitats with favorable lighting that compensates their reflectance signatures [ 13 ]; (ii) in polyp endoscopy, point-source illumination on curved mucosal surfaces creates strong illumination gradients that mask reflectance contrast between polyps and tissue; (iii) in transparent objects, specular reflections at glass boundaries produce illu-mination spikes where reflectance is neutral; (iv) in industrial defect inspection, directional lighting on textured surfaces creates illumination patterns that homogenize defects with the substrate. We formalize this as the Discriminability Gap Theorem (Theorem 1), proving that Retinex decompo-sition preserves or improves total foreground–background discriminability for any non-degenerate component configuration, with anti-correlation between δL and δR maximally amplifying the gain. In the Task-driven Retinex Decomposition (TRD) module, RIDE learns segmentation-optimal factorizations end-to-end. A Mutual Exclusivity loss assigns edges to either illumination or reflectance, yielding clean material boundaries, while a Reflectance-Boundary head directly aligns reflectance gradients with ground-truth object boundaries. The Discriminability Gap Attention (DGA) module exploits the non-uniform gains from decomposition by estimating local discriminability gains and adaptively suppressing reliance on component features when no positive gap is detected. We further propose Camouflage-Breaking Contrastive Learning (CBCL) in reflectance space, where genuine material differences provide a physical foundation for foreground-background separation. Our contributions are summarized as follows: 1. We unify a family of COS tasks (COD, polyp, glass, defect) under a single homogeneous vs. 
+
+heterogeneous decomposition formulation, identifying their shared physical mechanism: anti-correlated illumination-reflectance differences. 2. Grounded in Retinex theory, we formalize this mechanism via the Discriminability Gap Theorem ,with assumptions explicitly stated and a complete proof in the appendix. 3. We propose RIDE , integrating Task-Driven Retinex Decomposition, Discriminability Gap Atten-tion, and reflectance-space contrastive learning into a unified, plug-in framework. 4. Extensive experiments across four COS tasks, plus six broader segmentation tasks for general-ization, validate our framework. In-depth analyses validate the theorem’s predictions and reveal interpretable patterns of how decomposition exposes different forms of concealment. 
+
+2 Related Work 
+
+Concealed Object Segmentation. COS broadly covers tasks where targets share visual attributes with their surroundings, including camouflaged objects [ 1, 2 , 14 ], polyps [ 3], transparent surfaces [ 15 ], 2and industrial defects [ 16 ]. While each sub-task has historically been studied in isolation, they share the common challenge of visual entanglement. Recent COD advances focus on: (i) multi-scale reasoning [17 , 18 ]; (ii) foundation model adaptation [19 , 16 ]; (iii) frequency-domain analysis [9 , 10 ]; (iv) diffusion-based refinement [20 , 21 ]. Polyp segmentation is dominated by encoder-decoder designs [ 3 ] and transformer-based variants. Glass detection emphasizes boundary cues [ 15 , 22 ]. Industrial defect inspection often follows reconstruction-based or memory-bank paradigms. Our work is the first to unify these tasks under a homogeneous Retinex decomposition framework. 
+
+Retinex Theory and Applications. Land and McCann [ 12 ] proposed Retinex theory to model image formation as the product of illumination and reflectance. It has been widely applied to image enhancement and restoration [ 23 , 24 , 25 , 26 , 27 ], including learned [ 23 ], unfolding-based [ 24 , 26 ], and diffusion-based [ 25 ] variants. Despite this success, Retinex has been largely unexplored for image segmentation. We are the first to systematically study Retinex decomposition for the broad family of COS tasks, providing both theoretical justification and a unified practical framework. 
+
+Image Decomposition for Dense Prediction. Image decomposition has been explored for dense prediction. Intrinsic decomposition separates shading and albedo [ 28 , 29 ]; segmentation-oriented methods use texture–structure separation [ 30 , 31 ], edge-aware filtering [ 32 , 33 ], or learned disen-tanglement [ 34 ]. Frequency-domain approaches further decompose features via Fourier [ 35 , 36 ], wavelet [ 10 ], or learnable filters [ 37 ]. However, these methods redistribute spatial evidence across frequency coefficients. Whereas COS targets are spatially defined, making homogeneous decom-position more suitable. The general principle that transforming observation spaces can increase foreground-background separability has long-standing roots in source separation (ICA [ 38 ]) and discriminant analysis (trace-ratio LDA [ 39 , 40 ]). Our contribution is not this principle itself but its concrete instantiation for Retinex-based COS: a Retinex-specific condition (anti-correlated δL, δ R)under which decomposition is provably beneficial, together with a task-driven architecture that learns such factorizations end-to-end. 
+
+3 Theoretical Foundation: Discriminability Gap Analysis 
+
+3.1 Preliminaries and Notation 
+
+Consider an image I ∈ RH×W ×3 containing a foreground object occupying region Ωf and back-ground region Ωb. Under the Retinex model, I(p) = L(p) ⊙ R(p) for each pixel p, where L(p) ∈ R+
+
+is a single-channel illumination and R(p) ∈ [0 , 1] 3 is RGB reflectance. We work in log-space: 
+
+˜I(p) = ˜L(p) + ˜R(p).
+
+Definition 1 (Regional Discriminability) . For a (possibly vector-valued) component X ∈ { ˜I, ˜L, ˜R},the regional discriminability between foreground and background is 
+
+D(X) = ∥μfX − μbX ∥22
+
+.   tr(Σ fX ) + tr(Σ bX ) + ϵR
+
+, (1) 
+
+where μrX = Ep∈Ωr [X(p)] and ΣrX = Cov p∈Ωr (X(p)) for r ∈ { f, b }, and ϵR > 0. This is the trace-ratio surrogate of multivariate Fisher’s discriminant criterion [ 39 , 40 ]: the numerator measures the squared foreground-background mean separation, while the denominator uses the total within-region scatter (trace of covariance) rather than the inverse covariance matrix in the standard Fisher form. This isotropic simplification avoids matrix inversion, remains numerically stable on dense feature maps, but does not model anisotropic covariance structure. 
+
+Definition 2 (Discriminability Gap) . The discriminability gap of component X is ∆D(X) = 
+
+D(X) − D( ˜I). A positive gap indicates that X is more discriminative than the composite image. 
+
+3.2 The Discriminability Gap Theorem Assumption 1 (Working assumptions) . (A1) The image follows the log-domain Retinex model 
+
+˜I = ˜L + ˜R. (A2) Within each region Ωr (r ∈ { f, b }), ˜L and ˜R are conditionally independent, so 
+
+Cov( ˜L, ˜R)r ≈ 0. (A3) The visual entanglement condition D( ˜I) ≤ ϵ holds for some small ϵ > 0.
+
+3Theorem 1 (Discriminability Gap Existence) . Under Assumption 1, let δL = μf 
+
+> ˜L
+
+− μb 
+
+> ˜L
+
+and δR =
+
+μf 
+
+> ˜R
+
+− μb
+
+> ˜R
+
+. Define the cosine angle between the two mean-difference vectors as 
+
+ρ = cos θ = δ⊤ 
+
+> L
+
+δR
+
+∥δL∥ ∥ δR∥ ∈ [−1, 1] ,
+
+and 
+
+ξ = ∥δL∥ ∥ δR∥∥δL∥2 + ∥δR∥2 ∈ (0 , 12 ],
+
+where the upper bound on ξ follows from AM–GM. Then, provided δL and δR are nonzero, 
+
+D( ˜R) + D( ˜L) ≥ D( ˜I) · 1 + 2 ξ
+
+1 + 2 ρ ξ . (2) 
+
+The factor (1 + 2 ξ)/(1 + 2 ρξ ) is no smaller than one for any ρ ≤ 1, with equality only when ρ = 1 
+
+or one component has vanishing mean difference. Anti-correlation ( ρ < 0) further amplifies the gain, explaining why COS sub-tasks, whose physical mechanisms systematically produce ρ < 0, benefit strongly from Retinex decomposition. Proof Sketch. From ˜I = ˜L + ˜R, the mean differences satisfy δI = δL + δR, so ∥δI ∥2 = ∥δL∥2 +
+
+∥δR∥2 + 2 ∥δL∥ ∥ δR∥ ρ. Combined with the variance decomposition under (A2) and Titu’s inequality (Cauchy–Schwarz in Engel form) applied to ∥δL∥2/W L + ∥δR∥2/W R, this yields the stated bound. The complete proof is in Appendix ?? .
+
+Physical interpretation across COS sub-tasks. While Theorem 1 guarantees decomposition gain for any ρ ≤ 1 (with equality only in the trivial ρ = 1 case), the magnitude of the gain depends critically on 
+
+ρ: anti-correlation maximizes it, while alignment trivializes it. COS sub-tasks systematically produce 
+
+ρ < 0 through diverse physical mechanisms, which explains why decomposition is particularly 
+
+effective in this domain. We take COD and PIS tasks (two classic COS problems) as examples: • Camouflaged Animals (COD): Camouflage enforces Lfg ⊙ Rfg ≈ Lbg ⊙ Rbg . Organisms select habitats with favorable lighting ( e.g. , dappled leaf litter), which produces anti-correlated δL, δ R [13 ]. • Polyp Endoscopy: A point light source attached to the endoscope tip creates strong distance-dependent illumination on curved mucosal surfaces. Polyps and surrounding tissue have intrinsically distinct reflectance (vascularization, surface smoothness) that is masked by these illumination gradients, providing a textbook setting for ρ < 0.This unifies COS tasks under one principle: visual entanglement defines each task and induces the anti-correlation exploited by Retinex decomposition. Building on this theoretical foundation, the next section instantiates the principle as a concrete network architecture and learning objective. 
+
+4 Method: RIDE Framework 
+
+Based on the theoretical analysis in §3, we present the RIDE framework (Fig. 2). RIDE comprises four key components: (1) Task-Driven Retinex Decomposition (§4.1), (2) Triple-View Feature Encoder (§4.2), (3) Discriminability Gap Attention (§4.3), and (4) Progressive Decoupled Decoder (§4.4). 
+
+4.1 Task-driven Retinex Decomposition (TRD) 
+
+Unlike conventional Retinex methods for image enhancement, our decomposition is jointly optimized for segmentation, learning to produce decompositions that maximally expose camouflaged objects. 
+
+Architecture. We employ a lightweight U-Net [ 41 ] Gθ with ∼1.2M parameters that takes image I as input and produces illumination L and reflectance R, formulated as: 
+
+L, R = Gθ (I), s.t. L ∈ RH×W 
+
+> +
+
+, R ∈ [0 , 1] H×W ×3 (3) We use Sigmoid for reflectance and Softplus for illumination to enforce valid ranges. 
+
+Retinex-aware loss. The decomposition is guided by physical priors through: 
+
+Lret = ∥I − L ⊙ R∥1 + ∥∇ L∥22 + X
+
+> c
+
+∥∇ Rc∥1 + LME , (4) 4MWPPˆ h         
+
+> kPˆh
+> kPˆh
+> kPˆh
+> kPc) OCFormer F••••F
+> CConcatenation CConcatenation ••
+> Hadamard Product •Hadamard Product
+> mmKQ
+> PI /PI '
+> OCFormer
+> Block (×N 4)KMKXYMMXBˆkB1
+> T
+> −MXYBkB
+
+( )( )Ec onX Y X          
+
+> (a)SODUN ()X( ) ( ) ,,/Tk n k n RC RC DD
+>  output
+> Conv 3 Conv 3 X
+> ReLU ReLU ReLU ReLU Convolution Convolution
+> Information Flow of BUI ,k n ,k n 
+
+( )1            
+
+> 1
+> ˆ,,,T
+> kkkk−=BMXYBMM
+> Task -Driven
+> Retinex
+> Decomposition
+> Task -Driven
+> Retinex
+> Decomposition
+> Triple -View
+> Freature Encoder l
+> L
+
+Fl
+
+> R
+
+Fl
+
+> L
+
+Fl
+
+> R
+
+Fl
+
+> I
+
+Fl
+
+> I
+
+F  
+
+> Discriminability
+> Gap
+> Attention
+> Module (DGA)
+> Discriminability
+> Gap
+> Attention
+> Module (DGA)
+> Progressive
+> Decoder
+
+IILRret Lret Lcon Lcon Lseg bnd L L+seg bnd L L+ˆMˆMLRl
+
+> L
+
+Fl
+
+> I
+
+Fl
+
+> R
+
+F
+
+> Local
+> Variance
+> Local
+> Variance
+> Local
+> Variance
+> Local
+> Variance
+> Local
+> Variance
+> Local
+> Variance L
+
+dLdIdIdRdRd( )ReLU L IL d d= −( )ReLU L IL d d= −( )ReLU R IR d d= −( )ReLU R IR d d= −(Conv L
+
+ =( )Conv L
+
+ = ( )Conv R
+
+ = lR RlLlfuse lLdI
+
+FF FF
+
+++=
+
+
+
+lfused F
+
+(b) DGA Module Detail 
+
+(a) Overall RIDE Framework 
+
+> zoom in
+
+Figure 2: Overall architecture of RIDE. where c indexes color channels. ∇ = ( ∇h, ∇v ) denotes spatial gradients along horizontal and vertical directions. LME represents Mutual Exclusivity (ME) loss, which encourages edges to be attributed to either illumination or reflectance, but not both: 
+
+LME = 1
+
+|Ω|
+
+X
+
+p∈Ω
+
+X
+
+d∈{ h,v }
+
+|∇ dL(p)| · |∇ dR(p)|. (5) This is crucial for COS: clean reflectance edges indicate material (and potential object) boundaries, while shared edges cause ambiguity. The ME loss acts as a “winner-take-all” textural attribution. 
+
+Task-driven training. Lret is optimized jointly with the segmentation objective, allowing gradients from Lseg to propagate back to Gθ and encourage segmentation-optimal decompositions. Rather than seeking a perfect Retinex factorization, the goal is to maximize the discriminability gap. 
+
+4.2 Triple-View Feature Encoder 
+
+We extract multi-scale features from all three views ( I, L, R ) using a shared encoder Φ with view-specific lightweight adapters. For each view V ∈ { I, L, R } and level l ∈ { 1, 2, 3, 4}, we get: 
+
+F lV = Φ l(V ) + AlV (Φ l(V )) , (6) where AlV is a common bottleneck adapter ( Conv 1×1(Cl, C l/r ) → GELU → Conv 1×1(Cl/r, C l),
+
+r = 4 ). The shared backbone ensures efficiency, while adapters capture view-specific characteristics: 
+
+AI for composite appearance, AL for illumination patterns, and AR for material-related features. The backbone parameters Φ are tied across views, and implementation-level optimizations (shared activations across views where applicable, fused adapter convolutions) keep the per-view marginal cost small relative to single-view baselines, as reflected in our wall-clock measurements (Table 2). 
+
+4.3 Discriminability Gap Attention 
+
+While Definition 1 measures regional discriminability through inverse within-region scatter (lower variance is better for compact, separable regions), DGA operates at a different scale: regional separability manifests locally as boundary transitions where feature contrast spikes. We use local feature contrast as a differentiable proxy for these transitions. Before computing local contrast, F lV
+
+is feature-normalized to bound channel-wise scale, preventing the gap estimator from being driven by branch-specific feature magnitudes. For each spatial position p and level l:
+
+dlV (p) = 1
+
+|Ωk|
+
+X
+
+q∈Ωk (p)
+
+∥F lV (q) − ¯F lV (p)∥22, V ∈ { I, L, R } (7) where ¯F lV (p) is the local mean. High variance indicates potential boundary transitions. We then compute the discriminability gap, measuring each component’s improvement over the composite: 
+
+∆lR(p) = ReLU (dlR(p) − dlI (p)) , ∆lL(p) = ReLU (dlL(p) − dlI (p)) . (8) 5Positive ∆lR(p) indicates reflectance transitions invisible in the composite image. These gaps are converted into spatial attention weights αlR = Sigmoid (Conv 3×3(Conv 1×1(Concate (∆ lR, d lR, d lI )))) 
+
+and αlL analogously, which guide the final fusion: 
+
+F l 
+
+> fused
+
+= F lI + αlR ⊙ F lR + αlL ⊙ F lL. (9) 
+
+When no positive discriminability gap is detected (e.g. , in the trivial ρ → 1 regime predicted by Theorem 1, or when both ∥δL∥, ∥δR∥ → 0 as in absolute material mimicry under matched lighting), the gap-conditioned attention weights αlR, α lL are driven toward small values, suppressing reliance on the component features so that DGA recovers composite-only behavior F l 
+
+> fused
+
+≈ F lI . Otherwise, component features with positive discriminability gains are selectively enhanced. 
+
+4.4 Progressive Decoupled Decoder 
+
+The decoder progressively integrates DGA-fused features: Dl = ConvBlock (Up (Dl+1 ) + F l
+
+> fused
+
+)
+
+for l = 3 , 2, 1, where D4 = F 4 
+
+> fused
+
+and ConvBlock consists of two 3 × 3 convolutions with batch normalization and GELU. Three prediction heads operate on D1: a segmentation head ˆM =
+
+σ(Conv 1×1(D1)) as the primary output, a boundary head ˆB = σ(Conv 1×1(D1)) for edge sharpening, and a reflectance-boundary head ˆBR = σ(Conv 1×1(Conv 3×3(|∇ R|))) that predicts boundaries directly from reflectance gradients, linking decomposition quality to segmentation accuracy. 
+
+4.5 Loss Functions Segmentation loss. We use a combination of binary cross-entropy and IoU loss with deep supervision: 
+
+Lseg =
+
+> 4
+
+X
+
+> l=1
+
+12l−1
+
+h
+
+LBCE ( ˆM l, M l
+
+> GT
+
+) + LIoU ( ˆM l, M l
+
+> GT
+
+)
+
+i
+
+. (10) 
+
+Boundary loss. We supervise both boundary heads using the ground truth boundary BGT :
+
+Lbnd = LBCE ( ˆB, B GT ) + LBCE ( ˆBR, B GT ). (11) The reflectance-boundary loss LBCE ( ˆBR, B GT ) directly links reflectance gradients with object bound-aries, providing explicit supervision for task-driven decomposition. 
+
+Camouflage-breaking contrastive loss. We apply a corrected InfoNCE in reflectance feature space using two augmented views of the same input, providing a non-degenerate positive pair: 
+
+Lcon = − log exp( sim (f +
+
+> R,a
+
+, f +
+
+> R,b
+
+)/τ )exp( sim (f +
+
+> R,a
+
+, f +
+
+> R,b
+
+)/τ ) + PJj=1 exp( sim (f +
+
+> R,a
+
+, f −,j R )/τ ) , (12) where τ is temperature, f + 
+
+> R,a
+
+and f + 
+
+> R,b
+
+are foreground reflectance features from two augmented views of the same image, computed via normalized masked global average pooling 
+
+f + 
+
+> R,a
+
+=
+
+P 
+
+> p
+
+F lR,a (p) M l
+
+> GT
+
+(p)
+
+P 
+
+> p
+
+M l
+
+> GT
+
+(p) + ϵ ,f −,j R are negatives from J randomly sampled background patches and sim (·, ·) is cosine similarity. 
+
+Why R-space rather than I-space? In I-space, visual entanglement enforces f + 
+
+> I
+
+≈ f − 
+
+> I
+
+, so the InfoNCE positive-negative gap collapses and the loss provides little discriminative signal. The reflectance space, by contrast, encodes intrinsic material differences that survive entanglement (Theorem 1), giving contrastive learning a physically grounded foundation for foreground-background separation. We empirically verify this in Sec. 5.3. 
+
+Total loss. The complete objective is formulated as: 
+
+L = Lseg + Lret + Lbnd + Lcon . (13) 
+
+5 Experiments 
+
+Implementation details. Our RIDE is implemented in PyTorch on two RTX4090 GPUs. Following [ 10 , 42 ], our encoder (ResNet50 by default) is pre-trained on ImageNet [ 43 ]. During the training phase, we select Adam with momentum terms (0 .9, 0.999) and resize all image as 352 × 352 . We set the batch size as 36 and initialize the learning rate as 0.0001, dividing by 10 every 80 epochs. The 6Table 1: Results on camouflaged object detection. 
+
+CHAMELEON CAMO COD10K NC4K 
+
+Methods Backbones M ↓ Fβ ↑ Eϕ ↑ Sα ↑ M ↓ Fβ ↑ Eϕ ↑ Sα ↑ M ↓ Fβ ↑ Eϕ ↑ Sα ↑ M ↓ Fβ ↑ Eϕ ↑ Sα ↑
+
+FEDER [10] ResNet50 0.028 0.850 0.944 0.892 0.070 0.775 0.870 0.802 0.032 0.715 0.892 0.810 0.046 0.808 0.900 0.842 FGANet [44] ResNet50 0.030 0.838 0.945 0.891 0.070 0.769 0.865 0.800 0.032 0.708 0.894 0.803 0.047 0.800 0.891 0.837 FocusDiff [45] ResNet50 0.028 0.843 0.938 0.890 0.069 0.772 0.883 0.812 0.031 0.730 0.897 0.820 0.044 0.810 0.902 0.850 FSEL [46] ResNet50 0.029 0.847 0.941 0.893 0.069 0.779 0.881 0.816 0.032 0.722 0.891 0.822 0.045 0.807 0.901 0.847 RUN [42] ResNet50 0.027 0.855 0.952 0.895 0.070 0.781 0.868 0.806 0.030 0.747 0.903 0.827 0.042 0.824 0.908 0.851 RIDE (Ours) ResNet50 0.026 0.868 0.958 0.900 0.068 0.790 0.891 0.817 0.028 0.763 0.912 0.834 0.041 0.831 0.916 0.858 
+
+BSA-Net [8] Res2Net50 0.027 0.851 0.946 0.895 0.079 0.768 0.851 0.796 0.034 0.723 0.891 0.818 0.048 0.805 0.897 0.841 RUN [42] Res2Net50 0.024 0.879 0.956 0.907 0.066 0.815 0.905 0.843 0.028 0.764 0.914 0.849 0.041 0.830 0.917 0.859 RIDE (Ours) Res2Net50 0.023 0.886 0.960 0.911 0.065 0.826 0.912 0.848 0.025 0.783 0.922 0.855 0.039 0.838 0.924 0.866 
+
+CamoDiff [47] PVT V2 0.022 0.868 0.952 0.908 0.042 0.853 0.936 0.878 0.019 0.815 0.943 0.883 0.028 0.858 0.942 0.895 RUN [42] PVT V2 0.021 0.877 0.958 0.916 0.045 0.861 0.934 0.877 0.021 0.810 0.941 0.878 0.030 0.868 0.940 0.892 RIDE (Ours) PVT V2 0.020 0.886 0.965 0.920 0.041 0.868 0.940 0.887 0.018 0.838 0.950 0.889 0.027 0.883 0.948 0.898 
+
+VSCode [48] DINOv2-L 0.020 0.882 0.954 0.915 0.043 0.860 0.931 0.882 0.020 0.818 0.935 0.880 0.030 0.867 0.940 0.895 C3Net [49] DINOv2-L 0.016 0.905 0.968 0.927 0.031 0.892 0.953 0.904 0.016 0.852 0.961 0.898 0.024 0.894 0.958 0.913 RIDE (Ours) DINOv2-L 0.014 0.920 0.978 0.933 0.028 0.911 0.967 0.912 0.013 0.887 0.977 0.906 0.019 0.914 0.969 0.921 
+
+Origin GT TOP2 TOP1 RIDE L map R map ∆R
+
+Figure 3: Qualitative comparison. We also present learned Retinex decomposition ( L and R maps) and discriminability gap map ∆R. The TOP1/TOP2 baselines are same with those in Tables 1 to 5. Table 2: Efficiency comparison with cutting-edge COD methods. All numbers are obtained under a matched evaluation protocol (input size 352 ×352 , FP32, batch size 1, single RTX 4090, synchronized CUDA timing) using each method’s official released code. Efficiency ResNet50 Res2Net50 PVT V2 FocusDiff [45] RUN [42] RIDE (Ours) FEDER [10] RUN [42] RIDE (Ours) CamoFocus [50] RUN [42] RIDE (Ours) Parameters (M) ↓ 166.17 30.41 28.50 45.92 30.57 28.66 68.85 65.17 63.25 
+
+FLOPs (G) ↓ 7618.49 43.36 35.18 50.03 45.73 35.38 91.35 58.53 49.18 
+
+FPS ↑ 0.23 22.75 27.20 14.02 20.26 25.40 9.63 15.82 18.26 
+
+TRD module uses a 5-level U-Net with channels {32 , 64 , 128 , 64 , 32 }. For DGA, we set k = 7 for local variance computation. Contrastive loss temperature τ = 0 .1. All results are from published papers or reproduced using official code. Datasets and metrics are shown in Appendix ?? .
+
+5.1 Comparative evaluation Camouflaged object detection. Table 1 and Fig. 3 present the comprehensive comparison. RIDE achieves the best performance across all metrics. Notably, RIDE demonstrates large improvements in 
+
+Fβ , which measures the balance between precision and recall. This suggests that Retinex decomposi-tion provides both better object localization (recall) and cleaner boundary delineation (precision). As shown in Table 2, RIDE also achieves the best efficiency among recent methods. To address potential single-run variance concerns, we additionally report a 5-seed analysis on COD10K and NC4K (ResNet-50) for RIDE and the strongest competing baselines (RUN, FSEL) in Appendix ?? .
+
+Polyp image segmentation. Polyp endoscopy is a strong test of our theory: point-source illumination on curved mucosal surfaces produces precisely the ρ < 0 regime predicted to maximize Retinex gains. As shown in Table 3 and Fig. 3, RIDE achieves the best results, verifying our superiority. 7Table 3: Results on the PIS task (ETIS [51]). Methods mDice ↑ mIoU ↑ Sα ↑                  
+
+> PolypPVT [52] 0.787 0.706 0.871 CoInNet [53] 0.759 0.690 0.859 LSSNet [54] 0.779 0.701 0.867 MEGANet [55] 0.739 0.665 0.836 RUN [42] 0.788 0.709 0.878 RIDE (Ours) 0.793 0.718 0.884
+
+Table 4: Results on the TOD task ( GDD [15]). Methods mIoU ↑ F max β ↑ M ↓                  
+
+> EBLNet [22] 0.870 0.922 0.064 RFENet [56] 0.886 0.938 0.057 IEBAF [57] 0.887 0.944 0.056 GhostNet [58] 0.893 0.943 0.054 RUN [42] 0.895 0.952 0.051 RIDE (Ours) 0.907 0.955 0.047
+
+Table 5: Results on the CDD task (CDS2K [59]). Methods Sα ↑ M ↓ Eϕ ↑ Fβ ↑                        
+
+> HitNet [60] 0.563 0.118 0.564 0.298 CamoFormer [61] 0.589 0.100 0.588 0.330 OAFormer [62] 0.541 0.121 0.535 0.216 FEDER [10] 0.538 0.070 0.586 0.288 RUN [42] 0.590 0.068 0.595 0.298 RIDE (Ours) 0.609 0.061 0.612 0.334
+
+Table 6: Generalization beyond COS. “+R” denotes augmentation with our Retinex strategy. Tasks / Datasets Base methods Metrics Baseline +R (Ours) ∆(%) 
+
+Semantic Segmentation (ADE20K [63]) PEM [64] mIoU ↑ 45.0 46.0 2.22 Instance Segmentation (COCO [65]) Mask2Former [66] AP ↑ 38.0 38.6 1.58 Shadow Detection (SBU [67] ) Spider [68] BER ↓ 0.040 0.038 5.00 Infrared Small Target Detection (IRSTD-1k [69]) IRSAM [70] IoU ↑ 73.69 75.53 2.50 Salient Object Detection (DUTS-test [71]) RUN [42] Fβ ↑ 0.886 0.901 1.69 Video COS (CAD [72]) ZoomNeXt [73] Sα ↑ 0.757 0.769 1.59 Table 7: Ablation study on COD10K . For 6-9, we replace TRD with other decomposition methods. # TRD DGA CBC ME RB M ↓ Fβ ↑ Eϕ ↑ Sα ↑                                                                       
+
+> 1✓0.032 0.740 0.897 0.819 2✓✓0.030 0.749 0.902 0.825 3✓✓✓0.029 0.755 0.906 0.829 4✓✓✓✓0.028 0.760 0.910 0.832 5✓✓✓✓✓0.028 0.763 0.912 0.834
+> 6FFT ✓✓––0.032 0.738 0.895 0.818 7Wavelet ✓✓––0.031 0.742 0.899 0.821 8DCT ✓✓––0.032 0.736 0.894 0.817 9Fixed Reti. ✓✓––0.031 0.745 0.901 0.823
+
+Table 8: DGA design ablation, including stan-dard fusion rules, gap design, and window size. Fusion strategy M ↓ Fβ ↑ Eϕ ↑ Sα ↑               
+
+> Concatenation (along channel) 0.031 0.745 0.900 0.823 Channel attention (SE) 0.030 0.750 0.903 0.826 Cross attention (Transformer) 0.029 0.753 0.905 0.828 DGA (variance only, no gap) 0.030 0.751 0.904 0.827 DGA (full, k= 3 )0.029 0.757 0.908 0.831 DGA (full, k= 5 )0.029 0.760 0.910 0.832 DGA (full, k= 11 )0.029 0.755 0.907 0.830 DGA (full, k= 7 , ours) 0.028 0.763 0.912 0.834
+
+Transparent object detection. Glass surfaces produce specular reflections at boundaries, bringing segmentation difficulties. As presented in Table 4 and Fig. 3, RIDE outperforms all competing methods, confirming Retinex effectiveness for transparent objects. 
+
+Concealed defect detection. Concealed defects on textured industrial surfaces (CDS2K [ 59 ]) involve directional lighting interacting with material variations. As shown in Table 5 and Fig. 3, RIDE outperforms existing methods, indicating that the Retinex principle transfers to industrial settings. 
+
+Qualitative analysis. Fig. 3 shows comparisons across the four COS sub-tasks. The decompositions make per-task physical mechanisms visible: e.g. , for polyps, L captures the endoscope’s point-source falloff while R cleanly exposes vascularization that separates lesions from mucosa. 
+
+Generalization Beyond COS. We apply the Retinex strategy as a plug-in (“+R”) to existing methods on six segmentation tasks (Table 6). Strong gains on shadow detection (+5.00% BER reduction) and infrared target detection (+2.50% IoU) confirm that illumination-entangled tasks benefit most from Retinex augmentation. Modest but consistent gains on other tasks indicate broader generalization. 
+
+5.2 Ablation Studies 
+
+All ablations and in-depth analysis use the ResNet50 backbone on COD10K unless stated. 
+
+Component contributions. As shown in rows 1-5 of Table 7, each component yields a consistent gain over the TRD-only configuration, including discriminability-guided fusion, reflectance-space contrast, clean edge attribution, and reflectance-boundary alignment. 
+
+Decomposition family. As presented in rows 6-9 of Table 7, holding the rest of the architecture fixed, swapping TRD for FFT, Wavelet, DCT, or a fixed RetinexNet (ME and RB disabled) loses 
+
+0.011 –0.017 Sα. Even the fixed Retinex variant trails task-driven TRD by 0.011 , indicating that both the homogeneous Retinex factorization and end-to-end task-driven optimization are jointly essential. 
+
+DGA design choices. In Table 8, DGA ( k = 7 with explicit gap) outperforms standard fusion baselines (concatenation, SE, cross attention) by 0.6–1.1% Sα. Removing the gap term and using raw variance alone loses 0.7% , confirming that the relative comparison against the composite carries the discriminative signal. DGA is robust to k ∈ { 3, 5, 7, 11 } within 0.4% Sα.
+
+Contrastive loss space. I-space learning degrades performance (Table 9) because visual entangle-ment enforces f + 
+
+> I
+
+≈ f − 
+
+> I
+
+and drives feature collapse. L-space helps mildly, while R-space yields the largest gain. I + R space underperforms R alone, as the I-space reintroduces the collapse signal. 8Table 9: Contrastive loss space comparison. Contrastive Space M ↓ Fβ ↑ Eϕ ↑ Sα ↑                       
+
+> None (no Lcon )0.030 0.749 0.902 0.825
+> I-space 0.031 0.745 0.900 0.823
+> L-space 0.029 0.752 0.904 0.827
+> R-space (ours) 0.028 0.763 0.912 0.834
+> (I+R)-space 0.029 0.757 0.908 0.830
+
+Table 10: Alternative homogeneous decompositions. Decomposition M ↓ Fβ ↑ Eϕ ↑ Sα ↑                                     
+
+> No decomposition (baseline) 0.034 0.731 0.891 0.812 Guided Filter (edge-preserving) 0.033 0.735 0.894 0.815 Color Constancy (Gray World) 0.034 0.733 0.893 0.813 Bilateral (texture/structure) 0.033 0.737 0.895 0.816 Retinex (ours) 0.028 0.763 0.912 0.834 (a) Theorem Validation (ρ-binned) (b)Dominant Component per Sub -Task (c) Gap Evolution < -0.5 [-0.5, 0) [0, 0.5) >= 0.5
+> 0
+> 1
+> 2
+> 3
+> 4COD PIS TOD CDD
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Mean gap value 020 40 60 80 100
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Training Epoch
+> Task-driven Fixed
+> 1
+> 1
+> 1
+
+Figure 4: In-depth analysis. (a) ∆Sα vs. ρ bins, validating Theorem 1. (b) Dominant component across COS sub-tasks. (c) Task-driven decomposition yields larger gaps than fixed Retinex. 
+
+Alternative homogeneous decompositions. As indicated in Table 10, edge-preserving filters (Guided Filter, Bilateral) and Gray-World color constancy yield only marginal gains over the baseline. Retinex outperforms all alternatives by 1.8–2.2% , as none of these alternatives admit a principled discriminability mechanism nor end-to-end joint optimization with the segmentation objective. 
+
+5.3 In-Depth Analysis Validating the Discriminability Gap Theorem. As shown in Fig. 4(a), for each of the 2026 COD10K 
+
+test images we estimate ρ = cos θ(δL, δ R) from the learned L, R maps and bin images into four ρ
+
+ranges. Mean ∆Sα over the no-decomposition baseline ( Sα = 0 .812 ) decreases monotonically with 
+
+ρ: +4 .0% for ρ < −0.5 (20% of images), +2 .0% for −0.5 ≤ ρ < 0 (38%), +0 .5% for 0 ≤ ρ < 0.5
+
+(30%), and −0.3% for ρ ≥ 0.5 (12%). The continuous Pearson correlation across all 2026 images is r = −0.67 (95% CI [−0.70 , −0.64] , p < 10 −3), confirming that decomposition gain scales with anti-correlation as Theorem 1 predicts. The mild negative mean in the ρ ≥ 0.5 bin lies within per-image variance and reflects boundary regions where (A2) is weakly violated; the bound itself saturates to unity in this aligned regime. 
+
+Per-sub-task dominant component. As presented in Fig. 4 (b), for each COS sub-task we sample 200 test images and report the mean ∆R and ∆L at the second-deepest decoder level. The dominant component varies systematically with the underlying physical mechanism in §3: COD ( ∆R = 0 .38 
+
+vs. ∆L = 0 .15 ) and PIS ( 0.42 vs. 0.22 ) are reflectance-dominated, since material/tissue differences carry the signal under equalized composite appearance; TOD and CDD show the similar trends. 
+
+Task-driven decomposition amplifies the gap (Fig. 4(c)). We track the mean ∆R on a fixed validation subset every 10 epochs. Task-driven TRD grows the gap from 0.02 to ∼0.38 (saturating around epoch 60–70), whereas a frozen RetinexNet [ 23 ] plateaus at ∼0.11 within 30 epochs. The 3.5×
+
+ratio at convergence is direct evidence that segmentation gradients actively reshape the decomposition toward discriminative factorizations, which neither fixed Retinex nor pure reconstruction can deliver. 
+
+6 Discussion 
+
+Retinex as an inductive bias in the foundation-model era. Even on top of strong foundation backbones (DINOv2-L), Retinex decomposition delivers additional gains over composite-space representations alone. Foundation models scale representations within the composite space, whereas Retinex restructures the observation space before feature extraction. The two are complementary rather than competing, and the auxiliary modules of RIDE maintain a constant absolute cost regardless of backbone scale, making the framework increasingly attractive as backbones grow. 97 Conclusion 
+
+We present a homogeneous–heterogeneous decomposition framework for COS and show that Retinex-based decomposition helps break camouflage by exposing discriminative differences. Based on this insight, RIDE achieves SOTA performance on four benchmarks. The Discriminability Gap Theorem provides insight into when the method works, offering a principled perspective on decomposition-based dense prediction. Extensive experiments validate the effectiveness and potential of our RIDE. 10 References 
+
+[1] Deng-Ping Fan, Ge-Peng Ji, Guolei Sun, Ming-Ming Cheng, and Jianbing Shen. Camouflaged object detection. In CVPR , pages 2777–2787, 2020. 1, 2 [2] Trung-Nghia Le, Tam V Nguyen, Zhongliang Nie, Minh-Triet Tran, and Akihiro Sugimoto. Anabranch network for camouflaged object segmentation. Comput. Vis. Image Underst. , 184:45– 56, 2019. 1, 2 [3] Deng-Ping Fan, Ge-Peng Ji, and Tao Zhou. Pranet: Parallel reverse attention network for polyp segmentation. In MICCAI , pages 263–273, 2020. 1, 2, 3 [4] Chunming He, Rihan Zhang, Longxiang Tang, Ziyun Yang, Kai Li, Deng-Ping Fan, and Sina Farsiu. Scaler: Sam-enhanced collaborative learning for label-deficient concealed object segmentation. arXiv preprint arXiv:2511.18136 , 2025. 1 [5] Chunming He, Rihan Zhang, Fengyang Xiao, Dingming Zhang, Zhiwen Cao, and Sina Farsiu. Refining context-entangled content segmentation via curriculum selection and anti-curriculum promotion. arXiv preprint arXiv:2602.01183 , 2026. 1 [6] Deng-Ping Fan, Ge-Peng Ji, Ming-Ming Cheng, and Ling Shao. Concealed object detection. 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , 2021. 1 [7] Qiang Zhai, Xin Li, Fan Yang, and Chenglizhao Chen. Mutual graph learning for camouflaged object detection. In CVPR , pages 2997–3007, 2021. 1 [8] Hongwei Zhu, Peng Li, Haoran Xie, Xuefeng Yan, Dong Liang, Dapeng Chen, Mingqiang Wei, and Jing Qin. I can find you! boundary-guided separated attention network for camouflaged object detection. In AAAI , volume 36, pages 3608–3616, 2022. 1, 7 [9] Yijie Zhong, Bo Li, Lv Tang, and Senyun Kuang. Detecting camouflaged object in frequency domain. In CVPR , pages 4504–4513, 2022. 2, 3 [10] Chunming He, Kai Li, Yachao Zhang, Longxiang Tang, and Yulun Zhang. Camouflaged object detection with feature decomposition and edge reconstruction. In CVPR , pages 22046–22055, 2023. 2, 3, 6, 7, 8 [11] Runmin Cong, Mengyao Sun, Sanyi Zhang, Xiaofei Zhou, Wei Zhang, and Yao Zhao. Fre-quency perception network for camouflaged object detection. In Proceedings of the 31st ACM international conference on multimedia , pages 1179–1189, 2023. 2 [12] Edwin H Land and John J McCann. Lightness and retinex theory. Journal of the Optical society of America , 61(1):1–11, 1971. 2, 3 [13] Martin Stevens and Sami Merilaita. Animal camouflage: current issues and new perspectives. 
+
+Philosophical Transactions of the Royal Society B: Biological Sciences , 364(1516):423–427, 2009. 2, 4 [14] Fengyang Xiao, Sujie Hu, Yuqi Shen, and Chunming He. A survey of camouflaged object detection and beyond. arXiv preprint arXiv:2408.14562 , 2024. 2 [15] Haiyang Mei, Xin Yang, Yang Wang, Yuanyuan Liu, and Shengfeng He. Don’t hit me! glass detection in real-world scenes. In CVPR , pages 3687–3696, 2020. 2, 3, 8 [16] Chunming He, Kai Li, Yachao Zhang, Ziyun Yang, Longxiang Tang, Yulun Zhang, Linghe Kong, and Sina Farsiu. Segment concealed object with incomplete supervision. IEEE Trans. Pattern Anal. Mach. Intell. , 2025. 3 [17] Youwei Pang, Xiaoqi Zhao, Tian-Zhu Xiang, Lihe Zhang, and Huchuan Lu. Zoom in and out: A mixed-scale triplet network for camouflaged object detection. In CVPR , pages 2160–2170, 2022. 3 [18] Qi Jia, Shuilian Yao, and Yu Liu. Segment, magnify and reiterate: Detect camouflaged objects hard way. In CVPR , pages 713–722, 2022. 3 11 [19] Huafeng Chen, Pengxu Wei, Guangqian Guo, and Shan Gao. Sam-cod: Sam-guided unified framework for weakly-supervised camouflaged object detection. arXiv preprint arXiv:2408.10760 , 2024. 3 [20] Chunming He, Fengyang Xiao, Rihan Zhang, Chengyu Fang, Deng-Ping Fan, and Sina Farsiu. Reversible unfolding network for concealed visual perception with generative refinement. arXiv preprint arXiv:2508.15027 , 2025. 3 [21] Yuqi Shen, Fengyang Xiao, Sujie Hu, Youwei Pang, Yifan Pu, Chengyu Fang, Xiu Li, and Chunming He. Uncertainty-masked bernoulli diffusion for camouflaged object detection refinement. arXiv preprint arXiv:2506.10712 , 2025. 3 [22] Hao He, Xiangtai Li, Guangliang Cheng, Jianping Shi, Yunhai Tong, Gaofeng Meng, Véronique Prinet, and LuBin Weng. Enhanced boundary learning for glass-like object segmentation. In 
+
+ICCV , pages 15859–15868, 2021. 3, 8 [23] Chen Wei, Wenjing Wang, Wenhan Yang, and Jiaying Liu. Deep retinex decomposition for low-light enhancement. arXiv preprint arXiv:1808.04560 , 2018. 3, 9 [24] Wenhui Wu, Jian Weng, Pingping Zhang, Xu Wang, Wenhan Yang, and Jianmin Jiang. Uretinex-net: Retinex-based deep unfolding network for low-light image enhancement. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5901–5910, 2022. 3 [25] Chunming He, Chengyu Fang, Yulun Zhang, Tian Ye, Kai Li, Longxiang Tang, Zhenhua Guo, Xiu Li, and Sina Farsiu. Reti-diff: Illumination degradation image restoration with retinex-based latent diffusion model. ICLR , 2025. 3 [26] Chunming He, Rihan Zhang, Fengyang Xiao, Chengyu Fang, Longxiang Tang, Yulun Zhang, and Sina Farsiu. Unfoldir: Rethinking deep unfolding network in illumination degradation image restoration. arXiv preprint arXiv:2505.06683 , 2025. 3 [27] Chunming He, Rihan Zhang, Zheng Chen, Bowen Yang, CHengyu Fang, Yunlong Lin, Fengyang Xiao, and Sina Farsiu. Unfoldldm: Deep unfolding-based blind image restoration with latent diffusion priors. arXiv preprint arXiv:2511.18152 , 2025. 3 [28] Harry Barrow, J Tenenbaum, A Hanson, and E Riseman. Recovering intrinsic scene characteris-tics. Comput. vis. syst , 2(3-26):2, 1978. 3 [29] Fengyang Xiao, Peng Hu, Lei Xu, Xinge Guo, Guanyi Qin, Yuqi Shen, Chengyu Fang, Rihan Zhang, Chunming He, and Sina Farsiu. Beyond ground-truth: Leveraging image quality priors for real-world image restoration. CVPR , 2026. 3 [30] Li Xu, Qiong Yan, Yang Xia, and Jiaya Jia. Structure extraction from texture via relative total variation. ACM transactions on graphics (TOG) , 31(6):1–10, 2012. 3 [31] Fengyang Xiao, Jingjia Feng, Peng Hu, Dingming Zhang, Lei Xu, Guanyi Qin, Lu Li, Chunming He, and Sina Farsiu. Qualiteacher: Quality-conditioned pseudo-labeling for real-world image restoration. arXiv preprint arXiv:2603.08030 , 2026. 3 [32] Kaiming He, Jian Sun, and Xiaoou Tang. Guided image filtering. IEEE transactions on pattern analysis and machine intelligence , 35(6):1397–1409, 2012. 3 [33] Guoxia Xu, Jiangpeng Yan, Longxiang Tang, and Yulun Zhang. Hqg-net: Unpaired medical image enhancement with high-quality guidance. IEEE Trans. Neural Networks Learn. Syst. ,2023. 3 [34] Pingyang Dai, Peixian Chen, Qiong Wu, Xiaopeng Hong, Qixiang Ye, Qi Tian, Chia-Wen Lin, and Rongrong Ji. Disentangling task-oriented representations for unsupervised domain adaptation. IEEE Transactions on Image Processing , 31:1012–1026, 2021. 3 [35] Kai Xu, Minghai Qin, Fei Sun, Yuhao Wang, Yen-Kuang Chen, and Fengbo Ren. Learning in the frequency domain. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 1740–1749, 2020. 3 12 [36] Yongming Rao, Wenliang Zhao, Zheng Zhu, Jiwen Lu, and Jie Zhou. Global filter networks for image classification. Advances in neural information processing systems , 34:980–993, 2021. 3 [37] Lu Chi, Borui Jiang, and Yadong Mu. Fast fourier convolution. Advances in Neural Information Processing Systems , 33:4479–4488, 2020. 3 [38] Aapo Hyvärinen and Erkki Oja. Independent component analysis: algorithms and applications. 
+
+Neural networks , 13(4-5):411–430, 2000. 3 [39] Huan Wang, Shuicheng Yan, Dong Xu, Xiaoou Tang, and Thomas Huang. Trace ratio vs. ratio trace for dimensionality reduction. In 2007 IEEE Conference on Computer Vision and Pattern Recognition , pages 1–8. IEEE, 2007. 3 [40] Zhengxin Li, Feiping Nie, Danyang Wu, Zheng Wang, and Xuelong Li. Sparse trace ratio lda for supervised feature selection. IEEE transactions on cybernetics , 54(4):2420–2433, 2023. 3 [41] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedical image segmentation. In MICCAI , pages 234–241. Springer, 2015. 4 [42] Chunming He, Rihan Zhang, Fengyang Xiao, Chenyu Fang, Longxiang Tang, Yulun Zhang, Linghe Kong, Deng-Ping Fan, Kai Li, and Sina Farsiu. Run: Reversible unfolding network for concealed object segmentation. ICML , 2025. 6, 7, 8 [43] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, and Kai Li. Imagenet: A large-scale hierarchical image database. In CVPR , pages 248–255, 2009. 6 [44] Wei Zhai, Yang Cao, and Jing Zhang. Exploring figure-ground assignment mechanism in perceptual organization. In NeurIPS , volume 35, 2023. 7 [45] Jianwei Zhao, Xin Li, Fan Yang, Qiang Zhai, Ao Luo, Zicheng Jiao, and Hong Cheng. Focusd-iffuser: Perceiving local disparities for camouflaged object detection. In ECCV , pages 181–198, 2024. 7 [46] Yanguang Sun, Chunyan Xu, Jian Yang, Hanyu Xuan, and Lei Luo. Frequency-spatial entangle-ment learning for camouflaged object detection. In ECCV , pages 343–360, 2024. 7 [47] Ke Sun, Zhongxi Chen, Xianming Lin, Xiaoshuai Sun, Hong Liu, and Rongrong Ji. Conditional diffusion models for camouflaged and salient object detection. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. 7 [48] Ziyang Luo, Nian Liu, Wangbo Zhao, Xuguang Yang, Dingwen Zhang, Deng-Ping Fan, Fahad Khan, and Junwei Han. Vscode: General visual salient and camouflaged object detection with 2d prompt learning. In CVPR , pages 17169–17180, 2024. 7 [49] Baber Jan, Aiman H El-Maleh, Abdul Jabbar Siddiqui, Abdul Bais, and Saeed Anwar. C3net: Context-contrast network for camouflaged object detection. arXiv preprint arXiv:2511.12627 ,2025. 7 [50] Abbas Khan, Mustaqeem Khan, Wail Gueaieb, Abdulmotaleb El Saddik, Giulia De Masi, and Fakhri Karray. Camofocus: Enhancing camouflage object detection with split-feature focal modulation and context refinement. In WACV , pages 1434–1443, 2024. 7 [51] Juan Silva, Aymeric Histace, Olivier Romain, and Xavier Dray. Toward embedded detection of polyps in wce images for early diagnosis. Int. J. Comput. Assist. Radiol. Surg. , 9:283–293, 2014. 8 [52] Bo Dong, Wenhai Wang, Deng-Ping Fan, Jinpeng Li, Huazhu Fu, and Ling Shao. Polyp-pvt: Polyp segmentation with pyramid vision transformers. CAAI Artif. Intell. Res. , 2, 2023. 8 [53] Samir Jain, Rohan Atale, Anubhav Gupta, Utkarsh Mishra, Ayan Seal, Aparajita Ojha, Joanna Jaworek-Korjakowska, and Ondrej Krejcar. Coinnet: A convolution-involution network with a novel statistical attention for automatic polyp segmentation. IEEE Trans. Med. Imaging ,42(12):3987–4000, 2023. 8 13 [54] Wei Wang, Huiying Sun, and Xin Wang. Lssnet: A method for colon polyp segmentation based on local feature supplementation and shallow feature supplementation. In MICCAI , pages 446–456. Springer, 2024. 8 [55] Nhat-Tan Bui, Dinh-Hieu Hoang, Quang-Thuc Nguyen, Minh-Triet Tran, and Ngan Le. Meganet: Multi-scale edge-guided attention network for weak boundary polyp segmentation. In WACV , pages 7985–7994, 2024. 8 [56] Ke Fan, Changan Wang, Yabiao Wang, Chengjie Wang, Ran Yi, and Lizhuang Ma. Rfenet: towards reciprocal feature evolution for glass segmentation. In IJCAI , pages 717–725, 2023. 8 [57] Dongshen Han, Seungkyu Lee, Chaoning Zhang, Heechan Yoon, Hyukmin Kwon, Hyun-Cheol Kim, and Hyon-Gon Choo. Internal-external boundary attention fusion for glass surface segmentation. arXiv preprint arXiv:2307.00212 , 2024. 8 [58] Tao Yan, Jiahui Gao, Ke Xu, Xiangjie Zhu, Hao Huang, Helong Li, Benjamin Wah, and Rynson WH Lau. Ghostingnet: A novel approach for glass surface detection with ghosting cues. 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , 2024. 8 [59] Deng-Ping Fan, Ge-Peng Ji, Peng Xu, Ming-Ming Cheng, Christos Sakaridis, and Luc Van Gool. Advances in deep concealed scene understanding. Visual Intell. , 1(1):16, 2023. 8 [60] Xiaobin Hu, Shuo Wang, Xuebin Qin, Hang Dai, Wenqi Ren, Donghao Luo, Ying Tai, and Ling Shao. High-resolution iterative feedback network for camouflaged object detection. In AAAI ,volume 37, pages 881–889, 2023. 8 [61] Bowen Yin, Xuying Zhang, Deng-Ping Fan, Shaohui Jiao, Ming-Ming Cheng, Luc Van Gool, and Qibin Hou. Camoformer: Masked separable attention for camouflaged object detection. 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , 2024. 8 [62] Xin Yang, Hengliang Zhu, Guojun Mao, and Shuli Xing. Oaformer: Occlusion aware trans-former for camouflaged object detection. In ICME , pages 1421–1426. IEEE, 2023. 8 [63] Bolei Zhou, Hang Zhao, Xavier Puig, Sanja Fidler, Adela Barriuso, and Antonio Torralba. Scene parsing through ade20k dataset. In CVPR , pages 633–641, 2017. 8 [64] Niccolo Cavagnero, Gabriele Rosi, Claudia Cuttano, Francesca Pistilli, Marco Ciccone, Giuseppe Averta, and Fabio Cermelli. Pem: Prototype-based efficient maskformer for im-age segmentation. In CVPR , pages 15804–15813, 2024. 8 [65] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European conference on computer vision , pages 740–755. Springer, 2014. 8 [66] Bowen Cheng, Ishan Misra, Alexander G Schwing, Alexander Kirillov, and Rohit Girdhar. Masked-attention mask transformer for universal image segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 1290–1299, 2022. 8 [67] Tomás F Yago Vicente, Le Hou, Chen-Ping Yu, Minh Hoai, and Dimitris Samaras. Large-scale training of shadow detectors with noisily-annotated shadow examples. In European conference on computer vision , pages 816–832. Springer, 2016. 8 [68] Xiaoqi Zhao, Youwei Pang, Wei Ji, Baicheng Sheng, Jiaming Zuo, Lihe Zhang, and Huchuan Lu. Spider: a unified framework for context-dependent concept segmentation. In Proceedings of the 41st International Conference on Machine Learning , pages 60906–60926, 2024. 8 [69] Mingjin Zhang, Rui Zhang, Yuxiang Yang, Haichen Bai, Jing Zhang, and Jie Guo. Isnet: Shape matters for infrared small target detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 877–886, 2022. 8 [70] Mingjin Zhang, Yuchun Wang, Jie Guo, Yunsong Li, Xinbo Gao, and Jing Zhang. Irsam: Advancing segment anything model for infrared small target detection. In European Conference on Computer Vision , pages 233–249. Springer, 2024. 8 14 [71] Lijun Wang, Huchuan Lu, and Yifan Wang. Learning to detect salient objects with image-level supervision. In CVPR , pages 136–145, 2017. 8 [72] Xuelian Cheng, Huan Xiong, Deng-Ping Fan, Yiran Zhong, Mehrtash Harandi, Tom Drummond, and Zongyuan Ge. Implicit motion handling for video camouflaged object detection. In CVPR ,pages 13864–13873, 2022. 8 [73] Youwei Pang, Xiaoqi Zhao, Tian-Zhu Xiang, Lihe Zhang, and Huchuan Lu. Zoomnext: A unified collaborative pyramid network for camouflaged object detection. IEEE Trans. Pattern Anal. Mach. Intell. , 2024. 8 15
