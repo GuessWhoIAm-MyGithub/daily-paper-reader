@@ -1,0 +1,523 @@
+Title: VSCD: Video-based Scene Change Detection in Unaligned Scenes
+
+URL Source: https://arxiv.org/pdf/2605.20821v1
+
+Published Time: Thu, 21 May 2026 00:49:13 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+Jiae Yoon 1 Ue-Hwan Kim 1 2 
+
+# Abstract 
+
+Detecting what has changed in an environment is essential for long-term autonomy, yet most change detection settings assume fixed view-points, mild misalignment, or only a few changed objects. We introduce Video-based Scene Change Detection (VSCD), which predicts a pixel-wise change mask for each query frame, given a ref-erence and a query RGB video of the same in-door space recorded at different times under un-constrained camera motion. The two videos are not temporally synchronized, and many object in-stances may appear or disappear. To study this set-ting, we build a large-scale benchmark with over 1.1 million frames annotated with pixel-accurate change masks, together with a real-world test set for evaluating transfer beyond simulation. We propose a query-centric multi-reference model that learns temporal matching implicitly from change-mask supervision, aligns candidate ref-erence features to the query via local patch cor-respondence, and fuses per-candidate change fea-tures using frame-level and patch-level confidence before decoding a high-resolution mask once per frame. Our approach achieves state-of-the-art per-formance against strong image- and video-based baselines, and we validate its real-world impact by deploying it on a mobile robot for two down-stream applications—visual surveillance and ob-ject incremental learning. 
+
+> 1
+
+Department of AI Convergence, Gwangju Institute of Science and Technology, Gwangju, Republic of Korea 2GIST InnoCORE AI-Nano Convergence Institute for Early Detection of Neurode-generative Diseases, Gwangju Institute of Science and Technology, 61005 Gwangju, Republic of Korea. Correspondence to: Ue-Hwan Kim <uehwan@gist.ac.kr >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+Figure 1. Comparison between existing change detection datasets and our VSCD benchmark. Unlike prior image-based and video-based datasets that assume similar viewpoints or trajec-tories, VSCD features unconstrained camera motion, which leads to strong misalignment between reference and query videos. 
+
+# 1. Introduction 
+
+Embodied agents that operate autonomously in real environ-ments face a crucial challenge: the world is non-stationary and ever-changing. In dynamic surroundings, humans do not process all visual information uniformly. Instead, the vision system is particularly sensitive to changes in the en-vironment, such as the appearance or motion of objects, and indeed detects such changes reliably (Yantis & Jonides, 1984; Cole et al., 2004): change signals function as a key cue to summarize complex scenes and to prioritize behav-iorally relevant information (Rensink, 2002; Czigler & Ko-jouharova, 2022). Thus, the importance of change is no less for embodied agents in the physical world (Luo et al., 2018; Driess et al., 2023)—not only recognizing what is present at a single time but also accurately detecting what has changed over time. This requirement naturally leads to the change detection task, whose goal is to identify semantically meaningful 1                                  
+
+> arXiv:2605.20821v1 [cs.CV] 20 May 2026 VSCD: Video-based Scene Change Detection in Unaligned Scenes
+> Table 1. Comparison of change detection task formulations. We contrast existing benchmarks in terms of input modality, motion assumptions, alignment difficulty, and change complexity.
+> Task RSCD SCD AOD VSCD (Ours)
+> Input modality 2 images 2 images 2 videos 2 videos
+> Camera mobility Static Static Limited Unconstrained
+> Viewpoint variation Low Medium Low High
+> Trajectory mismatch None None Limited High
+> Temporal reasoning XX△O
+> Change type Land-cover / Structure Object appear / disappear Object appear Object appear / disappear
+> Scale of changes Large regions Few objects Single / few objects Many objects
+
+changes between observations of the same environment at different times. However, conventional change detection methods fail in the presence of conditions that naturally arise in real-world settings: unconstrained camera motion, strong viewpoint misalignment, and multiple simultaneous changes. Specifically, image-based methods only guaran-tee the reported performance when viewpoint variation is modest (Lu et al., 2004; Sakurada & Okatani, 2015), and video-based approaches assume nearly identical camera tra-jectories and conduct frame-wise change detection (Padilla et al., 2023; Tavares et al., 2025). This observation reveals an essential gap between current methodology and the re-quirements of long-term autonomy. To bridge the gap, we formulate the task from a funda-mentally different angle. Our formulation aims to detect changes between two unconstrained RGB videos of the same indoor environment observed at different times as a mobile agent independently traverses the scene. We define change at the level of objects and treat variations affecting only image appearance—such as illumination, shadows, or reflections—as nuisance factors rather than changes. Major characteristics of our Video-based Scene Change Detec-tion (VSCD) include unconstrained camera motion , severe viewpoint variation , strong cross-view misalignment , occlu-sions , and multiple simultaneous changes . To systematically study this setting, we construct a large-scale benchmark comprising more than 1.1 million frames with high-quality pixel-wise change masks, along with a real-world test set to evaluate generalization. Furthermore, our central reconceptualization is from inde-pendent frame-wise comparisons to sequence-level align-ment that jointly leverages temporal continuity and multi-view geometry . While individual frames may be severely misaligned, sequences encode sufficient temporal and spa-tial regularity to enable robust reasoning. This perspective motivates a three-stage architecture: (1) frame-level align-ment (temporal consistency) across reference and query sequences without trajectory alignment, (2) patch-level correspondence (geometric compensation) to learn multi-view geometry without explicit pose supervision, and (3) confidence-weighted fusion (robustness) to suppress am-biguous matches. In summary, we make the following contributions: • Problem Formulation : We introduce the first VSCD task that captures realistic scenarios essential for long-term autonomous operation. • Large-Scale Benchmark : We create and release a curated dataset combining over 1.1 million frames with real-world examples for rigorous evaluation. • Sequence-Aware Architecture : Our model exploits temporal structure without explicit supervision, outper-forming strong baselines. • Real-World Validation : Practical deployment on Stretch demonstrates the method’s applicability beyond standard benchmarks. • Open Source : To facilitate research on VSCD for mo-bile agents, we publicly release the full implemen-tation of our method at https://github.com/ AutoCompSysLab/VSCD .
+
+# 2. Related Work 
+
+2.1. Change Detection 
+
+Change detection aims to identify differences in observa-tions of the same environment at different times. We catego-rize methods into image-based and video-based approaches depending on input modality. Table 1 compares existing change detection tasks. 2.1.1. C HANGE DETECTION IN IMAGE 
+
+Remote sensing change detection (RSCD) employs satel-lite or aerial imagery—whose viewpoint, scale, and texture statistics differ markedly from standard indoor or street-view images—to capture large-scale environmental changes such as land-cover or building transitions (Gupta et al., 2019; Chen & Shi, 2020; Shi et al., 2021). Early works have relied on patch-based classifiers (Chen et al., 2019; 2020) or CNN 2VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+variants (Daudt et al., 2018; Fang et al., 2021), while re-cent methods adopt Transformer-based models (Chen et al., 2021a). However, RSCD operates on well-aligned image pairs and struggles in dynamic environments with significant viewpoint changes or occlusions. 
+
+Scene change detection (SCD) localizes object-level changes in street-view or indoor images from different times (Sakurada & Okatani, 2015; Alcantarilla et al., 2018; Sakurada et al., 2020; Park et al., 2021). Representative approaches include a Siamese architecture (Daudt et al., 2018), feature similarity via correlation layers (Sakurada et al., 2020), a temporal attention module (Chen et al., 2021b), tuned segmentation networks (Wang et al., 2023), and adapted foundation models (Cho et al., 2025; Kim & Kim, 2025). While SCD targets object-level changes similar to VSCD and handles slight misalignment, it operates on isolated image pairs and cannot exploit temporal structure or multiple viewpoints, which are central to VSCD. 2.1.2. C HANGE DETECTION IN VIDEO 
+
+Abandoned object detection (AOD) detects abandoned objects by comparing a query video and an anomaly-free ref-erence video in surveillance settings (da Silva et al., 2014). Various approaches for the AOD task have emerged, such as modelling the reference video as a union of low-dimensional subspaces (Thomaz et al., 2017), stacking reference and query frames into a single matrix and applying a domain transformation for alignment (Jardim et al., 2019), low-complexity dissimilarity module to compute frame-wise differences (Padilla et al., 2023), and combining multiple CNN-based feature extractors with a tree-based classifier (Tavares et al., 2025). Although AOD extends change de-tection to videos, its assumption of constrained camera motion—i.e., the reference and query videos usually fol-low the same or opposite trajectories—and its small number of target objects—often limited to a single instance—limit its generality compared to VSCD. 
+
+2.2. Video Comparison 
+
+Video comparison takes two videos as input and determines whether, and to what extent, one has been copied or is a near-duplicate of the other. 2.2.1. V IDEO COPY DETECTION 
+
+Video copy detection has focused on determining whether a query video contains content copied from a reference video, even under temporal, geometric, or photometric trans-formations (Lian et al., 2010). For example, DML-NDVR (Kordopatis-Zilos et al., 2017) samples frames and forms a single video descriptor, which is then compared; CR-UML (Cheng et al., 2021) performs k-nearest-neighbor retrieval and iteratively refines the embedding in an unsupervised manner; and a recent method dynamically selects repre-sentative frames and encodes a highly compressed video descriptor to reduce computational and storage costs (Fojcik et al., 2025). 2.2.2. V IDEO COPY LOCALIZATION 
+
+Recent work extends beyond binary detection to localize ex-act copied segments between two videos (Han et al., 2021). For instance, VSAL (Han et al., 2021) constructs a frame-wise spatial similarity map to recover the optimal alignment path for partial copies; TransVCL (He et al., 2023) uses a dual-softmax operation to obtain a differentiable similarity map to predict the temporal boundaries of copied segments; the Similarity Alignment Model (Liu et al., 2023) adopts a high-resolution network to refine similarity maps to high-light copied regions; and RTR (Lu et al., 2024) augments each frame with a regional token to encode local information to deal with a small spatial region. Notably, video copy localization identifies copied segments at the frame or temporal level and is not designed for un-derstanding pixel-wise or object-level changes. Inspired by frame-wise similarity maps for localization, we adopt simi-lar principles but extend them to pixel-wise semantic change detection. 
+
+# 3. VSCD Task 
+
+3.1. Problem Formulation 
+
+We consider the problem of detecting pixel-wise object-level changes between two RGB videos of the same physical environment, captured at two different time points under unconstrained camera motion. We do not assume any known geometric calibration, temporal synchronization, or frame-to-frame alignment between the two videos. Within each video, the scene state is fixed, and object-level changes occur only between the two recordings; temporal continuity is used as a structural prior for cross-video matching. Let H and W denote the height and width of video frames, and define the pixel domain as Ω = {1, . . . , H} × {1, . . . , W }. We are given a reference video Vr ∈ RTr ×H×W ×3
+
+and a query video Vq ∈ RTq×H×W ×3, where Tr and Tq
+
+are the numbers of frames in each video. We write Vr =
+
+{Ftr }Tr
+
+> t=1
+
+,Vq = {Ftq }Tq
+
+> t=1
+
+, with each frame Ftr , Ftq ∈ RH×W ×3.Let O denote the universe of object occupancies, where each occupancy is an object instance together with its physical location. The environment at the reference and query times induces finite sets Or, Oq ⊂ O. We define appearances and disappearances as Oapp = Oq \ Or and Odis = Or \ Oq, and the set of object-level changes as the symmetric difference 
+
+O∆ = Oapp ∪ Odis . Under this definition, relocating an object is also treated as a change (a disappearance at the original 3VSCD: Video-based Scene Change Detection in Unaligned Scenes                          
+
+> Table 2. Cross-dataset scale and diversity. Video units denotes the number of capture units (pairs/sequences/videos). Views counts labeled frames/images, and Locs counts distinct environments. Dataset Video units Views Locs VDAO (da Silva et al., 2014) 66 videos 0.71M 1VL-CMU-CD (Alcantarilla et al., 2018) –1,362 1ChangeSim (Park et al., 2021) 80 seq. 130k 10 VSCD-Syn (Ours) 1,090 pairs 1.13M 218 VSCD-Real (Ours) 8 pairs 17.0k 8
+
+location and an appearance at the new location). Variations that affect only appearance (e.g., illumination, shadows, reflections) are regarded as nuisance factors and are not considered object-level changes. For a query frame Ftq , each pixel (i, j) ∈ Ω corresponds to a visible physical location (up to occlusion), and we state it 
+
+changed if the associated object occupancy belongs to O∆,i.e., it is present at exactly one of the two time points. Then, the ground-truth change mask for the t-th query frame is a binary image Mt ∈ { 0, 1}H×W , whose value at pixel (i, j) is 
+
+Mti, j =
+
+
+
+1 if pixel (i, j) in Ftq is a physical location associated with an object instance in O∆,
+
+0 otherwise. (1) 
+
+Mti, j = 1 accounts for viewpoint changes and occlusions between the two recordings. Stacking all frames yields the ground-truth change mask sequence 
+
+M = {Mt }Tq 
+
+> t=1
+
+∈ { 0, 1}Tq×H×W . (2) A VSCD method is any mapping g that produces a per-pixel change score for each query frame and generates ˆM:ˆZ = g(Vr,Vq) ∈ RTq×H×W , ˆM = Iρ( ˆZ) > τ , (3) where ρ(·) is an element-wise score-to-confidence mapping and τ is a decision threshold. In this work, we instantiate 
+
+g with a parameterized model fθ and learn θ from change-mask supervision. 
+
+3.2. Benchmark Dataset 
+
+We build a dedicated benchmark for the VSCD task that combines a large-scale synthetic dataset with a carefully annotated real-world test set. Each example consists of a reference video, a query video recorded in the same physical environment at a different time, and a pixel-wise change-mask sequence for the query video. The benchmark is de-signed to stress the key challenges of VSCD, namely free agent motion, strong cross-view misalignment, and many simultaneous object-level changes. Table 2 summarizes the scale and environmental diversity of our benchmark in com-parison to representative change detection datasets. 3.2.1. S YNTHETIC DATA 
+
+We generate synthetic VSCD data in two simulation stacks (AI2-THOR (Kolve et al., 2017b) and Unreal Engine) to introduce rendering diversity while preserving the same VSCD input format. Within each layout, we form directed scene pairs according to a fixed cycle (e.g., 0 → 1, 1 →
+
+2, . . . , 4 → 0), so that every scene appears once as the query. For each environment, we substantially vary object instance configurations across time and capture reference and query videos along distinct, manually designed trajectories to in-duce strong cross-view misalignment and occlusions. To better reflect real-world conditions, some scene pairs are rendered under different illumination due to changes in day-light and indoor lighting, which can significantly alter color, brightness, and shadows, thereby making appearance-only cues less reliable. Pixel-accurate query-aligned masks are obtained by replaying the query trajectory and rendering only the changed occupancies O∆.3.2.2. R EAL -WORLD DATA 
+
+To measure sim-to-real transfer under real sensing artifacts, we collect eight indoor reference–query video pairs with notable viewpoint mismatch and no temporal synchroniza-tion (three robot-captured and five handheld). Environments undergo object-level additions, removals, and relocations between recordings, and the real set is used exclusively for evaluation while training is performed on the synthetic split. 
+
+# 4. Methodology 
+
+4.1. Overview 
+
+We propose VSCDNet, a query-centric multi-reference model for VSCD (Fig. 2). Given two unaligned videos, VSCDNet learns to associate each query keyframe with mul-tiple reference keyframes and to predict a pixel-wise change mask. Our design follows three principles: (i) Frame-level alignment that enforces temporal consistency across sequences without trajectory synchronization, (ii) Patch-level correspondence that performs local geometric com-pensation without pose supervision, and (iii) Confidence-weighted fusion that suppresses ambiguous matches before high-resolution decoding. 
+
+4.2. Stage 1: Frame-level Alignment and Reference Candidate Construction Keyframe encoding and frame representation. We uni-formly sample Tkey keyframes from each video and encode each frame using a frozen pretrained ViT image encoder (SAM-ViT (Kirillov et al., 2023)). The encoder outputs patch tokens on a fixed grid, which serve as the shared representation for both temporal matching and local cor-respondence. To obtain a compact frame descriptor while 4VSCD: Video-based Scene Change Detection in Unaligned Scenes   
+
+> Figure 2. The architecture of the proposed VSCDNet. The model consists of three stages: frame-level alignment to select reference candidates, patch-level correspondence for viewpoint compensation, and confidence-aware fusion followed by query-guided decoding to predict change masks.
+
+keeping the encoder frozen, we use a learnable alignment token updated by a lightweight attention-based aggregation head attending to patch tokens, and combine it with mean pooling: 
+
+vt = AvgPool (Et ) + AT (Et ), (4) where Et denotes patch tokens of the frame and AT (·) out-puts the updated alignment-token embedding. Applying the same construction to Eqt and Ers yields the query/reference frame vectors vqt and vrs, respectively. 
+
+Frame similarity and soft matching. We compute a co-sine similarity grid S ∈ RTkey ×Tkey with St,s = cos (vqt , vrs).A shallow residual convolutional head hψ : RTkey ×Tkey →
+
+RTkey ×Tkey refines the grid, and we define the refined align-ment logits by element-wise addition A = S + hψ (S). A row-wise softmax with temperature τ f yields a soft matching distribution: 
+
+Pframe (t, s) = exp  At,s/τ f
+
+
+
+∑s′ exp  At,s′ /τ f
+
+ . (5) We use Pframe (t, s) for candidate ranking and set the frame-level confidence Cf (t, s) = Pframe (t, s) for Stage 3. 
+
+Matched segment proposals and reference candidate set. Let ˆs(t) = arg max s Pframe (t, s) be the top-1 matched reference index, and let At, ˆs(t) be its alignment logit. We form matched segment proposals by grouping consecutive 
+
+t that satisfy |( ˆs(t + 1) − ˆs(t)) − 1| ≤ δ , where δ ≥ 0 is an integer tolerance for near-diagonal progression. We discard segments shorter than a minimum length, cap the segment length by Lmax , and optionally split segments at indices with 
+
+At, ˆs(t) below a threshold. For any uncovered query index t,we add a singleton segment {t} to ensure full coverage. For each query keyframe t, let R(t) be the set of reference indices contained in segment ranges covering t. By construc-tion, R(t) is non-empty. We select one segment-consistent anchor 
+
+sseg  
+
+> t
+
+= arg max  
+
+> s∈R(t)
+
+Pframe (t, s), (6) and fill the remaining slots with globally top-ranked ref-erences under Pframe (t, ·), with deduplication and |St | ≤ |St |max .
+
+4.3. Stage 2: Patch-level Correspondence and Change Feature Extraction Local patch correspondence. For each (t, s) with s ∈ St ,we compute dot-product local correlation volume between the query feature at (x, y) and reference features at each offset in a k × k window, and apply a softmax over the k2
+
+5VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+Table 3. Overall performance on the VSCD benchmark. We report frame-wise F1 score (%) on the synthetic dataset and the real-world test set, together with results stratified by video length, graphic level, and the number of changed objects.                                                                                                                      
+
+> Method Video length Graphic level Object changes Synthetic Captured by Real-world Task Model Low Mid High Mid High Low Mid High Overall Robot Human Overall AOD TCF-LMO 17.1 20.1 22.2 18.7 20.8 15.2 21.0 21.8 19.7 7.4 12.0 10.3 PBCD-MC 24.6 28.0 26.5 26.3 27.4 23.4 28.0 27.8 26.8 16.8 15.7 16.1 SCD CSCDNet 18.8 21.4 16.9 21.7 17.5 20.0 20.1 19.0 19.8 8.2 9.6 9.1 DR-TANet 20.5 22.0 17.2 22.9 17.9 20.8 20.5 20.6 20.6 9.1 13.1 11.6 C-3PO 22.7 26.1 20.8 30.1 16.9 18.8 25.1 27.8 24.1 8.0 13.9 11.7 ZSSCD 0.1 0.5 0.1 0.5 0.1 0.2 0.4 0.2 0.3 2.1 0.0 0.8 GeSCF 26.4 30.4 31.2 29.3 29.8 28.0 29.7 30.6 29.5 25.1 12.6 17.3 VSCD Ours 38.1 36.9 33.9 40.7 31.7 32.1 37.7 39.0 36.6 32.0 21.5 25.4
+
+offsets to obtain P(t,s) 
+
+> patch
+
+∈ Rk2×H/p×W /p, where p denotes the ViT patch size. 
+
+Differentiable warping. We use the patch matching dis-tribution to compute an expected displacement field on the patch grid. Let {δi}k2 
+
+> i=1
+
+be the 2D offsets in the local window. We compute the expected displacement on the patch grid by 
+
+∆(t,s)(x, y) = 
+
+> k2
+
+# ∑
+
+> i=1
+
+P(t,s)
+
+> patch ,i
+
+(x, y) δi, (7) and warp the reference feature map by bilinear sampling to obtain Er(w) 
+
+> t,s
+
+∈ RD×H/p×W /p.
+
+Per-candidate change feature at low resolution. For each (t, s), we compute a compact change feature on the patch grid: 
+
+Ft,s = gφ
+
+
+
+Eqt , Er(w)
+
+> t,s
+
+
+
+∈ RC×H/p×W /p, (8) where gφ is a lightweight convolutional head. It reduces channel dimensions of Eqt and Er(w) 
+
+> t,s
+
+, and fuses the reduced features with their cosine similarity map and difference to produce Ft,s.
+
+4.4. Stage 3: Confidence-aware Feature Fusion and Query-guided Decoding Patch-level confidence. We derive a patch-level confi-dence map from the patch matching distribution P(t,s) 
+
+> patch
+
+pro-duced in Stage 2, where k is the local window size. At each spatial location (x, y), we combine the peakiness of the distribution and its uncertainty: 
+
+p(t,s) 
+
+> max
+
+(x, y) = max 
+
+> i∈{ 1,..., k2}
+
+P(t,s)
+
+> patch ,i
+
+(x, y), (9) 
+
+e(t,s)(x, y) = − 1log (k2)
+
+> k2
+
+# ∑
+
+> i=1
+
+P(t,s)
+
+> patch ,i
+
+(x, y) log P(t,s)
+
+> patch ,i
+
+(x, y),
+
+(10) 
+
+C(t,s) 
+
+> sp
+
+(x, y) = cp p(t,s) 
+
+> max
+
+(x, y) + c 1 − e(t,s)(x, y), (11) where C(t,s) 
+
+> sp
+
+(x, y) is the patch-level confidence for candidate pair (t, s) at location (x, y), and cp and c are scalar weights. 
+
+Confidence-aware feature fusion. For each query keyframe t, we fuse {Ft,s}s∈St with weights combining frame-level confidence Cf (t, s) = Pframe (t, s) and patch-level confidence C(t,s) 
+
+> sp
+
+:
+
+Ft (x, y) = ∑s∈St Cf (t, s)C(t,s) 
+
+> sp
+
+(x, y) Ft,s(x, y)
+
+∑s∈St Cf (t, s)C(t,s) 
+
+> sp
+
+(x, y) + ε , (12) where, Ft ∈ RC×H/p×W /p is the fused change feature for query frame t, and ε is a small constant for numerical stabil-ity. This fusion is performed in feature space and yields a single fused representation per query frame, which enables decoding exactly once per query frame even when multiple reference candidates are used. 
+
+Query-guided decoding. Given the fused feature map 
+
+Ft , we predict a full-resolution change mask logit map ˆZt ∈ R1×H×W using a lightweight decoder with progressive upsampling. To recover fine boundaries and high-frequency details that are not preserved at the patch-token resolution, we inject the query RGB frame into the decoder at two de-coding resolutions. The change probability map is given by 
+
+σ ( ˆZt ), where σ (·) denotes the sigmoid function. We train VSCDNet with change-mask supervision using BCE-with-logits and soft Dice losses; details are provided in Appendix B. 
+
+# 5. Experiments 
+
+5.1. Settings Baselines. We compare VSCDNet against baselines from two related tasks: image-pair SCD and video-pair AOD. For SCD, we evaluate CSCDNet (Sakurada et al., 2020), DR-TANet (Chen et al., 2021b), and C-3PO (Wang et al., 2023), ZSSCD (Cho et al., 2025) and GeSCF (Kim & Kim, 6VSCD: Video-based Scene Change Detection in Unaligned Scenes   
+
+> Figure 3. Qualitative comparison results on VSCD dataset. The top row shows results on the synthetic data, and the bottom row shows results on the real-world data.
+
+2025). For AOD, we include TCF-LMO (Padilla et al., 2023) and PBCD-MC (Tavares et al., 2025). We do not include methods that require camera pose, geometric calibration, or explicit 3D/multi-view reconstruction as direct baselines, because such inputs and intermediate representations are unavailable under the VSCD protocol.                               
+
+> Table 4. Module ablation study results. We report the overall F1 score (%) on the synthetic test set. Variant AT CfCsp F1 (%) Full (default) OOO36.6
+> w/o AT XOO35.5 w/o Csp OOX35.9 w/o CfOXO35.1 w/o Csp ,CfOXX34.8
+
+Metrics. We use pixel-wise F1 score as the primary met-ric, which is appropriate under severe class imbalance. All results are reported using Frame-wise F1, computed per frame and averaged over frames. 
+
+5.2. Comparative Studies 
+
+5.2.1. Q UANTITATIVE COMPARISON 
+
+Table 3 reports frame-wise F1 on the synthetic benchmark and the real-world test set, with breakdowns by video length, graphic level, and the number of changed instances. VSCD-Net achieves the best overall performance on both domains (36.6 on synthetic and 25.4 on real-world). Importantly, the gains are not confined to a specific subset: VSCDNet remains top-1 across all slices and shows its clearest advan-tage as change density increases, with performance rising from 32.1 to 39.0 across low-to-high object-change settings. Moreover, VSCDNet sustains strong performance under long trajectories and high-quality rendering (33.9 and 31.7), which demonstrates that its improvements persist under sub-stantial viewpoint drift and appearance variation rather than relying on a specific condition. 5.2.2. Q UALITATIVE COMPARISON 
+
+Fig. 3 presents qualitative comparisons between our method and representative baselines from different change detection paradigms: PBCD-MC, C-3PO, and GeSCF. PBCD-MC exhibits highly noisy change masks, particu-larly when the reference and query videos are captured from different viewpoints. As this method relies on constrained camera motion assumptions, its predictions degrade signif-icantly under unconstrained trajectories. C-3PO produces relatively clean masks but often fails to fully cover changed object regions, resulting in fragmented or incomplete de-tections. This limitation stems from its reliance on single reference–query image pairs, which makes it difficult to resolve occlusions and viewpoint-induced misalignment. GeSCF, built upon a segmentation foundation model, ef-fectively fills object regions when alignment is favorable. However, under strong misalignment, it frequently misclas-sifies large portions of the scene as changes, and it leads to many false positives. 7VSCD: Video-based Scene Change Detection in Unaligned Scenes   
+
+> Figure 4. Real-world robotic application of video scene change detection. A mobile robot captures reference and query videos under unconstrained motion. VSCD supports (left) visual surveillance by localizing abnormal changes and (right) object incremental learning by highlighting newly introduced objects over time.
+
+In contrast, our method produces stable and accurate change masks even under severe viewpoint differences. By leverag-ing sequence-level alignment, patch-level correspondence, and confidence-aware multi-reference fusion, our model remains robust to misalignment while preserving precise object-level change localization. 
+
+5.3. Ablation Studies 
+
+5.3.1. M ODULE ABLATION 
+
+Table 4 isolates three components that directly operational-ize our core VSCD insight. Removing the alignment token results in a moderate drop in performance, from 36.6 to 35.5. This indicates that a learned global frame representation improves frame-level matching under viewpoint variation, and it leads to higher-quality reference candidates and more reliable downstream fusion. Global reliability matters more than local reliability, but both are complementary. Disabling Cf produces the largest single drop, confirming that multi-reference reasoning becomes fragile if all candidates are treated equally: a few weakly matched frames can inject systematic noise into the fused representation. Disabling Csp yields a smaller but consistent degradation, indicating that correspondence ambiguity is of-ten localized (e.g., repeated textures, thin structures, partial occlusions) and benefits from spatially varying trust. When both confidence terms are removed, performance drops further, and it demonstrates that Cf and Csp address different failure modes. Cf decides which frames to trust, while Csp decides which pixels/patches within a trusted frame are geometrically reliable. Together they implement a principled trust pipeline that is essential in the VSCD regime where alignment is inherently uncertain. 
+
+# 6. Real-world Application 
+
+We deploy VSCDNet on a Stretch 3 mobile robot to validate VSCD beyond simulation under realistic sensing artifacts (Fig. 4). We demonstrate VSCDNet in two real-world appli-cations: visual surveillance and object incremental learning. These applications use the binary mask as a reusable object-level change primitive: the same output is aggregated into anomaly scores for surveillance and used to restrict ground-ing/detection to changed regions for incremental learning. This design separates the hard VSCD problem of localizing persistent occupancy changes under unconstrained view-point mismatch from downstream semantic interpretation, such as assigning appearance, disappearance, or relocation labels. For visual surveillance, we compare a single anomaly-free reference video against multiple query videos recorded at later times, and aggregate the predicted pixel-wise change 8VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+masks into frame-level anomaly scores to identify when ab-normal changes occur (e.g., door state changes or object ap-pearance/disappearance) without requiring trajectory replay. In our deployment, VSCDNet identifies frames containing the abnormal event with a hit rate of 62.1%. This result shows that our VSCD formulation supports temporal local-ization of persistent object-level changes from unaligned moving-camera videos. For object incremental learning, we run VSCD between consecutive robot recordings and use the resulting change regions as proposals for newly introduced objects, which reduces the need for exhaustive manual annotation across the entire scene. In an evaluation in which 4 new objects are introduced over time, the system successfully classifies 2 of them in the final test run. This application indicates that VSCD can serve as an effective change-driven front-end for updating an object inventory under unconstrained robot motion. Implementation and data-collection details are provided in Appendix D. 
+
+# 7. Conclusion 
+
+We introduced Video-based Scene Change Detection (VSCD), where a reference and a query RGB video of the same environment are recorded at different times under un-constrained camera motion, without temporal synchroniza-tion or geometric calibration. We built a large-scale bench-mark with over 1.1 million synthetic frames and a real-world test set to evaluate transfer beyond simulation. We proposed VSCDNet, a query-centric multi-reference model that per-forms frame-level alignment, patch-level correspondence, and confidence-weighted fusion to predict a high-resolution change mask once per query frame. VSCDNet outperforms strong image-based and video-based baselines on both syn-thetic and real-world evaluations. Further, we demonstrated the practical deployment of VSCDNet on a mobile robot. Future work includes expanding the real-world benchmark, domain adaptation, or few-shot real-world fine-tuning, out-door and multimodal VSCD, and improved robustness under severe occlusion or large viewpoint gaps. 
+
+# Acknowledgements 
+
+This research was partly supported by the National Research Foundation of Korea (NRF) grant funded by the Korea government (MSIT) (No. NRF-2022R1C1C1009989); by the InnoCORE program of the Ministry of Science and ICT(GIST InnoCORE KH0860); by Institute of Informa-tion & communications Technology Planning & Evaluation (IITP) grant funded by the Korea government(MSIT) (No. RS-2022-II220926, Development of Self-directed Visual Intelligence Technology Based on Problem Hypothesis and Self-supervised Methods); and by the National Research Council of Science & Technology(NST) grant by the Korea government(MSIT) (No. GTL25041-000). 
+
+# Impact Statement 
+
+VSCD can support long-term robot monitoring by localizing persistent object-level changes from moving-camera videos. Because such monitoring may involve privacy-sensitive video data, deployment should require appropriate con-sent, access control, and data-retention practices. In safety-relevant use, false positives may trigger unnecessary inspec-tion and false negatives may miss important changes; VSCD outputs should therefore be used as assistive signals rather than sole decision criteria. 
+
+# References 
+
+Alcantarilla, P. F., Stent, S., Ros, G., Arroyo, R., and Gher-ardi, R. Street-view change detection with deconvolu-tional networks. Autonomous Robots , 42(7):1301–1322, 2018. Chen, H. and Shi, Z. A spatial-temporal attention-based method and a new dataset for remote sensing image change detection. Remote Sensing , 12(10):1662, 2020. Chen, H., Wu, C., Du, B., and Zhang, L. Deep siamese multi-scale convolutional network for change detection in multi-temporal vhr images. In 10th International Workshop on the Analysis of Multitemporal Remote Sensing Images ,pp. 1–4. IEEE, 2019. Chen, H., Qi, Z., and Shi, Z. Remote sensing image change detection with transformers. IEEE Transactions on Geo-science and Remote Sensing , 60:1–14, 2021a. Chen, S., Yang, K., and Stiefelhagen, R. Dr-tanet: Dy-namic receptive temporal attention network for street scene change detection. In IEEE Intelligent Vehicles Sym-posium , pp. 502–509, 2021b. Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. Simclr: A simple framework for contrastive learning of visual representations. In International Conference on Learning Representations , volume 2. PMLR New York, NY, USA, 2020. Cheng, H., Wang, P., and Qi, C. Cnn retrieval based unsuper-vised metric learning for near-duplicated video retrieval. 
+
+arXiv preprint arXiv:2105.14566 , 2021. Cho, K., Kim, D. Y., and Kim, E. Zero-shot scene change detection. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pp. 2509–2517, 2025. Cole, G. G., Kentridge, R. W., and Heywood, C. A. Visual salience in the change detection paradigm: the special 9VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+role of object onset. Journal of Experimental Psychology: Human Perception and Performance , 30(3):464, 2004. Czigler, I. and Kojouharova, P. Visual mismatch negativ-ity: a mini-review of non-pathological studies with spe-cial populations and stimuli. Frontiers in Human Neuro-science , 15:781234, 2022. da Silva, A. F., Thomaz, L. A., Carvalho, G., Nakahata, M. T., Jardim, E., de Oliveira, J. F., da Silva, E. A., Netto, S. L., Freitas, G., and Costa, R. R. An annotated video database for abandoned-object detection in a cluttered environment. In International Telecommunications Sym-posium , pp. 1–5. IEEE, 2014. Daudt, R. C., Le Saux, B., and Boulch, A. Fully convolu-tional siamese networks for change detection. In 25th IEEE International Conference on Image Processing , pp. 4063–4067. IEEE, 2018. Driess, D., Xia, F., Sajjadi, M. S., Lynch, C., Chowdhery, A., Wahid, A., Tompson, J., Vuong, Q., Yu, T., Huang, W., et al. Palm-e: An embodied multimodal language model. In International Conference on Machine Learning .PMLR, 2023. Fang, S., Li, K., Shao, J., and Li, Z. Snunet-cd: A densely connected siamese network for change detection of vhr images. IEEE Geoscience and Remote Sensing Letters ,19:1–5, 2021. Fojcik, K., Syga, P., and Klonowski, M. Extremely compact video representation for efficient near-duplicates detec-tion. Pattern Recognition , 158:111016, 2025. Gupta, R., Goodman, B., Patel, N., Hosfelt, R., Sajeev, S., Heim, E., Doshi, J., Lucas, K., Choset, H., and Gaston, M. Creating xbd: A dataset for assessing building damage from satellite imagery. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops , pp. 10–17, 2019. Han, Z., He, X., Tang, M., and Lv, Y. Video similarity and alignment learning on partial video copy detection. In 
+
+Proceedings of the 29th ACM International Conference on Multimedia , pp. 4165–4173, 2021. He, S., He, Y., Lu, M., Jiang, C., Yang, X., Qian, F., Zhang, X., Yang, L., and Zhang, J. Transvcl: attention-enhanced video copy localization network with flexible supervi-sion. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 37, pp. 799–807, 2023. Jardim, E., Thomaz, L. A., da Silva, E. A., and Netto, S. L. Domain-transformable sparse representation for anomaly detection in moving-camera videos. IEEE Transactions on Image Processing , 29:1329–1343, 2019. Kim, J.-W. and Kim, U.-H. Towards generalizable scene change detection. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 24463–24473, 2025. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., et al. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pp. 4015–4026, 2023. Kolve, E., Mottaghi, R., Han, W., VanderBilt, E., Weihs, L., Herrasti, A., Deitke, M., Ehsani, K., Gordon, D., Zhu, Y., et al. Ai2-thor: An interactive 3d environment for visual ai. arXiv preprint arXiv:1712.05474 , 2017a. Kolve, E., Mottaghi, R., Han, W., VanderBilt, E., Weihs, L., Herrasti, A., Deitke, M., Ehsani, K., Gordon, D., Zhu, Y., et al. Ai2-thor: An interactive 3d environment for visual ai. arXiv preprint arXiv:1712.05474 , 2017b. Kordopatis-Zilos, G., Papadopoulos, S., Patras, I., and Kom-patsiaris, Y. Near-duplicate video retrieval with deep metric learning. In Proceedings of the IEEE Interna-tional Conference on Computer Vision Workshops , pp. 347–356, 2017. Lian, S., Nikolaidis, N., and Sencar, H. T. Content-based video copy detection–a survey. Intelligent Multimedia Analysis for Security Applications , pp. 253–273, 2010. Liu, Z., Ma, F., Wang, T., and Rao, F. A similarity alignment model for video copy segment matching. arXiv preprint arXiv:2305.15679 , 2023. Lu, D., Mausel, P., Brondizio, E., and Moran, E. Change detection techniques. International Journal of Remote Sensing , 25(12):2365–2401, 2004. Lu, M., Lu, Y., Nie, S., Yang, X., and Zhang, X. Self-supervised video copy localization with regional token representation. In European Conference on Computer Vision , pp. 18–35. Springer, 2024. Luo, W., Sun, P., Zhong, F., Liu, W., Zhang, T., and Wang, Y. End-to-end active object tracking via reinforcement learn-ing. In International Conference on Machine Learning ,pp. 3286–3295. PMLR, 2018. Padilla, R., da Silva, A. F., da Silva, E. A., and Netto, S. L. Change detection in moving-camera videos with limited samples using twin-cnn features and learnable morpho-logical operations. Signal Processing: Image Communi-cation , 115:116969, 2023. Park, J.-M., Jang, J.-H., Yoo, S.-M., Lee, S.-K., Kim, U.-H., and Kim, J.-H. Changesim: Towards end-to-end 10 VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+online scene change detection in industrial indoor en-vironments. In IEEE/RSJ International Conference on Intelligent Robots and Systems , pp. 8578–8585. IEEE, 2021. Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, C., Ma, T., Khedr, H., R ¨adle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K. V., Carion, N., Wu, C.-Y., Girshick, R., Doll ´ar, P., and Feichtenhofer, C. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. URL https:// arxiv.org/abs/2408.00714 .Rensink, R. A. Change detection. Annual Review of Psy-chology , 53(1):245–277, 2002. Sakurada, K. and Okatani, T. Change detection from a street image pair using cnn features and superpixel segmenta-tion. In British Machine Vision Conference , 2015. Sakurada, K., Shibuya, M., and Wang, W. Weakly super-vised silhouette-based semantic scene change detection. In IEEE International Conference on Robotics and Au-tomation , pp. 6861–6867. IEEE, 2020. Shi, Q., Liu, M., Li, S., Liu, X., Wang, F., and Zhang, L. A deeply supervised attention metric-based network and an open aerial image dataset for remote sensing change detection. IEEE Transactions on Geoscience and Remote Sensing , 60:1–16, 2021. Tavares, L. G., Da Silva, A. F., Padilla, R., Thomaz, L. A., Netto, S. L., and Da Silva, E. A. Pixel-based change detec-tion in moving-camera videos using twin convolutional features on a data-constrained scenario. IEEE Access ,2025. Thomaz, L. A., Jardim, E., da Silva, A. F., da Silva, E. A., Netto, S. L., and Krim, H. Anomaly detection in moving-camera video sequences using principal subspace analy-sis. IEEE Transactions on Circuits and Systems I: Regular Papers , 65(3):1003–1015, 2017. Wang, G.-H., Gao, B.-B., and Wang, C. How to reduce change detection to semantic segmentation. Pattern Recognition , 138:109384, 2023. Yantis, S. and Jonides, J. Abrupt visual onsets and selective attention: evidence from visual search. Journal of Experi-mental Psychology: Human Perception and Performance ,10(5):601, 1984. 11 VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+# A. Dataset and Annotation Details  
+
+> Figure 5. Example of generating data in the AI2Thor simulator
+> (Kolve et al., 2017a). Reference and query videos are captured along different trajectories in the same environment with varying object configurations, and pixel-wise change masks are generated by rendering changed objects along the query trajectory.
+
+A.1. Synthetic Data Generation Details 
+
+A.1.1. S IMULATORS AND RENDERING FIDELITY 
+
+We generate synthetic VSCD data using two simulation stacks: Unity-based AI2-THOR (Kolve et al., 2017a), a widely used simulator for embodied/robotics research, and Unreal Engine, which offers more photorealistic graphics. This design intentionally introduces rendering diversity: throughout the paper, Mid graphics correspond to Unity/AI2-THOR renders, while High graphics correspond to Unreal Engine renders (used in the graphics-level breakdown in Section 5.2). A.1.2. LAYOUTS , SCENES , AND DIRECTED SCENE PAIRS 
+
+Our benchmark comprises 218 pre-built indoor layouts (e.g., homes, offices, restaurants). For each layout, we create five scenes by varying the set and configuration of object in-stances while keeping the underlying layout geometry fixed. We then form VSCD examples as directed scene pairs (s →
+
+s′) following a fixed cycle (e.g., 0 → 1, 1 → 2, . . . , 4 → 0), so that each scene acts as the query once. Object-level changes between s and s′ include appearances, disappearances, and relocations; relocations are treated as changes under our formulation by modeling instances at different physical lo-cations as distinct elements of the instance set. A.1.3. INDEPENDENT TRAJECTORIES AND CROSS -VIEW MISALIGNMENT 
+
+For each scene, we record an RGB video with a mobile agent traversing the environment along a manually designed trajectory. Crucially, reference and query videos are not required to share the same trajectory. By capturing different scenes with different paths and viewpoints, the resulting reference–query pair exhibits strong viewpoint variation, occlusion, and temporal asynchrony, matching the intended VSCD setting. A.1.4. P IXEL -WISE CHANGE MASK GENERATION BY QUERY -TRAJECTORY RENDERING 
+
+Pixel-wise supervision is generated at render time by lever-aging simulator metadata. For a directed pair (s → s′), let 
+
+Or and Oq denote the object-instance sets in the reference and query scenes, and let O∆ = ( Oq \ Or) ∪ (Or \ Oq) de-note the symmetric difference. To obtain a mask aligned to the query frames, we perform an additional render pass that replays the query camera trajectory and renders only instances in O∆ as white while setting all other regions to black. This produces a binary mask sequence that is tem-porally aligned with the query video and reflects physical object-level changes rather than raw appearance differences. Fig.5 provides a concrete example in AI2-THOR, where the reference and query videos traverse the same environ-ment along different trajectories, and query-aligned change masks are generated by replaying the query trajectory and rendering only instances in O∆. The example also highlights the multi-change regime of VSCD (e.g., multiple appeared and disappeared instances in a single pair), which makes naive frame differencing unreliable under cross-view mis-alignment. 
+
+A.2. Real-world VSCD Test Set and Annotation Pipeline 
+
+A.2.1. D ATA COLLECTION PROTOCOL 
+
+For each real-world example, we record a reference video 
+
+Vr and a query video Vq of the same indoor space at two 12 VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+different time points. The two recordings are intentionally captured along different paths and viewpoints, without as-suming temporal synchronization or geometric calibration, to match the VSCD setting. Between the two recordings, the environment undergoes object-level changes (additions, removals, and relocations), while lighting and other photo-metric conditions may vary naturally. A.2.2. W HY PIXEL -WISE CHANGE ANNOTATION IS DIFFICULT IN VSCD Obtaining pixel-wise change masks in the real world is chal-lenging for two reasons that are intrinsic to VSCD. First, cross-view misalignment means that even unchanged re-gions may look very different across recordings. Therefore, naive frame differencing or image-pair annotation is unreli-able. Second, disappeared objects provide no direct pixels in the query. Although the corresponding physical location may still be visible in Vq, the object instance itself is ab-sent, and it makes it hard to localize the changed region in the query view without additional viewpoints or explicit 3D reconstruction. These difficulties highlight that VSCD is not only challenging for models but also for obtaining supervision in real deployments. A.2.3. A UXILIARY RECORDING FOR ANNOTATING DISAPPEARED OBJECTS 
+
+To mitigate the absence of direct visual evidence for dis-appeared objects, we capture an auxiliary RGB video Vu
+
+for each pair, recorded only for annotation. In this auxil-iary recording, all objects that appear in either Vr or Vq are physically present at once, and we traverse the scene with a trajectory similar to that of the query recording so that changed objects are observed under query-like viewpoints. This auxiliary video is never used as an input to any VSCD model and serves only to recover pixel-wise labels. A.2.4. W ARP -AND -SEGMENT LABEL GENERATION 
+
+We generate per-frame change labels for the query video by combining (i) segmentation masks extracted directly from query frames (for appeared/visible changed objects) and (ii) segmentation masks extracted from auxiliary frames, warped into the query view (to recover disappeared-object regions). Concretely, for each query frame Ftq , we select an auxiliary frame (or a short local neighborhood of frames) that best matches the viewpoint of Ftq and estimate a warp that maps the auxiliary frame into the query frame coordinate sys-tem. Let S (·) denote an off-the-shelf segmentation model used only for label generation; in our implementation, S
+
+is SAM2 (Ravi et al., 2024). We compute query masks 
+
+At = S (Ftq ) and auxiliary masks Ut = S (Fπ(t) 
+
+> u
+
+), and warp the auxiliary masks into the query view to obtain eUt .We then combine masks to form the final change mask Mt
+
+for each query frame: 
+
+Mt = Mt 
+
+> app
+
+∪ Mt
+
+> dis
+
+,
+
+where Mt 
+
+> app
+
+represents masks of appeared/relocated in-stances visible in the query, derived from At , and Mt 
+
+> dis
+
+rep-resents regions corresponding to disappeared/relocated in-stances, derived from the warped auxiliary masks eUt . Relo-cations are treated as changes by construction, contributing to both appeared and disappeared regions at different physi-cal locations. This procedure produces approximate pixel-wise supervision that is aligned to the query frames and enables evaluation of sim-to-real generalization under real-istic sensing noise. Real-world labels may contain boundary errors from SAM2 and view-warping artifacts for disap-peared objects; since all methods are evaluated with the same labels, relative comparisons remain meaningful, while absolute real-world F1 should be interpreted conservatively. 
+
+# B. Implementation and Experimental Details 
+
+B.1. Training and Implementation Keyframe sampling and preprocessing. We train VSCD-Net with change-mask supervision on a fixed number of keyframes. For each reference–query pair, we uniformly sample Tkey = 32 frames from both videos. When the orig-inal sequence is shorter than Tkey , we allow repeated sam-pling so that each sample always contains exactly 32 frames per video. Each RGB frame is resized to 1024 × 1024 and normalized with ImageNet mean and standard deviation. 
+
+Backbone and feature resolution. We use a pretrained SAM ViT-B image encoder to extract patch tokens on a 64 × 64 grid ( D = 768 ). From the patch tokens, we compute a compact per-frame descriptor by combining (i) average pooling over patch tokens and (ii) a learnable alignment token updated by a lightweight attention-based aggregation head (1 layer, 8 heads). All patch-level modules operate on the 64 × 64 token grid. 
+
+Frame-level alignment and reference candidate construc-tion. Given query/reference frame descriptors, we build a cosine-similarity matrix and refine it with a shallow residual convolutional head. We obtain a soft matching distribution by applying a row-wise softmax with temperature τ f = 0.5.Matched segment proposals are constructed from the top-1 path using a near-diagonal tolerance δ = 2, a minimum seg-ment length of 2, and a maximum segment length Lmax = 5.For each query keyframe t, we select one segment-consistent anchor reference and fill the remaining slots with globally top-ranked references under the soft matching distribution, 13 VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+using K = 4 and capping the final candidate set size to 
+
+|St | ≤ 6. 
+
+Patch correspondence, fusion, and decoding. For each candidate pair (t, s), we compute local patch correspon-dence by evaluating dot-product correlation within a k × k
+
+window on the token grid (default k = 5), and apply soft-max over the k2 offsets to obtain a patch-matching distri-bution. We compute an expected displacement field and warp the reference feature map by differentiable bilinear sampling. A lightweight convolutional head then produces a per-candidate change feature at 64 × 64 resolution, and mul-tiple candidate features are fused by a confidence-weighted average in feature space. Finally, we decode the fused fea-ture once per query keyframe using a lightweight upsam-pling decoder (64 →128 →256 →512 →1024). To recover fine boundaries, we inject the query RGB frame into the decoder at the 256 and 1024 stages (16-channel projection), and output a full-resolution logit mask for each query frame. 
+
+Loss and optimization. We supervise change prediction using binary cross-entropy with logits and a soft Dice loss: 
+
+L (t) 
+
+> mask
+
+= LBCEWithLogits ( ˆZt , Mt ) + LDice ( ˆZt , Mt ), (13) and average L (t) 
+
+> mask
+
+over query keyframes in the batch. We optimize trainable parameters using AdamW while keeping the pretrained transformer image encoder frozen. 
+
+B.2. Evaluation Protocol Keyframe sampling. For all methods, we uniformly sam-ple a fixed number of keyframes from each reference and query video to control computational cost and en-sure fair comparison. Unless otherwise stated, we use the same keyframe sampling strategy for all baselines and our method. 
+
+Image-based SCD baselines. Image-based SCD meth-ods require a single reference image for each query frame. To adapt them to the VSCD setting, we perform explicit frame matching using ViT-SAM features (Kirillov et al., 2023). Specifically, we extract ViT-SAM embeddings for all reference and query keyframes, compute cosine similarity between them, and select the top-1 most similar reference frame for each query frame. The selected image pairs are then processed independently to produce pixel-wise change masks. 
+
+Video-based AOD baselines. Video-based abandoned ob-ject detection methods are applied directly to reference and query keyframe sequences following the original implemen-tations. These methods rely on constrained camera motion and sequence-level comparison and do not require additional frame matching beyond their native pipelines.                                                                   
+
+> Table 5. Stratification criteria. Difficulty factors used for the stratified breakdown in Table 3.
+> Factor Bin Threshold Video length Low <900 frames Mid 900–1500 frames High >1500 frames Graphic level Mid Unity/AI2-THOR High Unreal Engine Object changes Low <5 changed instances Mid 5–15 changed instances High >15 changed instances
+> Table 6. Hyper-parameter ablation study. Default configuration is K=4,|St|max =6,k=5,Lmax =5, and Tkey =32 . Each row changes one parameter while keeping the others fixed to the default. Parameter Value F1 (%) Default –36.6
+> K236.6
+> K636.6
+> |St|max 436.2
+> |St|max 836.4
+> k335.9
+> k737.2
+> Lmax 336.5
+> Lmax 736.5
+> Tkey 16 34.7
+> Tkey 64 37.7
+
+Difficulty factor stratification. Table 5 summarizes the stratification criteria for difficulty factors used in the break-down of Table 3. We bucket test pairs by (i) video length measured in the number of frames, (ii) graphics level de-termined by the simulation stack (Mid: Unity/AI2-THOR, High: Unreal Engine), and (iii) the number of changed ob-ject instances between the reference and query scenes (in-cluding appearances, disappearances, and relocations). 
+
+# C. Additional Experimental Results 
+
+C.1. Hyper-parameter Ablation Study 
+
+We additionally evaluate sensitivity to key hyper-parameters in Table 6. We vary one parameter at a time while keeping the others fixed to the default configuration. Specifically, we consider K, the number of top reference frames retrieved per query frame from frame matching, |St |max , the cap on the final candidate set size, k, the local window size used for patch correspondence, Lmax , the maximum length of matched segment proposals, and Tkey , the number of sampled keyframes per video. 14 VSCD: Video-based Scene Change Detection in Unaligned Scenes   
+
+> Figure 6. Qualitative comparison results on synthetic VSCD dataset. VSCDNet produces more coherent and complete change masks than representative baselines across both AI2-THOR (top; Mid graphics) and Unreal Engine (bottom; High graphics).
+
+We first observe that varying K, the number of top reference frames retrieved per query frame from frame-level matching, has little effect on performance. Using K = 2 or K = 6 yields the same F1 score as the default setting. This indicates that the frame-level alignment stage already produces highly reli-able reference candidates, such that increasing or decreasing the number of retrieved frames does not significantly affect the quality of the fused representation. Similarly, changing the maximum candidate set size |St |max 
+
+15 VSCD: Video-based Scene Change Detection in Unaligned Scenes   
+
+> Figure 7. Qualitative comparison results on real-world VSCD dataset. Despite real sensing noise, illumination variation, and unconstrained camera motion, VSCDNet maintains coherent object-level change localization and reduces spurious detections compared to baselines.
+
+results in only minor performance differences. This suggests that our candidate construction strategy is robust and does not rely on a large number of reference frames, as long as a small set of well-aligned candidates is available. In contrast, the patch correspondence window size k has a more noticeable impact. A larger window ( k = 7 ) slightly improves performance, while a smaller window ( k = 3) de-grades it. This trend reflects a trade-off between capturing sufficient local displacement to compensate for viewpoint differences and maintaining precise spatial correspondence. We use k = 5 as the default because k = 7 improves real-world F1 only from 25.43 to 25.86, while increasing infer-ence time from 3.44s to 3.62s and local patch-matching cost from 15.10 to 29.60 GMACs per video pair. Varying Lmax between 3 and 7 results in nearly identical performance (36.5 F1 in both cases), comparable to the de-fault setting. This indicates that VSCDNet is not sensitive to the exact temporal span of matched segments, as long as short spurious matches are filtered and overly long segments are avoided. In practice, a moderate segment length is suffi-cient to capture temporal consistency without introducing additional noise from loosely aligned frames. Reducing Tkey to 16 leads to a noticeable drop in perfor-mance (34.7 F1), suggesting that too sparse temporal sam-pling limits the ability to establish reliable cross-video as-sociations. Increasing Tkey to 64 improves performance to 37.7 F1, indicating that denser temporal coverage provides additional matching evidence. However, the gain over the default setting remains moderate, and it reflects a trade-off between temporal resolution and computational cost. On the real-world set, using 8, 16, 24, and 32 sampled frames gives 0.87, 1.73, 2.62, and 3.44s forward time, with 3.19, 3.62, 4.05, and 4.48GB peak memory, respectively. Overall, the limited sensitivity across hyper-parameters sug-gests that VSCDNet’s performance is primarily driven by its core design—multi-reference alignment and confidence-aware fusion—rather than careful tuning of individual pa-rameters. 
+
+C.2. Alignment-quality Analysis 
+
+We analyze alignment quality using the Top 1 − Top 2 gap of Pf rame , where smaller gaps indicate more ambiguous alignment. Table 7 clarifies the role of our design choices: ambiguous and medium cases benefit most from unweighted multi-reference reasoning, whereas clear cases benefit most from confidence-aware fusion. As alignment improves, both precision and recall rise, especially recall, suggesting that better alignment mainly recovers missed changed regions. 16 VSCD: Video-based Scene Change Detection in Unaligned Scenes    
+
+> Table 7. Alignment ambiguity analysis. Query frames are grouped by the top-1/top-2 gap in Pframe ; smaller gaps indicate more ambiguous alignment.
+
+Bin Top-1 only Multi-ref w/o conf Full F1 Precision Recall Ambiguous 31.9 33.9 34.6 37.5 51.4 Medium 32.9 35.5 36.3 38.2 54.8 Clear 36.2 36.3 39.0 39.3 60.6 
+
+C.3. Error Analysis 
+
+We also categorize frame-level errors: FP-heavy errors ac-count for 53.9%, balanced errors for 27.7%, and FN-heavy errors for 18.4%. FPs mainly arise from small or near-zero-change frames with spurious unchanged regions, while FNs mainly reflect incomplete coverage of large changed objects. 
+
+C.4. Synthetic-to-real Gap Analysis 
+
+To better understand the synthetic-to-real gap, we repeated the same failure analysis on both domains using change-size thresholds derived from the synthetic test split (Table 8). Real-world transfer is intrinsically difficult—due to motion blur, exposure changes, etc., yet VSCDNet still improves over the strongest baseline. The gap is not uniform: it is concentrated in small/medium changes, while large changes transfer much better. This indicates that sim-to-real degrada-tion is driven mainly by fine/localized changes and boundary precision, not by a general failure of sequence-level align-ment. 
+
+C.5. Additional Qualitative Results 
+
+We provide additional qualitative comparisons to further validate the observations made in the main paper. Across a variety of environments, we consistently observe similar trends: video-based methods produce noisy predictions un-der viewpoint changes, image-based methods fail to fully capture object-level changes due to single-reference limita-tions, and zero-shot methods tend to over-predict changes under misalignment. In contrast, our method maintains stable and coherent change masks across diverse scenes, even when reference and query videos exhibit large viewpoint differences or contain many simultaneous object-level changes. These ad-ditional results confirm that the qualitative advantages dis-cussed in the main text generalize beyond the examples shown in Fig. 6, and Fig. 7. 
+
+# D. Real-world Application 
+
+This section demonstrates the deployment of the VSCD framework in real-world robotic applications, with a focus on two representative scenarios: visual surveillance and ob-ject incremental learning. All videos are collected using a Stretch 3 robot in indoor environments that include illu-mination changes, sensor noise, and viewpoint variation. Importantly, the reference and query videos are recorded under unconstrained robot motion without frame synchro-nization or pose information, reflecting realistic deployment conditions. 
+
+Visual surveillance. In the visual surveillance setting, we compare one anomaly-free reference video against three query videos that each contains a distinct abnormal event: (i) a door state change (closed → open), (ii) the appearance of a previously absent object, and (iii) the disappearance of an object present in the reference recording. The robot tra-verses the same environment across recordings but follows slightly different trajectories, producing strong cross-video misalignment and occlusion patterns. Given a reference– query pair, VSCD predicts a change mask sequence for the query video. For practical surveillance, we convert the pre-dicted per-frame masks into frame-level anomaly scores (e.g., by aggregating mask confidence over pixels) and use these scores to identify frames and temporal intervals that contain abnormal changes. This application highlights a core capability of VSCD: reliable change detection under moving cameras without relying on fixed viewpoints or explicit frame correspondences, by aligning videos at the se-quence level and consulting multiple reference observations for each query frame. 
+
+Object incremental learning. We further apply VSCD as a change-driven front-end for object incremental learn-ing, where new objects are introduced over time and the robot updates its object inventory sequentially. The data consist of three training videos recorded in chronological order, followed by a test video that contains all objects in-troduced across training. The protocol proceeds as follows. First, in the initial training video, we obtain object candi-dates using an off-the-shelf grounding/detection module and initialize an object set by assigning each discovered instance a new class identity (treated as an incremental la-bel). For the second and third training videos, we run VSCD between consecutive recordings, using the previous video as reference and the current video as query. VSCD identifies regions that differ across time; when these regions overlap with grounded object candidates, we treat them as newly introduced object instances and add them as new classes 17 VSCD: Video-based Scene Change Detection in Unaligned Scenes 
+
+Table 8. Synthetic-to-real gap by change size. We report precision, recall, and F1 after grouping frames by the visible size of changed regions, using thresholds derived from the synthetic test split.                         
+
+> Change mask size Synthetic Precision Synthetic Recall Synthetic F1 Real-world Precision Real-world Recall Real-world F1 Small ( <2.70%) 18.9 70.5 21.4 14.5 73.1 13.3 Medium (2.70%–10.82%) 39.8 55.5 41.9 27.6 52.3 34.3 Large ( ≥10.82%) 51.2 47.3 45.6 41.7 57.6 46.3
+
+(or update the corresponding representation if an instance is re-observed). Finally, in the test video, we evaluate whether the system can correctly classify objects among all classes accumulated so far, using the learned incremental object set. This setting emphasizes the practical insight that semantic change detection can serve as a natural supervisory signal for incremental learning: by focusing computation and su-pervision on regions flagged as changed, the robot avoids exhaustive annotation of entire scenes, while sequence-level alignment reduces false discoveries caused purely by view-point or photometric variation rather than genuine object-level novelty. 18

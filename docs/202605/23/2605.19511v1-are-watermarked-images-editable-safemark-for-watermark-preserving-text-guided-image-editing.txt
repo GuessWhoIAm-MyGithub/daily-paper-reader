@@ -1,0 +1,647 @@
+Title: Are Watermarked Images Editable? SafeMark for Watermark-Preserving Text-Guided Image Editing
+
+URL Source: https://arxiv.org/pdf/2605.19511v1
+
+Published Time: Wed, 20 May 2026 00:50:31 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Are Watermarked Images Editable? SafeMark for Watermark-Preserving Text-Guided Image Editing 
+
+Xiaodong Wu 
+
+Queen’s University 
+
+xiaodong.wu@queensu.ca 
+
+Qi Li 
+
+Queen’s University 
+
+qi.li@queensu.ca 
+
+Xiangman Li 
+
+Queen’s University 
+
+xiangman.li@queensu.ca 
+
+Zelin Zhang 
+
+Queen’s University 
+
+zelin.zhang@queensu.ca 
+
+Lingshuang Liu 
+
+University of Waterloo 
+
+lingshuang.liu@uwaterloo.ca 
+
+Jianbing Ni 
+
+Queen’s University 
+
+jianbing.ni@queensu.ca 
+
+## Abstract 
+
+This paper investigates a fundamental yet underexplored question: can water-marked images remain editable without compromising watermark integrity? We propose SafeMark , a framework for watermark-preserving text-guided image ma-nipulation that explicitly integrates watermark integrity into the editing process. Specifically, SafeMark adds a thresholded watermark-decoding loss directly to the diffusion editor’s training objective, fine-tuning the editor so that semantically valid edits also preserve the embedded watermark at the final output. This design admits a clean information-theoretic justification: maintaining high bit-accuracy on the edited image lower-bounds the mutual information that the editor channel preserves between watermark and edited output, the quantity that fundamentally controls wa-termark recoverability. SafeMark is compatible with differentiable diffusion-based editors, and requires no architectural modification. Extensive evaluations across multiple datasets, text-guided editing methods, and post-edit distortion settings demonstrate that SafeMark achieves high watermark bit accuracy across diverse editing settings while maintaining high-quality semantic edits, without sacrificing robustness to common post-edit distortions. These results demonstrate that se-mantic editability and watermark integrity are fundamentally compatible, enabling trustworthy image provenance in generative editing pipelines. 
+
+## 1 Introduction 
+
+Rapid advances in generative AI, driven by text-to-image models such as Stable Diffusion [ 1 ], Ima-gen [ 2], and DALL-E3 [ 3 ], have greatly accelerated the creation, modification, and redistribution of digital images. This shift makes reliable ownership verification and provenance tracking increas-ingly critical for creators, platforms, and rights holders. Invisible image watermarking addresses this need by embedding imperceptible signals into images that can later be recovered by dedicated decoders. Prior work has demonstrated the effectiveness of watermarking in text-to-image generation for provenance-preserving image synthesis [ 4, 5], spanning both post hoc encoder–decoder schemes, such as HiDDeN [ 6], MBRS [ 7], and StegaStamp [ 8], and model-integrated approaches, including Stable Signature [9] and Tree-Ring watermarks [10]. 
+
+> Preprint.
+> arXiv:2605.19511v1 [cs.CV] 19 May 2026
+
+A key requirement of image watermarking is robustness: the embedded watermark must remain verifiable under distortions. Existing methods, such as Robust-Wide [ 11 ], JigMark [ 12 ], VINE [ 13 ], EditGuard [ 14 ], and SleeperMark [ 15 ], improve survivability by training against predefined distortions or editing behaviors, an adversarial-defense paradigm whose robustness is fundamentally coupled to the specific threat models assumed during training. However, the rise of text-guided diffusion editors, such as SDEdit [ 16 ], InstructPix2Pix [ 17 ], DiffusionCLIP [ 18 ], Asyrp [ 19 ], and Prompt-to-Prompt [ 20 ], has fundamentally changed how images are modified. These methods enable rich, semantics-driven edits via iterative denoising, going far beyond traditional pixel-level perturbations. This shift raises a critical question: can watermarks remain verifiable under semantics-driven editing? More broadly, can watermarked images remain editable without compromising watermark integrity? These questions remain largely unexplored and motivate the need for watermark-preserving mechanisms that explicitly enforce integrity during the editing process. In this paper, we study the coexistence of watermarking and editing and propose SafeMark , a framework for watermark-preserving, text-guided image manipulation that treats watermark integrity as an explicit objective during editing. Specifically, we consider a practical setting in which an image editing service provider has access to both the editing model and the watermark encoder–decoder, and study three key research questions about preserving embedded watermarks under text-guided editing. RQ1) Can existing robust watermarking methods preserve watermarks under arbitrary text-guided image edits? Our experiments demonstrate that watermark preservation is strongly editor-dependent: for example, SleeperMark retains high bit accuracy under some edits (e.g., 0.977 
+
+on Church images edited with DiffusionCLIP), but degrades significantly under others (e.g., 0.619 
+
+on the same dataset when edited with Eff-Diff). RQ2) Can text-guided image editing be made watermark-safe by design? By integrating watermark supervision directly into the editing process, 
+
+SafeMark achieves substantially higher watermark bit accuracy (close to 1.0 in most settings), while existing baselines typically drop to around 0.6 under the same conditions. RQ3) Do SafeMark -protected images remain robust to subsequent post-processing distortions? Under common post-edit distortions such as rotation, blurring, and resizing, SafeMark maintains high watermark bit accuracy (around 0.9), indicating that watermark-preserving editing does not compromise robustness to conventional image corruptions. To the best of our knowledge, SafeMark is the first framework that enforces watermark preservation within the editing objective itself, providing protection by design rather than by approximation. The main contributions of this paper are summarized as follows: 
+
+• We identify and empirically demonstrate that existing robust watermarking methods are editor-dependent and fail to generalize across diverse text-guided image editing pipelines. 
+
+• We cast watermark-preserving editing as constrained optimization and provide an information-theoretic foundation, including a Fano-type recovery bound, accuracy-to-MI lemmas, and a conditional finite-step convergence theorem, to justify SafeMark’s hinge-penalty objective. 
+
+• We propose SafeMark , a framework for watermark-preserving text-guided image manipulation that integrates watermark supervision into the editing process, achieving high watermark bit accuracy while maintaining high-quality manipulation results. 
+
+• We demonstrate that SafeMark remains robust to conventional post-edit distortions, confirming that watermark-preserving editing does not reduce resilience to standard image corruptions. 
+
+## 2 Related Work 
+
+Image watermarking embeds an imperceptible signal into visual content so that ownership, prove-nance, or user-level information can be recovered after redistribution. Classical robust watermarking has evolved from hand-crafted frequency-domain designs to neural encoder–decoder systems that are trained against simulated channels such as JPEG compression, resizing, blurring, and color perturba-tions. Representative methods include HiDDeN [ 6], StegaStamp [ 8], MBRS [ 7], RoSteALS [ 21 ], and TrustMark [ 22 ]. These methods substantially improve robustness to pixel-level and acquisition-time distortions, but text-guided diffusion editing introduces a different challenge: the image may be partially re-synthesized, semantically transformed, or regenerated through a latent generative prior. Recent studies and benchmarks [ 12 , 13 , 23 ] show that watermark recovery can degrade sharply under such semantic editing, indicating that robustness to conventional distortions does not directly translate into watermark preservation during generative manipulation. 2This gap has motivated editing-aware watermarking, where watermark training or verification explic-itly accounts for modern image editors rather than treating editing as ordinary noise. Robust-Wide [ 11 ] injects instruction-driven editing operations into the watermark training loop through Partial Instruction-driven Denoising Sampling Guidance, encouraging watermark signals to survive semantic changes produced by editors such as InstructPix2Pix [ 17 ]. JigMark [ 12 ] learns from original/edited image pairs in a black-box manner to improve survival under diffusion edits, while VINE [ 13 ]analyzes how diffusion editing suppresses high-frequency watermark components and uses generative priors with surrogate degradations to improve edit robustness. Beyond copyright decoding alone, EditGuard [ 14 ] combines watermarking with tamper localization for both classical and AIGC-based edits, and SleeperMark [ 15 ] studies watermark persistence after fine-tuning text-to-image diffusion models. However, most existing methods still optimize the watermark itself against selected editors, edit distributions, or downstream adaptation settings for robustness; they do not directly constrain the editing process to preserve an already embedded watermark. Our work targets this complementary direction: watermark-preserving editing, where the editor is trained to satisfy the requested semantic modification while maintaining decodability of the embedded watermark. For evaluation, we select VINE and SleeperMark as the most directly comparable baselines (encoder-decoder schemes for real-image and AIGC settings, respectively); Robust-Wide is designed for instruction-driven editing pipelines and is not directly applicable to the domain-transfer and h-space editors we evaluate, Jig-Mark relies on a black-box jigsaw-key paradigm incompatible with encoder-decoder schemes, and EditGuard focuses on tamper localization not bit-level recovery. 
+
+## 3 Problem Formulation and Theoretical Foundations 
+
+3.1 Problem Setup 
+
+An image xorig watermarked with a message w ∈ { 0, 1}B is edited by Eθ under prompt p, with decoder Dϕ recovering ˆw from the output; the encoder/decoder are fixed and we optimize only θ.
+
+Constrained Objective. Let xedit = Eθ (xorig , p). SafeMark seeks θ⋆ satisfying: 
+
+min  
+
+> θ
+
+Exorig ,w,p
+
+h
+
+Lsem 
+
+ xedit , xref 
+
+i
+
+s.t. Acc 
+
+
+
+ˆw, w
+
+
+
+≥ τ, ˆw = σ
+
+
+
+Dϕ(xedit )
+
+
+
+,
+
+(1) where τ ∈ [0 , 1] is the accuracy threshold and Acc is the hard-bit accuracy reported at evaluation. The semantic loss Lsem is instantiated in Section 4.1; during training, the non-differentiable Acc is replaced by a smooth surrogate gAcc derived in Section 3.3. 
+
+3.2 Information-Theoretic Foundation 
+
+Watermark recoverability is bounded by Iθ (W ; Xe), the mutual information preserved by the editor channel; in this view, hard-bit accuracy provably lower-bounds this quantity, thereby grounding 
+
+SafeMark ’s bit-accuracy-driven hinge training objective. 
+
+Editor as a watermark channel. We treat W ∈ { 0, 1}B as uniform with independent bits, match-ing standard encoders (HiDDeN [ 6], VINE [ 13 ], etc.). The editor produces Xe = Eθ (Xorig , p; ξ),and the chain W → Xorig → Xe → ˆW is Markov; we call the conditional distribution of Xe given 
+
+W the editor watermark channel , with mutual information Iθ (W ; Xe) measured in bits. 
+
+Theorem 1 (Information-theoretic necessary condition for watermark recovery) . For any editor parameter θ and decoder Dϕ, the block error rate Pe(θ, ϕ ) := Pr[ ˆW̸ = W ] satisfies 
+
+Pe(θ, ϕ ) ≥ 1 − Iθ (W ; Xe) + 1 
+
+H(W ) . (2) 
+
+With W uniform on {0, 1}B , H(W ) = B bits, so Pe ≥ 1 − (Iθ (W ; Xe) + 1) /B . (Proof in Appendix H.) For a fixed watermark encoder and message distribution, optimizing the decoder cannot exceed what 
+
+Iθ already permits; SafeMark therefore reparameterizes θ to raise Iθ directly. 3From bit accuracy to mutual information. Let ¯a := 1
+
+> B
+
+P 
+
+> b
+
+Pr[ ˆWb = Wb] denote average bit accuracy. 
+
+Lemma 1 (Bit accuracy lower-bounds channel mutual information) . Under the assumed indepen-dence of the bits of W ,
+
+Iθ (W ; Xe) ≥ H(W ) − B H 2(1 − ¯a(θ, ϕ )) . (3) 
+
+With W uniform on {0, 1}B , this becomes Iθ (W ; Xe) ≥ B 1 − H2(1 − ¯a) bits. (Proof in Ap-pendix H.) 
+
+Bit accuracy as a tractable surrogate target. Enforcing ¯a(θ, ϕ ) ≥ τ implies 
+
+Iθ (W ; Xe) ≥ B 1 − H2(1 − τ ) bits , (4) motivating bit-level training as a tractable proxy for the mutual information (MI) objective; for 
+
+τ ∈ [1 /2, 1] , the bound is monotone increasing in τ and saturates at the maximum B bits when 
+
+τ = 1 .
+
+3.3 Hinge Penalty Relaxation 
+
+Since the feasible set is defined through a non-linear multi-step denoising trajectory, solving Eq. (1) directly is computationally prohibitive. SafeMark instead relaxes the constraint via a one-sided hinge penalty on a Brier-type differentiable surrogate of hard bit accuracy: 
+
+gAcc( ˆ w, w) := 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+
+
+1 − ( ˆ wb − wb)2
+
+, ˆwb ∈ [0 , 1] , (5) where ˆwb = σ(Dϕ(xedit )) b. Combining with the semantic loss Lsem (instantiated in Section 4.1), the training objective is 
+
+Ltotal (θ) = λsem Lsem + λwm Lwm , (6) 
+
+Lwm = max  0, τ − gAcc( ˆ w, w). (7) 
+
+Calibration: from soft surrogate to hard accuracy. By a pointwise wrong-bit-count argument (Lemma 2, Appendix H), training to gAcc ≥ τ implies hard-bit accuracy ¯a ≥ 4τ − 3; combining with Lemma 1 yields 
+
+Iθ (W ; Xe) ≥ B 1 − H2
+
+  4(1 − τ )  , whenever τ ≥ 7/8, (8) so the soft hinge is the variational counterpart of Eq. (4) for τ ≥ 7/8; at τ = 1 , zero hinge loss is equivalent to perfect hard-bit recovery. Once gAcc ≥ τ (inactive phase), the hinge contributes zero gradient and training reduces to λsem Lsem 
+
+alone; under explicit non-vanishing-gradient and gradient-alignment assumptions on the active phase, gradient descent enters the inactive phase in finitely many steps (Theorem 2, Appendix H). 
+
+## 4 SafeMark 
+
+4.1 Methodology 
+
+The editor Eθ , decoder Dϕ, edited output xedit , soft accuracy gAcc , and hinge loss Lwm are as defined in Section 3.1 and Section 3.3; we specify the SafeMark-specific instantiation. An overview of the pipeline is illustrated in Fig. 1. 
+
+Reference target for semantic supervision. To provide a stable semantic target without over-constraining the optimization, we use the frozen pre-trained editor Eθ0 (i.e., without our training updates) to produce a reference edit xref = Eθ0 (xorig , p), capturing the intended editing direction. 
+
+Semantic alignment loss. Semantic consistency is enforced only on the final edited image by encouraging xedit to remain close to the reference: 
+
+Lsem = ∥xref − xedit ∥1. (9) 4Watermark decoding and soft accuracy. The frozen decoder Dϕ is applied to the final edited image xedit , and a sigmoid activation yields soft bit estimates ˆw = σ(Dϕ(xedit )) ∈ [0 , 1] B . Since hard bit accuracy is non-differentiable, we adopt the Brier-type surrogate gAcc (Eq. (5) ), which is smooth and admits gradient flow from the decoded bits back through the editor. 
+
+Overall training objective. The full objective is Ltotal = λsem Lsem + λwm Lwm as in Eq. (6) , with 
+
+gAcc feeding the hinge Lwm in Eq. (7) . Both λsem and λwm are tuned on a validation set; sensitivity to 
+
+τ is analyzed in Appendix E. Gradients flow only through the final output xedit , with no supervision on intermediate denoising steps. 
+
+4.2 Training Procedure                                                              
+
+> Algorithm 1 SafeMark Training Procedure Require: Trainable editor Eθ, frozen editor Eθ0, decoder Dϕ,triples (xorig ,w,ptxt ), weights λsem , λ wm , threshold τ,step size η
+> 1: for each minibatch (xorig ,w,ptxt )do
+> 2: xref ← E θ0(xorig ,ptxt )
+> 3: xedit ← E θ(xorig ,ptxt )
+> 4: Lsem ← ∥ xref −xedit ∥1
+> 5: ˆw←σ(Dϕ(xedit ))
+> 6: gAcc ←B−1PBb=1
+> 1−( ˆ wb−wb)2
+> 7: Lwm ←max(0 , τ −gAcc)
+> 8: Ltotal ←λsem Lsem +λwm Lwm
+> 9: θ←θ−η∇θLtotal
+> 10: end for
+
+The training procedure of SafeMark is sum-marized in Algorithm 1. For each mini-batch, we first compute a fixed semantic reference xref = Eθ0 (xorig , ptxt ) using the 
+
+frozen editor Eθ0 (line 2), capturing the in-tended editing direction. The trainable ed-itor Eθ then produces the final edited im-age xedit without supervision at intermedi-ate steps (line 3). Semantic alignment en-courages xedit to remain close to the refer-ence (line 4), while watermark supervision decodes the embedded watermark and com-putes bit accuracy (lines 5–6). A thresh-olded hinge loss penalizes accuracy below 
+
+τ (line 7), and the combined objective up-dates the editor parameters (lines 8–9). Because the watermark loss is applied only to the final output xedit and gradients are propagated through it, SafeMark is compatible with differentiable diffusion-based editors and applies watermark supervision only at the final denoised output, requiring no architectural modification to the underlying editor. At inference time, only the fine-tuned editor Eθ
+
+is required; the frozen reference editor Eθ0 and watermark decoder Dϕ are used exclusively during training and introduce no additional computational overhead at deployment. 
+
+## 5 Evaluation 
+
+5.1 Experiment Setup Datasets. We evaluate watermark-preserving editing on both real images and AI-generated images. For real images, we use LSUN-Church, LSUN-Bedroom [ 24 ], CelebA [ 25 ], and AFHQ-Dog [ 26 ], watermarked by HiDDeN [ 6] and VINE [ 13 ]; from each dataset, we sample 100 images and apply domain-valid semantic attributes. For AI-generated images, we evaluate Stable Signature [ 9 ] and SleeperMark [ 15 ] on Church, Bedroom, Human, and Dog images generated from fixed category prompts with different random seeds. Dataset statistics and domain-specific editing rationales are provided in Appendix B, and protocol details are provided in Appendix C. 
+
+Baselines. HiDDeN is a classical encoder-decoder scheme optimized against simulated channel noise; VINE explicitly targets diffusion-editing robustness via frequency-domain surrogate attacks; Stable Signature and SleeperMark embed watermarks into the Stable Diffusion generation pipeline. All images are edited with DiffusionCLIP [ 18 ], Asyrp [ 19 ], and Eff-Diff [ 27 ]. These editors span fine-tuning-based domain transfer, semantic h-space attribute manipulation, and score-based efficient editing, covering a broad range of diffusion editing behaviors; full descriptions are in Appendix A. 
+
+Metrics. We evaluate image quality with FID [ 28 ], IS [ 29 ], and CLIP cosine similarity [ 30 ], and evaluate watermark preservation using bit accuracy, Acc = 1
+
+> N
+
+PNi=1 [ˆbi = bi], where bi and ˆbi are the embedded and decoded bits. Higher IS, CLIP, and Acc indicate better image quality, semantic alignment, and watermark preservation, while lower FID indicates better realism. 5Figure 1: Overview of SafeMark . Given a watermarked input image xorig and an editing prompt p,the diffusion editor produces the final edited image xedit . SafeMark enforces (i) semantic alignment to a reference edit xref = Eθ, 0(xorig , p) and (ii) watermark preservation by decoding ˆw = σ(Dϕ(xedit )) 
+
+and applying a thresholded loss when decoding accuracy drops below τ .
+
+5.2 Limitations of Existing Robust Watermarking under Text-Guided Editing (RQ1)                          
+
+> Table 1: Watermark bit accuracy after direct diffusion editing. Editor Set. V-Ch. V-Bd. S-Ch. S-Bd.
+> Original 0.996 0.999 0.998 0.999 DiffCLIP Mani 0.951 0.941 0.977 0.951 Asyrp Mani 0.708 0.299 0.919 0.798 Eff-Diff Mani 0.621 0.586 0.619 0.904
+> V/S : VINE/SleeperMark; Ch./Bd. : Church/Bedroom.
+
+Table 1 reports bit accuracy for VINE and SleeperMark, both designed to im-prove robustness under editing, across three diffusion-based editors. Al-though VINE achieves near-perfect ac-curacy on unedited images, it degrades sharply under semantic editors: un-der Asyrp, accuracy drops from 0.996 
+
+to 0.708 on Church and from 0.999 
+
+to 0.299 on Bedroom; under Eff-Diff, it drops to 0.621 and 0.586 . Sleeper-Mark shows the same editor-dependent degradation on AI-generated images, confirming that existing robust watermarking methods do not provide reliable preservation across heterogeneous or un-seen editing pipelines. This editor-dependent failure highlights a fundamental limitation of the adversarial-defense paradigm: watermark robustness trained against a fixed distortion distribution cannot generalize to the open-ended space of semantic edits produced by heterogeneous diffusion pipelines. These observations motivate SafeMark that enforces watermark preservation directly within the editing objective. 
+
+5.3 Watermark-Preserving Editing with SafeMark (RQ2) 
+
+We investigate watermark preservation during editing using SafeMark across heterogeneous text-guided image editing pipelines, where SafeMark denotes edits on images protected by our method, Mani denotes direct edits, and abbreviations Ch./Bd./Cel. = Church/Bedroom/CelebA and Diff/Eff = DiffCLIP/Eff-Diff are used throughout. Across all datasets and editing pipelines, 
+
+SafeMark maintains high watermark decoding accuracy, even when existing robust watermark-ing methods fail under direct editing. For real images watermarked by VINE and HiD-DeN (Tables 2 and 3), SafeMark preserves watermark accuracy close to 1.0 across LSUN-Church, LSUN-Bedroom, CelebA, and AFHQ-Dog under DiffusionCLIP, Asyrp, and Eff-Diff. 6Table 2: Comparison of image manipulation performance with and without SafeMark on VINE-watermarked LSUN-Church and LSUN-Bedroom under three diffusion-based editing methods. 
+
+Original denotes the original watermarked images; Mani denotes direct edits, and SafeMark denotes 
+
+SafeMark -protected edits. 
+
+Edit Method Setting LSUN-Church LSUN-Bedroom Acc FID IS CLIP Acc FID IS CLIP 
+
+Original 0.996 0.65 2.65 0.597 0.999 0.54 2.55 0.722 DiffusionCLIP Mani 0.951 142.53 1.86 0.556 0.941 143.06 1.75 0.671 
+
+SafeMark 0.999 141.84 1.88 0.559 0.999 145.68 1.78 0.674 Asyrp Mani 0.708 191.36 3.36 0.515 0.299 116.88 4.52 0.693 
+
+SafeMark 1.000 193.96 3.48 0.513 1.000 117.82 4.54 0.690 Eff-Diff Mani 0.621 103.26 3.47 0.573 0.586 104.43 3.92 0.699 
+
+SafeMark 0.995 120.03 3.44 0.561 0.996 158.03 4.73 0.658 
+
+Table 3: Comparison of image manipulation performance with and without SafeMark on HiDDeN-watermarked CelebA and AFHQ-Dog using three diffusion-based editing methods. 
+
+Edit Method Setting CelebA AFHQ-Dog Acc FID IS CLIP Acc FID IS CLIP 
+
+Original 0.958 17.24 2.13 0.575 0.969 15.32 2.06 0.797 DiffusionCLIP Mani 0.450 138.01 1.70 0.553 0.477 129.41 1.97 0.726 
+
+SafeMark 0.921 138.62 1.68 0.550 0.867 148.00 1.80 0.710 Asyrp Mani 0.466 183.67 2.52 0.511 0.445 292.71 3.54 0.592 
+
+SafeMark 1.000 185.20 2.49 0.512 1.000 292.70 3.53 0.593 Eff-Diff Mani 0.504 114.34 2.95 0.548 0.482 112.78 6.20 0.729 
+
+SafeMark 0.940 108.75 2.94 0.537 0.949 105.29 6.56 0.762 Mani SafeMark Original (IS/Acc) 0.0 0.5 1.0                 
+
+> Church: Acc
+> DiffCLIP Asyrp Eff-Diff 075 150 225 300
+> Church: FID
+> DiffCLIP Asyrp Eff-Diff 0.0 1.0 2.0 3.0 4.0
+> Church: IS
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Church: CLIP
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Bedroom: Acc
+> DiffCLIP Asyrp Eff-Diff 075 150 225 300
+> Bedroom: FID
+> DiffCLIP Asyrp Eff-Diff 0.0 1.0 2.0 3.0 4.0
+> Bedroom: IS
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Bedroom: CLIP
+> DiffCLIP Asyrp Eff-Diff
+
+Figure 2: Comparison of image manipulation performance with and without SafeMark on SleeperMark-watermarked Church and Bedroom images using three diffusion-based editing methods. 7Mani SafeMark Original (IS/Acc) 0.0 0.5 1.0                 
+
+> Human: Acc
+> DiffCLIP Asyrp Eff-Diff 075 150 225 300
+> Human: FID
+> DiffCLIP Asyrp Eff-Diff 0.0 1.2 2.5 3.8 5.0
+> Human: IS
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Human: CLIP
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Dog: Acc
+> DiffCLIP Asyrp Eff-Diff 075 150 225 300
+> Dog: FID
+> DiffCLIP Asyrp Eff-Diff 0.0 1.2 2.5 3.8 5.0
+> Dog: IS
+> DiffCLIP Asyrp Eff-Diff 0.0 0.5 1.0
+> Dog: CLIP
+> DiffCLIP Asyrp Eff-Diff
+
+Figure 3: Comparison of image manipulation performance with and without SafeMark on Stable Signature -watermarked Human and Dog images using three diffusion-based editing methods. 
+
+Table 4: Editing fidelity between SafeMark and direct editing. VINE HiDDeN Data/Edit FID ↓ CLIP ↑ Data/Edit FID ↓ CLIP ↑
+
+Ch./Diff 27.91 0.783 Cel./Diff 47.92 0.721 Ch./Asyrp 51.89 0.817 Cel./Asyrp 41.23 0.839 Ch./Eff 86.63 0.672 Cel./Eff 32.72 0.681 Bd./Diff 30.90 0.865 Dog/Diff 62.67 0.810 Bd./Asyrp 31.93 0.824 Dog/Asyrp 57.75 0.885 Bd./Eff 124.33 0.748 Dog/Eff 23.67 0.809 
+
+For example, while direct edit-ing causes the watermark accuracy of VINE-protected images to drop sharply under Asyrp (from 0.996 to 
+
+0.708 on Church and from 0.999 to 
+
+0.299 on Bedroom), SafeMark re-stores the accuracy to 1.000 in both cases; similar recovery trends are ob-served under Eff-Diff. The same pat-tern holds for AI-generated images protected by SleeperMark and Stable Signature (Figures 2 and 3): SafeMark reliably recovers watermark correctness across all tested editors despite the pronounced variability of direct editing, including semantically aggressive cases where Mani drops below 0.5. Notably, this recovery is consistent across all three heterogeneous editors, confirming that the watermark-preserving objective generalizes across diffusion architectures and content domains. The Comp results in Table 4 evaluate whether SafeMark preserves the intended editing outcome instead of reverting toward the original image. Across both real and AI-generated images, Comp 
+
+yields low FID values and high CLIP similarity scores, indicating that SafeMark outputs remain perceptually and semantically close to direct edits while enforcing strict watermark preservation. In particular, the FID and CLIP scores of SafeMark outputs are consistently comparable to those of direct edits, with no systematic degradation across datasets or editing methods, confirming that the watermark supervision does not redirect the editor toward a collapsed or averaged output. The overhead introduced by SafeMark is thus confined to the training stage and does not alter the qualitative character of the editing result at inference time. These results answer RQ2 by showing that watermark-safe image editing is achievable at the editing output: SafeMark maintains watermark correctness across diverse text-guided image editing pipelines without compromising semantic manipulation (qualitative examples in Appendix I; per-attribute variability in Appendix F). 8No Makeup                                            
+
+> Pale
+> Beards
+> Young
+> Old
+> Freckles
+> Makeup
+> Tanned
+> Attribute
+> None
+> Color
+> Rotate
+> Resize
+> Crop
+> Blur
+> Distortion
+> 0.062 0.063 0.060 0.058 0.061 0.062 0.063 0.072
+> 0.071 0.051 0.072 0.068 0.071 0.065 0.073 0.091
+> 0.072 0.074 0.071 0.069 0.072 0.073 0.091 0.074
+> 0.091 0.103 0.124 0.112 0.121 0.098 0.152 0.113
+> 0.102 0.191 0.113 0.118 0.141 0.131 0.152 0.112
+> 0.143 0.172 0.171 0.168 0.178 0.152 0.181 0.163 0.050
+> 0.075
+> 0.100
+> 0.125
+> 0.150
+> 0.175
+> 0.200
+> Failure Rate
+
+Figure 4: Failure heatmap of watermark preservation for SafeMark under post-edit distortions. 
+
+5.4 Post-Edit Distortion Robustness (RQ3) 
+
+We further examine SafeMark ’s robustness to common post-edit distortions using DiffusionCLIP on HiDDeN-watermarked CelebA images. Figure 4 visualizes the watermark failure rate ( WFR = 1 − Acc ) of SafeMark -protected images across multiple post-edit distortions and semantic attributes. Overall, SafeMark demonstrates strong resistance to a wide range of post-edit distortions: across most attribute–distortion combinations, the failure rate remains relatively low, with the majority of cases falling below approximately 0.15 and many close to the no-distortion baseline. In particular, lightweight perturbations such as color adjustment and rotation introduce only minor degradation, indicating that the watermark signal enforced by SafeMark is robust to moderate pixel-level and geometric changes. More aggressive distortions, including cropping and blurring, naturally pose greater challenges, leading to higher failure rates for certain attributes; nevertheless, the degradation remains controlled and bounded without catastrophic collapse, and SafeMark does not exhibit universal failure even under the most severe distortions. Robustness variations are primarily driven by distortion type rather than semantic attribute: while some attributes show slightly higher sensitivity under particular distortions, no attribute consistently dominates the failure landscape, confirming that SafeMark generalizes its robustness across diverse semantic content (see Appendix D for the attribute-wise CelebA breakdown). 
+
+## 6 Limitations 
+
+An important limitation lies in the extent of semantic modifications that SafeMark can support while preserving watermark integrity. As edits become increasingly aggressive, such as drastic structural changes, complete object replacement, or transformations that fundamentally alter the scene layout, the watermark constraint may begin to conflict with the editing objective. The tipping point depends on factors including watermark bit capacity, semantic distance of edit, and the decoder’s tolerance to feature-level changes. Characterizing this boundary and developing adaptive trade-off strategies between edit fidelity and watermark preservation are important directions for future work. Additionally, SafeMark currently requires white-box access to the editor’s parameters and a separate fine-tuning round for each target architecture, which may limit its deployment flexibility because the learned adaptations do not transfer across structurally distinct pipelines. 
+
+SafeMark can be viewed as exposing a limitation of current watermarking techniques that preserve embedded signals even after substantial edits, potentially allowing significantly altered images to retain valid watermarks. This highlights a key weakness: watermark presence alone is insufficient to determine whether an image has been modified. Addressing such watermark-preserving scenarios requires stronger mechanisms, such as binding watermarks to semantic content, edit histories, or tamper-evident provenance records. Developing these defenses is beyond the scope of this work and remains an open problem. More broadly, this tension suggests that future provenance systems should 9pair watermark recovery with complementary signals, such as perceptual fingerprints or cryptographic edit logs, rather than relying on watermark presence alone to certify image authenticity. 
+
+## 7 Conclusion 
+
+We studied watermark preservation under text-guided image editing, where semantic manipulations can severely degrade embedded ownership signals despite visually plausible outputs. We showed that watermarking methods trained against fixed distortion models fail to generalize across diverse diffusion editors, revealing a fundamental bottleneck of the adversarial-defense paradigm. To address this, we introduced SafeMark , which enforces watermark consistency directly within the editing objective. Our information-theoretic analysis shows that maintaining bit accuracy at the edited output lower-bounds the mutual information preserved by the editor channel, thereby controlling watermark recoverability. SafeMark realizes this principle through a hinge-penalty objective that couples semantic fidelity with watermark decoding supervision at the final denoised output. Across real and AI-generated images, multiple watermarking schemes, and heterogeneous diffusion editors, 
+
+SafeMark achieves high watermark bit accuracy while maintaining edit fidelity and robustness to post-edit distortions. More broadly, our results show that watermark degradation is not inherent to semantic editing, but arises from unconstrained editing dynamics. This reframes provenance protection as an edit-time design problem and motivates co-designing watermarking systems with editing pipelines and tamper-aware objectives. 
+
+## References 
+
+[1] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. [2] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kamyar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, et al. Photorealistic text-to-image diffusion models with deep language understanding. Advances in neural information processing systems , 35:36479–36494, 2022. [3] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image generation with clip latents. arXiv preprint arXiv:2204.06125 , 1(2):3, 2022. [4] Ahmad Rezaei, Mohammad Akbari, Saeed Ranjbar Alvar, Arezou Fatemi, and Yong Zhang. Lawa: Using latent space for in-generation image watermarking. In European Conference on Computer Vision , pages 118–136. Springer, 2024. [5] Changhoon Kim, Kyle Min, Maitreya Patel, Sheng Cheng, and Yezhou Yang. Wouaf: Weight modulation for user attribution and fingerprinting in text-to-image diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8974–8983, 2024. [6] Jiren Zhu, Russell Kaplan, Justin Johnson, and Li Fei-Fei. Hidden: Hiding data with deep networks. In 
+
+Proceedings of the European conference on computer vision (ECCV) , pages 657–672, 2018. [7] Zhaoyang Jia, Han Fang, and Weiming Zhang. Mbrs: Enhancing robustness of dnn-based watermarking by mini-batch of real and simulated jpeg compression. In Proceedings of the 29th ACM International Conference on Multimedia , pages 41–49, 2021. [8] Matthew Tancik, Ben Mildenhall, and Ren Ng. Stegastamp: Invisible hyperlinks in physical photographs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 2117–2126, 2020. [9] Pierre Fernandez, Guillaume Couairon, Hervé Jégou, Matthijs Douze, and Teddy Furon. The stable signature: Rooting watermarks in latent diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 22466–22477, 2023. [10] Yuxin Wen, John Kirchenbauer, Jonas Geiping, and Tom Goldstein. Tree-rings watermarks: Invisible fingerprints for diffusion images. Advances in Neural Information Processing Systems , 36:58047–58063, 2023. [11] Runyi Hu, Jie Zhang, Ting Xu, Jiwei Li, and Tianwei Zhang. Robust-wide: Robust watermarking against instruction-driven image editing. In European Conference on Computer Vision , pages 20–37. Springer, 2024. 
+
+10 [12] Minzhou Pan, Yi Zeng, Zongyuan Ge, and Ruoxi Jia. Jigmark: A black-box approach for enhancing image watermarks against diffusion model edits. arXiv preprint arXiv:2406.03720 , 2024. [13] Shilin Lu, Zihan Zhou, Jiayou Lu, Yuanzhi Zhu, and Adams Wai-Kin Kong. Robust watermarking using generative priors against image editing: From benchmarking to advances. arXiv preprint arXiv:2410.18775 ,2024. [14] Xuanyu Zhang, Runyi Li, Jiwen Yu, Youmin Xu, Weiqi Li, and Jian Zhang. Editguard: Versatile image watermarking for tamper localization and copyright protection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11964–11974, 2024. [15] Zilan Wang, Junfeng Guo, Jiacheng Zhu, Yiming Li, Heng Huang, Muhao Chen, and Zhengzhong Tu. Sleepermark: Towards robust watermark against fine-tuning text-to-image diffusion models. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 8213–8224, 2025. [16] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. Sdedit: Guided image synthesis and editing with stochastic differential equations. arXiv preprint arXiv:2108.01073 ,2021. [17] Tim Brooks, Aleksander Holynski, and Alexei A Efros. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 18392–18402, 2023. [18] Gwanghyun Kim, Taesung Kwon, and Jong Chul Ye. Diffusionclip: Text-guided diffusion models for robust image manipulation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 2426–2435, 2022. [19] Mingi Kwon, Jaeseok Jeong, and Youngjung Uh. Diffusion models already have a semantic latent space. 
+
+arXiv preprint arXiv:2210.10960 , 2022. [20] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross attention control. arXiv preprint arXiv:2208.01626 , 2022. [21] Tu Bui, Shruti Agarwal, Ning Yu, and John Collomosse. Rosteals: Robust steganography using autoencoder latent space. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 933–942, 2023. [22] Tu Bui, Shruti Agarwal, and John Collomosse. Trustmark: Universal watermarking for arbitrary resolution images. arXiv preprint arXiv:2311.18297 , 2023. [23] Bo An, Ming Ding, Mohammad Rabbani, Shipra Agrawal, Hu Xu, Ke Deng, Nanning Zhu, Amr Mo-hamed, Galen McMahan, Shyam Raman, Micah Goldblum, Jonas Geiping, and Tom Goldstein. Waves: Benchmarking the robustness of image watermarks. arXiv preprint arXiv:2401.08573 , 2024. [24] Fisher Yu, Ari Seff, Yinda Zhang, Shuran Song, Thomas Funkhouser, and Jianxiong Xiao. Lsun: Con-struction of a large-scale image dataset using deep learning with humans in the loop. arXiv preprint arXiv:1506.03365 , 2015. [25] Ziwei Liu, Ping Luo, Xiaogang Wang, and Xiaoou Tang. Deep learning face attributes in the wild. In 
+
+Proceedings of International Conference on Computer Vision (ICCV) , December 2015. [26] Yunjey Choi, Youngjung Uh, Jaejun Yoo, and Jung-Woo Ha. Stargan v2: Diverse image synthesis for multiple domains. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition ,2020. [27] Nikita Starodubcev, Dmitry Baranchuk, Valentin Khrulkov, and Artem Babenko. Towards real-time text-driven image manipulation with unconditional diffusion models. arXiv preprint arXiv:2304.04344 ,2023. [28] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural information processing systems , 30, 2017. [29] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki Cheung, Alec Radford, and Xi Chen. Improved techniques for training gans. Advances in neural information processing systems , 29, 2016. [30] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 
+
+11 [31] Xingang Pan, Ayush Tewari, Thomas Leimkühler, Lingjie Liu, Abhimitra Meka, and Christian Theobalt. Drag your gan: Interactive point-based manipulation on the generative image manifold. In ACM SIGGRAPH 2023 conference proceedings , pages 1–11, 2023. [32] Huan Ling, Karsten Kreis, Daiqing Li, Seung Wook Kim, Antonio Torralba, and Sanja Fidler. Editgan: High-precision semantic image editing. Advances in Neural Information Processing Systems , 34:16331– 16345, 2021. [33] Xuanyu Zhang, Zecheng Tang, Zhipei Xu, Runyi Li, Youmin Xu, Bin Chen, Feng Gao, and Jian Zhang. Omniguard: Hybrid manipulation localization via augmented versatile deep image watermarking. In      
+
+> Proceedings of the Computer Vision and Pattern Recognition Conference , pages 3008–3018, 2025. [34] Lijun Zhang, Xiao Liu, Antoni V Martin, Cindy X Bearfield, Yuriy Brun, and Hui Guan. Attack-resilient image watermarking using stable diffusion. Advances in Neural Information Processing Systems , 37: 38480–38507, 2024. [35] Coalition for Content Provenance and Authenticity (C2PA). C2pa technical specification, version 1.3.
+> https://c2pa.org/specifications/specifications/1.3/index.html , 2023. Accessed: 2026-02-02. [36] Diederik P Kingma. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 , 2014.
+
+## A Background 
+
+A.1 Diffusion-Based Image Editing 
+
+Diffusion models have not only revolutionized image synthesis but have also reshaped image editing by providing a flexible, semantically rich generative prior. Traditional editing techniques, ranging from Photoshop-style retouching to GAN-based semantic manipulation [ 31 , 32 ], often suffer from limited controllability for complex edits. In contrast, diffusion-based image editing leverages the iterative denoising process as a powerful mechanism for performing highly aligned and coherent edits. This paradigm shift enables users to modify images using intuitive text prompts without requiring specialized skills. As a result, diffusion-based editing has become a central capability of modern generative AI systems and serves as the backbone of many commercial tools. The foundation of diffusion-based editing lies in the stochastic forward–reverse diffusion process, which encodes an image into noise and then regenerates it guided by a text prompt. Diffusion models maintain a rich, multi-scale representation of content throughout sampling, allowing them to preserve fine textures, spatial layouts, and object boundaries even under drastic edits. Approaches such as DDIM inversion [18 ], SDEdit [ 16 ], and InstructPix2Pix [ 17 ] provide pathways to reconstruct or approximate the latent trajectory of an existing image so the model can manipulate it while retaining fidelity to the original scene. The increasing popularity of diffusion editing additionally raises concerns related to authenticity, provenance, and security. Editing capabilities can be used for benign creative applications but may also enable deceptive manipulations such as deepfakes, misinformation, and malicious content alteration. Identity preservation during editing becomes a double-edged sword: while useful for personalization, it also magnifies privacy risks. Consequently, watermarking, edit traceability, provenance metadata, and edit accountability mechanisms are becoming essential complements to diffusion-based editing pipelines. As diffusion models continue to improve in fidelity, semantic alignment, and editability, diffusion-based image editing has evolved into a core research area bridging computer vision, human–AI interaction, and security. It forms the technological backbone of modern generative ecosystems, supporting workflows in design, entertainment, and digital content creation. Ongoing research seeks to make diffusion-based editing more precise, controllable, robust to prompt variations, and resilient to misuse, ultimately pushing toward trustworthy, user-aligned, and high-fidelity image editing systems. 
+
+A.2 Watermarking on Diffusion Models 
+
+The advances in text-to-image generation, driven by models such as Stable Diffusion [ 1 ], Imagen [ 2], and DALL-E2 [ 3 ], have achieved unprecedented levels of photorealism and semantic alignment, but they also raise profound concerns regarding responsibility, copyright protection, and model misuse. 12 Image watermarking [ 33 ] has emerged as a critical solution for enabling trustworthy and accountable image generation. Watermarking diffusion models, however, presents challenges that fundamentally differ from those encountered in traditional image watermarking. Watermark embedding in diffusion models occurs through a multi-step stochastic denoising process, during which latent representations undergo iterative transformations. The high dimensionality and inherent instability of diffusion trajectories make watermark signals susceptible to distortion during sampling. Furthermore, the adoption of latent diffusion architectures, where generation and editing operate in a compressed latent space rather than pixel space, complicates watermark injection and extraction. In this setting, both attacks and defenses [ 10 , 34 ] can be executed directly in the latent domain, rendering conventional spatial-domain and frequency-domain watermarking techniques increasingly insufficient for modern generative models. Recent works have therefore explored generation-integrated watermarking, where watermarks are embedded not only in the final image but also within the generative process itself. Techniques such as Stable Signature [ 9 ] and Tree-Ring Watermarking [ 10 ] leverage the structure of the diffusion sampling pipeline to enforce signal propagation into the final output. In these approaches, water-marks may be injected into the initial noise, guided through classifier-free diffusion, or encoded into specialized model components. Such methods aim to maintain watermark recoverability against manipulations including image editing, style transfer, and adversarial removal. Meanwhile, water-marking diffusion models must satisfy multiple competing requirements: robustness to common and generative transformations, imperceptibility and efficiency for large-scale deployment, traceability for provenance standards such as C2PA [ 35 ], and resilience in open-source ecosystems where model weights, sampling pipelines, or watermarking components may be modified. 
+
+## B Real Image Dataset Details 
+
+CelebA [ 25 ] contains over 200K celebrity face images annotated with rich attribute labels. The dataset exhibits substantial diversity in facial appearance, pose, expression, illumination conditions, and background clutter. Such variations make CelebA a standard benchmark for portrait editing, identity-preserving generation, and fine-grained semantic manipulation. From a watermarking perspective, the strong semantic consistency of facial structures, together with localized attribute edits (e.g., hair, makeup, or facial expression), poses challenges for preserving imperceptible yet robust watermark signals under text-guided editing. 
+
+AFHQ-Dog [26 ] provides high-resolution dog images spanning a wide range of breeds, fur textures, colors, and shapes. Compared to human faces, dog images exhibit larger intra-class variability and less rigid structural regularity, which stresses the generalization capability of watermark embedding and decoding mechanisms. Semantic edits on AFHQ-Dog often involve global texture and shape changes, making it a challenging testbed for evaluating watermark robustness under substantial appearance transformations. 
+
+LSUN-Church and LSUN-Bedroom [24 ] consist of large-scale scene-level imagery with complex spatial layouts. Church scenes typically contain intricate architectural structures, repeated geometric patterns, and long-range spatial dependencies, while bedroom images feature diverse object composi-tions, lighting conditions, and viewpoint variations. These scene-centric datasets introduce additional difficulty for watermark preservation, as text-guided editing may induce global structural reorganiza-tion rather than localized attribute modification. Evaluating on LSUN-Church and LSUN-Bedroom therefore enables a comprehensive assessment of watermark robustness under large-scale semantic and spatial edits. 
+
+## C Experimental Details and Coverage Rationale 
+
+C.1 Implementation Details 
+
+Unless otherwise stated, we enforce a strict watermark preservation requirement by setting the target watermark-accuracy threshold to τ = 1 .0. The optimization objective balances semantic fidelity and watermark integrity using trade-off coefficients λsem = 3 .0 and λwm = 1 .0, which are fixed across all experiments. All experiments are optimized using Adam [ 36 ] with a learning rate of 
+
+8 × 10 −6, together with a StepLR scheduler (step size = 1, γ = 1 .3) to ensure stable convergence. 
+
+SafeMark is implemented in PyTorch and evaluated on an NVIDIA RTX 6000 GPU (48 GB VRAM). 13 Approximate per-attribute runtimes on a single such GPU are 2–3 hours for DiffusionCLIP and Asyrp, and approximately 1 hour for Eff-Diff-Edit. All editors are used in their original configurations, and SafeMark introduces no editor-specific architectural changes. To ensure reproducibility, all experiments are conducted with fixed random seeds unless explicitly stated. Results on real-image benchmarks are annotated using the corresponding dataset names for clarity. 
+
+C.2 Hyperparameter Selection and Protocol Design 
+
+Our evaluation is designed to test watermark-preserving editing under realistic variation rather than a single curated edit type. We combine four visual domains, multiple watermarking mechanisms, and three heterogeneous diffusion editors, so that the edited images include both localized attribute changes and global scene-level transformations. We select λsem and λwm on a held-out validation split by requiring watermark accuracy to reach the target threshold while keeping the protected edit close to the corresponding direct edit. After this selection, the same coefficients are used for all datasets, watermarking schemes, and editing pipelines, so the reported results do not rely on dataset-specific or editor-specific tuning. The threshold τ is set to 1.0 in the main experiments to evaluate the strictest preservation setting, and Appendix E reports a threshold ablation showing that watermark accuracy improves monotonically with τ while image quality and CLIP similarity remain stable. The number of semantic attributes differs across datasets because each benchmark supports a different set of meaningful and valid edits. For example, CelebA contains many localized facial attributes, whereas LSUN scene datasets and AFHQ-Dog support fewer semantically coherent prompt edits without producing unrealistic or ill-defined targets. We therefore use all valid semantic attributes curated for each domain rather than forcing an equal number of attributes across datasets. This design avoids comparing datasets under artificial edits that are not meaningful for their visual domain. For watermark payloads, we follow the default payload settings of each watermarking method, including HiDDeN, VINE, Stable Signature, and SleeperMark. This choice keeps the evaluation aligned with each method’s intended operating point and avoids weakening or strengthening a baseline through non-standard payload choices. For AIGC experiments, we fix one source prompt per semantic category and generate 100 images with different random seeds, which isolates the effect of editing while preserving diversity in generated content. For real images, each dataset contains 100 randomly sampled watermarked inputs, and edits are evaluated over the available semantic attributes for that domain. This yields 100 × 47 , 100 × 34 , 100 × 30 , and 100 × 32 edited samples for LSUN-Church, LSUN-Bedroom, CelebA, and AFHQ-Dog, respectively, before aggregation. Our prompt and edit coverage is designed to span both localized and global semantic changes. Face edits include identity-adjacent, hairstyle, expression, and appearance changes; dog edits emphasize texture, color, and shape variations; and scene edits cover global architectural or layout-level trans-formations. Together with three heterogeneous diffusion editors, four visual domains, and multiple watermarking mechanisms, this protocol evaluates whether watermark-preserving editing remains reliable across diverse practical editing conditions rather than a single curated prompt family. 
+
+## D Attribute-wise Analysis of DiffusionCLIP Editing on CelebA 
+
+Table 5 reports the DiffusionCLIP editing results on CelebA, where performance is averaged over different attribute categories. The Orig FID values indicate that different attributes induce varying degrees of semantic change under direct editing, with style-related and fantasy attributes exhibiting larger distribution shifts, while identity- or emotion-related edits result in relatively smaller changes. In contrast, the FID between direct edits and SafeMark -protected results remains consistently low across all categories, indicating that SafeMark introduces only limited additional deviation while enforcing watermark preservation. Across all attribute categories, SafeMark maintains high image quality and semantic alignment, as reflected by stable IS and CLIP similarity scores. More importantly, watermark decoding accuracy consistently exceeds 0.91 , even for attributes involving substantial appearance or style changes. These results suggest that SafeMark preserves watermark integrity uniformly across diverse semantic edit types, without being biased toward specific attribute categories or editing difficulty levels. 14 Table 5: DiffusionCLIP editing performance on CelebA, averaged over attribute categories. Orig FID 
+
+denotes the average FID between the original watermarked images and directly edited images ( Mani ). 
+
+FID denotes the average FID between the direct edits ( Mani ) and the corresponding SafeMark -protected edits ( SafeMark ). IS, CLIP similarity, and Acc report the image quality, semantic alignment, and watermark decoding accuracy of SafeMark -protected results, respectively.                                    
+
+> Attribute Category Orig FID FID IS CLIP Acc
+> Celebrities 108.42 37.88 1.68 0.713 0.914 Hair 144.46 44.59 1.60 0.772 0.913 Style 193.38 45.05 1.68 0.723 0.925 Appearance 123.45 49.36 1.65 0.725 0.928 Fantasy 143.71 53.90 1.67 0.706 0.912 Emotion 104.37 55.18 1.80 0.695 0.929
+
+## E Ablation Study 
+
+We conduct an ablation study to analyze the effect of the watermark threshold τ in SafeMark under DiffusionCLIP-based editing on CelebA, as shown in Figure 5. The threshold τ controls the strictness of watermark preservation during editing and thus governs the trade-off between watermark robustness and editing flexibility. As expected, watermark decoding accuracy ( Acc ) increases monotonically with larger values of τ , reaching near-perfect performance at higher thresholds. This confirms that τ
+
+effectively serves as a control parameter for enforcing stronger watermark preservation. Importantly, increasing τ does not significantly compromise editing quality. Across the full range of thresholds, perceptual metrics such as FID and CLIP similarity remain largely stable, with only minor variations. In particular, the Comp results show that SafeMark -edited images remain visually and semantically close to their directly edited counterparts even under stricter watermark constraints. These results demonstrate that SafeMark enables strong and tunable watermark robustness while preserving high-quality and semantically faithful image manipulation. 
+
+## F Variability Across Semantic Attributes 
+
+We complement the point estimates in the main paper with per-attribute mean and standard deviation, treating each semantic attribute (the editing target) as the unit of repetition while keeping the watermarking method and editor fixed. For every (dataset, watermark, editor) cell, each attribute provides 100 edited images on which we compute, per attribute: (i) bit accuracy as the mean over the 100 images, (ii) FID against the same 100 watermarked source images, (iii) Inception Score on the edited set, and (iv) the average pairwise CLIP cosine similarity between the source and edited sets. We then report mean ±1σ across N attributes per dataset, with N = 47 for CelebA, N = 34 
+
+for AFHQ-Dog, N = 32 for LSUN-Bedroom, and N = 30 for LSUN-Church. The per-attribute FID and IS are computed on 100 image pairs each and are therefore intrinsically noisier than the corpus-level estimates in Tables 2–3 and Figures 2–3; the per-attribute standard deviation should be read as a measure of how the editing target shifts the visual distribution, rather than as the uncertainty of the main-paper numbers. Across all editors and datasets, the Mani vs SafeMark gap in watermark accuracy is many standard deviations wide, confirming that watermark preservation under SafeMark 
+
+is not driven by a few favorable attributes. For cells marked with †, the per-attribute SafeMark outputs were not retrievable from disk at the time of submission; we therefore reproduce the corresponding corpus-level point estimates from the main paper, without dispersion. These daggered values are not directly comparable to the per-attribute means in adjacent rows for FID, IS, and CLIP (corpus-level versus per-attribute aggregation), but the bit-accuracy values share the same aggregation semantics. Per-attribute Mani values for the same editors are included in full and match the corresponding main-table point estimates. 
+
+## G Implications for Attacks, Defenses, and Editing Assumptions 
+
+SafeMark is not only a watermark-preserving text-guided image manipulation framework, but also offers a unified perspective for understanding both attacks and defenses in generative image editing 15 0.7 0.8 0.9 1.0 20 40 60 80 100 120 Threshold  Mani  SafeMark  Comp (a) FID ↓0.7 0.8 0.9 1.0 1.64 1.66 1.68 1.70 1.72 1.74 1.76 1.78 Threshold  Mani  SafeMark  % (3) (b) IS ↑0.7 0.8 0.9 1.0 0.54 0.56 0.58 0.60 0.62 0.64 0.66 0.68 0.70 0.72 0.74 Threshold  Mani  SafeMark  Comp 
+
+(c) CLIP ↑0.7 0.8 0.9 1.0 0.5 0.6 0.7 0.8 0.9 1.0 Threshold  Mani  SafeMark (d) Acc ↑
+
+Figure 5: Ablation study of the watermark threshold τ for S AFE MARK under D IFFUSION CLIP-based editing on CelebA. We report FID, IS, CLIP similarity, and watermark decoding accuracy (Acc) to illustrate the trade-off between editing quality and watermark robustness. Table 6: Per-attribute mean ±σ for VINE-watermarked LSUN-Church ( N = 30 ) and LSUN-Bedroom (N = 32 ). Companion to Table 2. Editor Setting LSUN-Church LSUN-Bedroom Acc FID IS CLIP Acc FID IS CLIP DiffusionCLIP Mani 0.951 ±0.036 143 .12 ±64 .10 1.86 ±0.37 0.560 ±0.030 0.941 ±0.038 142 .50 ±36 .74 1.76 ±0.23 0.676 ±0.041 
+
+SafeMark 0.999 ±0.000 142 .48 ±63 .65 1.88 ±0.39 0.565 ±0.029 0.999 ±0.000 145 .68 ±37 .23 1.78 ±0.25 0.679 ±0.038 
+
+Asyrp Mani 0.708 ±0.082 191 .36 ±64 .86 1.91 ±0.53 0.520 ±0.031 0.299 ±0.112 116 .89 ±26 .70 2.07 ±0.15 0.698 ±0.018 
+
+SafeMark 1.000 † 193 .96 † 3.48 † 0.513 † 1.000 † 117 .82 † 4.54 † 0.690 †
+
+Eff-Diff Mani 0.621 ±0.010 105 .24 ±46 .90 2.07 ±0.40 0.577 ±0.021 0.586 ±0.013 104 .44 ±26 .04 2.06 ±0.25 0.704 ±0.023 
+
+SafeMark 0.995 ±0.011 119 .95 ±32 .62 2.11 ±0.27 0.566 ±0.017 0.996 ±0.005 158 .04 ±43 .78 2.21 ±0.20 0.662 ±0.032 
+
+systems. From a security standpoint, text-guided image editing pipelines can be deemed as a class of watermark removal or degradation attacks, where the editing process, intentionally or not, alters semantic content while disrupting embedded ownership signals. Different editing models therefore correspond to heterogeneous attack strategies, each inducing distinct transformation trajectories that may weaken or erase watermarks. Under this view, SafeMark functions as a defense mechanism by explicitly constraining the editing process to preserve watermark consistency. Unlike prior robust watermarking approaches that focus on improving the intrinsic robustness of the watermark itself, 
+
+SafeMark enforces watermark preservation as an explicit objective during editing, thereby decoupling watermark survivability from the specific characteristics of the editor. This interpretation highlights 
+
+SafeMark as a general defensive layer that can be integrated into generative editing pipelines to safeguard image provenance and ownership in the presence of powerful semantic manipulation tools. Meanwhile, this defense-oriented interpretation clarifies the assumptions and limitations of SafeMark .The framework operates under a white-box setting, requiring access to both the editing model and 16 Table 7: Per-attribute mean ±σ for HiDDeN-watermarked CelebA ( N = 47 ) and AFHQ-Dog ( N = 34 ). Companion to Table 3. Editor Setting CelebA AFHQ-Dog Acc FID IS CLIP Acc FID IS CLIP DiffusionCLIP Mani 0.450 ±0.054 137 .93 ±42 .31 1.71 ±0.18 0.559 ±0.020 0.477 ±0.032 128 .89 ±60 .84 1.97 ±0.25 0.733 ±0.047 
+
+SafeMark 0.921 ±0.034 138 .49 ±42 .58 1.68 ±0.17 0.557 ±0.023 0.867 ±0.045 147 .04 ±50 .34 1.80 ±0.18 0.723 ±0.045 
+
+Asyrp Mani 0.466 ±0.017 190 .63 ±28 .02 1.77 ±0.14 0.531 ±0.025 0.444 ±0.019 293 .95 ±66 .11 1.74 ±0.29 0.594 ±0.071 
+
+SafeMark 1.000 † 185 .20 † 2.49 † 0.512 † 1.000 † 292 .70 † 3.53 † 0.593 †
+
+Eff-Diff Mani 0.502 ±0.049 116 .38 ±32 .79 1.83 ±0.26 0.562 ±0.016 0.482 ±0.033 112 .35 ±51 .58 2.02 ±0.27 0.738 ±0.044 
+
+SafeMark 0.941 ±0.037 110 .55 ±26 .84 1.83 ±0.24 0.554 ±0.018 0.949 ±0.017 104 .36 ±45 .35 1.97 ±0.23 0.770 ±0.035 
+
+Table 8: Per-attribute mean ±σ for SleeperMark-watermarked LSUN-Church ( N = 30 ) and LSUN-Bedroom ( N = 32 ). Companion to Figure 2. Editor Setting LSUN-Church LSUN-Bedroom Acc FID IS CLIP Acc FID IS CLIP DiffusionCLIP Mani 0.977 ±0.026 92 .58 ±54 .30 1.94 ±0.25 0.750 ±0.054 0.951 ±0.060 110 .06 ±27 .16 1.41 ±0.18 0.841 ±0.033 
+
+SafeMark 0.998 ±0.001 85 .31 ±39 .79 2.04 ±0.21 0.751 ±0.042 0.999 ±0.001 123 .94 ±31 .71 1.45 ±0.18 0.833 ±0.031 
+
+Asyrp Mani 0.919 ±0.039 210 .42 ±70 .10 1.77 ±0.35 0.642 ±0.060 0.798 ±0.120 188 .25 ±73 .69 1.47 ±0.18 0.784 ±0.063 
+
+SafeMark 1.000 † 213 .01 † 3.09 † 0.641 † 0.988 † 173 .10 † 2.89 † 0.779 †
+
+Eff-Diff Mani 0.619 ±0.010 89 .45 ±55 .11 2.09 ±0.21 0.769 ±0.051 0.561 ±0.010 90 .28 ±16 .02 1.34 ±0.07 0.865 ±0.018 
+
+SafeMark 0.904 ±0.016 84 .13 ±33 .63 2.16 ±0.15 0.758 ±0.037 0.922 ±0.040 100 .71 ±15 .16 1.36 ±0.07 0.844 ±0.016 
+
+the watermark encoder–decoder. While this assumption is realistic for model developers or service providers who control the editing pipeline, it limits the direct applicability of SafeMark in no-box or black-box settings where internal model parameters or decoding mechanisms are unavailable. In addition, SafeMark relies on watermarking schemes with an explicit decoder to evaluate and enforce watermark consistency during editing, and thus does not directly apply to approaches that embed information solely in the initial diffusion noise without a decoding process. Despite these constraints, our findings provide broader insights into watermark preservation under text-guided editing. The experimental results suggest that watermark degradation is not an inevitable consequence of semantic manipulation, but rather arises from unconstrained editing dynamics. By enforcing watermark-aware constraints, SafeMark demonstrates that high-fidelity semantic editing and watermark preservation are not fundamentally incompatible. This observation indicates that even in no-box settings, it may be possible to design editing strategies or auxiliary mechanisms that im-plicitly regularize semantic transformations to avoid destroying watermark signals, without requiring direct access to a watermark decoder. Therefore, designing decoder-free or black-box–compatible watermark-preserving editing mechanisms is a promising direction for future research. 
+
+## H Proofs of Theoretical Results 
+
+Proof of Theorem 1 
+
+Fano’s inequality applied to ˆW as an estimate of W gives H(W | ˆW ) ≤ H2(Pe)+ Pe log( |W|− 1) ≤
+
+1+ Pe H(W ), since H2(Pe) ≤ 1 bit and (for uniform PW ) log |W| = H(W ). By the data-processing inequality (DPI) on W → Xe → ˆW , H(W | ˆW ) = H(W ) − I(W ; ˆW ) ≥ H(W ) − Iθ (W ; Xe).Combining and rearranging yields Eq. (2). □
+
+Remark. Theorem 1 is a necessary condition only; it does not certify low Pe. Average bit accuracy and block recovery are distinct quantities: at ¯a = 0 .9 and B = 64 , H2(0 .1) ≈ 0.469 , so Lemma 1 gives Iθ ≥ 64(1 − 0.469) ≈ 34 bits and Theorem 1 gives Pe ≥ 1 − 35 /64 ≈ 0.45 . The Fano bound is loose (under independent bit errors the actual block error is 1 − 0.964 ≈ 0.999 ), but it is consistent with the qualitative observation that long messages require very high per-bit accuracy. We therefore use Eq. (4) as a principled formal motivation for bit-level training, rather than as a sufficient condition for exact W -recovery. 17 Table 9: Per-attribute mean ±σ for Stable Signature-watermarked generated images. Human =CelebA-style faces ( N = 47 ), Dog =AFHQ-Dog-style images ( N = 34 ). Companion to Figure 3. Editor Setting Human Dog Acc FID IS CLIP Acc FID IS CLIP DiffusionCLIP Mani 0.502 ±0.035 121 .53 ±49 .00 1.72 ±0.12 0.643 ±0.034 0.562 ±0.041 111 .41 ±68 .01 1.37 ±0.19 0.842 ±0.074 
+
+SafeMark 0.886 ±0.023 142 .74 ±44 .63 1.84 ±0.12 0.608 ±0.027 0.911 ±0.034 111 .16 ±60 .12 1.61 ±0.16 0.826 ±0.061 
+
+Asyrp Mani 0.478 ±0.018 179 .94 ±19 .41 1.38 ±0.13 0.554 ±0.035 0.496 ±0.023 287 .97 ±91 .81 1.57 ±0.11 0.696 ±0.085 
+
+SafeMark 1.000 † 124 .77 † 2.25 † 0.592 † 1.000 † 270 .63 † 4.31 † 0.752 †
+
+Eff-Diff Mani 0.460 ±0.028 174 .96 ±30 .74 1.36 ±0.13 0.630 ±0.035 0.489 ±0.031 96 .42 ±51 .91 1.29 ±0.22 0.858 ±0.056 
+
+SafeMark 0.943 ±0.016 188 .60 ±28 .92 1.39 ±0.13 0.604 ±0.030 0.942 ±0.019 113 .67 ±49 .79 1.54 ±0.20 0.824 ±0.052 
+
+Proof of Lemma 1 
+
+For each bit b, applying Fano’s inequality to the binary channel Wb → ˆWb (|W b| = 2 , so log( |W b| − 
+
+1) = 0 ) gives H(Wb | ˆWb) ≤ H2(1 − ab). Expanding H(W | ˆW ) by the chain rule and using that conditioning on a richer σ-algebra reduces entropy, 
+
+H(W | ˆW ) = 
+
+> B
+
+X
+
+> b=1
+
+H(Wb | W<b , ˆW ) ≤
+
+> B
+
+X
+
+> b=1
+
+H(Wb | ˆWb) ≤
+
+> B
+
+X
+
+> b=1
+
+H2(1 − ab),
+
+where the first inequality holds because (W<b , ˆW ) contains ˆWb as a sub-component. By concavity of H2 on [0 , 1] (Jensen), P 
+
+> b
+
+H2(1 − ab) ≤ B H 2(1 − ¯a). Finally, the DPI on W → Xe → ˆW gives 
+
+Iθ (W ; Xe) ≥ I(W ; ˆW ) = H(W ) − H(W | ˆW ) ≥ H(W ) − B H 2(1 − ¯a). □
+
+Lemma 2 (Soft-to-hard calibration) . gAcc( ˆ w, w) ≥ τ implies hard-bit accuracy ¯a ≥ 4τ − 3.
+
+Proof of Lemma 2 
+
+Let e := B(1 − ¯as) be the number of hard-wrong bits in the sample. For any wrong bit, | ˆwb − wb| ≥ 
+
+1/2, hence 1 − ( ˆ wb − wb)2 ≤ 3/4. For any correct bit, 1 − ( ˆ wb − wb)2 ≤ 1. Therefore 
+
+gAcc s
+
+≤ (B − e) · 1 + e · (3 /4) 
+
+B = 1 − e
+
+4B = 1 − 1 − ¯as
+
+4 ,
+
+which rearranges to ¯as ≥ 4gAcc s
+
+− 3. Taking expectation preserves the linear inequality. □
+
+Remark. For τ ∈ [1 /2, 7/8) the calibration bound ¯a ≥ 4τ − 3 becomes vacuous (it implies 
+
+¯a < 1/2, where Lemma 1 is trivial). Tightening the calibration in this regime via cross-entropy surrogates, whose direct Barber–Agakov bound gives Iθ ≥ H(W ) − E[BCE] , is straightforward but unused in our experiments. SafeMark’s reported configuration uses τ = 1 throughout, where zero hinge loss is equivalent to perfect hard-bit recovery. 
+
+Theorem 2: Finite-Step Entry into the Inactive Phase Theorem 2 (Finite-step entry into the inactive phase) . Assume: 
+
+(A1) gAcc( ·) is L-smooth in θ.
+
+(A2) In the active phase, ∥∇ θ gAcc( θ)∥ ≥ μ > 0.
+
+(A3) In the active phase, ⟨∇L wm (θ), ∇L total (θ)⟩ ≥ c∥∇L wm (θ)∥2 for some c > 0.
+
+(A4) ∥∇ θ Ltotal (θ)∥ ≤ M for all iterates θ.Then gradient descent θt+1 = θt − η∇L total (θt) with step size η ≤ cμ 2/(LM 2), starting from any 
+
+θ0 in the active phase, enters the inactive phase {gAcc ≥ τ } within 
+
+T ≤ 2 Lwm (θ0)
+
+ηcμ 2 (10) 
+
+iterations. 
+
+18 Proof. Let f (θ) := τ − gAcc( θ), so Lwm (θ) = max(0 , f (θ)) . By (A1), f is L-smooth. For any θt in the active phase ( f (θt) = Lwm (θt) > 0), the smoothness inequality gives 
+
+f (θt+1 ) ≤ f (θt) − η⟨∇L wm (θt), ∇L total (θt)⟩ + Lη 2
+
+2 ∥∇L total (θt)∥2.
+
+Applying (A3) and ∥∇L wm ∥ ≥ μ from (A2), the inner-product term is at least cμ 2; applying (A4), the second-order term is at most Lη 2M 2/2. Hence 
+
+f (θt+1 ) ≤ L wm (θt) − ηcμ 2 + Lη 2M 2
+
+2 .
+
+The choice η ≤ cμ 2/(LM 2) gives Lη 2M 2/2 ≤ ηcμ 2/2, so 
+
+f (θt+1 ) ≤ L wm (θt) − ηcμ 2
+
+2 .
+
+Since Lwm ≥ 0, this descent of at least ηcμ 2/2 per active-phase step cannot continue beyond 
+
+T = 2 Lwm (θ0)/(ηcμ 2) steps without entering the inactive phase. 
+
+Discussion of assumptions. (A1) follows from the Brier surrogate definition composed with the editor and decoder; it is the mildest of the four. (A4) can be enforced by gradient clipping or by working on a bounded parameter ball. (A3) holds whenever λwm is chosen sufficiently large relative to λsem Gsem /μ (under a uniform bound ∥∇L sem ∥ ≤ Gsem ). (A2) is the strongest assumption: a PŁ-type lower bound on ∥∇ gAcc ∥ uniformly on the active phase is not provable for general non-convex deep networks. We treat it as a working assumption consistent with the rapid empirical convergence observed in Section 5, and view Theorem 2 as a conditional result rather than an unconditional convergence guarantee. Theorem 2 extends to mini-batch SGD by replacing the deterministic budget with an expected-hitting-time analogue under a variance-bound assumption on the stochastic gradient. 
+
+## I Additional Qualitative Examples of Watermark Preservation 
+
+Figure 6 and Figure 7 present additional qualitative results of SafeMark under diverse combinations of datasets, watermarking schemes, and diffusion-based editing methods. For each example, we show the Original watermarked image ( Orig ), the directly edited output without protection ( Mani ), and the protected editing result produced by SafeMark (SafeMark ). The number below each image reports the decoded watermark bit accuracy (Acc). Figure 6 focuses on widely used benchmark datasets and watermarking methods, including CelebA– HiDDeN, AFHQ-Dog–HiDDeN, LSUN-Church–VINE, and LSUN-Bedroom–VINE. Across dif-ferent diffusion editors (DiffusionCLIP, Asyrp, and EffDiff), direct text-guided editing often causes severe degradation of watermark recoverability, as evidenced by the noticeably reduced Acc in Mani .In contrast, SafeMark consistently restores high decoding accuracy while preserving the intended editing effects, demonstrating robust watermark protection under realistic editing scenarios. Figure 7 further extends this analysis to a different set of datasets and watermarking schemes, including the Human–Signature, Dog–Signature, Church–SleeperMark, and Bedroom–SleeperMark settings. Despite the use of alternative watermark designs and visual domains, a similar trend is observed: direct editing significantly disrupts watermark decoding, whereas SafeMark reliably maintains high bit accuracy after editing. Together, these two groups of examples highlight that 
+
+SafeMark provides consistent watermark preservation across heterogeneous datasets, watermarking methods, and diffusion-based editors. 19 Figure 6: Additional qualitative examples of SafeMark . We report representative generated/editing results across CelebA-HiDDeN, AFHQ-Dog-HiDDeN, LSUN-Church-VINE, and LSUN-Bedroom-VINE using DiffusionCLIP, Asyrp, and EffDiff. Columns correspond to Orig (original watermarked image), Mani (direct editing without protection), and SafeMark (editing with our protection). The value below each image is the decoded watermark bit accuracy (bit Acc), where higher is better. 20 Figure 7: Additional qualitative examples of SafeMark . We report representative generated/editing results across Human-Signature, Dog-Signature, Church-SleeperMark, and Bedroom-SleeperMark using DiffusionCLIP, Asyrp, and EffDiff. Columns correspond to Orig (original watermarked image), 
+
+Mani (direct editing without protection), and SafeMark (editing with our protection). The value below each image is the decoded watermark bit accuracy (bit Acc), where higher is better. 21
