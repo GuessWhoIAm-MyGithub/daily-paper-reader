@@ -1,0 +1,807 @@
+Title: Lighting-aware Unified Model for Instance Segmentation
+
+URL Source: https://arxiv.org/pdf/2605.20436v1
+
+Published Time: Thu, 21 May 2026 00:17:50 GMT
+
+Number of Pages: 32
+
+Markdown Content:
+# Lighting-aware Unified Model for Instance Segmentation 
+
+Qisai Liu, Alloy Das, Zhanhong Jiang, Joshua R. Waite, Aditya Balu, Adarsh Krishnamurthy, and Soumik Sarkar 
+
+Iowa State University, Ames, IA 50011, USA 
+
+{qisai, alloy, zhjiang, jrwaite, baditya, adarsh, soumiks}@iastate.edu 
+
+Abstract. Foundation models like the Segment Anything Model (SAM) demonstrate impressive zero-shot generalization but frequently degrade under diverse real-world illumination, particularly for instance segmen-tation. In this work, we address this limitation by developing Light-ing Convolutional-Attention (LCA) , an adapter module that enhances segmentation robustness without fine-tuning the heavy backbone. LCA employs a dual-branch architecture to process RGB features alongside contrast maps, enabling physically motivated sensitivity to structural changes rather than illumination artifacts. We optimize LCA through a pairwise training strategy, introducing a targeted loss term that explic-itly penalizes discrepancies between clean images and their correspond-ing illumination variants. To evaluate and support this architecture, we conduct a comprehensive empirical study across multiple existing bench-marks and present a novel Unity-based synthetic dataset specifically de-signed to accurately replicate complex real-world lighting conditions. Ex-tensive experimental results demonstrate that our approach successfully bridges the domain gap, delivering superior lighting-robust segmentation. 
+
+Keywords: Instance segmentation · Lighting self-attention · Curriculum-based pairwise training 
+
+1 Introduction 
+
+Instance segmentation has achieved remarkable progress through foundation models such as the Segment Anything Model (SAM) [16], which demonstrates impressive zero-shot generalization across diverse visual domains. However, be-cause these models are predominantly trained on well-lit and high-quality im-agery, they frequently suffer significant performance degradation when deployed in environments with adverse illumination. This creates a critical gap in real-world applications such as nighttime driving, indoor low-light scenes, overex-posed outdoor settings, and mixed artificial and natural lighting conditions. In safety-critical applications such as autonomous driving [22], robotic manip-ulation, and medical imaging [1], lighting variation is the norm rather than the exception. Similarly, in agricultural applications, plant segmentation in outdoor scenes is subject to drastic illumination shifts from morning to night, leading  
+
+> arXiv:2605.20436v1 [cs.CV] 19 May 2026 2Q. Liu et al.
+
+to significant model degradation [23]. A segmentation model that performs well under controlled laboratory conditions but degrades under a cloudy sky or in a dimly lit warehouse is fundamentally unreliable. Yet, the dominant paradigm in segmentation research treats lighting variation as a secondary concern, addressed primarily through generic data augmentation [24] or domain adaptation [27], rather than as a first-class architectural and training problem. We argue that addressing lighting robustness requires intervention at three complementary levels: (1) the data level , where training images must systemati-cally span the complex space of realistic lighting conditions; (2) the architectural level , where the model must possess explicit mechanisms for reasoning about structural integrity independent of illumination; and (3) the training level , where the learning objective must explicitly force the extraction of lighting-invariant representations. 
+
+Contributions. To this end, we propose Pairwise Lighting Augmentation Pipe-line with Lighting Convolutional Attention (PLAP-LCA) , a framework that equ-ips the Segment Anything Model (SAM) with robust lighting invariance without requiring computationally prohibitive fine-tuning of its heavy backbone. At the core of our approach is the LCA module, a specialized adapter injected into SAM’s frozen encoder. LCA employs a dual-branch architecture that explicitly separates standard spatial features from illumination-sensitive structural edge information, leveraging Laplacian-filtered contrast maps. We propose a pair-wise training strategy that optimizes the network using standard segmentation supervision alongside a targeted feature consistency loss, penalizing represen-tational discrepancies across lighting variations. This strategy is evaluated on both real-world public benchmarks and a new synthetic dataset generated from a Unity environment, covering a wide range of physically accurate illumination. In summary, our main contributions are as follows: (1) We introduce the LCA module, a lightweight dual-branch adapter that equips foundation models with illumination-robust structural representations. (2) We propose a curriculum-based pairwise training strategy and a novel feature consistency loss to explicitly bridge the representational gap between ideal and adverse lighting conditions. (3) We present a comprehensive empirical study on lighting vulnerabilities, sup-ported by a novel Unity-based synthetic dataset for physically accurate illu-mination evaluation as well as three diverse public benchmarks: COCO [18], VOC [9], and Cityscapes [5], demonstrating consistent improvements across all illumination conditions. 
+
+2 Related Work 
+
+In this section, we review primarily related work on foundation model for seg-mentation and refer interested readers to Sec. A.1 for attention mechanism and data augmentation. 
+
+Segmentation Models. The Segment Anything Model (SAM) [16] represents a paradigm shift in image segmentation, leveraging a dataset of over 1 billion masks to achieve strong zero-shot generalization through a promptable archi-Abbreviated paper title 3Clean Image Variant Image  
+
+> img1 (B, 3, H, W) img2 (B, 3, H, W)
+> SAM Preprocess
+> Resize & Normalization
+> SAM Image Encoder (Frozen) ViT-B + LCA Modules (Ours)
+> Clean Embedding Prompt Encoder Variant Embedding
+> Prompt Sampling Prompt Embedding Mask Decoder (Cross-attention Head)
+> Clean Mask
+> Variant Mask
+> Training Loss Segmentation +Consistency
+
+Fig. 1: PLAP-LCA. Clean and variant images share a SAM ViT-B encoder with LCA modules injected into the final two blocks. Only LCA weights, scalar gates, and the mask decoder are trained through supervise and consistency losses. Please see the Supplementary Materials for concrete details of the whole framework. 
+
+tecture. While SAM’s core design consists of a ViT-based image encoder, a lightweight prompt encoder, and a lightweight mask decoder is highly effective. Subsequent work has explored SAM adaptation for specialized domains. For in-stance, SAM-Adapter [4] incorporates task-specific tuning, while HQ-SAM [15] introduces an additional token to enhance mask boundary details. More recently, the community has expanded SAM’s capabilities; EfficientSAM [30] drastically reduces computational overhead via masked image pretraining, PerSAM [31] enables training-free, one-shot personalization for specific visual concepts, and SAM 2 [20] extends the foundation model into real-time video segmentation us-ing a streaming memory architecture. However, despite these rapid architectural evolutions, existing adaptations primarily optimize for computational efficiency, semantic tracking, or boundary precision under standard conditions. They leave the foundation model vulnerable to low-level physical degradations like extreme lighting. Our work complements these efforts by addressing the orthogonal chal-lenge of illumination invariance, introducing a lightweight adapter that secures lighting resilience without updating SAM’s pre-trained weights. 
+
+Robustness to Environmental Conditions. Segmentation under adverse conditions has been extensively studied, primarily within the autonomous driv-ing domain. While Cityscapes [5] established the standard benchmark for ur-ban scene understanding under controlled, clear-weather conditions, ACDC [22], which captures fog, rain, snow, and night scenarios, alongside Dark Zurich [21], which specifically isolates nighttime degradation, have driven significant progress. To tackle these domain shifts, existing paradigms typically rely on unsuper-vised domain adaptation (UDA) [11, 27], image-to-image style transfer [13], or environment-specific architectural designs [29]. However, these approaches gen-erally necessitate full-model retraining or require direct access to target-domain data. In contrast, our approach addresses environmental degradation by enhanc-ing a frozen foundation model through a lightweight adapter. By relying entirely on synthetically augmented data and a unity-based physical engine, we eliminate 4 Q. Liu et al. 
+
+the dependency on target-domain collection while preserving the zero-shot capa-bilities of the base architecture. However, these approaches generally necessitate full-model retraining or require direct access to target-domain data. In contrast, our approach addresses environmental degradation by enhancing a frozen foun-dation model through a lightweight adapter. We eliminate the dependency on costly real-world data collection under adverse lighting conditions, while main-taining both the computational efficiency and the generalization capabilities of the base architecture 
+
+3 Dataset Generation 
+
+A main contribution of our approach is that segmentation models can be trained to be lighting-invariant, with structured pairwise training on clean and lighting-variant images that share identical ground-truth. This requires robust meth-ods for generating realistic lighting variants. We employ two complementary strategies: (1) image-space augmentation by the Pairwise Lighting Augmentation Pipeline (PLAP), which is applicable to any existing dataset, and (2) physically rendered synthetic data generated within the Unity engine, which provides com-plex illumination variations with pixel-level perfect annotations. Both strategies develop the key insight that lighting variations do not change object geometry masks, bounding boxes, and category labels remain valid across all different il-lumination conditions. The clean-variant pairs share annotations and provide a direct training signal for lighting invariance. 
+
+3.1 Image-Space Augmentation: PLAP 
+
+PLAP generates paired image sets (Iclean , I variant ) by applying controlled lighting variants techniques to existing benchmark images (COCO, VOC, Cityscapes). This still preserves all instance-level annotations. The pipeline is defined by three design elements: physically motivated operations, conflict awareness sampling, and structured severity levels. PLAP implements multiple (in this work we select nine to cover generic scenarios) lighting operations, each corresponded to physi-cal models of image formation or sensor response: exposure, directional shadow, color temperature (warm/cool), vignetting, contrast, Gamma correction, bright-ness, film grain, and atmospheric haze . Please see Sec. A.3 for more details about the definitions of these operations. 
+
+Conflict-Aware Sampling. As noted above, certain operation pairs are con-tradictory or redundant. We encode these as conflict groups: 
+
+C = {warm , cool }, {exposure , brightness }, {haze , contrast } (1) Once an operation is selected, everything else in its conflict group is removed from the candidate pool for that image. In the sampling stage, this helps ensure variants remain within the manifold of realistic lighting conditions. 
+
+Three-Level Severity Protocol. Rather than treating augmentation strength as a single continuous factor, we discretize it into three severity tiers. Each tier Abbreviated paper title 5
+
+constrains both the parameter range of individual operations and the maximum number of operations that can be composed. Severity 1 applies a single subtle change that is barely visible on casual inspection. Severity 2 allows up to two operations with wider parameter ranges, producing clearly noticeable lighting variants. Severity 3 pushes up to three simultaneous operations into extreme, which is the kind of lighting you encounter in a parking garage at night or in an overexposed outdoor scene at midday. Please see Table 6 in Sec. A.4 for more details. 
+
+3.2 Physically-Rendered Synthetic Data: Unity-Lighting 
+
+While PLAP operates in 2D image space and can augment any existing dataset, it fundamentally cannot reproduce illumination that simulates the actual 3D light transport. In Image-space operations, it cannot reproduce complex physical phenomena like sunlight reflections, the interplay of mixed natural and artificial illuminants, or light refracting through windows. To capture these physically grounded effects, we construct a complementary synthetic dataset directly inside the Unity engine. The synthetic data pipeline is shown in Fig. 2. Please see Sec. A.5 for the property summary and the specific generation method of the dataset. Lighting Rig: Physically manipulates the scene lights - not post-processing                             
+
+> Dataset Capture Loop: Modify camera positons and lighting parameters for increased scene variety
+> Sun Angle Color Temperature Indoor Light Intensity Enable Fill Lights Directional Light
+> 1: Move All Cameras •16 Cameras •x3 Shots •0.5-3m Wander •± 30° Pitch •± 120° Yaw
+> 2: Capture Segmentation Mask •Unity Perception API •Instance Segmentation Mask •Frame Data
+> •Bright Daylight •Sun 45-60 Elevation •No Rig Lights •5500-6500K
+> 3: Capture RGB Images Clean •Overcast / Afternoon •Sun 15-35 Elevation •Occassional Fill Lights •4000-5000K Mild •Dusk / Dim Indoor •Sun Near Horizon •Rig Lights Enabled •2700-3500K Moderate •Night / Harsh Artificial •Sun Below Horizon •Rig Lights Bright •1800-2500K Severe
+
+Fig. 2: Unity synthetic data pipeline overview. Top: The lighting rig exposes five physically-grounded parameters manipulated directly in the 3D scene. Middle: Each iteration randomises 16 camera positions then records instance-segmentation masks. 
+
+Bottom: Every viewpoint is re-rendered under four lighting conditions Clean , Mild ,
+
+Moderate , and Severe construct pairwise training data with the perfect ground truth mask. 6 Q. Liu et al. 
+
+4 Methodology 
+
+Our framework consists of three components: (1) a pairwise lighting augmenta-tion pipeline for generating training pairs, PLAP, which was detailed in Sec. 3 (2) an LCA module for illumination awareness feature processing, and (3) a pairwise training strategy with driven by a novel consistency loss function. 
+
+4.1 Lighting Convolutional Attention (LCA) Module 
+
+The LCA module (as shown in Fig. 3) is designed to inject illumination awareness into SAM’s frozen ViT encoder. Rather than fine-tuning the full encoder, we attach a lightweight LCA module to the last multiple transformer blocks. This framework also introduces a set of additional trainable parameters dedicated to a lighting-sensitive feature. Before going into the full details of the architecture, we first motivate its specific formulation. Our design comes from the observation that illumination changes corrupt feature maps across three distinct dimensions: (i) globally , where uniform shifts in brightness or color temperature bias entire feature channels; (ii) locally , where spatial effects like cast shadows and specular highlights disrupt specific regions; and (iii) structurally , where degraded edge contrast obscures the true physical boundaries of objects. To address each of these dimensions, the LCA module employs three paral-lel attention gates that operate simultaneously on the original block input x ∈
+
+RB×C×H×W (B: batch size, C: number of channels, H: height of feature map, 
+
+W : width of the feature map): a channel attention gate Gch (RB×C×H×W →
+
+RB×C×1×1) that recalibrate feature channels to counteract global illumination bias, a spatial attention gate Gsp (RB×C×H×W → RB×1×H×W ) that identifies locally affected regions, and a contrast attention gate Gct (RB×C×H×W →
+
+RB×C×1×1) based on a Laplacian edge detector that reinforces degraded struc-tural boundaries. The three gates are fused together and projected through a residual path, yielding the complete module: 
+
+Φ(x) = PW (ReLU (GN (DW (x ⊙ Gch (x) ⊙ Gsp (x) ⊙ Gct (x))))) , (2) where Φ(x) : RB×C×H×W → RB×C′×H×W is the output feature. DW : RB×C×H×W → RB×C×H×W and PW : RB×C×H×W → RB×C′×H×W de-note depthwise and pointwise convolutions, respectively. The depthwise convo-lution performs spatial filtering independently for each channel, while the point-wise ( 1×1) convolution mixes information across channels. Together they form a lightweight depthwise-separable convolution used for efficient feature projection. GN here is the group normalization to stabilize the training. 
+
+Channel Attention Gate. Illumination shifts tend to affect certain feature channels more than others. Those channels that encode brightness or color tem-perature will fluctuate wildly significantly under lighting variations, while those capturing geometric shape or texture remain relatively stable. The channel gate 
+
+Gch is designed to explicitly disentangle these varying between channels. We first summarize each channel using two complementary statistics: an average that Abbreviated paper title 7Parallel Attention Gates      
+
+> Channel Attention Gate
+> Contrast Attention Gate Spatial Attention Gate
+> Feature Reweighting
+> ch sp ct XGGGInput Feature Lightweight Residual Projection
+> Gated Residual Fusion
+> Block(X)+g LCA(X) Output Feature
+
+Fig. 3: Lighting Convolutional Attention (LCA) module. Channel, spatial, and Lapla-cian contrast gates are multiplied element-wise and projected separable convolution, then fused through a learned scalar gate. 
+
+captures the typical activation energy across the spatial extent, and a maximum that captures the strongest localized response. Both are obtained directly from global adaptive pooling operations: davg = AvgPool (x), dmax = MaxPool (x) ∈
+
+RB×C×1×1.
+
+Spatial Attention Gate. While channel attention asks which features mat-ter, spatial attention asks where. Cast shadows, specular spots, and illumination gradients are all spatially localized. The model needs a mechanism to focus on af-fected regions and leave well-lit areas alone. We condense the channel dimension into two spatial summary maps: a mean and a max across all C features at each location: savg = Mean (x, dim =1) , smax = Max (x, dim =1) ∈ RB×1×H×W . These are concatenated into a 2-channel tensor and passed through a single convolu-tion with a deliberately large 7×7 kernel: Gsp (x) = σ(Conv 7×7([ savg ; smax ])) 
+
+The 7×7 receptive field is chosen to match the spatial scale of typical light-ing structures in the feature map: shadow boundaries, penumbra gradients, and highlight falloffs all span multiple pixels at the 64 ×64 resolution of the ViT features. A smaller kernel would miss these meso-scale patterns; a larger one offers diminishing returns. The output shape (B, 1, H, W ) provides one scalar per location that broadcasts across all channels. This entire gate costs only 98 parameters. 
+
+Contrast Attention Gate. The first two gates capture what and where to adapt, but neither explicitly models the physical signature of lighting variation: edges. Lighting changes manifest most visibly at boundaries—shadow edges pro-duce sharp intensity gradients, highlights create bright spots ringed by darker surface, and inter-reflections introduce subtle contrast shifts. The contrast gate is designed to detect exactly these regions. The gate operates in three stages. First, a learned 1×1 convolution projects the C-dimensional feature space down to a single-channel intensity map: g = Conv proj 
+
+> 1×1
+
+(x) ∈ RB×1×H×W . This is not a simple RGB-to-grayscale conversion—the input is already a 768-dimensional deep feature representation. The projection learns which combination of feature channels best captures lighting-relevant intensity variation. Next, we apply a 8 Q. Liu et al. 
+
+fixed Laplacian kernel [17] to detect edges in this intensity map: 
+
+e = g ∗ Klap , Klap =
+
+
+
+0 1 01 −4 1 0 1 0
+
+ (3) The Laplacian approximates the second spatial derivative ∇2g, responding strongly wherever intensity changes rapidly. We deliberately keep this kernel fixed (reg-istered as a non-trainable buffer) rather than making it learnable: the Laplacian is already an optimal isotropic edge detector, and fixing it eliminates the risk of the kernel degenerating during training at zero parameter cost. Finally, the raw Laplacian response, which can be negative and has arbitrary magnitude, is normalized per sample and refined by a small learnable convolution: 
+
+ˆe = e − min( e)max( e) − min( e) + ϵ , Gct (x) = σ
+
+
+
+Conv refine  
+
+> 3×3
+
+(ˆ e)
+
+
+
+(4) where min and max operate over the spatial dimensions of each sample inde-pendently, and ϵ = 10 −6. Per-sample normalization ensures consistent input range regardless of absolute edge magnitude. The 3×3 refinement (10 parame-ters) allows the gate to sharpen relevant edges and suppress noise, making this an adaptive edge detector rather than a purely classical one. 
+
+Gate Fusion. The three gates are combined via element-wise multiplication: 
+
+xatt = x ⊙ Gch (x)
+
+| {z }
+
+> (B,C, 1,1)
+
+⊙ Gsp (x)
+
+| {z } 
+
+> (B, 1,H,W )
+
+⊙ Gct (x)
+
+| {z } 
+
+> (B, 1,H,W )
+
+(5) Broadcasting handles the shape mismatch naturally: the channel gate scales features globally per channel, while the spatial and contrast gates modulate each location uniformly across channels. Multiplication means that if any gate outputs a near-zero value, the corresponding feature is suppressed, regardless of how strongly the other gates activate. In other words, a feature survives only when the channel is important, the location is relevant, and a lighting edge 
+
+is present. This conjunctive behavior is strictly more selective than additive or weighted-sum alternatives, and it comes at zero parameter cost. 
+
+Depthwise-Separable Projection. The gated features xatt are projected into the residual space through a depthwise-separable convolution. The depthwise stage applies an independent 3×3 filter to each channel: h = DW (xatt ), DW =
+
+Conv2d (C, C, 3×3, groups =C). This gives every channel its own local spatial ker-nel, enabling the module to capture per-feature patterns like lighting gradients and penumbra structures, which cannot be achieved by using a purely pointwise (1×1) projection. After group normalization and ReLU activation, a pointwise 
+
+1×1 convolution mixes information across channels: Φ(x) = PW (ReLU (GN (h))) , PW =
+
+Conv2d (C, C, 1×1, bias =False ).The pointwise convolution is initialized to all zeros: WPW ← 0. This is a deliberate choice with a strong guarantee. At the start of training, regardless of what the gates compute and regardless of the input, the pointwise layer maps Abbreviated paper title 9
+
+everything to zero—meaning Φ(x) ≡ 0. The network begins as an exact copy of pretrained SAM, not an approximation. As gradients flow back through the loss, the weights grow from zero in directions that reduce the segmentation error, and the LCA module “fades in” progressively. This avoids the representation damage that randomly-initialized injections can cause in pretrained models. 
+
+4.2 Integration into SAM 
+
+SAM’s ViT-B encoder consists of 12 transformer blocks. We keep all of them frozen and attach an LCA module to each of the last N blocks (we use N =2 by default). For a patched block Bℓ, the output becomes: 
+
+xℓ+1 = Bℓ(xℓ) + σ(γℓ) · Φ(xℓ) (6) where γℓ ∈ R is a learnable gate scalar, initialized to −1.0 so that σ(γℓ) ≈ 0.269 
+
+at the start. Note that Φ takes the block’s input xℓ, not its output—the frozen block runs exactly as before. Combined with the zero-initialized pointwise con-volution (Sec. 4.1), the initial contribution of LCA is exactly: σ(−1.0) · Φ(xℓ) = 0.269 × 0 = 0. The network thus starts training as unmodified SAM. Each block then independently learns how much adaptation it needs: blocks processing more lighting-sensitive features tend to develop larger gate values over the course of training, while blocks that already produce stable features keep their gates small. The trainable parameter groups in our framework are: (i) the LCA modules attached to the patched blocks, (ii) the per-block gate scalars γℓ, and (iii) SAM’s mask decoder. 
+
+4.3 Dual-Stream Training 
+
+The key insight is that a lighting-invariant model should produce identical out-puts for the same scene under different illumination. We implement this via a dual-stream setup (Algorithm 1 in Sec. ?? ). Each training sample is a pair 
+
+(Iclean , I var ) depicting the same scene under clean and variant lighting, shar-ing ground-truth masks M = {m1, . . . , m K }. Both images pass independently through the encoder, generating two sets of spatial embeddings. For each ground-truth mask, we sample a random foreground point and tight bounding box as prompts. Crucially, the same prompts decode masks from both streams, ensuring any prediction difference stems solely from illumination-induced fea-ture variation. Supervised loss. For each predicted mask pk and its correspond-ing ground truth mk, we use a standard combination of binary cross-entropy (BCE) and Dice loss (induced by Dice Similarity Coefficient): Lseg (p, m ) = 
+
+BCE (p, m ) + 1 − Dice (p, m ). Both streams contribute to the supervised signal through a weighted blend: Lsup = λs · L seg (pclean , m ) + (1 − λs) · L seg (pvar , m ),where λs = 0 .5 by default, weighting both streams equally. This ensures the model learns to segment correctly under both lighting conditions, not just the clean one. Consistency loss. The supervised loss tells the model what to predict; the consistency loss tells it to predict the same thing regardless of lighting. We 10 Q. Liu et al.                   
+
+> Table 1: Dataset statistics for our evaluation framework.
+> Dataset Classes Train Val Domain
+> COCO [18] 80 118,287 5,000 General objects VOC 2012 [9] 20 1,464 1,449 General objects Cityscapes [5] 82,975 500 Urban driving Unity (Ours) 481 1418 251 Synthetic
+
+enforce this with a simple L1 penalty between the two streams’ sigmoid-activated outputs: Lcons = ∥σ(pclean ) − σ(pvar )∥1. This loss requires no additional annota-tion—only the paired images themselves. It provides a self-supervised learning signal that is orthogonal to the supervised objective: even if both predictions are slightly wrong in the same way, they won’t be penalized by this term, as long as they agree. Total loss. The per-instance losses are accumulated across all K
+
+instances in a batch: 
+
+L = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+h
+
+L(k) 
+
+> sup
+
++ λc · L (k)
+
+> cons
+
+i
+
+(7) We set λc = 0 .1 by default. The lower weight prevents the consistency term from dominating the supervised signal during early training, when the model has not yet learned to produce reasonable masks. As training progresses and the supervised loss decreases, the relative influence of consistency naturally grows, pushing the model toward illumination invariance. 
+
+5 Experiments 
+
+We evaluate PLAP-LCA across four benchmarks spanning general object seg-mentation, urban scene understanding, and controlled synthetic lighting vari-ation. Our main focus is to answer if LCA improve segmentation quality and lighting robustness compared to existing adaptation strategies across diverse domains. Then in the ablation studies, we investigate the impact of image reso-lution, different LCA architecture, and consistency loss weight. 
+
+5.1 Dataset 
+
+We evaluate PLAP-LCA on three established benchmarks and one synthetic dataset to demonstrate generalization across domains, category distributions, and lighting conditions (Table 1). Please see Sec. A.6 for more details. 
+
+5.2 Comparative Study 
+
+Table 2 compares segmentation performance (mIoU) across four datasets under clean (C) and lighting-variant (V) conditions. SAM-0 provides a moderate base-line but shows slight degradation under lighting changes. Decoder fine-tuning Abbreviated paper title 11 
+
+(Dec) significantly improves performance across all datasets. The proposed LCA achieves competitive results while maintaining very small performance gaps be-tween clean and variant images, indicating improved robustness to illumination changes. LCA+Dec delivers the best overall performance on several datasets, demonstrating that combining lighting-aware feature adaptation with decoder tuning improves both segmentation accuracy and lighting invariance.                                                       
+
+> Table 2: Quantitative comparison (mIoU) on four benchmarks. C= Clean Image,
+> V= Lighting variant. Bold : best per column-split.
+> Model Cityscapes VOC COCO Unity
+> SAM-0 C0.562 0.614 0.658 0.610 V0.560 0.608 0.652 0.606 Dec C0.770 0.725 0.806 0.823 V0.767 0.713 0.804 0.808 YOLOv11s C0.245 0.542 0.364 0.052 V0.238 0.518 0.346 0.038
+> LCA (ours) C0.759 0.690 0.792 0.801 V0.756 0.682 0.788 0.797
+> LCA+Dec (ours) C0.787 0.735 0.814 0.833
+> V0.784 0.728 0.811 0.837
+
+Fig. 4 shows that LCA improves mean IoU from 0.235 to 0.380 (+61.7%) over the SAM baseline. The scatter plot confirms LCA wins on 195 of 290 instances (67.2%), with the largest gains concentrated in the low baseline performance condition, where lighting degradation most severely disrupts the encoder. Fig. 5 presents one challenging case where the SAM baseline fails under lighting degradation. The baseline achieves near-zero IoU (0.007), the entire hillside with false positives, while LCA recovers a mask (IoU = 0.585) around a small, low-contrast target. The difference maps confirm that LCA’s gains come almost entirely from reducing large-scale false-positive background activations. To understand why LCA improves segmentation, we visualize encoder at-tention via GradCAM in Fig. 6. Under degradation, the Baseline diffuses acti-vation across low-contrast background regions, while LCA’s contrast attention gate suppresses these activations and refocuses onto high-contrast object bound-aries. This behavior persists on the clean image, suggesting the Laplacian branch learns a structurally grounded attention prior rather than merely compensating for degradation artifacts. 
+
+5.3 Ablation Studies Image Resolution Ablation. We study the effect of input image resolution on segmentation performance using the VOC dataset. As shown in Table 3, we 12 Q. Liu et al.        
+
+> (a) IoU distribution. LCA shifts the rightward (μ=0 .380 ) compare with the SAM baseline ( μ=0 .235 ).
+> (b) Instance IoU scatter. LCA wins on 195 of 290 instances (67.2%).
+
+Fig. 4: Quantitative IoU analysis comparing the SAM baseline and LCA in Cityscape lighting variant. The histogram on the left shows the overall distribution shift; the scatter plot on the right shows per-instance results, where points above the y=x indicate LCA improvement. 
+
+Fig. 5: Sheep in a low-contrast outdoor scene. The baseline (IoU = 0.007) collapses into a near-total false-positive flood across the hillside; LCA (IoU = 0.585) isolates the small target instance despite its low contrast against the surrounding terrain. 
+
+evaluate four resolutions: 128 × 128 , 256 × 256 , 512 × 512 , and 1024 × 1024 .Interestingly, the relationship between resolution and mIoU is non-monotonic. The best performance is achieved at the lowest resolution of 128 × 128 (0.6379 Clean, 0.6329 Variant), followed by 1024 × 1024 , while intermediate resolutions of 256 and 512 yield lower mIoU. 
+
+Table 3: Ablation on input image res-olution. mIoU on VOC dataset. Size Clean Variant 
+
+128 0.6379 0.6329 
+
+256 0.6285 0.6232 
+
+512 0.6256 0.6212 
+
+1024 0.6355 0.6303 
+
+This suggests that the LCA module effectively captures lighting-invariant fea-tures in compact spatial representations, where the self-attention mechanism bene-fits from a denser receptive field. The per-formance dip at intermediate resolutions may be attributed to increased spatial complexity without a proportional gain in semantic information. Notably, the gap Abbreviated paper title 13  
+
+> Fig. 6: On the top is the lighting variant image under GradCam. LCA achieves IoU = 0.268, comparing to the baseline only gets 0.112. LCA concentrates attention on the targeted area, but the decoder only diffuses with the background.
+
+between Clean and Variant conditions remains stable ( ∼0.005 ) across all res-olutions, indicating that the lighting robustness of our approach is resolution-agnostic. 
+
+LCA Architectural Variants. In addition to the proposed variant, we evaluate two other variants of the proposed LCA module, all sharing the same CBAM [28] + Laplacian gate design but differing in gate composition and residual projec-tion.              
+
+> Table 4: Ablation on LCA architectural variants. mIoU on VOC dataset. Params reported for ×4blocks. Version Params Clean Variant V1 (Sequential) 151K 0.6592 0.6524 V2 (Parallel+Fusion) 151K 0.6589 0.6517 V3 (Parallel+DWSep) 2.49M 0.6905 0.6848
+
+V1 applies gates sequen-tially in the classical CBAM order (channel → spatial →
+
+contrast) with a low-rank bot-tleneck residual. V2 com-putes all three gates in par-allel and combines them via softmax-normalised learnable fusion weights, allowing the network to discover the optimal gate mix during training. V3 (the proposed one) retains the parallel gate computation but replaces the 1×1 bottleneck with a depthwise-separable convolution for residual projection, introducing a local receptive field at the cost of additional parameters. As shown in Table 4, V3 significantly outperforms both V1 and V2 on the VOC dataset, achieving 0.6905 Clean and 0.6848 Variant mIoU compared to ∼0.659 for V1 and V2. The marginal difference between V1 and V2 suggests that sequential versus parallel gate ordering has limited impact on performance. The substantial gain from V3 indicates that the depthwise-separable residual projection, which incor-porates spatial context through 3×3 depthwise convolutions, is the key design choice driving improvement. While V1 and V2 achieve a 15 × parameter reduc-tion over the original attention design (151K vs. 2.33M for 4 blocks), V3 uses 2.49M parameters, comparable to the original. However, V3 still delivers a mean-ingful mIoU improvement, demonstrating that reallocating parameters toward 14 Q. Liu et al. 
+
+a spatially-aware residual projection is more effective than the original design. Based on these results, we adopt V3 as the default LCA configuration in all subsequent experiments. 
+
+Consistency Loss Weight. We ablate the consistency loss weight λcons in Eq. 4.3, which controls the strength of the L1 penalty between clean and variant prediction maps.                       
+
+> Table 5: Ablation on consistency loss weight
+> λcons .mIoU on VOC dataset.
+> λcons Clean Variant 00.6146 0.6081 0.1 0.6148 0.6086
+> 0.5 0.6147 0.6083 10.6158 0.6083 50.6152 0.6080 10 0.6145 0.6074
+
+As shown in Table 5, performance is remarkably stable across a wide range of values, with less than 0.15% mIoU variation between the best and worst set-tings. The best Variant mIoU (0.6086) is achieved at 
+
+λcons = 0 .1, while Clean mIoU peaks at λcons = 1 
+
+(0.6158). Larger values ( λcons ≥ 5) slightly degrade performance, particularly under Variant conditions, suggesting that over-constraining cross-lighting con-sistency can limit the model’s capacity to adapt to individual lighting scenarios. Notably, even λcons = 0 
+
+(no consistency loss) achieves competitive results, in-dicating that the LCA module itself provides substan-tial lighting invariance through its attention mecha-nism. We use λcons = 0 .1 as the default, as it provides the best balance across both conditions. 
+
+Limitations. PLAP-LCA has key limitations. Extreme lighting like complete darkness with point lights remains untested—synthetic data cannot capture all real-world artifacts. The LCA module adds computational cost that may hin-der edge deployment. Training requires paired clean-variant images; synthetic augmentations may not bridge the gap to natural lighting. Conflict sampling relies on manually defined operation groups. Finally, we focus only on instance segmentation; video and panoptic extensions remain unexplored. 
+
+6 Conclusion and Broader Impact 
+
+We introduced PLAP-LCA, equipping SAM with lighting invariance via three contributions: the LCA module—a lightweight dual-branch adapter processing structural edge information alongside RGB features; a curriculum-based pair-wise training strategy with feature consistency loss; and a comprehensive empir-ical study across benchmarks and a new Unity-based synthetic dataset. Experi-ments demonstrate consistent improvements under diverse lighting with minimal trainable parameters. The zero-initialization ensures stable training, and abla-tions confirm each attention gate’s complementary contribution. This work en-ables safer autonomous driving at night, reliable medical imaging under variable clinical lighting, and robust agricultural monitoring across day-night cycles—all without expensive model retraining or costly real-world data collection. The lightweight adapter design makes illumination robustness accessible for resource-constrained applications. Abbreviated paper title 15 
+
+References 
+
+1. Bougourzi, F., Hadid, A.: Recent advances in medical imaging segmentation: A survey. arXiv preprint arXiv:2505.09274 (2025) 2. Chankhachon, S., Kansomkeat, S., Bhurayanontachai, P., Intajag, S.: Deep learning network with illuminant augmentation for diabetic retinopathy segmentation using comprehensive anatomical context integration. Diagnostics 15 (21), 2762 (2025) 3. Chaturvedi, S., Ren, M., Hold-Geoffroy, Y., Liu, J., Dorsey, J., Shu, Z.: Synthlight: Portrait relighting with diffusion model by learning to re-render synthetic faces. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 369–379 (2025) 4. Chen, T., Zhu, L., Deng, C., Cao, R., Wang, Y., Zhang, S., Li, Z., Sun, L., Zang, Y., Mao, P.: Sam-adapter: Adapting segment anything in underperformed scenes. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 3367–3375 (2023) 5. Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., Schiele, B.: The cityscapes dataset for semantic urban scene understanding. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 3213–3223 (2016) 6. Cubuk, E.D., Zoph, B., Mane, D., Vasudevan, V., Le, Q.V.: Autoaugment: Learning augmentation strategies from data. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 113–123 (2019) 7. Cubuk, E.D., Zoph, B., Shlens, J., Le, Q.V.: Randaugment: Practical automated data augmentation with a reduced search space. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops. pp. 702–703 (2020) 8. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al.: An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020) 9. Everingham, M., Eslami, S.A., Van Gool, L., Williams, C.K., Winn, J., Zisserman, A.: The pascal visual object classes challenge: A retrospective. International journal of computer vision 111 (1), 98–136 (2015) 10. Hendrycks, D., Dietterich, T.: Benchmarking neural network robustness to common corruptions and perturbations. arXiv preprint arXiv:1903.12261 (2019) 11. Hoyer, L., Dai, D., Van Gool, L.: Daformer: Improving network architectures and training strategies for domain-adaptive semantic segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 9924– 9935 (2022) 12. Hu, J., Shen, L., Sun, G.: Squeeze-and-excitation networks. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 7132–7141 (2018) 13. Huang, X., Belongie, S.: Arbitrary style transfer in real-time with adaptive instance normalization. In: Proceedings of the IEEE international conference on computer vision. pp. 1501–1510 (2017) 14. Jin, S., Wang, L., Temming, B., Pokorny, F.T.: Physically-based lighting augmen-tation for robotic manipulation. arXiv e-prints pp. arXiv–2508 (2025) 15. Ke, L., Ye, M., Danelljan, M., Tai, Y.W., Tang, C.K., Yu, F., et al.: Segment anything in high quality. Advances in Neural Information Processing Systems 36 ,29914–29934 (2023) 16 Q. Liu et al. 16. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4015–4026 (2023) 17. Kondor, R., Pan, H.: The multiscale laplacian graph kernel. Advances in neural information processing systems 29 (2016) 18. Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., Zitnick, C.L.: Microsoft coco: Common objects in context. In: European conference on computer vision. pp. 740–755. Springer (2014) 19. Pan, X., Luo, P., Shi, J., Tang, X.: Two at once: Enhancing learning and gen-eralization capacities via ibn-net. In: Proceedings of the european conference on computer vision (ECCV). pp. 464–479 (2018) 20. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., et al.: Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) 21. Sakaridis, C., Dai, D., Gool, L.V.: Guided curriculum model adaptation and uncertainty-aware evaluation for semantic nighttime image segmentation. In: Pro-ceedings of the IEEE/CVF international conference on computer vision. pp. 7374– 7383 (2019) 22. Sakaridis, C., Dai, D., Van Gool, L.: Acdc: The adverse conditions dataset with correspondences for semantic driving scene understanding. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 10765–10775 (2021) 23. Sermwuthisarn, P., Phumeechanya, S.: Integration of u-net and fastsam for accu-rate leaf image segmentation in complex backgrounds. Engineering, Technology & Applied Science Research 15 (6), 30119–30129 (2025) 24. Shorten, C., Khoshgoftaar, T.M.: A survey on image data augmentation for deep learning. Journal of big data 6(1), 1–48 (2019) 25. Wang, H., Xiao, C., Kossaifi, J., Yu, Z., Anandkumar, A., Wang, Z.: Augmax: Adversarial composition of random augmentations for robust training. Advances in neural information processing systems 34 , 237–250 (2021) 26. Wang, J., Liu, J., Sun, X., Singh, K.K., Shu, Z., Zhang, H., Yang, J., Zhao, N., Wang, T.Y., Chen, S.S., et al.: Comprehensive relighting: Generalizable and con-sistent monocular human relighting and harmonization. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 380–390 (2025) 27. Wang, M., Deng, W.: Deep visual domain adaptation: A survey. Neurocomputing 
+
+312 , 135–153 (2018) 28. Woo, S., Park, J., Lee, J.Y., Kweon, I.S.: Cbam: Convolutional block attention module. In: Proceedings of the European conference on computer vision (ECCV). pp. 3–19 (2018) 29. Wu, X., Wu, Z., Guo, H., Ju, L., Wang, S.: Dannet: A one-stage domain adaptation network for unsupervised nighttime semantic segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 15769– 15778 (2021) 30. Xiong, Y., Varadarajan, B., Wu, L., Xiang, X., Xiao, F., Zhu, C., Dai, X., Wang, D., Sun, F., Iandola, F., et al.: Efficientsam: Leveraged masked image pretraining for efficient segment anything. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 16111–16121 (2024) 31. Zhang, R., Jiang, Z., Guo, Z., Yan, S., Pan, J., Ma, X., Dong, H., Gao, P., Li, H.: Personalize segment anything model with one shot. arXiv preprint arXiv:2305.03048 (2023) Abbreviated paper title 17 
+
+A Supplementary Materials 
+
+A.1 Additional Related Work Attention Mechanisms for Visual Robustness. Attention mechanisms have been widely adopted to enhance visual recognition, evolving from channel (SE-Net [12]) and spatial attention (CBAM [28]) to the self-attention paradigms driving Vision Transformers [8]. Despite these advancements, attention mech-anisms explicitly designed for environmental robustness remain underexplored. The closest parallel to our objective involves feature modulation and normal-ization strategies [19], which adapt batch statistics to align different domains. However, these methods remain implicitly learned and agnostic to the physical properties of the degradation. Our LCA module distinguishes itself by using contrast maps as an explicit, physically-grounded illumination signal. Combined with a learned gating mechanism, this design isolates structural cues from light-ing artifacts while retaining the foundational knowledge embedded within the pre-trained backbone. 
+
+Data Augmentation for Robustness. Standard augmentation pipelines [6, 7] apply photometric and geometric transformations without explicit physi-cal motivation. Corruption benchmarks [10] evaluate robustness but do not provide training-time augmentation strategies, while AugMax [25] and adver-sarial augmentation approaches [26] improve worst-case robustness but lack structured severity control. More recently, the community has pivoted toward illumination-centric data synthesis. Recent frameworks employ inverse render-ing for physically-based lighting augmentation [14], utilize diffusion models for diverse illumination synthesis [3], or apply color constancy principles for varied illuminant simulation [2]. While these approaches inject realistic lighting varia-tion, they often incur high generation cost and do not organize synthesized data into progressive difficulty tiers. Our PLAP-LCA provides physically motivated operations with conflict-aware sampling and structured severity levels, comple-mented by a Unity-based synthetic dataset for physically accurate evaluation. 
+
+A.2 Full Architecture Details 
+
+The main paper provides a high-level overview of PLAP-LCA in Fig. 1. Here we present the detailed diagrams of the training pipeline Fig. 7 and the LCA module internals Fig. 8, followed by the complete forward-pass pseudocode Algorithm 1. 
+
+Training Pipeline Fig. 7 shows the full dual stream training setup. Both the clean and variant images share the same frozen ViT-B encoder with LCA modules included into the last two blocks. The prompt encoder and mask decoder are shared across both streams. Only the LCA weights, the per-block gate scalars, and the mask decoder are updated during training. 18 Q. Liu et al. 
+
+Algorithm 1 Forward Pass of the LCA Module 
+
+Require: Block input x ∈ RB×C×H×W , gate scalar γ
+
+Ensure: Adapted output xout ∈ RB×C×H×W
+
+# — Channel Attention Gate — 
+
+1: davg ← AdaptiveAvgPool2d (x) ▷ (B, C, 1, 1) 
+
+2: dmax ← AdaptiveMaxPool2d (x) ▷ (B, C, 1, 1) 
+
+3: Gch ← σ MLP (davg ) + MLP (dmax ) ▷ shared MLP, (B, C, 1, 1) 
+
+# — Spatial Attention Gate — 
+
+4: savg ← Mean (x, dim =1)  ▷ (B, 1, H, W )
+
+5: smax ← Max (x, dim =1)  ▷ (B, 1, H, W )
+
+6: Gsp ← σ Conv 7×7([ savg ; smax ])  ▷ (B, 1, H, W )
+
+# — Contrast Attention Gate — 
+
+7: g ← Conv proj  
+
+> 1×1
+
+(x) ▷ learned grayscale, (B, 1, H, W )
+
+8: e ← g ∗ Klap  ▷ fixed Laplacian, no grad 9: ˆe ← (e − min e) / (max e − min e + ϵ) ▷ per-sample normalize 10: Gct ← σ Conv refine  
+
+> 3×3
+
+(ˆ e) ▷ (B, 1, H, W )
+
+# — Multiplicative Fusion — 
+
+11: xatt ← x ⊙ Gch ⊙ Gsp ⊙ Gct  ▷ broadcast multiply 
+
+# — Depthwise-Separable Projection (PW is zero-init) — 
+
+12: h ← DWConv 3×3(xatt ) ▷ groups = C
+
+13: h ← ReLU  GroupNorm (h)
+
+14: Φ(x) ← PWConv 1×1(h) ▷ WPW init = 0
+
+# — Gated Residual Addition — 
+
+15: xout ← Block (x) + σ(γ) · Φ(x) ▷ frozen ViT block + LCA 16: return xout 
+
+LCA Module Architecture Fig. 8 displays the internal structure of the LCA module. Three attention gates (channel, spatial, contrast) run in parallel and are fused by element-wise multiplication before a depthwise separable residual projection. 
+
+A.3 PLAP: Operations and Severity Configuration Image-Space Operations The following operations form the PLAP library. All transforms are physically motivated and operate in floating-point precision before conversion back to uint8 .
+
+– Exposure (EV adjustment): Images are converted from sRGB to lin-ear light space, scaled by 2EV , then converted back. This mirrors how real cameras adjust exposure. Abbreviated paper title 19 
+
+– Directional Shadow: A smooth gradient mask, parameterized by angle θ,strength s, and sharpness ξ, darkens one side of the image to approximate the effect of a strong directional light source being partially occluded. The sharpness parameter scales with severity level, from a soft gradient at mild to a near-knife-edge boundary at severe. 
+
+– Color Temperature (Warm/Cool): Channel-wise multiplication shifts the red–blue balance. Warm boosts red and suppresses blue; cool does the reverse. These are physically opposite effects and are therefore treated as mutually exclusive in the conflict-aware sampler. 
+
+– Vignetting: A radial power-law falloff mask progressively darkens the image toward its edges. The center position is sampled slightly off-center to increase realism. 
+
+– Contrast: Each channel is scaled linearly around its own mean: Iout =(I −μc)·f +μc. Operating in per-channel mode avoids introducing unwanted color shifts. 
+
+– Gamma Correction: The pointwise nonlinearity Iout = I1/γ  
+
+> in
+
+reshapes the tonal curve, lifting or compressing midtones while leaving pure black and white unchanged. 
+
+– Brightness: A uniform scale factor (1+ p/ 100) approximates a global change in illumination level without altering contrast or color balance. Treated as mutually exclusive with exposure adjustment. 
+
+– Film Grain: Additive Gaussian noise drawn independently per pixel and per channel introduces the speckle pattern typical of high-ISO capture or underlit sensors. 
+
+– Atmospheric Haze: The image is blended toward a fixed pale haze color via Iout = I · (1 − a) + Chaze · a, producing the washed-out appearance of fog, mist, or smog. Treated as mutually exclusive with contrast adjustment and with lens flare. 
+
+– Color Cast: (Severity 3 only) An arbitrary hue-axis tint, unlike the warm/cool operations which are restricted to the red–blue axis, allows any hue direc-tion (sickly green, purple, magenta) to simulate fluorescent, sodium-vapour, or LED spill lighting. The hue angle is sampled uniformly from [0 ◦, 360 ◦)
+
+per image. 
+
+– Lens Flare: (Severity 3 only) A Gaussian-shaped overexposure region cen-tered near a frame edge simulates a strong light source in-frame. The warm-white spectral color ( [1 .0, 0.96 , 0.82] ) matches the chromaticity of direct sun-light or halogen illumination. 
+
+Conflict-Aware Sampling The PLAP sampler also construct four mutual-exclusion groups to prevent physically contradiction or perceptually redundant: 1. warm ↔ cool — opposite color temperatures. 2. exposure ↔ brightness — redundant luminance adjustments. 3. haze ↔ contrast — haze inherently flattens contrast. 4. flare ↔ haze — flare requires clear optical line. 20 Q. Liu et al.                                                     
+
+> Table 6: Severity level configuration. Each level controls the parameter range for each operation and the maximum number of simultaneously applied operations.
+> Severity 1 Severity 2 Severity 3
+> (Mild) (Moderate) (Severe) Exposure (EV) [−0.3,+0 .3] [ −0.8,+0 .8] [ −1.5,+1 .5]
+> Brightness (%) [−15 ,+15] [−30 ,+30] [−45 ,+45]
+> Contrast factor [0 .9,1.1] [0 .75 ,1.25] [0 .6,1.4]
+> Gamma [0 .85 ,1.15] [0 .7,1.3] [0 .55 ,1.5]
+> Color temp. tint [0 .03 ,0.07] [0 .08 ,0.14] [0 .15 ,0.25]
+> Vignette strength [0 .1,0.2] [0 .2,0.4] [0 .4,0.65]
+> Shadow strength [0 .2,0.35] [0 .35 ,0.55] [0 .55 ,0.75]
+> Grain intensity [0 .01 ,0.02] [0 .02 ,0.04] [0 .04 ,0.07]
+> Max operations 123
+
+Severity Level Configuration Table 6 lists the parameter ranges and maxi-mum operation counts for each severity level. All parameter ranges are strictly not overlapping across levels: the upper bound of the current level is the lower bound of the next level. Shadow sharpness ξ also scales with severity making the compound difficulty grow faster than the parameter values. 
+
+A.4 Severity Levels Image Quality Validation Table 7 reports perceptual image quality metrics between clean and the lighting augmentation across all four datasets. Across Cityscapes, COCO, and VOC, augmented images maintain low FID scores and high SSIM/FSIM values, which confirms that PLAP introduces photometric variation while preserving structural and perceptual similarity to the original im-ages. The Unity synthetic dataset also shows higher FID and lower SSIM/FSIM values, reflecting the broad distributional shift introduced by unity stimulation engine rather than image-space operations. Despite this, SSIM and FSIM remain relatively high, that shows that structural scene content is preserved. 
+
+A.5 Unity Dataset Details Scene Construction We construct our dataset using pre-existing indoor apart-ment environments within Unity. Each simulation contains a realistic array of household items including furniture, appliances, and decorations. We combine multiple distinct apartment layouts and capture a wide variety of spatial config-urations in our training data. The pipeline is illustrated in Fig. 2. The simulation environment enables automatic generation of precise instance masks for every object. The property summary of the dataset is shown in Table 8. 
+
+Lighting Rig For each scene, we design lighting configurations to produce light-ing variants that are aligned with our previous three-level severity framework. Abbreviated paper title 21                                     
+
+> Table 7: Perceptual image quality metrics between clean and lighting-augmented pairs across four benchmarks. Unity yields higher FID due to physically rendered scene variation rather than image-space augmentation. (FID ↓: Fréchet Inception Distance; SSIM ↑: Structural Similarity Index; FSIM ↑: Feature Similarity Index)
+> Dataset Split FID ↓SSIM ↑FSIM ↑
+> Cityscapes train 4.1753 0.8486 0.9022 val 11.7663 0.8449 0.8993 COCO train 3.1833 0.8632 0.9211 val 10.2894 0.8636 0.9224 VOC train 6.3118 0.8649 0.9208 val 6.5617 0.8674 0.9237 Unity train 22.6932 0.7447 0.8782 val 58.5673 0.7299 0.8713
+
+To generate these complex environments, we manipulate the physical proper-ties of light sources, such as intensity, color temperature, and angular direction. This allows us to model a wide range of realistic illumination changes. Each configuration is also saved alongside the variant image, so the capture can be reproduced. At the mild level, we adjust the main directional light by ±20–30% and modify its color temperature slightly warm or cool. The rendered images look subtly different. At the moderate level, we start adding or removing ad-ditional lights, simulating overcast conditions. At the severe level, we drop the scene into darkness with a single harsh point light, or increase the lighting in-tensity to an extreme level. The boundaries between objects become difficult to distinguish due to severe contrast degradation. 
+
+Camera Strategy We employ a camera rotation strategy for viewpoint di-versity. The camera is placed at fixed anchor positions within each scene and performs systematic rotations. This rotational strategy aims to maximize cover-age of each scene, resulting in a variety of synthetic indoor capture scenarios. For each viewpoint, we capture frames across all lighting configurations, and each viewpoint shares an identical ground truth mask. 
+
+A.6 Additional Results 
+
+In this section, we present the implementation details and additional results to validate and support our proposed methods. 
+
+Implementation Details We build on the SAM ViT-B checkpoint and at-tach LCA modules to the last N =2 transformer blocks. The ViT backbone and prompt encoder are frozen. We train with AdamW using three parameter groups: LCA weights at learning rate 1 × 10 −4 with weight decay 1 × 10 −2, gate scalars at 2 × 10 −3 with no weight decay, and the mask decoder at 5 × 10 −5 with weight 22 Q. Liu et al.                        
+
+> Table 8: Unity synthetic dataset summary.
+> Property Value
+> Apartment scenes 10 Total viewpoints 16 Lighting configs per viewpoint 4 (reference + 3 severity) Total images 1,418 Total annotated instances 481 Resolution 1920 ×1080 Annotation format COCO JSON (masks + boxes) Rendering pipeline Unity HDRP + Perception
+> Table 9: Computational comparison. Parameters are reported for the full model, in-cluding the frozen SAM encoder.
+> Model Params (M) Added Trainable (M)
+> SAM ViT-B 93.7 —+ Decoder training 93.7 ∼4.0 +LCA only 96.2 ∼2.4 +LCA+Dec 96.2 ∼6.4
+
+decay 5 × 10 −2. Training runs for [N_EPOCHS] epochs with a batch size of [BS] 
+
+on [N_GPU] × [GPU_TYPE] GPUs using PyTorch’s DistributedDataParallel. We use automatic mixed precision (AMP) throughout and clip gradient norms to 1.0. The supervised and consistency loss weights are λs = 0 .5 and λc = 0 .1
+
+unless otherwise noted. 
+
+Computational Overhead Table 9 summarizes the parameter counts. LCA adds only 2.4M trainable parameters to the 93.7M baseline model, a 2.6% over-head. Combined with the mask decoder, the trainable fraction remains below 7% of the full model. 
+
+Robustness Analysis Fig. 9 shows how much each model degrades under light-ing variation on COCO. We measure the mIoU drop between clean images and their lighting variants across three severity levels. At mild severity, the models behave very similarly. All three remain within a tight range, which is expected since the perturbations are relatively small. Differences start to appear at mod-erate severity, where fine-tuning already begins to help. The gap becomes clearer at severe lighting conditions: the zero-shot SAM model drops by 1.19 pp, while LCA+Decoder limits the drop to 0.70 pp. The violin plots in panel (b) show that this pattern is not caused by a few extreme outliers. Instead, the zero-shot model develops a long tail of failures at higher severity, while the fine-tuned models remain more stable. Panel (c) combines all severity levels into a single Abbreviated paper title 23 
+
+distribution. Here, LCA+Decoder is the most concentrated around zero, indicat-ing fewer large failures overall. In other words, LCA improves robustness across lighting conditions and remains particularly effective when the perturbations become challenging—precisely the situations where robustness matters most in practice. 
+
+Per-Dataset IoU Analysis Fig. 4 in the main paper shows the IoU histogram and scatter plot for Cityscapes under lighting variant conditions. Here we provide the same analysis for the three remaining benchmarks (Fig. 10-Fig. 12). In all cases, the histogram shift to the right and the majority of scatter points above the 
+
+y=x diagonal confirm that LCA consistently improves per-instance IoU, with the largest gains concentrated in low-baseline instances where lighting degradation most severely disrupts the encoder. 
+
+Supervised Loss Blending We investigate the supervised loss blending weight 
+
+λsup , which controls the relative contribution of the clean and variant image losses: Lsup = λsup · L clean + (1 − λsup ) · L var .As shown in Table 10, the best Clean mIoU (0.6382) is achieved at λsup = 0 .7,while the best Variant mIoU (0.6339) occurs at λsup = 0 .3. This is intuitive: emphasising the clean loss improves Clean performance, while up-weighting the variant loss benefits Variant conditions. No extreme ( λsup = 0 or 1) achieves the best result in either condition, confirming that joint training on both lighting conditions is beneficial. The overall variation remains small ( < 0.2% ), indicating robustness to this hyperparameter. We adopt λsup = 0 .5 as the default for a balanced trade-off.                 
+
+> Table 10: Ablation on supervised loss weight λsup . mIoU on VOC dataset.
+> λsup Clean Variant 00.6368 0.6321 0.1 0.6375 0.6320 0.3 0.6378 0.6339
+> 0.5 0.6377 0.6328 0.7 0.6382 0.6329 10.6371 0.6316
+
+A.7 Examples of Data 
+
+We provide examples across the all evaluation benchmark. For each of the scenes, the top rows show the clean image and are followed by its lighting variants across all three different severity levels (mild, moderate, severe). The severity level increases from the left to the right. The bottom row shows the corresponding ground truth instance masks. 24 Q. Liu et al. 
+
+LCA vs. Baseline The examples shown Figures Fig. 13-Fig. 14 for cityscape dataset, Figures Fig. 15-Fig. 16 for coco dataset, and Figures Fig. 17-Fig. 18 for unity dataset where the baseline fails (IoU < 0.13 ) but LCA is able to recover a well-localized mask (IoU > 0.72 ). These cases cover all three evaluation domains. In each panel we show: (1) the input image with the ground-truth contour, (2) the baseline prediction, (3) the LCA prediction, and (4) a signed difference map (red marks false positives from the baseline that LCA removes, while blue shows regions recovered only by LCA). Looking across the examples, a similar behavior appears in all three domains. The baseline often produces confident predictions, but the activations spread beyond the object and bleed into the surrounding area. With LCA, these off-boundary activations are largely suppressed, and the mask becomes more focused around the object edges. The contrast gating helps emphasize these high-contrast boundaries and pull the prediction back toward the correct region. We see the same behavior whether the lighting degradation comes from image-space augmentations (COCO and Cityscapes) or from physically rendered lighting changes in Unity. This suggests that the Laplacian branch is not simply adapting to artifacts from a specific dataset, but instead learns a more general structural signal related to object boundaries. 
+
+Real-World Scenes: COCO and Cityscapes Figures Fig. 19-Fig. 20 and Figures Fig. 21-Fig. 22 show examples drawn from COCO and Cityscapes us-ing the PLAP to generate the lighting variants. The original datasets reflect the diversity of real-world capture conditions background, heavy occlusion, and wide differences in instances. Lighting variants are produced by PLAP applied to the original images. Across both datasets, as the severity keeps increasing, the degradation becomes most evident at instance boundaries and on small or low-contrast objects, which are exactly the scenarios our method is designed to handle. 
+
+Synthetic Scenes: Unity Figures Fig. 23-Fig. 24 are the examples from our Unity synthetic dataset. The key distinction from the real-world benchmarks is that lighting here is not a image level operation. It is rendered physically by the Unity engine through our Sec. A.5 configuration across the three severity levels. As a result, reflections, and surface materials all respond to the lighting change in a way that image space augmentation cannot replicate. Ground truth instance masks are captured natively by the Unity Perception package at ren-der time, which also gives perfect annotations. Together, these properties make the synthetic dataset a controlled but non-trivial complement to the real-world evaluation. Abbreviated paper title 25 Clean Image Variant Image 
+
+img1 (B, 3, H, W) img2 (B, 3, H, W) 
+
+SAM Preprocess 
+
+resize to 1024x1024 ImageNet Normalize 
+
+SAM ViT-B Image Encoder (Frozen - 86M+ Parameters) 0 1 2 3 4 5 6 7 8 10 11 12 LCA LCA 
+
+out = block(x) + σ(gate) * LCA(x) gate init = -1 → σ ≈ 0.27 Trainable per LCA block: ~39k params | LCA lr=1e-4 gates lr =2e-3 
+
+emb1 (clean) 
+
+(1, 256, 64, 64) 
+
+emb2 (variant) 
+
+(1, 256, 64, 64) 
+
+Neck 
+
+Conv +LN 
+
+Mask Decoder (Trainable) 
+
+2-way Cross-Attention MLP Heads → 3 masks (256x256) IoU Head → 3 confidence scores Select mask with highest IoU pred lr = 5e-5 | weight decay = 5e-2 
+
+Prompt Sampling 
+
+1 random fg point per mask Tight bounding box + neg pt 
+
+Prompt Encoder 
+
+points + labels → sparse embed boxes → token | dense PE grid 
+
+GT Instance Masks 
+
+resize 256x256 (nearest) Shared between clean & variant pred_clean (sigmoid mask) pred_variant (sigmoid mask) 
+
+(1, 1, 256, 256) + IoU Confidence (1, 1, 256, 256) + IoU Confidence 
+
+Loss Computation Supervised Loss: BCE + Dice 
+
+sup = sup_w x L(pred_clean, GT) + (1- sup_w) x L(pred_variant, GT) default sup_w = 0.5 → equal blend | per-instance accumulation 
+
+Consistency Loss: cons_w x L1( σ(pred ), σ(pred ) ) 21
+
+default cons_w = 0.1 | core lighting-invariance signal 
+
+Total Loss = supervised + cons_w x consistency 
+
+AMP GradScaler | clip_grad_norm = 1.0 | backward() V LCA weights (lr=1e-4, wd=1e-2) | gates (lr=2e-3) | decoder (lr=5e-5, wd=5e-2) 
+
+Validation Metrics 
+
+mIoU: average mask IoU accross all instances (clean + variant streams) mAP / mAP@50 / mAP@75: COCO-style 101-point interpolated AP confidence = IoU prediciton head score rank instances → TP/FP at each threshold → PR curve 
+
+Parameter Summary (LCA+ Decoder Variant) 
+
+Frozen: ViT backbone + prompt encoder (~89M) | Trainable: LCA (~78k for 2 blocks) + gates (2) + mask decoder (~4M) LCA per block: gates ~25.5K + DW-Sep projection ~13.6K | Original attention module was ~580K → 15x reduction 
+
+Fig. 7: Detailed PLAP-LCA training pipeline. Clean and variant images are processed by a shared, frozen ViT-B encoder with LCA modules at the last two blocks. The prompts remain unchanged and are shared with both streams. The supervised loss trains against shared ground-truth masks, while the consistency loss penalizes any prediction divergence caused purely by illumination. 26 Q. Liu et al. LCA: Parallel CBAM + Laplacian Gates → Depthwise-Separable Residual 
+
+~39K params per block | inkected into last N ViT blocks | zero-init residual 
+
+x (B, 768, H, W) 
+
+Spatial Attention 
+
+“Where to attend spatially?” 
+
+Mean 
+
+dim=1 (C) (B, 1, H, W) 
+
+Max 
+
+dim=1 (C) (B, 1, H, W) 
+
+cat (B, 2, H, W) 
+
+Conv2d(2, 1, 7x7) 
+
+pad=3, no bias | 98 params 
+
+sigmoid 
+
+Spatial Gate 
+
+(B, 1, H, W) 
+
+1 scalar per location → broadcasts C 
+
+Channel Attention 
+
+“Which feature channels matter?” 
+
+AvgPool 
+
+global (1x1) (B, 768, 1, 1) 
+
+MaxPool 
+
+global (1x1) (B, 768, 1, 1) 
+
+Shared MLP 
+
+Conv1x1(768→16) → ReLU → Conv1x1(16→768) 
+
+Sum → σ 
+
+Channel Gate 
+
+(B, 768, 1, 1) 
+
+1 scalar per channel → broadcasts HxW 
+
+> 24,576 params | Processes both paths
+
+Contrast (Laplacian) 
+
+“Where are lighting edges?” 
+
+Conv2d(768, 1, 1x1) 
+
+to_gray | 769 params 
+
+→ (B, 1, H, W) 
+
+min-max → [0, 1] 
+
+Conv2d(1, 1, 3x3) 
+
+pad=1 | 10 params 
+
+sigmoid 
+
+Contrast Gate 
+
+(B, 1, H, W) Highlights lighting edges 
+
+Laplacian Convolution 
+
+[0, 1, 0; 1, -4, 1; 0, 1, 0] 
+
+Fixed buffer (not trainable) Parallel Parallel Parallel 
+
+x_att = x ch sp ct 
+
+> element-wise product - all three gates must “agree” for a feature to pass broadcasting: ch scales channels, sp+ct scae spatial locations
+
+Depthwise-Separable Residual Projection 
+
+Depthwise Conv2d 
+
+(768, 768, 3x3, groups=768) each channel: own 3x3 filter | 6,912 params 
+
+GroupNorm 
+
+32 groups 1,536 params 
+
+ReLU 
+
+Pointwise Conv2d(768, 768, 1x1, bias=False) 
+
+Cross-channel mixing | 589,824 params Initialization as all zeros 
+
+LCA Residual (B, 768, H, W) 
+
+Gated Residual Addition → ViT Block Output 
+
+gate = nn.Parameter(tensor(-1.0)) 
+
+σ (-1.0) ≈ 0.269 | lr = 2e-3 Learns per-block how much LCA to blend 
+
+x + block(x)+σ(g) LCA(x) 
+
+(B, 768, H, W) 
+
+→ feeds into next ViT block 
+
+Parameter Summary (in_ch=768, se_mid=16) 
+
+Gates: to_gray 769 + constrast 10 + ch_mlp 24,576 + sp_conv 98 = 25,453 Proj: DW 6,912 + GN 1,536 + PW 589, 824 = 598,272 | Per block total: ~39,085 trainable Note: PW 1x1 is 589K paarms but ZERO-init → does not disrupt pretrained SAM at start 
+
+Fig. 8: LCA module architecture.The three gates run in parallel. The channel gate 
+
+(left) uses global average and max pool statistics fed through a shared MLP to produce a per-channel scalar mask. The spatial gate (center) concatenates channel-wise mean and max maps and convolves them with a 7×7 kernel to produce a per-location scalar mask. The contrast gate (right) projects the feature map to a single-channel grayscale, applies a fixed Laplacian kernel, min-max normalizes the result, and refines it with a trainable convolution to highlight lighting edges. All three gates are multiplied onto the input feature tensor, the gated features then pass through a projection. Abbreviated paper title 27 Mild (Sev. 1) Moderate (Sev. 2) Severe (Sev. 3) 
+
+0.00 
+
+0.20 
+
+0.40 
+
+0.60 
+
+0.80 
+
+1.00 
+
+1.20 
+
+> Mean mIoU Drop  (clean  variant, pp)
+> 0.04
+> 0.26
+> 1.19
+> 0.01
+> 0.17
+> 0.73
+> 0.05
+> 0.17
+> 0.70
+
+(a) Average mIoU Degradation: Clean vs. Lighting Variant   
+
+> SAM Zero-Shot
+> Decoder Only
+> LCA + Decoder (Ours)
+> Mild (Sev. 1) Moderate (Sev. 2) Severe (Sev. 3)
+
+40 
+
+20 
+
+0
+
+20 
+
+40 
+
+> Per-image mIoU Drop (pp)
+
+(b) Distribution of Per-image Degradation by Severity 
+
+> SAM Zero-Shot
+> Decoder Only
+> LCA + Decoder (Ours)
+
+40 20 0 20 40 
+
+Per-image mIoU Drop (clean variant, pp) 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+> Density
+
+(c) Pooled Distribution of mIoU Drop (All Severities) 
+
+> SAM Zero-Shot
+> Decoder Only
+> LCA + Decoder (Ours)
+
+Robustness Analysis: mIoU Degradation Under Lighting Variations 
+
+Fig. 9: Robustness analysis on COCO across all three severity levels. (a) Average mIoU drop (clean − variant) per severity. (b) Per-image drop distributions; wider spread indicates more variable degradation. (c) Pooled KDE across all severities; a sharper peak at zero indicates greater lighting robustness. 
+
+(a) IoU histogram — COCO (lighting variant). (b) Per-instance scatter — COCO. 
+
+Fig. 10: IoU analysis on COCO under lighting variant conditions. Left: distribution shift between SAM baseline and LCA. Right: per-instance comparison; points above 
+
+y=x indicate LCA improvement. 28 Q. Liu et al.    
+
+> (a) IoU histogram — VOC (lighting variant). (b) Per-instance scatter — VOC.
+
+Fig. 11: IoU analysis on VOC under lighting variant conditions.    
+
+> (a) IoU histogram — Unity (lighting variant). (b) Per-instance scatter — Unity.
+
+Fig. 12: IoU analysis on the Unity synthetic dataset under physically rendered lighting variant conditions. Because Unity lighting is rendered rather than augmented, the performance gap is larger, reflecting the additional domain shift. 
+
+Fig. 13: Cityscapes (road, sev1, ∆IoU = +0.761). The baseline floods the entire road surface with high confidence (IoU = 0.060, conf = 0.98); LCA recovers a compact mask tightly aligned with the target lane segment (IoU = 0.821). Abbreviated paper title 29 
+
+Fig. 14: Cityscapes (sky, sev2, ∆IoU = +0.725). Under moderate lighting, the base-line misidentifies large building façades as sky (IoU = 0.042); LCA correctly isolates the visible sky region (IoU = 0.767). 
+
+Fig. 15: COCO (truck, sev2, ∆IoU = +0.756). The baseline activates on the lower-half background rather than the vehicle body (IoU = 0.046); LCA produces a well-bounded truck mask (IoU = 0.802), demonstrating robustness to the high-contrast reflective win-dow surface. 
+
+Fig. 16: COCO (person, sev2, ∆IoU = +0.700). Low ambient stadium lighting causes the baseline to flood a rectangular region of the court (IoU = 0.030); LCA correctly segments the athlete’s silhouette (IoU = 0.729). 30 Q. Liu et al. 
+
+Fig. 17: Unity (object, sev1, ∆IoU = +0.686). In a near-dark synthetic indoor scene, the baseline produces a large false-positive region unrelated to the target object (IoU = 0.128); LCA isolates the dimly-lit target using structural edge cues (IoU = 0.814). 
+
+Fig. 18: Unity (object, sev1, ∆IoU = +0.663). Warm ceiling lighting creates a strong false edge that misleads the baseline into activating across the wall and furniture (IoU = 0.123); LCA suppresses the photometric distraction and recovers the target boundary (IoU = 0.786). Abbreviated paper title 31 
+
+Fig. 19: COCO scene. Row 1: clean image and three severity levels (mild, moderate, severe). Row 2: corresponding ground-truth instance masks. 
+
+Fig. 20: COCO scene (second example). 32 Q. Liu et al. 
+
+Fig. 21: Cityscapes scene. 
+
+Fig. 22: Cityscapes scene (second example). 
+
+Fig. 23: Unity scene. 
+
+Fig. 24: Unity scene (second example).

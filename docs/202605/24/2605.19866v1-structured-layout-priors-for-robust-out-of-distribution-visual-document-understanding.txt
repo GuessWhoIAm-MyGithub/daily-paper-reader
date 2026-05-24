@@ -1,0 +1,419 @@
+Title: Structured Layout Priors for Robust Out-of-Distribution Visual Document Understanding
+
+URL Source: https://arxiv.org/pdf/2605.19866v1
+
+Published Time: Wed, 20 May 2026 01:18:05 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Structured Layout Priors for Robust Out-of-Distribution Visual Document Understanding 
+
+Peter El Hachem 
+
+ETH Zurich Rämistrasse, Switzerland 
+
+pelhachem@ethz.ch 
+
+Ahmed Nassar 
+
+IBM Research Rüschlikon, Switzerland 
+
+ahn@zurich.ibm.com 
+
+A. Said Gurbuz 
+
+IBM Research Rüschlikon, Switzerland 
+
+said.gurbuz@ibm.com 
+
+Christoph Auer 
+
+IBM Research Rüschlikon, Switzerland 
+
+cau@zurich.ibm.com 
+
+Peter W. J. Staar 
+
+IBM Research Rüschlikon, Switzerland 
+
+taa@zurich.ibm.com 
+
+# Abstract 
+
+Vision-Language Models (VLMs) parse documents end-to-end but frequently break down on layouts unlike those seen in training. We attribute this to a two-hop bottleneck: before the decoder can extract content (Hop 2), it must first classify and localize the enclosing layout entity (Hop 1), and when the first hop fails the second collapses into omissions, malformed structure, or autoregressive repetition. We pre-resolve Hop 1 outside the decoder by running a lightweight RT-DETR detector, serializing its outputs in the parser’s native DocTags vocabulary, and injecting them into the prompt alongside the full page image. Unlike analyze-then-parse approaches that crop the page, or prior prompt-level priors written in plain text, our prior shares the decoder’s generation space and leaves the global image in view as a fallback when detections are noisy. On a 10k-page structural out-of-distribution benchmark, markdown F1 rises from 0.37 to 0.92 ; on the Chinese subset of OmniDocBench, table TEDS rises from 0.01 to 0.36 ; and on the 26k-page ViDoRe V3 benchmark, infinite-loop decoding failures drop across every industrial domain tested. These gains cost 15% wall-clock latency and a median of 74 prompt tokens, with no architectural change to the base VLM. An attention-level analysis further reveals a bimodal phase shift in which the decoder attends to injected layout tokens when emitting structure and to image patches when emitting content, consistent with the two-hop bottleneck being alleviated. Model weights will be released to support reproducibility. 
+
+# 1 Introduction 
+
+Document understanding remains a central challenge in computer vision because most informa-tion is stored in visually rich, unstructured formats [1]. Recent Vision-Language Models (VLMs) significantly simplify OCR pipelines by jointly modeling vision and text, enabling end-to-end conversion from page images to structured markup [2, 3, 4]. However, structured document gener-ation creates a structural dependency : the decoder must first identify a region’s boundaries and class, then emit its content within the enclosing markup, typically as an interleaved pattern such as 
+
+⟨tag ⟩ content ⟨/tag ⟩. Recent systems already hint at this dependency by using region grounding or coordinate-based prompting to stabilize parsing [5, 6, 7], yet the mechanism behind these gains has remained largely implicit. 
+
+> Preprint.
+> arXiv:2605.19866v1 [cs.CV] 19 May 2026
+
+We make this dependency explicit by framing end-to-end document parsing as a two-hop problem: first, entity resolution , where visual features are localized and mapped to a layout class; second, 
+
+content extraction , where the decoder parses the identified region. When the first hop fails, errors propagate to the second and manifest as omissions, malformed structure, or repetitive decoding, and this effect is amplified in compact models whose decoder capacity is already constrained. The two-hop view has recently been studied for factual recall in multimodal models [8, 9]; we adapt it here to structured document generation. Building on this framing, we pre-resolve the first hop outside the autoregressive loop. A lightweight RT-DETR detector [10] predicts document regions and their coordinates, and we serialize these detections as location-tag priors before appending them to the task prompt. The decoder thus receives a symbolic page map alongside the full page image, and can allocate its capacity to Hop 2 rather than recovering layout structure from pixels. Unlike analyze-then-parse pipelines that feed detector-defined crops to the recognizer [11, 12], we keep the full page in view so the decoder retains a global fallback when the detector is imperfect. Our key contributions are as follows: (i) A layout-conditioned fine-tuning pipeline : We introduce a “Guided-Decoding” framework that injects structured RT-DETR layout priors directly into the VLM prompt. This decouples layout localization from content extraction, effectively targeting the “two-hop” bottleneck without requiring architectural changes. (ii) Mechanistic evidence for capacity reallocation : Through attention analysis, we reveal a bimodal attention phase shift : the decoder attends to layout tokens for structural syntax and to image patches for textual content. This is consistent with the pipeline actively resolving the first hop, freeing the compact decoder’s capacity for content extraction. (iii) Robust out-of-distribution (OOD) generalization : Across severe structural, linguistic, and complexity shifts, our method raises markdown F1 from 0.37 to 0.92 on NoveltySet, table TEDS from 0.01 to 0.36 on the Chinese subset of OmniDocBench, and reduces infinite-loop decoding failures on every industrial domain of ViDoRe V3. Ablations confirm the prior acts as lightweight, flexible guidance, adding only 15% latency rather than a rigid constraint. 
+
+# 2 Related Work 
+
+Document VLMs Traditional OCR pipelines decompose document extraction into text detection, recognition, and downstream parsing [13, 14]. These systems often accumulate error across stages and lose spatial semantics when layouts are complex or noisy [15, 16]. Recently, the field has shifted toward generative transformer-based architectures, evolving into modern solutions based on Vision-Language Models (VLMs) . These models adopt joint training paradigms for layout and content parsing while removing the dependency on external OCR engines. Frameworks such as Donut [2], Nougat [3], DeepSeek-OCR [5], Qwen2-VL [6], and recent document-expert variants like SmolDocling [17] unify document extraction into a single-stage decoding task. 
+
+Layout conditioning and structural priors The diversity of documents poses a challenge in developing a unified model that can comprehend intricate relationships between text and visual objects across a wide range of document types, formats, and tasks. Researchers have pursued several complementary strategies to bridge the gap between visual and text signals. Early approaches like 
+
+LayoutLM [18, 19, 20] sought to bridge this gap by incorporating 2D positional embeddings. These embeddings represent coordinates (x0, y 0, x 1, y 1) of each bounding box rather than individual text tokens, allowing the model to treat the document as a spatial map rather than a linear string. However, these models require an external OCR engine, meaning system performance is strictly capped by the quality of the OCR. In the generative era, methods to align vision and language have evolved. Cross-attention blocks, introduced by Flamingo [21], and self-attention linear projections, used by LLaVA-based models [22], successfully map visual features to language models but often struggle with downstream tasks that necessitate fine-grained visual groundedness or high-resolution spatial details. To provide better structural signposting, SmolVLM [23] introduces the use of media introduction tokens . However, these markers only signal the presence of visual content without conveying its internal structure. 2More recent works frame layout conditioning as an analyze-then-parse pipeline. Dolphin [11] and 
+
+GLM-OCR [12] adopt a two-stage pipeline with precomputed layout analysis. However, a key difference is that both parse detector-defined regions as separate crops, making the downstream parser tightly dependent on detector quality: missed boxes remove content entirely, and inaccurate boxes corrupt the local crop seen by the recognizer. In our approach, the detector provides only a structural prior, while the full page image is still passed to the vision encoder. As a result, the model retains global visual context and can still use the original page evidence even when the injected layout prior is imperfect. Most closely related to our work, Zhu et al. [24] inject layout tokens as a plain-text prior to a general-purpose VLM. Our contribution differs in three respects: (i) our priors are serialized in the parser’s own DocTags vocabulary, not plain text, aligning with the decoder’s generation space; (ii) we target a 258M-parameter document-expert VLM where the two-hop bottleneck is most acute; and (iii) we provide attention-level evidence for the mechanism by which layout priors help, leading to improved stability and performance. Table 1: Comparison of detector-conditioned document parsers. “Crops” = recognizer sees detector-defined sub-images only. “Full page” = vision encoder sees the entire page, with detections used only as a prompt-level prior. “Native” = prior tokens come from the parser’s own tokenizer.                         
+
+> Method Detector →Prompt Page image input Prior tokens Scale Dolphin [11] yes crops plain text 8B GLM-OCR [12] yes crops mixed ∼1.3B Zhu et al. [24] yes full page plain text general-purpose Qwen2-VL [6] endogenous full page native 2–72B
+> Ours yes full page native (DocTags) 0.258B
+
+Autoregressive collapse in document parsers A significant limitation in transformer-based docu-ment parsers is autoregressive degradation , frequently manifesting as generation collapse. In its simplest form, the last sentence or paragraph is repeated over and over again. This phenomenon is a well-documented failure mode in neural text generation, particularly when employing greedy decoding strategies [25, 3, 12]. Typically, collapse is triggered by an initial localized error, such as a misinterpretation of a dense visual artifact, from which the model’s internal hidden states are unable to recover. As the sequence length increases, the attention mechanism becomes increasingly biased toward the recently generated repetitive tokens, leading to a total loss of semantic progression. Our method injects layout priors directly in the native DocTags syntax, integrating naturally with the decoder’s token-level predictions (e.g., <text><loc_100><loc_200><loc_300><loc_400></text> ). By doing so, we counteract generative instability by anchoring the model’s attention. We formalize this two-step decomposition later in the pipeline description in Section 3.2. Taken together, the literature shows that layout conditioning helps, but existing solutions either crop the page and inherit any detector error, inject the prior as plain text that is foreign to the decoder’s vocabulary, or operate at a scale where the two-hop bottleneck is easy to absorb. Our work targets the remaining gap: a compact, DocTags-native, full-page-preserving prior whose mechanism we make observable through attention-level analysis. 
+
+# 3 Methodology 
+
+3.1 Implementation details Base Model granite-docling-258M is used as the base VLM for our fine-tuning pipeline. It combines a google/siglip2-base-patch16-512 vision backbone [26], which encodes document images up to 2048 ×2048 pixels via dynamic patching, with an Idefics3-style pixel-shuffle connector and a compact Granite-165M decoder that autoregressively generates structured DocTags outputs. 
+
+Layout detector We utilize docling-layout-heron , an RT-DETR-based detector that achieves high-fidelity localization of document elements (mAP@50:95 = 0.69 on DocLayNet [27, 28]). By leveraging an end-to-end transformer framework, it delivers significant precision gains over traditional 3Figure 1: Overview of our two-stage pipeline YOLO-based systems [29] while maintaining the low-latency inference necessary for real-time document processing. The model outputs bounding boxes in a normalized top-left coordinate system. Detected object categories are detailed in Appendix C, Table 9. 
+
+Markup Language DocTags is a structured markup language that represents document objects and their bounding-box coordinates as tokens [17]. To pre-resolve Hop 1, we map precomputed layout objects into DocTags format before injecting them into the prompt. A complete list of DocTags is provided in Appendix C Table 10. 
+
+3.2 Two-Stage Parsing Pipeline Stage 1: Layout Precomputation Stage 1 augments the existing VLM training and inference loops without any change to the annotation format: as each image is loaded, docling-layout-heron [28] produces a set of layout detections on the fly. The detector was pretrained on a mixture that overlaps with the document distributions we care about, including DocLayNet [27] and WordScape [30]. Let 
+
+B = {(ck, x min  
+
+> k
+
+, y min  
+
+> k
+
+, x max  
+
+> k
+
+, y max  
+
+> k
+
+)}Kk=1 ,
+
+where ck is the semantic class and the coordinates are normalized to [0 , 500] . We serialize this set into a DocTags layout prior L = serialize( B), which conditions generation as 
+
+pψ (R | I) ≈ pψ (R | I, L ), L ∼ pϕ(· | I),
+
+where ϕ denotes the detector parameters and R is the target parse. This factorization separates structural proposal from autoregressive content generation: Stage 1 commits to candidate regions and their classes, and the decoder conditions on both the image and the serialized blueprint when generating the parse. Resolving the class-plus-location decision at the prompt level pre-answers Hop 1, so the decoder’s autoregressive capacity can be spent on Hop 2 (content extraction). 
+
+Stage 2: VLM Parsing Given the pre-solved structural layout, the second stage performs multi-modal synthesis. The input image is processed via a Vision Encoder, which adaptively partitions the image into a dynamic number of patches based on the aspect ratio. Each patch is mapped to a 64-token visual representation. Passing the full page image preserves a visual fallback when detections are incomplete, at the cost of duplicated information (detections describe regions that the encoder already sees). Section 5 shows this redundancy is useful: the model remains functional under high detection dropout, suggesting it treats the prior as guidance rather than groundtruth. To bridge the modality gap, these visual tokens are projected through a Multi-Layer Perceptron (MLP) into the shared embedding space of the language model. The sequence of visual tokens and 4the DocTag-augmented prompt are then fed into the LLM decoder. By conditioning the linguistic generation on both the raw visual features and the validated structural "blueprint," the model generates a layout-enriched parse of the document with higher fidelity than ungrounded baselines. 
+
+3.3 Training Strategy Phase 1: Pretraining The pretraining phase jointly optimizes two objectives: modality alignment 
+
+and document understanding . For modality alignment, we train the connector (a pixel-shuffle projector) to map visual features from the SigLIP-2 backbone into the embedding space of the Granite-165M language model using the Cauldron dataset [31]. This stage emphasizes dense-text pages with relatively simple layouts so the model first learns reliable character recognition before tackling harder structural reasoning. For document understanding, we then expose the model to a hybrid corpus that combines synthetic examples produced by the Docling ensemble pipeline (e.g., TableFormer outputs) with high-quality human-labeled annotations. The manually verified subset covers complex structures such as nested tables, mathematical formulas, and multi-column flows, providing supervision for richer document parsing. The model is optimized using a standard autoregressive next-token prediction objective [32]. Given an input image I and a text instruction P , the model minimizes the negative log-likelihood of the target sequence R. By segmenting the output tokens into label, location, and content types, the model is trained to jointly perform object classification, spatial localization, and content extraction within a unified sequence modeling framework. 
+
+Phase 2: Layout Injection Building upon the pretrained structured checkpoint, Phase 2 introduces a structural paradigm shift by transitioning the model from a "one-shot" parser to a guided two-stage architecture . For each training batch, we employ docling-layout-heron to detect page elements. We apply post-processing to retain high-confidence detections (score > 0.6), merge fragmented regions, and perform non-maximum suppression to handle overlapping boxes. These detections are then serialized into the DocTags format. By injecting these serialized detections as an explicit structural prior, we decompose the parsing task into two distinct steps: (i) entity resolution and (ii) 
+
+content extraction . Stage 1 (Heron) pre-resolves the ”where" and ”what" by providing the layout class and spatial coordinates in the prompt. Conditioned on this blueprint, the decoder can dedicate its full capacity to ”Hop 2", extracting and generating content from the visual evidence rather than exhausting parameters on spatial discovery. 
+
+Phase 3: Guided Fine-tuning In this final phase, we concentrate gradient on the tokens whose prediction actually requires multimodal reasoning. Because location tokens are copied verbatim from the prompt to the output, supervising them teaches the model only to copy, so we mask them out of the loss. We keep the loss on label tokens: they dictate the structural context, and any error in their generation propagates into the enclosed content and undermines the pipeline’s reliability. Concretely, we use a Masked Cross-Entropy Loss with an indicator function M (xi) that suppresses location tokens ( <loc_0> , . . . , <loc_500> ) during backpropagation: 
+
+Lguided = −
+
+> |R|
+
+X
+
+> i=1
+
+M (xi) · log pψ (xi | I, P, x <i ) (1) where: 
+
+M (xi) = 
+
+0 if xi ∈ T location 
+
+1 otherwise (2) and Tlocation is the set of all spatial coordinate tokens. Training, optimization, and detector hyperparameters are summarized in Appendix A, Table 4. 50 1 2 3 4 5 6 7 8
+
+CS 
+
+Energy 
+
+Fin. (EN) 
+
+Fin. (FR) 
+
+HR 
+
+Pharma. 
+
+Physics 
+
+Infinite loop failures (%) 
+
+Base 
+
+Finetuned Figure 2: Stability benchmarking on ViDoRe dataset for infinite loops across 7 different industries. Red bars are the base model, green bars are the finetuned model. 
+
+Figure 3: t-SNE visualization of training data, Nov-eltySet, and selected ViDoRe subsets. Quantitative MMD details and SVM separability results are re-ported for the comparison between training data and NoveltySet in Appendix Table 6, Appendix Figure 5, and Table 7. 
+
+# 4 Evaluation 
+
+Our core hypothesis is that layout-conditioned fine-tuning transfers better to out-of-distribution (OOD) documents than standard end-to-end decoding. We evaluate along three complementary OOD axes and, for completeness, an in-distribution benchmark: • Structural shift: NoveltySet, a proprietary 10k-page human-annotated benchmark curated to exhibit page structures and object compositions absent from training. • Linguistic shift: the Chinese subset of the public OmniDocBench [33]. • Stability under complexity: 26k pages of the public ViDoRe V3 [34] spanning seven industrial domains. • In-distribution (reference): DocLayNet [27]. For DocLayNet and NoveltySet, reference annotations are available in DocTags format, enabling direct structural and content evaluation with docling-eval . For OmniDocBench, we follow its official evaluation protocol, which scores model outputs from generated Markdown files. 
+
+OOD Evaluation: Language Generalization Out of the full training mixture used for both base-model granite-docling-258M and finetuned granite-docling-2stage-258M , around 1% of training data is Chinese documents. To evaluate this generalization, we benchmark both models on OmniDocBench [33], which contains 1355 PDF images as mixture of English and Chinese documents. To assess the generalization across language fairly, we benchmark our models by filtering out English documents, keeping only Chinese documents. The results show while text-level metrics can remain similar or slightly degrade, structure-sensitive objects significantly improve. Especially for table extraction, we can see an improvement from near 0% to 43% . This pattern suggests that layout-prior injection is particularly effective for structure-centric parsing such as table extraction, regardless of the language of the underlying content. To contextualize this result, we also benchmark our models on the English subset of OmniDocBench using edit-distance metrics across text, table, formula, and reading-order extraction, and compare them against a range of state-of-the-art specialist and general-purpose document parsers. The Pareto comparison in Figure 4 shows that granite-docling-2stage-258M remains competitive despite its compact 0.25B parameter scale. Full multilingual results are reported in Table 2, and the complete English-only comparison is reported in Appendix Table 8. 6Figure 4: Pareto comparison on the English subset of OmniDocBench. The plot compares edit-distance performance across state-of-the-art document parsers as a function of model size, highlighting that granite-docling-2stage-258M remains competitive at 0.25B parameters. Table 2: OmniDocBench benchmark results for granite-docling-258M vs granite-docling-2stage-258M across Chinese (ZH) and English (EN) subsets. ED : Edit Distance, TEDS : Tree Edit Distance-based Similarity, TEDS-S : TEDS Structure only, RO : Reading Order.                                                 
+
+> Text Table Formula RO Lang. Model ED ↓BLEU ↑TEDS ↑TEDS-S ↑ED ↓ED ↓ED ↓
+> ZH granite-docling-258M 0.84 0.04 0.01 0.01 0.98 0.86 0.73
+> granite-docling-2stage-258M 0.62 0.02 0.36 0.43 0.57 0.84 0.52
+> EN granite-docling-258M 0.78 0.10 0.43 0.47 0.44 0.29 0.69
+> granite-docling-2stage-258M 0.17 0.48 0.47 0.52 0.34 0.30 0.19
+
+OOD Evaluation: Stability under complexity To quantify the impact of structural prompting on decoding robustness, we evaluate our model on the ViDoRe V3 dataset [34], encompassing 26,000 pages across diverse industrial domains. We use ViDoRe V3 for its industrial diversity and structural complexity, and assess robustness independently of ground-truth availability. Using a high-throughput vLLM inference engine, we monitor generation for timeout-inducing infinite loops and define a failure as any sequence exceeding a maximum token threshold ( Tmax = 5000 ) without EOS termination. Results are qualitatively unchanged for Tmax ∈ { 2000 , 10000 }. We report the ratio of infinite loops across industries for the base model granite-docling-258M and the finetuned model granite-docling-2stage-258M .
+
+Findings. Conditioning generation on layout priors yields more stable decoding across all domains (Figure 2). Without structural grounding, the VLM more frequently fails on dense visual regions, complex infographics, and schematic diagrams, entering repetitive autoregressive loops. The t-SNE analysis (Figure 3) supports this pattern: subsets that occupy distinct regions of the feature space relative to the training distribution, including HR, Energy, and Finance (EN), exhibit the highest baseline failure rates, and Finance (FR) does as well, which is consistent with sensitivity to a language shift given the limited French-language training data. The linguistic generalization aligns with our earlier findings: gains are driven primarily by structured elements such as tables, where DocTags provide an unambiguous spatial scaffold regardless of the underlying language. Quantitatively, the mean infinite-loop rate drops from 3.9% to 2.4% across the seven industrial domains, with the largest absolute reductions on the most OOD subsets (HR: 7.4% →3.6% ; Finance EN: 4.6% →1.5% ; Energy: 
+
+4.3% →2.2% ); CS, already at 0.9% , is unchanged within noise. 
+
+OOD evaluation: Structural generalization NoveltySet is a proprietary dataset of over 10000 human annotated images, created within the Docling team. In our evaluation protocol, we treat NoveltySet as out-of-distribution (OOD) with respect to the entire training dataset , as it exhibits different page structures and object compositions. 7Table 3: Model performance on DocLayNet (ID) and NoveltySet (OOD). The two-stage model closes most of the OOD gap left by the baseline, raising F1 from 0.37 to 0.92 and edit distance from 0.78 to 
+
+0.39 on NoveltySet, while remaining competitive in-distribution.                                                   
+
+> Setting Model BLEU ↑F1-Score ↑Precision ↑Recall ↑Meteor ↑Edit-Dist. ↓
+> ID smol-docling 0.59 0.80 0.89 0.78 0.67 0.48 DeepSeek-OCR 0.61 0.82 0.88 0.80 0.77 0.29 granite-docling-258M 0.65 0.84 0.91 0.83 0.72 0.29
+> granite-docling-2stage-258M 0.70 0.85 0.92 0.83 0.79 0.27
+> OOD granite-docling-258M 0.10 0.37 0.94 0.26 0.25 0.78
+> granite-docling-2stage-258M 0.62 0.92 0.95 0.90 0.83 0.39
+
+To quantify this shift, we compute image-level representations for both training-set images and NoveltySet images using the frozen, fine-tuned vision encoder of granite-docling-2stage-258M . For an image xi, let Pi be the dynamic number of visual patches produced by the encoder. Each patch is represented by 64 tokens of dimension 576, so we denote patch-token features as Vi ∈ RPi×64 ×576 
+
+with elements Vi,p,t . We define the pooled embedding by averaging over all patch tokens: 
+
+zi = 164 PiPiX
+
+> p=1 64
+
+X
+
+> t=1
+
+Vi,p,t ∈ R576 .
+
+Using these embeddings, we quantify ID/OOD separation in two ways. First, we train a binary linear SVM to classify dataset labels (training data vs. NoveltySet), obtaining a near-perfect F1 score of 0.99. Second, we compute Maximum Mean Discrepancy (MMD) with an RBF kernel, yielding an unbiased MMD value of 0.512 .Full MMD kernel details are reported in Appendix Table 6, and SVM ROC and classification metrics are reported in Appendix Figure 5 and Table 7. Together, these results, along with the t-SNE visualization in Figure 3, show that NoveltySet occupies a distinct region in feature space, supporting its use as an OOD benchmark relative to the full training distribution. Having established NoveltySet as OOD, we benchmark produced Markdown text using the same metrics as DocLayNet. Results are reported in Table 3. 
+
+In Distribution evaluation DocLayNet [27] is a human-annotated dataset with 80,863 unique pages, resized to 1024 × 1024 , spanning six document categories. In this section, we compare Markdown extraction performance across DeepSeek-OCR [5], smol-docling [17], granite-docling-258M , and our fine-tuned model granite-docling-2stage-258M . Results are reported in Table 3. 
+
+granite-docling-2stage-258M matches or exceeds every in-distribution baseline on every metric, and in particular improves over the un-conditioned granite-docling-258M backbone across the board (BLEU 0.65 →0.70 , F1 0.84 →0.85 , edit distance 0.29 →0.27 ), indicating that the layout prior does not trade in-distribution accuracy for out-of-distribution robustness. 
+
+# 5 Experiments 
+
+We evaluate the proposed layout-injection framework with three complementary experiments: (1) Mechanistic interpretability of attention behavior, (2) Ablations for training, and (3) overhead of precomputation. 
+
+Experiment 1: Mechanistic Interpretability To evaluate the efficacy of structural prompt injection in mitigating recall errors, we conduct a mechanistic interpretability study on the model’s internal attention mechanisms. Specifically, we investigate the allocation of the decoder’s computational budget, quantified via attention weights, across visual embeddings and injected structural tokens during autoregressive generation. This analysis has been conducted on a single NVIDIA L4 GPU. For each document page, we perform a forward pass and extract the attention matrices from the language decoder at each decoding step t.Following the standard scaled dot-product attention [35], the attention weight matrix A for a given layer and head is defined as: 
+
+A = softmax 
+
+ QK ⊤
+
+√dk
+
+
+
+(3) 8To synthesize these signals across all layers L and heads H, we employ a max-pooling aggregation: 
+
+Agg( i, j ) = max  
+
+> l∈L ,h ∈H
+
+Al,h [i, j ] (4) The choice of the max operator over the arithmetic mean is strategic. While the mean may dilute sparse, high-magnitude attention signals, the max operator effectively isolates the primary "anchors" (e.g., coordinate tags or specific image patches) that exert the strongest influence on the current token’s hidden state. Our analysis reveals a distinct bimodal attention shift . When the decoder generates structural syntax (e.g., layout or coordinate tokens), the peak attention mass aligns predominantly with the injected layout tokens. Conversely, during the generation of textual content, attention reverts to the corresponding image patches and preceding context. This phase-shift is consistent with the two-hop decomposition: the injected layout tokens function as spatial priors that ground the VLM’s Hop 1 entity resolution in the precomputed structural metadata, which would otherwise have to be recovered from pixels during decoding. A complementary per-token attention-distribution plots for generated layout tags and location tokens are provided in Appendix Figures 6 and 7. 
+
+Experiment 2: Ablation Studies and Robustness Analysis A two-stage pipeline introduces a potential error propagation pathway, where inaccuracies in the layout precomputation stage may degrade downstream generation. To quantify this sensitivity, we conduct a multi-axis ablation on the DocLayNet test split [27], evaluating three perturbations: Permutation , comparing reading-order injection against randomized ordering, Stochastic Injection , varying injection probability (p ∈ { 0.8, 1.0}) to probe whether parsing capability is preserved when priors are absent and Partial Masking , applying a dropout rate of 0.3 over layout components to simulate missed detections. The results show that the VLM is a robust consumer of noisy layout metadata, maintaining high fidelity under all three perturbations. Full ablation results are provided in Appendix B, Table 5. 
+
+Experiment 3: Layout Precomputation Overhead We evaluate the computational cost of the proposed two-stage pipeline by benchmarking the inference runtime on the DocLayNet [27] test split using an NVIDIA A100 GPU. Excluding I/O operations, the docling-layout-heron detector executes at a median latency of only 28 ms per page. When integrated into the full pipeline, 
+
+granite-docling-2stage-258M achieves a median processing speed of 2.6 seconds per page, representing a marginal 15% overhead compared to the 2.26 seconds per page required by the baseline granite-docling-258M . In our experiments, this latency increase coincides with improved structural recall and decoding stability (see Section 4). Full cross-hardware runtime statistics, including performance on consumer-grade hardware, are provided in Appendix D.4 Moreover, we also measure the number of layout tokens injected into the prompt on the DocLayNet test split. Benchmarked on DocLayNet, a median of 74 tokens are added from the precomputation. Corresponding appendix details are provided in Appendix D.5, Table 13. 
+
+# 6 Conclusion and Limitations 
+
+We demonstrated that decoupling layout localization from content extraction significantly improves the out-of-distribution generalization of compact VLMs. By offloading layout analysis to a specialized detector and injecting explicit spatial anchors as prompt priors, our approach stabilizes decoding on dense, complex documents. This two-stage paradigm adds only 15% latency and a median of 
+
+74 prompt tokens, suggesting a practical path toward more reliable document parsing with compact VLMs. While promising, our findings have limitations. First, the pipeline relies on the upstream layout detector: although our ablations show the VLM is tolerant to moderate noise, arbitrarily poor structural proposals can yield misleading priors, and gains are not guaranteed to transfer uniformly to document families, scripts, or visual styles absent from our evaluation. Second, the two-stage paradigm introduces a practical systems trade-off between modest latency and the added detector, serialization, and prompt-budget cost, which may constrain ultra-strict deployments. Finally, because our study focuses on empirical performance and stability, the mechanisms by which structural priors improve generalization should be viewed as evidence-backed hypotheses rather than complete causal explanations. 9References 
+
+[1] D. Baviskar, S. Ahirrao, and K. Kotecha. “Multi-Layout Unstructured Invoice Documents Dataset: A Dataset for Template-Free Invoice Processing and Its Evaluation Using AI Ap-proaches”. In: Ieee Access 9 (2021), pp. 101494–101512. DOI : 10.1109/access.2021. 3096739 .[2] Geewook Kim et al. “OCR-free Document Understanding Transformer”. In: arXiv preprint arXiv:2111.15664 (2022). [3] Lukas Blecher et al. Nougat: Neural Optical Understanding for Academic Documents . 2023. arXiv: 2308.13418 [cs.LG] . URL : https://arxiv.org/abs/2308.13418 .[4] Nikolaos Livathinos et al. Docling: An Efficient Open-Source Toolkit for AI-driven Document Conversion . 2025. arXiv: 2501.17887 [cs.AI] . URL : https://arxiv.org/abs/2501. 17887 .[5] Haoran Wei, Yaofeng Sun, and Yukun Li. DeepSeek-OCR: Contexts Optical Compression .2025. arXiv: 2510.18234 [cs.CV] . URL : https://arxiv.org/abs/2510.18234 .[6] Shuai Bai et al. Peng Wang. Qwen2-VL: Enhancing Vision-Language Model’s Perception of the World at Any Resolution . 2024. arXiv: 2409.12191 [cs.CV] . URL : https://arxiv. org/abs/2409.12191 .[7] Haoran Wei et al. General OCR Theory: Towards OCR-2.0 via a Unified End-to-end Model .2024. arXiv: 2409.01704 [cs.CV] . URL : https://arxiv.org/abs/2409.01704 .[8] Ido Cohen et al. Performance Gap in Entity Knowledge Extraction Across Modalities in Vision Language Models . 2026. arXiv: 2412.14133 [cs.CL] . URL : https://arxiv.org/abs/ 2412.14133 .[9] Constantin Venhoff et al. Too Late to Recall: Explaining the Two-Hop Problem in Multimodal Knowledge Retrieval . 2025. arXiv: 2512.03276 [cs.AI] . URL : https://www.arxiv.org/ abs/2512.03276 .[10] Yian Zhao et al. DETRs Beat YOLOs on Real-time Object Detection . 2024. arXiv: 2304.08069 [cs.CV] . URL : https://arxiv.org/abs/2304.08069 .[11] Hao Feng et al. Dolphin: Document Image Parsing via Heterogeneous Anchor Prompting .2025. arXiv: 2505.14059 [cs.CV] . URL : https://arxiv.org/abs/2505.14059 .[12] Shuaiqi Duan et al. GLM-OCR Technical Report . 2026. arXiv: 2603.10910 [cs.CL] . URL :
+
+https://arxiv.org/abs/2603.10910 .[13] Mayank Singh et al. OCR++: A Robust Framework For Information Extraction from Scholarly Articles . 2016. arXiv: 1609 . 06423 [cs.DL] . URL : https : / / arxiv . org / abs / 1609 . 06423 .[14] Rasha Sinha and Rekha B S. Digitization of Document and Information Extraction using OCR .2025. arXiv: 2506.11156 [cs.CV] . URL : https://arxiv.org/abs/2506.11156 .[15] Shruti Rijhwani, Antonios Anastasopoulos, and Graham Neubig. “OCR Post Correction for Endangered Language Texts”. In: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) . Ed. by Bonnie Webber et al. Online: Association for Computational Linguistics, Nov. 2020, pp. 5931–5942. DOI : 10.18653/v1/2020.emnlp-main.478 . URL : https://aclanthology.org/2020.emnlp-main.478/ .[16] Juan Ramirez-Orta et al. Post-OCR Document Correction with large Ensembles of Character Sequence-to-Sequence Models . 2022. arXiv: 2109.06264 [cs.CL] . URL : https://arxiv. org/abs/2109.06264 .[17] Ahmed Nassar et al. SmolDocling: An ultra-compact vision-language model for end-to-end multi-modal document conversion . 2025. arXiv: 2503.11576 [cs.CV] . URL : https: //arxiv.org/abs/2503.11576 .[18] Xu Yiheng et al. “LayoutLM: Pre-training of Text and Layout for Document Image Under-standing”. In: Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining . KDD ’20. ACM, Aug. 2020, pp. 1192–1200. DOI : 10.1145/ 3394486.3403172 . URL : http://dx.doi.org/10.1145/3394486.3403172 .[19] Yang Xu et al. LayoutLMv2: Multi-modal Pre-training for Visually-Rich Document Understand-ing . 2022. arXiv: 2012.14740 [cs.CL] . URL : https://arxiv.org/abs/2012.14740 .[20] Yupan Huang et al. LayoutLMv3: Pre-training for Document AI with Unified Text and Image Masking . 2022. arXiv: 2204 . 08387 [cs.AI] . URL : https : / / arxiv . org / abs / 2204 . 08387 .10 [21] Jean-Baptiste Alayrac et al. Flamingo: a Visual Language Model for Few-Shot Learning . 2022. arXiv: 2204.14198 [cs.CV] . URL : https://arxiv.org/abs/2204.14198 .[22] Haotian Liu et al. The Llama 3 Herd of Models . 2024. arXiv: 2407.21783 [cs.AI] . URL :
+
+https://arxiv.org/abs/2407.21783 .[23] Andrés Marafioti et al. SmolVLM: Redefining small and efficient multimodal models . 2025. arXiv: 2504.05299 [cs.AI] . URL : https://arxiv.org/abs/2504.05299 .[24] Zhaoqing Zhu et al. A Simple yet Effective Layout Token in Large Language Models for Document Understanding . 2025. arXiv: 2503.18434 [cs.CV] . URL : https://arxiv.org/ abs/2503.18434 .[25] Ari Holtzman et al. The Curious Case of Neural Text Degeneration . 2020. arXiv: 1904.09751 [cs.CL] . URL : https://arxiv.org/abs/1904.09751 .[26] Alexey Gritsenko et al. Michael Tschannen. SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features . 2025. arXiv: 
+
+2502.14786 [cs.CV] . URL : https://arxiv.org/abs/2502.14786 .[27] Birgit Pfitzmann et al. “DocLayNet: A Large Human-Annotated Dataset for Document-Layout Segmentation”. In: Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . KDD ’22. ACM, Aug. 2022, pp. 3743–3751. DOI : 10.1145/ 3534678.3539043 . URL : http://dx.doi.org/10.1145/3534678.3539043 .[28] Nikolaos Livathinos et al. Advanced Layout Analysis Models for Docling . 2025. arXiv: 2509. 11720 [cs.CV] . URL : https://arxiv.org/abs/2509.11720 .[29] Joseph Redmon et al. You Only Look Once: Unified, Real-Time Object Detection . 2016. arXiv: 
+
+1506.02640 [cs.CV] . URL : https://arxiv.org/abs/1506.02640 .[30] Maurice Weber et al. WordScape: a Pipeline to extract multilingual, visually rich Documents with Layout Annotations from Web Crawl Data . 2023. arXiv: 2312.10188 [cs.LG] . URL :
+
+https://arxiv.org/abs/2312.10188 .[31] Hugo Laurençon et al. What matters when building vision-language models? 2024. arXiv: 
+
+2405.02246 [cs.CV] . URL : https://arxiv.org/abs/2405.02246 .[32] Haotian Liu et al. Visual Instruction Tuning . 2023. arXiv: 2304 . 08485 [cs.CV] . URL :
+
+https://arxiv.org/abs/2304.08485 .[33] Linke Ouyang et al. OmniDocBench: Benchmarking Diverse PDF Document Parsing with Comprehensive Annotations . 2025. arXiv: 2412.07626 [cs.CV] . URL : https://arxiv. org/abs/2412.07626 .[34] António Loison et al. ViDoRe V3: A Comprehensive Evaluation of Retrieval Augmented Generation in Complex Real-World Scenarios . 2026. arXiv: 2601.08620 [cs.AI] . URL :
+
+https://arxiv.org/abs/2601.08620 .[35] Ashish Vaswani et al. Attention Is All You Need . 2023. arXiv: 1706.03762 [cs.CL] . URL :
+
+https://arxiv.org/abs/1706.03762 .11 Table 4: Training hyperparameters for the proposed two-stage document parser. 
+
+Hyperparameter Value 
+
+Vision encoder SigLIP-2 Language model Granite-165M Multimodal connector Pixel-shuffle projector / MLP Optimizer AdamW Learning-rate schedule Linear warmup (500 steps) + cosine decay Backbone learning rate ηbackbone 2 × 10 −5
+
+Projector learning rate ηmp 5.12 × 10 −4
+
+Gradient clipping Max norm 1.0
+
+Per-device batch size 2Gradient accumulation steps 8Effective batch size 1,024 Hardware 64 × NVIDIA H100 80GB Total training steps 244,140 across phases T1, T2, and T3
+
+Phase-3 training loss Masked cross-entropy excluding location tokens Detector confidence threshold τ 0.6 Detector NMS IoU threshold ι 0.5 Detector post-processing Confidence filtering, fragment merging, and NMS 
+
+Table 5: Performance comparison across various structural augmentation parameters. Configurations follow the naming convention [S]-[P]-[D]: S indicates shuffling (ys) or in-order injection (ns), P denotes the probability of layout injection per sample, and D represents the dropout ratio, where a random subset of detected components is discarded for a percentage of samples. 
+
+Configuration BLEU F1-Score Precision Recall METEOR Edit-Dist ns - 0.8 - 0.0 0.684 0.850 0.907 0.819 0.766 0.276 ns - 1.0 - 0.0 0.680 0.851 0.909 0.816 0.770 0.274 ys - 0.8 - 0.0 0.677 0.846 0.903 0.812 0.761 0.280 ys - 1.0 - 0.0 0.690 0.854 0.913 0.822 0.772 0.273 ys - 1.0 - 0.3 0.691 0.856 0.913 0.825 0.774 0.271 
+
+# A Training Hyperparameters 
+
+Table 4 summarizes the model, optimization, and detector settings used throughout all training phases. 
+
+# B Ablation Study Results 
+
+Table 5 reports the ablation results for structural augmentation on the DocLayNet [27] test split. 
+
+# C Out-of-Distribution Shift Validation 
+
+This appendix summarizes the quantitative checks used to support our treatment of NoveltySet as an out-of-distribution benchmark relative to the training distribution. We report two complementary diagnostics: a kernel-based two-sample test over pooled vision embeddings and a linear separability analysis based on dataset-label prediction. Together, these results provide additional context for the OOD evaluation presented in Section 4. 
+
+C.1 MMD heuristic and kernel settings for ID/OOD separation 
+
+Table 6 reports the kernel configuration and resulting MMD values used in Section 4. 
+
+C.2 SVM ROC and classification scores for ID/OOD separability 
+
+Figure 5 reports the ROC curve of the linear SVM used for dataset-label separation, and Table 7 reports the corresponding classification scores on DocLayNet. 12 Table 6: MMD summary for training-data (ID) vs NoveltySet (OOD) using pooled vision embeddings. 
+
+Metric Value Feature dimension 576 
+
+σ (median heuristic) 82.984 
+
+γ = 1 /(2 σ2) 7.26074 × 10 −5
+
+MMD 2biased 0.262944 
+
+MMD 2unbiased 0.262272 
+
+MMD biased 0.512781 
+
+MMD unbiased 0.512125 
+
+0.0 0.2 0.4 0.6 0.8 1.0 False positive rate 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 True positive rate 
+
+AUC-ROC: training-data vs. NoveltySet AUC = 0.9999 
+
+SVM (NoveltySet positive), AUC = 0.9999 
+
+Chance (AUC = 0.50) Figure 5: Linear SVM ROC curve for training-data vs NoveltySet separability. Table 7: Linear SVM evaluation scores on DocLayNet. 
+
+Metric Value Precision 1.0000 Recall 0.9748 F1 0.9872 
+
+13 Figure 6: Attention distribution conditioned on generating a location token. The mass concentrates on injected structural tokens, consistent with the decoder relying on prompt-level layout priors while emitting document structure. 
+
+C.3 Mechanistic attention heatmap 
+
+Figures 6 and 7 further break this behavior down by generated token type. They report the attention distribution when the decoder emits a layout tag and when it emits a location token, respectively, making the bimodal shift discussed in Section 5 explicit. 
+
+C.4 OmniDocBench English-only comparison 
+
+Table 8 reports the full English-only OmniDocBench comparison referenced in Section 4, including larger specialist and general-purpose baselines. 14 Figure 7: Attention distribution conditioned on generating a layout token. The distribution remains concentrated on structural prompt tokens, consistent with the decoder using serialized coordinates to resolve spatial structure before returning to image-grounded content extraction. 
+
+# D The docling-layout-heron detector 
+
+D.1 Class list 
+
+The docling-layout-heron detector predicts 17 layout classes, listed in Table 9. 
+
+D.2 DocTags 
+
+DocTags constitute a subset of the model’s expanded tokenizer, representing document structure. As detailed in Table 10, these tags are categorized into: (i) Layout Tags , which provide semantic classification for document regions, and (ii) Location Tags , which define spatial coordinates via a discrete grid of 501 quantized tokens. 
+
+D.3 Mapping Heron output to DocTags 
+
+This subsection illustrates how raw layout detections are converted into the DocTags sequence used by granite-docling-258M .
+
+Original detections from Heron. 
+
+> section-header: [49, 42, 197, 51] text: [132, 56, 432, 71] list-item: [132, 73, 421, 81] list-item: [132, 82, 188, 90] text: [131, 98, 246, 105] picture: [132, 106, 440, 257] text: [132, 269, 443, 291] caption: [132, 296, 295, 302] otsl: [131, 302, 441, 459] page-footer: [48, 471, 183, 478]
+
+15 Table 8: English-only OmniDocBench comparison across state-of-the-art models. Metrics are edit distance ( ↓) for text, table, formula, and reading order. 
+
+Lang. Model Size Text Table Formula RO 
+
+ZH granite-docling-258M 0.25B 0.84 0.98 0.86 0.73 
+
+granite-docling-2stage-258M 0.25B 0.62 0.57 0.84 0.52 
+
+EN GPT4o ±200B 0.144 0.234 0.425 0.128 Gemini2.5-Pro 128B 0.055 0.130 0.356 0.049 
+
+InternVL3-78B 78B 0.117 0.279 0.380 0.095 InternVL2-76B 76B 0.353 0.547 0.543 0.317 Qwen2.5-VL-72B 72B 0.092 0.341 0.315 0.106 Dolphin 8B 0.352 0.465 0.258 0.35 Qwen2.5-VL-7B 7B 0.151 0.598 0.376 0.138 olmOCR 7B 0.097 0.608 0.455 0.145 OCRFlux-3B 3B 0.112 0.269 0.447 0.126 DeepSeek-OCR (Large) 3B 0.054 0.277 0.152 0.067 dots.ocr 1.7B 0.137 0.166 0.320 0.182 GOT-OCR2.0 0.9B 0.189 0.459 0.360 0.141 Nougat 0.35B 0.365 0.572 0.488 0.382 granite-docling-258M 0.25B 0.78 0.44 0.31 0.69 SmolDocling 0.25B 0.262 0.729 0.753 0.227 
+
+granite-docling-2stage-258M 0.25B 0.17 0.34 0.29 0.19 Table 9: Heron layout-object class map used in this work.                   
+
+> Class ID Class Name 0Caption 1Footnote 2Formula 3List-item 4Page-footer 5Page-header 6Picture 7Section-header 8Table 9Text 10 Title 11 Document Index 12 Code 13 Checkbox-Selected 14 Checkbox-Unselected 15 Form 16 Key-Value Region
+
+Table 10: DocTag Vocabulary: Specialized tokens integrated into the granite-docling-258M tokenizer. We introduce <otsl> to represent Optimized Table Structure Language for hierarchical cell extrac-tion.             
+
+> Tag Category Tokens / Range Layout Tags <page_header> ,<section_header> ,
+> <unordered_list> ,<ordered_list> ,
+> <list_item> ,<text> ,<otsl> ,
+> <picture> ,<page_break> ,
+> <formula> ,<code> ,<page_footer>
+> Location Tags <loc_0> . . . <loc_500>
+
+16 Serialized DocTags prompt fragment. 
+
+<section_header><loc_49><loc_42><loc_197><loc_51></section_header> <text><loc_132><loc_56><loc_432><loc_71></text> <list_item><loc_132><loc_73><loc_421><loc_81></list_item> <list_item><loc_132><loc_82><loc_188><loc_90></list_item> <text><loc_131><loc_98><loc_246><loc_105></text> <picture><loc_132><loc_106><loc_440><loc_257></picture> <text><loc_132><loc_269><loc_443><loc_291></text> <caption><loc_132><loc_296><loc_295><loc_302></caption> <otsl><loc_131><loc_302><loc_441><loc_459></otsl> <page_footer><loc_48><loc_471><loc_183><loc_478></page_footer> 
+
+Final prompt injected. 
+
+Convert this page to Docling: <layout> <section_header><loc_49><loc_42><loc_197><loc_51></section_header> <text><loc_132><loc_56><loc_432><loc_71></text> <list_item><loc_132><loc_73><loc_421><loc_81></list_item> <list_item><loc_132><loc_82><loc_188><loc_90></list_item> <text><loc_131><loc_98><loc_246><loc_105></text> <picture><loc_132><loc_106><loc_440><loc_257></picture> <text><loc_132><loc_269><loc_443><loc_291></text> <caption><loc_132><loc_296><loc_295><loc_302></caption> <otsl><loc_131><loc_302><loc_441><loc_459></otsl> <page_footer><loc_48><loc_471><loc_183><loc_478></page_footer> </layout> 
+
+D.4 Runtime Overhead 
+
+Runtime performance of docling-layout-heron in 3 hardware configurations: a single AMD EPYC 7763 64-Core, a single Nvidia A100-80GB and an Apple MacBook M3 with MPS enabled. 
+
+Device Batch-Size Model mean min max 
+
+CPU 32 heron 0.643 0.141 0.826 CUDA 100 heron 0.030 0.026 0.099 200 heron 0.031 0.027 0.068 500 heron 0.026 0.026 0.027 MPS 50 heron 0.044 0.041 0.051 100 heron 0.060 0.041 0.091 Table 11: Inference runtime per image in seconds for the Heron model on various batch sizes. CPU=AMD EPYC 7763 (4 threads). GPU=A100 80GB. MPS=M3 Max, 40 cores, 64GB. Runtime performance of granite-docling-2stage-258M compared to granite-docling-258M bench-marked on DocLayNet test set. Table 12: Comparative inference runtime (s/page) on DocLayNet (NVIDIA A100, BS=1). 
+
+Model Configuration Mean Median Std. Dev. 
+
+granite-docling-258M 2.26 1.96 1.52 
+
+granite-docling-2stage-258M 2.61 2.29 1.68 
+
+Abs. Overhead +0.35 +0.33 –
+
+Rel. Increase 15.4% 16.8% –
+
+17 Table 13: Prompt token overhead from docling-layout-heron on DocLayNet. 
+
+Statistic Tokens per page 
+
+Min 0Max 590 Median 74 Mean 80.28 
+
+D.5 Prompt Token Overhead 
+
+Token-overhead statistics for layout-prior injection on the DocLayNet test split are summarized in Table 13. 18
