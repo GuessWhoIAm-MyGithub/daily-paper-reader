@@ -1,0 +1,684 @@
+Title: NuGraph: Graph-Based Reasoning over 3D Primitives for Nucleus Segmentation Correction
+
+URL Source: https://www.biorxiv.org/content/10.64898/2026.05.16.725603v1.full.pdf
+
+Number of Pages: 10
+
+Markdown Content:
+> IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026 1
+
+# NuGraph: Graph-Based Reasoning over 3D Primitives for Nucleus Segmentation Correction 
+
+Mingzhi Wang, Peng Liu, Yi Zhao, Bingzhang Wang, Jia Wan, Liqiang Nie, Donglai Wei 
+
+Abstract — Correcting segmentation errors in large-scale 3D nuclei reconstructions requires reasoning about which fragments belong to the same nucleus across densely packed regions. Existing correction methods rely on local pairwise fragment matching, which cannot resolve the global topology of nuclear clusters and fails to recover missing morphology. We propose N UGRAPH , a graph-based rea-soning framework that operates over atomic 3D primitives obtained by decomposing erroneous masks. N UGRAPH 
+
+encodes primitive geometry via a 3D point-cloud backbone and performs global relational reasoning through graph attention, capturing inter-primitive dependencies across en-tire clusters rather than isolated pairs. A primitive–proposal contrastive loss aligns local primitive features with nucleus-level semantics, improving grouping accuracy in dense regions. The resulting proposals are then refined by a shape-refinement network that predicts signed distance fields to restore smooth morphology. To train without manual error annotations, we develop a self-supervised data engine that synthesizes realistic segmentation errors from clean nuclei labels. To benchmark correction at brain scale, we curate NucEMFix, the first brain-wide EM benchmark of nuclei error cases across FAFB and MICrONS (8,000+ annotated error nuclei). N UGRAPH attains 87.99% F1 on NucEMFix-F (FAFB) and 86.20% on NucEMFix-M (MICrONS), outperforming both re-segmentation baselines (e.g., +8.6% over nnU-Net) and pairwise correction methods, while reducing curation effort by over 100 × relative to manual proofreading. Code and data are available at https://mingzhiwang618.github. io/NucEMFix .
+
+Index Terms — Graph reasoning, nuclei segmentation, error correction, connectomics, 3D point cloud 
+
+I. I NTRODUCTION 
+
+# ACCURATE 3D nuclei segmentation provides the foun-dation for a wide range of biological studies—from development and regeneration to large-scale anatomy [1], [2]. In neuroscience, nuclei serve as spatial anchors linking cellular identity to circuit reconstruction and cross-scale integration [3]– [6], and segmentation quality directly impacts downstream anal-yses [7]–[9]. As shown in Fig. 1, landmark EM datasets such 
+
+This work was supported by the National Science Foundation (NSF) CAREER Award (IIS-2239688), National Natural Science Foundation of China under Project 62406090, and Lingang Laboratory, Grant No. LGL-1987-03. Mingzhi Wang, Bingzhang Wang, Jia Wan and Liqiang Nie are with the School of Computer Science and Technology, Harbin Institute of Technology (Shenzhen), Shenzhen 518055, China (email: wangmingzhi618@gmail.com, wbz2003@connect.hku.hk, ji-awan1998@gmail.com, nieliqiang@gmail.com). Peng Liu, Yi Zhao and Donglai Wei are with the Department of Computer Science, Boston College (email: peng.liu@bc.edu, zgao18723122430@gmail.com, donglai.wei@bc.edu) (a) Contact  (b) Misalignment  (c) Missing slice 
+
+(d) Large false merge&split  (e) Human mistakes 
+
+Fig. 1. Long-tail nuclei segmentation errors in public 3D microscopy datasets: (a) ambiguous contact between nuclei yielding false merges; (b) misalignment with discontinuous objects; (c) missing slices with axial gaps; (d) merge–split hybrids from misalignment and dense packing; (e) annotation artifacts. 
+
+as FAFB and MICrONS have unlocked cellular-scale mapping at unprecedented scope, yet their released nuclei segmentations still contain errors despite extensive proofreading [10], [11]. The last mile of 3D nuclei segmentation is dominated by rare, heterogeneous failures—false merges in densely packed regions due to weak boundary cues [12] and false splits from acquisition artifacts disrupting z-axis continuity [13]. Correcting these errors demands reasoning about which fragments belong to the same nucleus, yet most prior correction methods rely on local pairwise fragment matching [14]–[16]. These approaches face a fundamental limitation: local pairwise decisions cannot resolve the global topology of densely packed nuclear clusters. Unlike neurons, where skeletons provide explicit merge candidates, nuclei lack such structural priors, making local reasoning insuf-ficient for complex merge–split cases. Furthermore, pairwise matching cannot recover missing morphology caused by axial gaps or EM artifacts, which is critical for downstream cell typing and morphological analysis. To address this, we propose N UGRAPH , a graph-based reasoning framework that operates over atomic 3D primitives decomposed from erroneous masks, reducing diverse error types to a common structural representation. Graph attention reasons across all primitives in a cluster, capturing the global topological context that local pairwise methods miss, while a primitive–proposal contrastive loss aligns local primitive features with nucleus-level semantics. A shape-refinement head 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint 2 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026 Output (c) Shape refinement Input        
+
+> Atomic Primitives Point Cloud Nucleus Proposal Graph Reasoning
+> (b) Graph -based relational reasoning (a) Shape decomposition
+> Fig. 2. Overview of the N UGRAPH framework. (a) Shape decomposition : erroneous masks are split into atomic 3D primitives via EDT-based watershed. (b) Graph-based relational reasoning : point-cloud features of primitives are encoded and reasoned over by a graph network to group them into nucleus proposals. (c) Shape refinement : a 3D U-Net predicts signed distance fields to restore complete nucleus morphology. A self-supervised data engine synthesizes realistic errors from clean labels for training.
+
+then predicts signed distance fields to restore smooth morphol-ogy. To eliminate manual error annotation, we develop a self-supervised data engine that synthesizes realistic segmentation errors from clean labels. To benchmark correction at brain scale, we curate NucEM-Fix , a systematic benchmark of nuclei error cases across FAFB (Drosophila) and MICrONS (Mouse), encompassing over 8,000 annotated error nuclei. Across both datasets, NUGRAPH consistently outperforms re-segmentation baselines and pairwise correction methods. The main contributions are:  
+
+> •
+
+Graph-based nucleus reasoning. We formulate nucleus error correction as relational reasoning over atomic 3D primitives, using graph attention with primitive–proposal contrastive alignment to overcome the limitations of local pairwise methods.  
+
+> •
+
+NucEMFix benchmark. The first brain-wide EM bench-mark (FAFB, MICrONS) for nuclei correction, featuring 8,000+ annotated error nuclei with diverse failure modes and a self-supervised data engine for scalable training.  
+
+> •
+
+State-of-the-art performance. NUGRAPH achieves the highest F1 scores on NucEMFix, outperforming re-segmentation and pairwise correction baselines. 
+
+II. R ELATED WORK 
+
+A. 3D Nuclei Instance Segmentation 
+
+Voxel-wise approaches such as 3D U-Net [17] and nnU-Net [18] learn semantic masks but struggle to separate tightly packed instances. Shape-aware methods introduce geometric priors: StarDist [19] parametrizes nuclei as star-convex polyhe-dra, while Cellpose [20] predicts spatial gradient flows. Despite these advances, deploying general-purpose segmenters on large-scale, anisotropic EM volumes remains challenging due to the interplay of low axial resolution, image artifacts, and dense cellular packing, producing characteristic false merges and false splits that require dedicated correction. Public benchmarks span modalities and species, including 
+
+C. elegans [21], rodent and human tissue [1], [22], and cancer cell lines [23]. NucMM [24] provides large-scale microCT and EM nuclei volumes, and NIS3D [25] offers densely annotated 3D fluorescence data. These resources focus on segmenting all nuclei from scratch. Our NucEMFix complements them by targeting the last-mile error space in brain-scale EM, supplying curated error cases for correction benchmarking. 
+
+B. Segmentation Error Correction in Connectomics 
+
+Automated proofreading has primarily targeted neuron 
+
+reconstruction via multiscale error detection [26], topological priors [14], [27], or skeleton-based tracing [28]–[30]. Pairwise approaches classify fragment pairs for merging using point-cloud features [15] or learned edge networks [16]. Graph-based formulations such as multicut and agglomeration [31], [32] optimize global partitioning with learned edge weights but typically initialize edges only between adjacent supervoxels, limiting their ability to reason over densely packed structures. Transferring these paradigms to nuclei faces fundamental challenges. Nuclei are volumetric blobs rather than curvilin-ear structures, so simply linking fragments cannot recover complete morphology. Nuclei also form dense clusters where local adjacency is ambiguous and global context is essential. NUGRAPH addresses both: graph attention captures global topology across entire clusters, and SDF refinement restores smooth morphology in postprocessing. 
+
+III. M ETHODOLOGY 
+
+A. Overview 
+
+We formulate nucleus error correction as a relational reason-ing problem over atomic 3D primitives. As illustrated in Fig. 2, NUGRAPH operates in three stages: (1) shape decomposition ,which decomposes erroneous masks into atomic primitives 
+
+P = {pi}Ni=1 ; (2) graph-based relational reasoning , which groups primitives into nucleus proposals C = {C k}Kk=1 via global graph attention; and (3) shape refinement , which restores complete morphology by predicting signed distance fields for each proposal, yielding the final output M∗ = SKk=1 M∗
+
+> k
+
+.
+
+B. Shape Decomposition 
+
+To reduce diverse error types to a common representation, we decompose erroneous masks into atomic 3D primitives. Given a mask M0, we apply realignment preprocessing [33], remove severely degraded slices, compute the Euclidean Distance Transform (EDT), and apply watershed on the negated EDT to split at geometric bottlenecks. Specifically, local maxima of the EDT are identified as watershed seeds using a minimum peak distance of dmin = 10 voxels, ensuring that only sufficiently separated geometric centers generate distinct primitives. This produces an over-complete set of primitives P = {pi}. Small fragments below volume vmin are merged with neighbors, reframing error correction as a structured grouping problem.          
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint AUTHOR et al. : NUGRAPH: GRAPH-BASED REASONING OVER 3D PRIMITIVES FOR NUCLEUS SEGMENTATION CORRECTION 33D backbone GAT
+> Nucleus Proposal Primitives Surface Point
+> Max Pooling
+> Avg Pooling
+> MLP
+> Weighted Sum
+> MLP
+> MLP
+> Weighted Sum
+> Point-wise
+> Feature 𝑓𝑓 𝑖𝑖 ℎ𝑖𝑖
+> Primitive Feature Extraction
+> Primitive Features Proposal Feature Prop
+> Pull Pu
+> (b) Primitive-Proposal Contrastive Lea
+> Fig. 3. Graph-based relational reasoning: surface points of primitives are encoded by a 3D backbone, then aggregated into primitive-level features via dual-path attention pooling. Graph attention networks capture global topological context, with primitive–proposal contrastive learning aligning local primitives with global proposal structure. Edge classification groups primitives into nucleus proposals.
+
+C. Graph-Based Relational Reasoning 
+
+As illustrated in Fig. 2(b), the core of N UGRAPH is relational reasoning over primitives: determining which fragments belong to the same nucleus by capturing global context across entire clusters, rather than making isolated pairwise comparisons. The detailed architecture of this stage is further illustrated in Fig. 3. 
+
+Geometric Feature Encoding . Given primitives P = {pi},we sample surface points from all primitives as a unified input and process them through a point-cloud encoder to obtain point-wise features F ∈ RNpts ×C :
+
+F = Φ enc (P), (1) where Φenc denotes the 3D Sparse-UNet [34] backbone, and the input surface point coordinates are normalized before encoding. 
+
+Primitive Feature Extraction . To aggregate point-level fea-tures {fj }j∈pi into a compact descriptor hi for each primitive 
+
+pi, we employ a dual-path residual attention pooling module to capture both local salient and overall contextual features. Specifically, let fj ∈ RC denote the point-wise feature of point j extracted from F, and f mean  
+
+> i
+
+= 1
+
+> |pi|
+
+P 
+
+> j∈pi
+
+fj and 
+
+f max  
+
+> i
+
+= max j∈pi fj the mean- and max-pooled features of primitive pi, respectively. We compute residual features f mean  
+
+> i
+
+−
+
+fj and f max  
+
+> i
+
+− fj , which quantify the relative contribution and spatial saliency of each point j within primitive pi.Two separate MLPs process these residuals to generate attention weights, which are normalized via softmax. The final primitive descriptor is obtained by concatenating the attention-weighted aggregations from both paths and passing through a fusion MLP: 
+
+hi = MLP 
+
+X
+
+> j∈pi
+
+αmean  
+
+> j
+
+fj ; X
+
+> j∈pi
+
+αmax  
+
+> j
+
+fj
+
+ , (2) where αmean  
+
+> j
+
+and αmax  
+
+> j
+
+are the softmax-normalized attention weights for the mean and max pooling paths, respectively. 
+
+Graph Reasoning . Given the primitive descriptors {hi}
+
+obtained from the previous module, we construct an undirected graph G = ( V, E) where each node vi ∈ V corresponds to a primitive pi with feature hi. Two nodes are connected by an edge if the minimum pairwise distance between their surface points is below a threshold d (measured in voxels): 
+
+(vi, v j ) ∈ E ⇐⇒ min 
+
+> p∈pi,q∈pj
+
+∥p − q∥2 < d. (3) To capture high-order topological context, we employ an 
+
+L-layer Graph Attention Network (GAT) [35] to iteratively refine node features. Specifically, given initial node features 
+
+h(0)  
+
+> i
+
+= hi, the l-th layer computes: 
+
+e(l) 
+
+> ij
+
+= a(l)⊤LeakyReLU( W(l) 
+
+> s
+
+h(l−1)  
+
+> i
+
++ W(l) 
+
+> t
+
+h(l−1)  
+
+> j
+
+), (4) 
+
+α(l) 
+
+> ij
+
+= exp( e(l) 
+
+> ij
+
+)
+
+P   
+
+> vk∈N (vi)∪{ vi}
+
+exp( e(l) 
+
+> ik
+
+) , (5) 
+
+h(l) 
+
+> i
+
+= X  
+
+> vj∈N (vi)∪{ vi}
+
+α(l) 
+
+> ij
+
+W(l) 
+
+> t
+
+h(l−1)  
+
+> j
+
++ b(l), (6) where W(l) 
+
+> s
+
+, W(l) 
+
+> t
+
+are learnable linear projection matrices for the source and target nodes, respectively, a(l) is a learnable attention vector, b(l) is a bias term, and α(l) 
+
+> ij
+
+denotes the normalized attention coefficient from node vj to node vi at layer l. We then obtain the refined node features h′ 
+
+> i
+
+= h(L) 
+
+> i
+
+,where we set L = 2 by default. Given these refined features, we classify each edge to determine whether the connected primitives belong to the same nucleus. For each edge (vi, v j ) ∈ E , we concatenate the node features and pass them through an MLP classifier: 
+
+sij = MLP([ h′
+
+> i
+
+; h′ 
+
+> j
+
+]) , (7) where sij is the predicted logit score. Edges with predicted probability σ(sij ) > τ e are retained to form a pruned graph 
+
+G′ = ( V, E′), where we set τe = 0 .5 as threshold under our balanced positive/negative edge sampling: 
+
+E′ = {(vi, v j ) ∈ E | σ(sij ) > τ e}, (8) We then extract connected components from G′ as nucleus proposals {C k}Kk=1 , where each proposal Ck represents a set of primitives predicted to belong to the same nucleus instance. 
+
+Primitive–Proposal Contrastive Alignment . Graph reasoning refines primitive features via spatial interactions, but many primitives remain geometrically incomplete, forming irregular sheet-like structures due to missing slices. These fragments lack holistic nucleus semantics, limiting graph-based reasoning. As shown in Fig. 4, to bridge local primitive features with global nucleus-level semantics, we introduce a primitive– proposal contrastive loss. For each nucleus proposal Ck, we aggregate features from all component primitives using the same attention pooling module to obtain a proposal embedding 
+
+ck. The contrastive objective aligns each primitive feature with      
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint 4IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026 Nucleus Proposal
+> ℎ!
+> Primitive Features Primitive Features Proposal Feature Proposal Feature
+> Pull Push
+> (b) Primitive -Proposal Contrastive Learning
+
+Fig. 4. Primitive–proposal contrastive alignment. Each primitive is pulled toward its proposal embedding while proposal embeddings are pushed apart, bridging local primitive features with nucleus-level semantics. 
+
+its corresponding proposal while enforcing separation between proposals: 
+
+Lcontrast = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥hi − cyi ∥22
+
++ 1
+
+K(K − 1) 
+
+X 
+
+> k̸=l
+
+max(0 , m − ∥ ck − cl∥2)2 ,
+
+(9) where yi is the ground-truth nucleus index of primitive i,and m is the margin enforcing minimum separation between proposal embeddings. During training, proposals Ck are formed by grouping primitives according to ground-truth nucleus labels (rather than predicted edges) to provide a stable target for alignment; at inference they are produced by the predicted edge classifier as in Eq. (8). 
+
+Overall Training Objective . The complete loss combines edge classification with contrastive learning: 
+
+Ltotal = LBCE + λcontrast Lcontrast , (10) where λcontrast is a weighting coefficient, and the edge classification loss LBCE is defined as 
+
+LBCE = − 1
+
+|E| 
+
+X
+
+> (i,j )∈E
+
+h
+
+yij log σ(sij )+(1 −yij ) log  1−σ(sij )i
+
+,
+
+(11) where yij ∈ { 0, 1} denotes the ground truth label indicating whether primitives i and j belong to the same ground-truth nucleus, and σ(·) is the sigmoid function. 
+
+Self-Supervised Training . To learn relational reasoning with-out manual error annotations, we synthesize realistic segmenta-tion errors from clean nuclei masks. We randomly place 1–20 nuclei in a shared 3D space, iteratively displacing each along random directions until it contacts existing nuclei, creating stochastic overlaps that mimic false merges. The nuclei are then truncated along the axial direction and fragmented via EDT-watershed—consistent with the input representation stage—to generate labeled primitives for self-supervised training. 
+
+D. Shape Refinement 
+
+After relational reasoning produces nucleus proposals Ck, a shape-refinement network restores complete morphology by predicting a continuous signed distance field (SDF). For each voxel v, the SDF is defined as S(v) = −d(v, ∂ Ω) if v ∈ Ω
+
+and S(v) = d(v, ∂ Ω) otherwise, where Ω is the foreground volume and d(·) the Euclidean distance to the boundary. The SDF is normalized to [−1, 1] .Nucleus Proposal  
+
+> Cropped Image
+
+## C
+
+> SDF Prediction
+> Mask Prediction
+> SDF GT
+> Mask GT
+
+ℒ!"#$  
+
+> 3D U -Net
+
+ℒ%&' 
+
+Fig. 5. Shape refinement: a 3D U-Net predicts signed distance fields from each proposal and its image patch, restoring complete nucleus morphology. A self-supervised data engine synthesizes realistic error scenarios from clean nuclei labels for training. TABLE I 
+
+NUC EMF IX STATISTICS . "I NITIAL " COUNTS RELEASED INSTANCES BEFORE CURATION . "E RROR -AFFECTED " COUNTS NUCLEI IMPACTED BY EACH ERROR TYPE : FM ( FALSE MERGE ), FS ( FALSE SPLIT ), FM&S (FALSE MERGE &SPLIT ). V OLUME SIZE IN KILO -VOXELS .
+
+Subset Volume (kvox) Initial Error-affected nuclei 
+
+FM FS FM&S Total NucEMFix-F 3.6×8.2×14 .3 106,978 5,258 1,031 1,012 7,301 NucEMFix-M 1.6×4.1×6.1 77,475 711 20 26 757 
+
+As shown in Fig. 5, a 3D U-Net takes each proposal and its corresponding image patch as input and jointly predicts an SDF ˆSk and a foreground mask ˆMk. Training pairs are synthesized from clean labels via stochastic slice masking (removing adjacent mask slices) and patch masking (occluding foreground blocks). The training objective combines mask supervision, SDF regression, and total variation regularization for smooth surfaces: 
+
+LSC = Lbce ( ˆMk, M k) + Ldice ( ˆMk, M k)+ λsdf ∥ ˆSk − Sk∥22
+
++ λtv 
+
+X
+
+> a∈{ x,y,z }
+
+∥∇ a ˆSk∥1.
+
+(12) where λsdf and λtv are balancing weights. 
+
+IV. N UC EMF IX BENCHMARK 
+
+A. Dataset Source 
+
+We curate NucEMFix from two landmark public datasets to ensure diversity in resolution, species, and staining: the Full Adult Fly Brain (FAFB) [36] and the MICrONS dataset ( 1 mm 3
+
+mouse visual cortex) [4]. For FAFB, we use the released whole-brain nuclei segmentation [37]; for MICrONS, we sample from the central subvolume to mitigate boundary artifacts. 
+
+B. Hierarchical Data Curation 
+
+Given the petabyte scale of these volumes (containing millions of nuclei), manual inspection of every instance is infeasible. We therefore devised a two-stage curation pipeline to systematically harvest high-value error cases. 
+
+Automated Candidate Mining . To efficiently locate errors within the PB-scale data, we implemented a heuristic screening protocol based on geometric priors: 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint AUTHOR et al. : NUGRAPH: GRAPH-BASED REASONING OVER 3D PRIMITIVES FOR NUCLEUS SEGMENTATION CORRECTION 5(a) NucEMFix -F (b) NucEMFix -M  
+
+> Fig. 6. Long-tailed distribution of error case sizes in NucEMFix. Cases span the whole brain and vary widely in shape and size across three types: false merge, false split, and false merge&split.
+> •
+
+Merge Candidates : We targeted instances that exceeded biologically plausible volume or bounding box dimensions. These large candidates were subjected to multi-step mor-phological erosion; instances that fractured into multiple connected components were flagged as probable false merges (aggregates of multiple nuclei).  
+
+> •
+
+Split Candidates: We identified potential false splits primarily via voxel count ranking. Instances falling signifi-cantly below the minimum expected volume of a complete nucleus were flagged as fragments. These candidates represent ”shattered” parts of a nucleus or isolated slices resulting from z-axis discontinuities, often lacking their complementary halves in the initial segmentation. 
+
+Manual Inspection and Voxel-level Correction . Following automated mining, we conducted rigorous manual correction by three trained annotators ( ∼250 hours).  
+
+> •
+
+Brain-wide Systematic Review: Beyond the automatically flagged candidates, annotators performed a systematic inspection of all segmented nuclei across the full extent of the datasets using Neuroglancer [38]. This exhaustive review enabled us to discover error cases that evaded the heuristic screening. Critically, annotators documented the specific failure mode for each error case, categorized by root cause (e.g., misalignment, boundary ambiguity). This fine-grained error taxonomy provides valuable insights into the failure modes of current segmentation methods.  
+
+> •
+
+Voxel-level Correction: All identified error cases—both from automated mining and systematic review—were exported to ITK-SNAP [39] for voxel-level editing. 
+
+Expert Consensus Review . To ensure label consistency, two senior experts double-reviewed all corrected samples. Only cases with unanimous consensus entered the final benchmark. 
+
+C. Dataset Statistics 
+
+Across both subsets, errors are long-tailed: a few very large merge cases dominate, while many small split fragments populate the tail (Fig. 6). NucEMFix-F also contains larger nuclei on average than NucEMFix-M, leading to more extensive error regions. As shown in Tab. I, NucEMFix-F consists of 
+
+3584 × 8192 × 14336 voxels at 80 × 64 × 64 nm 3 resolu-tion, containing 106 , 978 neuronal nuclei, among which we annotated > 3,000 error cases affecting > 7,300 (∼ 7% ) nuclei. NucEMFix-M comprises 1632 ×4096 ×6144 voxels at the same resolution, with 77 , 475 nuclei and ∼ 400 error cases affecting 
+
+> 750 nuclei. Note that the counts above denote nuclei affected ,since a single error case may involve multiple nuclei, especially in false merge cases. The mouse brain is substantially larger than that of Drosophila, resulting in more sparsely distributed nuclei and consequently fewer segmentation errors compared to FAFB. In MICrONS, we observed that most errors occur in the vicinity of blood vessels, affecting endothelial and perivascular cell nuclei. These nuclei often exhibit irregular morphologies, leading to false merges or fragmented instances, and thus represent a key target for future correction strategies. 
+
+V. E XPERIMENTS 
+
+A. Experiment Settings 
+
+Evaluation Metrics . To evaluate performance, we adapt standard 3D instance segmentation metrics, precision, recall, and F1-score. A predicted nucleus and a ground-truth instance are considered a match if their Intersection-over-Union (IoU) is at least τ . Unless otherwise noted, we use τ = 0 .75 [19]. 
+
+Methods in Comparison . We compare our approach against four representative nucleus instance segmentation methods: 
+
+U-Net [17], nnU-Net [18], StarDist [19], and Cellpose [20]. 
+
+Implementation Details . All training data are derived from the FAFB and MICrONS datasets. We first exclude the NucEMFix error cases, then randomly select 5,000 clean nuclei as a base set for synthetic data generation. For training the reasoning module, these clean masks are used to synthesize 5,000 topological error cases as described in Sec. III-C. For shape refinement, 5,000 local 3D patches are extracted by cropping cubic volumes centered at each nucleus centroid ( 128 3 for FAFB, 64 3 for MICrONS) and stochastically degraded to generate corrupted-input/clean-target pairs. For baseline methods, all original nuclei masks within these patches are retained as training targets. All synthetic data are split into training and validation sets with an 8:2 ratio. All models are trained on a single NVIDIA A800 GPU using the Adam optimizer with a learning rate of 1×10 −4, a batch size of 32, and up to 100 epochs with early stopping to prevent overfitting.  
+
+> .CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint 6IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026
+
+(a) NucEMFix-F 
+
+(b) NucEMFix-M 
+
+Fig. 7. Per-error-type F1 on NucEMFix across all methods, broken down by false merge, false split, and merge&split. (a) Error Case  (b) U-Net  (c) nnU-Net  (d) StarDist  (f) Ours  (g) GT (e) Cellpose 
+
+Fig. 8. Qualitative correction results on NucEMFix. Different colors indicate different instances. Top: false merge&split with misalignment; middle: false split from missing axial slices; bottom: false merge. TABLE II BENCHMARK RESULTS ON NUC EMF IX . R E-SEGMENTATION BASELINES 
+
+(U-N ET , NN U-N ET , S TAR DIST , C ELLPOSE ) SEGMENT FROM SCRATCH ;NUGRAPH REASONS OVER EXISTING PRIMITIVES . I NITIAL SEGMENTATION RESULTS SHOW THE SEVERITY OF UNCORRECTED ERRORS .
+
+Method NucEMFix-F NucEMFix-M 
+
+Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Initial Seg 12.83 9.50 10.92 8.74 5.04 6.39 U-Net [17] 68.30 87.69 76.79 73.68 88.49 80.41 nnU-Net [18] 71.95 88.60 79.41 41.49 42.86 42.16 StarDist [19] 69.03 77.75 73.13 19.10 20.13 19.60 Cellpose [20] 36.34 73.24 48.58 44.72 56.61 49.97 
+
+Ours 86.50 89.53 87.99 82.45 90.32 86.20 
+
+B. Benchmark Results 
+
+Quantitative Results . Our evaluation covers two complemen-tary comparison paradigms. Table II and Fig. 7 compares NUGRAPH against re-segmentation baselines (U-Net, nnU-Net, StarDist, Cellpose), which segment entirely from scratch without access to any prior mask information. Table IV further provides correction-specific baselines including pairwise matching and graph agglomeration methods, which is discussed in detail in Sec. V-C. N UGRAPH significantly outperforms all re-segmentation baselines across both subsets. On NucEMFix-F, N UGRAPH achieves an F1 of 87.99% (+8.58% over nnU-Net), with gains driven primarily by resolving false splits caused by axial gaps and false merges in dense clusters where ambiguous boundaries confound segmentation methods. On NucEMFix-M, most false-split and hybrid errors originate from severe misalignment where realignment preprocessing fails to restore structural continuity. Performance on these cases remains degraded across all methods, as instance reconstruction becomes infeasible without image evidence. Despite this, NUGRAPH achieves the highest overall F1 of 86.20%. 
+
+Qualitative Results . Fig. 8 shows representative correction results. U-Net produces non-biological sheet-like false splits. nnU-Net fails to correct false merges and yields eroded segmentation. StarDist cannot adapt to irregular boundaries in NucEMFix due to its star-convexity constraint. Cellpose produces fragmented results, as its gradient flows are disrupted by misalignment and noise. All baselines struggle with false splits from missing slices, as they cannot reason across vacant axial layers. In contrast, N UGRAPH achieves accurate correction across all error types by reasoning globally over primitives and restoring complete morphology. 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint AUTHOR et al. : NUGRAPH: GRAPH-BASED REASONING OVER 3D PRIMITIVES FOR NUCLEUS SEGMENTATION CORRECTION 7
+
+TABLE III STAGE -WISE ABLATION OF NUGRAPH . S1: SHAPE DECOMPOSITION , S2: GRAPH -BASED REASONING , S3: SHAPE REFINEMENT . S1+S3 SHOWS THAT SHAPE REFINEMENT ALONE CANNOT SUBSTITUTE FOR RELATIONAL REASONING .
+
+Stage False Merge False Split False Merge&Split All 
+
+S1 S2 S3 Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) — — — 6.87 3.37 4.52 19.91 41.59 26.92 13.24 8.89 10.64 12.83 9.50 10.92 
+
+✓ 52.77 82.27 64.30 7.69 25.15 11.78 10.86 29.84 15.93 34.10 66.98 45.19 
+
+✓ ✓ 80.35 90.25 85.01 48.27 67.52 56.30 35.18 55.73 43.14 67.14 82.29 73.94 
+
+✓ ✓ 86.58 91.15 88.80 64.85 75.83 69.91 57.60 65.12 61.13 79.07 85.38 82.10 
+
+✓ ✓ ✓ 92.29 94.19 93.23 75.48 85.39 80.13 68.52 69.47 68.99 86.50 89.53 87.99 
+
+TABLE IV REASONING ARCHITECTURE ABLATION . L OCAL PAIR -MATCHING METHODS VS . OUR GLOBAL GRAPH -BASED REASONING APPROACH . ∗ DENOTES THE MULTICUT -BASED VERSION OF EDGE NETWORK .
+
+Method False Merge False Split False Merge&Split All 
+
+Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) 
+
+Pair-Matching 
+
+PointNet++ [15] 84.76 78.35 81.43 76.05 85.88 80.67 55.81 43.68 49.00 79.91 74.58 77.15 EdgeNetwork [16] 89.22 92.65 90.90 67.49 78.68 72.65 61.14 67.00 63.93 81.88 87.14 84.43 
+
+Graph Reasoning 
+
+EdgeNetwork ∗ [16] 89.41 92.81 91.08 67.57 78.77 72.74 61.74 67.60 64.54 82.36 87.58 84.88 Ours w/o Lcontrast 90.92 91.76 91.34 74.16 84.70 79.08 61.69 67.00 64.23 84.94 86.46 85.67 
+
+Ours 92.29 94.19 93.23 75.48 85.39 80.13 68.52 69.47 68.99 86.50 89.53 87.99 
+
+C. Ablation Studies 
+
+Stage-Wise Integration . As shown in Tab. III, we progressively integrate each stage. The initial segmentation yields F1 of 10.92%. Shape decomposition (S1) boosts F1 to 45.19% by decomposing dense clusters. Adding graph-based reasoning (S2) brings a 28.75% leap to 73.94%, establishing correct topology. The full N UGRAPH reaches 87.99%. The S1+S3 variant (skipping reasoning) achieves 82.10%—higher than S1+S2 alone on geometrically simple cases, but falling short of the full model on complex merge–split scenarios where shape refinement on raw primitives lacks topologically correct grouping. S2 and S3 are complementary: reasoning fixes topology and refinement smooths morphology. 
+
+Pair-Matching vs. Graph Reasoning . We compare local pair-matching baselines—PointNet++ [15] and EdgeNetwork [16], both widely used for neuron proofreading—against our graph-based approach (Tab. IV). Since these baselines were originally designed for neuron fragments, we re-implemented them and re-trained from scratch on the NucEMFix synthetic data to ensure they are adapted to the nuclei domain. For a controlled comparison, all methods share the same primitive decomposition, candidate-edge threshold, training data, and SDF refinement; only the reasoning module differs. Pair-matching methods predict pairwise connectivity and group primitives via union–find on the predicted links. EdgeNetwork ∗
+
+replaces union–find with multicut optimization [31] for a globally consistent partitioning, but its edge weights are still derived from pairwise features alone, limiting reasoning over densely entangled regions. PointNet++ performs reasonably on isolated false splits but struggles in dense merge–split hybrids (F1: 49.00%), where a primitive’s identity cannot be resolved without broader context. EdgeNetwork improves to 84.43% via learned edge features, and its multicut variant adds only 2 3 4 5 6-10 11+ 
+
+> Number of primitives
+> 40%
+> 50%
+> 60%
+> 70%
+> 80%
+> 90%
+> F1 score
+> NuGraph (ours)
+> EdgeNetwork
+> PointNet++
+> 85.7%
+> 80.3%
+> 65.5%
+> 82.2%
+> 75.8%
+> 59.0%
+> 78.3%
+> 66.9%
+> 42.3%
+
+Fig. 9. F1 vs. primitive count per case on the False Merge&Split subset of NucEMFix-F. N UGRAPH degrades more gracefully as complexity grows. 
+
+a marginal gain (84.88%), confirming that the bottleneck lies in pairwise feature expressiveness rather than the grouping strategy. Graph attention reasoning raises F1 to 85.67% by aggregating neighborhood context across the entire cluster, and contrastive alignment adds a further 2.32% (87.99%) by aligning primitive features with proposal-level semantics. 
+
+Robustness to Case Complexity . Fig. 9 reports F1 as a function of the number of primitives per error case on the False Merge&Split subset of NucEMFix-F. For simple cases with 2–5 primitives, all methods perform comparably, as pairwise decisions suffice when the grouping structure is uncomplicated. However, performance diverges sharply as complexity grows: PointNet++ drops from 78.3% at 5 primitives to 42.3% at 11+, and EdgeNetwork from 82.2% to 59.0%, reflecting their inability to resolve ambiguous groupings 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint 8 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026 
+
+TABLE V 3D BACKBONE COMPARISON FOR THE REASONING MODULE . P OINT NET ++ WITH FIXED POINT SAMPLING VS . S PARSE U-N ET .
+
+Backbone False Merge False Split False Merge&Split All 
+
+Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) PointNet++ (2048 pts) 90.58 92.41 91.49 71.92 82.92 77.03 66.48 69.37 67.89 84.35 87.89 86.08 PointNet++ (4096 pts) 90.29 90.44 90.36 72.83 83.61 77.85 66.21 67.59 66.88 84.23 86.31 85.26 PointNet++ (8192 pts) 85.43 82.29 83.83 71.75 82.72 76.85 64.63 62.85 63.73 80.38 79.65 80.01 Sparse U-Net 92.29 94.19 93.23 75.48 85.39 80.13 68.52 69.47 68.99 86.50 89.53 87.99 
+
+TABLE VI SHAPE COMPLETION ABLATION . M ASK -ONLY RECONSTRUCTION VS . SDF-GUIDED COMPLETION .
+
+Method False Merge False Split False Merge&Split All 
+
+Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) Pre (%) Rec (%) F1 (%) w/o SDF (Mask-only) 91.40 93.95 92.66 73.33 84.70 78.61 67.11 70.36 68.69 84.76 88.60 86.64 
+
+Ours (with SDF) 92.29 94.19 93.23 75.48 85.39 80.13 68.52 69.47 68.99 86.50 89.53 87.99 (a) with  𝓛𝓛 𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜 𝐦𝐦𝐦𝐦 𝐜𝐜  (b) w/o  𝓛𝓛 𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜𝐜 𝐦𝐦𝐦𝐦 𝐜𝐜 
+
+Fig. 10. Pairwise similarity of primitive embeddings, with and with-out primitive–proposal contrastive learning. Ground-truth grouping: 
+
+{1},{2,3 },{4},{5},{6},{7},{8,9 },{10 },{11 },{12 }.
+
+without global context. N UGRAPH degrades more gracefully, maintaining 65.5% F1 even at 11+ primitives, as graph attention aggregates neighborhood evidence across all primitives rather than reasoning over isolated pairs. 
+
+Effect of Contrastive Alignment . Fig. 10 visualizes primitive feature embeddings: without contrastive learning, similarity patterns are diffuse; with contrastive alignment, intra-group similarity becomes compact and inter-group separation clear, providing more reliable edge cues for graph reasoning. 
+
+3D Backbone Choice . Tab. V compares 3D backbones for the reasoning module. PointNet++ with fixed-size sampling shows limited robustness under long-tailed error distributions, as small cases are over-represented and larger regions suffer from redundant padding. Sparse U-Net processes variable-length surfaces without uniform sampling and benefits from a larger receptive field, enabling more effective global reasoning. 
+
+Shape Refinement . Table VI compares mask-only reconstruc-tion against SDF-guided completion. SDF supervision improves F1 on false splits from 78.61% to 80.13% (+1.52%) and overall F1 by +1.35%, confirming that continuous SDF representation helps recover fragmented nuclei with missing slices. 
+
+Hyperparameter Sensitivity . We evaluate sensitivity to graph construction threshold d, contrastive weight λcontrast , and SDF weight λsdf (Fig. 11). Performance is stable across a wide range for all three. Best results are at d=7 , λcontrast =1 , λsdf =1 .5 7 10 15       
+
+> d
+> 84
+> 86
+> 88
+> 90
+> Performance (%)
+> Precision
+> Recall
+> F1-score
+> 0.01 0.1 15
+> contrast
+> 84
+> 86
+> 88
+> 90
+> Performance (%)
+> Precision
+> Recall
+> F1-score
+> 0.01 0.1 15
+> sdf
+> 84
+> 86
+> 88
+> 90
+> Performance (%)
+> Precision
+> Recall
+> F1-score
+
+Fig. 11. Sensitivity to graph construction threshold d, contrastive weight 
+
+λcontrast , and SDF weight λsdf . F1 is stable across a broad range. 
+
+D. More Analysis 
+
+Stability on Error-Free Nuclei . To verify that N UGRAPH 
+
+does not over-correct accurate segmentations, we evaluated on 30,000 (FAFB) and 10,000 (MICrONS) correctly annotated nuclei. Only one nucleus was erroneously split in FAFB and four underwent minor modifications in MICrONS, confirming that N UGRAPH preserves segmentation quality brain-wide. 
+
+Inference Cost . Table VII reports the inference time of NUGRAPH on NucEMFix-F, broken down by error type and pipeline stage. Across all 3,633 error cases, N UGRAPH 
+
+completes correction in approximately 85.2 minutes on a single NVIDIA A800 GPU running single-threaded sequential inference. The shape decomposition stage (S1) dominates runtime due to EDT computation and slice realignment, while graph reasoning (S2) and SDF refinement (S3) contribute smaller overhead. In contrast, manual curation of the same cases required over 100 annotator-hours, yielding a speedup of more than 100 × relative to human correction. 
+
+Failure Cases . Fig. 12 shows failure cases. (a) A nucleus with a deep invagination: the reasoning module fails to merge the two primitives, as the irregular shape lacks the geometric cues needed for confident grouping. (b) Two nuclei with an extremely large contact surface: the module incorrectly predicts high connectivity, producing a false merge. (c) Severe misalignment with illumination artifacts: preprocessing fails to 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint AUTHOR et al. : NUGRAPH: GRAPH-BASED REASONING OVER 3D PRIMITIVES FOR NUCLEUS SEGMENTATION CORRECTION 9
+
+TABLE VII INFERENCE TIME OF NUGRAPH ON NUC EMF IX -F PER ERROR TYPE . S1: 
+
+> SHAPE DECOMPOSITION AND ALIGNMENT
+
+; S2: GRAPH -BASED REASONING ; S3: SDF SHAPE REFINEMENT .
+
+Error Type Total stage time (min) Total Manual 
+
+S1 S2 S3 (min) (hours) 
+
+False Merge&Split 6.2 2.1 1.7 10.0 100+ False Merge 27.2 17.8 8.7 53.7 False Split 11.1 7.5 2.9 21.5 
+
+Total 44.5 27.4 13.3 85.2 >100 h 
+
+restore continuity, leaving the reasoning module without usable structural input. Such cases are prevalent in NucEMFix-M. Prediction  GT        
+
+> Error Case Image Image Error Case
+> Prediction GT
+> (a) (b)
+> Z-Slice 29 ZY Plane
+> Z-Slice 30
+> Error Case Prediction GT
+> (c)
+
+Fig. 12. Failure cases. (a) Deep invagination misread as two primitives; (b) large contact surface causing a false merge; (c) severe misalignment with illumination artifacts breaking structural continuity. 
+
+VI. D ISCUSSION 
+
+Why dense clusters remain the hardest regime . Across both subsets, residual errors concentrate on tightly packed, irregular nuclei—e.g., perivascular populations in MICrONS and large merge clusters in FAFB—where local boundary cues are weak and primitive decomposition is most ambiguous. Our graph reasoning mitigates but does not eliminate this regime: Fig. 9 shows graceful degradation rather than a hard ceiling, suggesting better primitive proposals—not richer reasoning— are the next bottleneck. 
+
+Cross-dataset gap . The performance asymmetry between NucEMFix-F and NucEMFix-M stems mainly from acquisition-level differences. MICrONS has a larger fraction of cases dominated by severe misalignment and illumination artifacts that destroy structural continuity, leaving the geometry-only reasoning module without usable input (cf. Sec. V-B and the failure cases in Fig. 12). This points to image-conditioned reasoning as a clear next step. 
+
+Implications for downstream analysis . Beyond raw F1, the SDF refinement head restores smooth, biologically plausible morphology—a prerequisite for downstream cell typing and morphological analysis. Combined with the brain-wide stability evaluation (Sec. V-D), this suggests N UGRAPH can be deployed across entire connectomic volumes without quality regression. 
+
+Limitations and Future Work . The data engine synthesizes errors from clean masks alone, restricting reasoning to geo-metric cues; severe imaging artifacts and missing slices that destroy structural continuity remain hard cases. Future work will couple error generation to raw EM imagery and explore image-conditioned graph reasoning at no added inference cost. 
+
+VII. C ONCLUSION 
+
+We presented N UGRAPH , a graph-based framework that corrects 3D nuclei segmentation by decomposing errors into atomic primitives and reasoning over them with graph at-tention and primitive–proposal contrastive alignment. This formulation captures the global topology of dense clusters that local pairwise methods miss, while an SDF refinement head restores smooth morphology. Trained entirely on self-supervised synthetic errors, N UGRAPH eliminates the need for manual error annotation. We also released NucEMFix , the first brain-wide EM benchmark for nuclei correction with 8,000+ error cases across FAFB and MICrONS. N UGRAPH attains 87.99% F1 on NucEMFix-F and 86.20% on NucEMFix-M, outperforming all baselines and cutting curation effort by over 
+
+100 × relative to manual proofreading. By releasing both the framework and a standardized correction benchmark, we hope NucEMFix will serve the broader connectomics community as a common testbed for measuring future last-mile correction methods at brain scale. 
+
+REFERENCES 
+
+[1] J. C. Caicedo, A. Goodman, K. W. Karhohs, B. A. Cimini, J. Ackerman, M. Haghighi, C. Heng, T. Becker, M. Doan, C. McQuin et al. , “Nucleus segmentation across imaging experiments: the 2018 data science bowl,” 
+
+Nature methods , vol. 16, no. 12, pp. 1247–1253, 2019. [2] H. Nunley, B. Shao, D. Denberg, P. Grover, J. Singh, M. Avdeeva, B. Joyce, R. Kim-Yip, A. Kohrman, A. Biswas et al. , “Nuclear instance segmentation and tracking for preimplantation mouse embryos,” 
+
+Development , vol. 151, no. 21, p. dev202817, 2024. [3] A. Jorstad, B. Nigro, C. Cali, M. Wawrzyniak, P. Fua, and G. Knott, “Rapid and semi-automated extraction of neuronal cell bodies and nuclei from electron microscopy image stacks,” Frontiers in Neuroinformatics ,vol. 10, p. 20, 2016. [4] C. M. Schneider-Mizell, A. L. Bodor, F. Collman, D. Brittain, A. A. Bleckert, S. Dorkenwald, N. L. Turner, T. Macrina, K. Lee, R. Lu et al. ,“Functional connectomics spanning multiple areas of mouse visual cortex,” 
+
+Nature , vol. 629, pp. 1055–1064, 2025. [5] A. T. Kuan, J. S. Phelps, L. A. Thomas, T. M. Nguyen, J. Han, C.-L. Chen, J. Anthony, F. Engert, X. Zhuang, and J. W. Lichtman, “Dense neuronal reconstruction through x-ray holographic nano-tomography,” 
+
+Nature Neuroscience , vol. 23, no. 12, pp. 1637–1643, 2020. [6] W.-C. A. Lee, V. Bonin, M. Reed, B. J. Graham, G. Hood, K. Glattfelder, and R. C. Reid, “Light-microscopy-based connectomic reconstruction of mammalian brain tissue,” Nature , vol. 629, pp. 1117–1126, 2025. [7] Z. Pang, T. Hong, Z. Liu, Y. Wei, H. Ni, A. Li, H. Gong, Q. Luo, and X. Li, “Cellotype: a unified model for segmentation and classification of tissue images,” Nature Methods , vol. 22, pp. 142–150, 2025. [8] X. Chen, S. Li, L. H. Mervin, X. Jia, C. Shen, X. Tan, and Y. Wang, “Instance-level semantic segmentation of nuclei based on multimodal structure encoding,” BMC Bioinformatics , vol. 26, p. 47, 2025. [9] H. Wang, L. Roa-Pe ˜na, M. H. Rohban, J. Najder, A. R. Carr, A. E. Carpenter, and S. Singh, “Keep it accurate and robust: An enhanced nuclei analysis framework,” Computational and Structural Biotechnology Journal , vol. 23, pp. 3842–3854, 2024. 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint 10 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2026 
+
+[10] A. Aswath, A. Alsahaf, B. N. Giepmans, and G. Azzopardi, “Segmenta-tion in large-scale cellular electron microscopy with deep learning: A literature survey,” Medical image analysis , vol. 89, p. 102920, 2023. [11] S. M. Plaza, “Focused proofreading: efficiently extracting connectomes from segmented em images,” arXiv preprint arXiv:1409.1199 , 2014. [12] P. Hirsch and D. Kainmueller, “An auxiliary task for learning nuclei segmentation in 3d microscopy images,” in Medical Imaging with Deep Learning . PMLR, 2020, pp. 304–321. [13] L. Wu, A. Chen, P. Salama, S. Winfree, K. W. Dunn, and E. J. Delp, “Nisnet3d: Three-dimensional nuclear synthesis and instance segmentation for fluorescence microscopy images,” Scientific Reports , vol. 13, no. 1, p. 9533, 2023. [14] Q. Chen, X. Chen, C. Wang, Y. Liu, Z. Xiong, and F. Wu, “Learning multimodal volumetric features for large-scale neuron tracing,” in 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 2, 2024, pp. 1174–1182. [15] J. Berman, D. B. Chklovskii, and J. Wu, “Bridging the gap: Point clouds for merging neurons in connectomics,” in International Conference on Medical Imaging with Deep Learning . PMLR, 2022, pp. 150–159. [16] B. Matejek, D. Haehn, H. Zhu, D. Wei, T. Parag, and H. Pfister, “Biologically-constrained graphs for global connectomics reconstruction,” in CVPR , 2019. [17] ¨O. C¸ i c¸ ek, A. Abdulkadir, S. S. Lienkamp, T. Brox, and O. Ronneberger, “3d u-net: learning dense volumetric segmentation from sparse annotation,” in MICCAI . Springer, 2016, pp. 424–432. [18] F. Isensee, P. F. Jaeger, S. A. Kohl, J. Petersen, and K. H. Maier-Hein, “nnu-net: a self-configuring method for deep learning-based biomedical image segmentation,” Nature methods , vol. 18, no. 2, pp. 203–211, 2021. [19] M. Weigert, U. Schmidt, R. Haase, K. Sugawara, and G. Myers, “Star-convex polyhedra for 3d object detection and segmentation in microscopy,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , 2020, pp. 3666–3673. [20] C. Stringer, T. Wang, M. Michaelos, and M. Pachitariu, “Cellpose: a generalist algorithm for cellular segmentation,” Nature Methods , vol. 18, no. 1, pp. 100–106, 2021. [21] F. Long, H. Peng, X. Liu, S. K. Kim, and E. Myers, “A 3d digital atlas of c. elegans and its application to single-cell analyses,” Nature methods ,vol. 6, no. 9, pp. 667–672, 2009. [22] Y. Tokuoka, T. G. Yamada, D. Mashiko, Z. Ikeda, N. F. Hiroi, T. J. Kobayashi, K. Yamagata, and A. Funahashi, “3d convolutional neural networks-based segmentation to acquire quantitative criteria of the nucleus during mouse embryogenesis,” NPJ systems biology and applications , vol. 6, no. 1, pp. 1–12, 2020. [23] V. Ulman, M. Ma ˇska, K. E. Magnusson, O. Ronneberger, C. Haubold, N. Harder, P. Matula, P. Matula, D. Svoboda, M. Radojevic et al. ,“An objective comparison of cell-tracking algorithms,” Nature methods ,vol. 14, no. 12, pp. 1141–1152, 2017. [24] Z. Lin, D. Wei, M. D. Petkova, Y. Wu, Z. Ahmed, K. S. K, S. Zou, N. Wendt, J. Boulanger-Weill, X. Wang et al. , “Nucmm dataset: 3d neuronal nuclei instance segmentation at sub-cubic millimeter scale,” in 
+
+Medical Image Computing and Computer Assisted Intervention–MICCAI 2021: 24th International Conference, Strasbourg, France, September 27– October 1, 2021, Proceedings, Part I 24 . Springer, 2021, pp. 164–174. [25] W. Zheng, C. Peng, Z. Hou, B. Lyu, M. Wang, X. Mi, S. Qiao, Y. Wan, and G. Yu, “Nis3d: a completely annotated benchmark for dense 3d nuclei image segmentation,” Advances in neural information processing systems , vol. 36, pp. 4741–4752, 2023. [26] J. Zung, I. Tartavull, K. Lee, and H. S. Seung, “An error detection and correction framework for connectomics,” Advances in neural information processing systems , vol. 30, 2017. [27] Q. Chen, X. Chen, C. Wang, Z. Xiong, and F. Wu, “Neuron segment connectivity prediction with multimodal features for connectomics,” IEEE Transactions on Medical Imaging , 2026. [28] S. Jiang, Z. Pan, Z. Feng, Y. Guan, M. Ren, Z. Ding, S. Chen, H. Gong, Q. Luo, and A. Li, “Skeleton optimization of neuronal morphology based on three-dimensional shape restrictions,” BMC bioinformatics , vol. 21, no. 1, p. 395, 2020. [29] J. Yang, Y. He, and X. Liu, “Retrieving similar substructures on 3d neuron reconstructions,” Brain Informatics , vol. 7, no. 1, p. 14, 2020. [30] R. Zhao, Y. Liu, S. Zhang, Z. Yi, Y. Xiao, F. Xu, Y. Yang, and P. Zhou, “Neurofly: A framework for whole-brain single neuron reconstruction,” 
+
+arXiv preprint arXiv:2411.04715 , 2024. [31] T. Beier, C. Pape, N. Rahaman, T. Prange, S. Berg, D. D. Bock, A. Cardona, G. W. Knott, S. M. Plaza, L. K. Scheffer et al. , “Multicut brings automated neurite segmentation closer to human performance,” 
+
+Nature methods , 2017. [32] J. Funke, F. Tschopp, W. Grisaitis, A. Sheridan, C. Singh, S. Saalfeld, and S. C. Turaga, “Large scale image segmentation with structured loss based deep learning for connectome reconstruction,” TPAMI , 2018. [33] P. H. Li, L. F. Lindsey, M. Januszewski, M. Tyka, J. Maitin-Shepard, T. Blakely, and V. Jain, “Automated reconstruction of a serial-section em drosophila brain with flood-filling networks and local realignment,” 
+
+Microscopy and Microanalysis , 2019. [34] S. Contributors, “Spconv: Spatially sparse convolution library,” 2022. [35] P. Veli ˇckovi ´c, G. Cucurull, A. Casanova, A. Romero, P. Lio, and Y. Bengio, “Graph attention networks,” arXiv preprint arXiv:1710.10903 ,2017. [36] Z. Zheng, J. S. Lauritzen, E. Perlman, C. G. Robinson, M. Nichols, D. Milkie, O. Torrens, J. Price, C. B. Fisher, N. Sharifi et al. , “A complete electron microscopy volume of the brain of adult drosophila melanogaster,” Cell , 2018. [37] S. Mu, S. YU, N. Turner, C. McKellar, S. Dorkenwald, F. Collman, S. Koolman, M. Moore, S. MORE-JOHN, B. Silverman et al. , “3d reconstruction of cell nuclei in a full drosophila brain. preprint,” 
+
+Neuroscience, Nov , 2021. [38] J. Maitin-Shepard, “Neuroglancer,” https://github.com/google/ neuroglancer, 2016, accessed: 2025-07-19. [39] P. A. Yushkevich, Y. Gao, and G. Gerig, “Itk-snap: An interactive tool for semi-automatic segmentation of multi-modality biomedical images,” in 2016 38th annual international conference of the IEEE engineering in medicine and biology society (EMBC) . IEEE, 2016, pp. 3342–3345. 
+
+.CC-BY 4.0 International license available under a (which was not certified by peer review) is the author/funder, who has granted bioRxiv a license to display the preprint in perpetuity. It is made The copyright holder for this preprint this version posted May 19, 2026. ;https://doi.org/10.64898/2026.05.16.725603 doi: bioRxiv preprint

@@ -1,0 +1,803 @@
+Title: Inconsistency-aware Multimodal Schrödinger Bridge for Deepfake Localization
+
+URL Source: https://arxiv.org/pdf/2605.23113v1
+
+Published Time: Mon, 25 May 2026 00:21:59 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Inconsistency-aware Multimodal Schr¨ odinger Bridge for Deepfake Localization 
+
+## Jiayu Xiong 1,2 Jing Wang 1,2* Qi Zhang 3* Wanlong Wang 1,2 Jun Xue 41Department of Computer Science and Techonology, Huaqiao University 
+
+> 2
+
+## Xiamen Key Laboratory of Computer Vision and Pattern Recognition, Huaqiao University 
+
+> 3
+
+## Tongji University 4School of Cyber Science and Engineering, Wuhan University 
+
+{yuinst, wwl58 }@stu.hqu.edu.cn, wroaring@hqu.edu.cn, zhangqi cs@tongji.edu.cn, junxue@whu.edu.cn 
+
+## Abstract 
+
+Audio-visual deepfake localization demands interval-level outputs that serve as temporal evidence. Despite recent progress, symmetric fusion under single-sided or asyn-chronous forgeries propagates cross-modal noise, degrad-ing high-precision localization. We present IaMSB, an inconsistency-aware multimodal Schr¨ odinger Bridge (SB) that jointly estimates cross-modal consistency and performs interval-level localization. Unlike diffusion models, SB minimizes path-distribution discrepancy and yields consis-tency scores without explicit noise injection or denoising. With the Schr¨ odinger Bridge (SB), IaMSB unifies consis-tency estimation, cross-modal information selection, and bridge-step scheduling in one framework. Specifically, a lightweight coarse bridge first proposes candidate intervals and estimates cross-modal consistency; these statistics se-lect cross-modal witness signals and allocate bridge steps asymmetrically across modalities. A refinement bridge then performs step-tuned fusion and outputs refined, time-aligned intervals. IaMSB anticipates single-sided and asyn-chronous forgeries and, using bottlenecked cross-modal in-teraction with step allocation, suppresses noise transfer, avoids unnecessary iterations. Across benchmarks, IaMSB stabilizes strict-IoU boundary precision, raising AP@0.95 by 3 ∼ 10% , and yields improved high-precision localiza-tion, particularly for single-sided forgeries. 
+
+## 1. Introduction 
+
+Rapid proliferation of synthetic media and falling tampering costs make deepfake localization essential for governance and forensics [9, 23, 29]. Interval-level predictions pro-vide auditable, time-stamped evidence that surpasses video-level labels and directly supports moderation and legal ad-judication [4, 40]. Because audio and visual often diverge   
+
+> *Corresponding authors. lip-sync
+> face swap
+> inpainting
+> (a) Fake events of modality V
+> Low confidence level events
+> VC
+> (b) Independently generated audio (c) Real Audio (d) Synchronously generated audio
+> Time Time Time Time
+> TTS
+> Hard to fabricate Easy to erase
+> Easy to event transfer
+> Hard to event convert
+
+Figure 1. A bridge estimates the cross-modal deepfake event set’s reachability. (a)(b): Mismatched events rarely reach; Subfigure (a)(c): single-sided cases are asymmetric, and (a)(d): consistent events reach more easily; arrival steps define the generation cost for suspicion scoring and budget allocation. 
+
+in confidence, existence of manipulation, onset, and dura-tion, methods that explicitly resolve cross-modal asymme-try while delivering precise temporal boundaries are neces-sary [10, 24, 37]. Recent work has markedly advanced cross-modal local-ization via symmetric fusion modules [18, 20, 40, 41] (i.e., order-invariant, equal-depth fusion) with temporal refine-ment [3, 4, 33, 40]. However, sample lengths and the occur-rence of deepfake events are often unaligned, and tempo-ral fusion for sequence modeling is computationally expen-sive. This yields three issues: (i) negative transfer from the clean (non-forged) modality, injecting noise and inducing false localization [32, 34, 36, 38]; and (ii) too many fusion layers waste compute on the clean modality, whereas too few hinder convergence of the forged modality [6, 14]; and 
+
+(iii) given computational overhead of fusion [2, 25, 30], an unavoidable trade-off constrains temporal resolution [41]. Consequently, reliability remains constrained precisely in high-precision localization regimes. Generative decoders allow explicit step control of in-ference budgets and can speed up convergence [11, 31], 
+
+> arXiv:2605.23113v1 [cs.CV] 22 May 2026
+
+which provides inspiration for asymmetric fusion (i.e., adaptive steps or equivalent layers). Framing event bound-aries as multi-step denoising of noisy queries yields trace-able generation trajectories and more stable training objec-tives [8, 16, 35]. However, existing formulations still lack a principled scheduler for multimodal asynchrony and a cal-ibrated, temporally local measure of cross-modal discrep-ancy to steer interaction and compute. These gaps point to a bridge-based decoder that couples consistency scoring with step-wise generation. Motivated by this, we formulate audio–visual deep-fake localization as event generation and introduce IaMSB 
+
+(inconsistency-aware multimodal Schr¨ odinger Bridge), a framework that first leverages diffusion Schr¨ odinger Bridge (SB) for cross-modal consistency estimate, interaction, and deepfake event generation. SB cast as stochastic control, transports a source distribution to a target distribution with-out an explicit noise-adding/denoising cycle while directly quantifying distributional discrepancy [11, 12]. At terminal time (Fig. 1), the SB objective yields a direct cross-modal consistency score that filters relevant evidence and, in turn, guides compute-budget allocation across iterations. Viewed as a diffusion-style decoder with a controllable step count, SB further enables step-adaptive fusion of the filtered cross-modal evidence. Our contributions are: • Consistency-as-Transport. Estimate cross-modal con-sistency via a Schr¨ odinger bridge that transports between endpoint distributions, yielding a calibrated reachability while eliminating auxiliary alignment networks. • Coupling as Bottleneck. A static, entropy-regularized optimal-transport coupling with evidence screening serves as a lightweight implicit interaction bottleneck, which unifying compute budget allocation, suppressing noise propagation, and mitigating negative transfer under modality imbalance and asynchrony. • Cascaded SB Localizer. Few-step bridges propose coarse intervals, followed by an evidence-guided, step-adaptive refiner with time mapping that targets cross-modal inconsistency for precise event localization. To our knowledge, IaMSB is the first method to apply the diffu-sion model to audio-visual deepfake localization. Finally, IaMSB addresses issues (i)–(iii) by limiting cross-modal noise, adaptively reallocating compute toward suspicious modalities, and coupling an O(1) consistency score with an O(T ) refinement bridge for finer temporal modeling. On audio–visual deepfake localization bench-marks, it achieves precise interval localization, robust cross-modal consistency, and improves AP@0.95 by 3% ∼ 10% .
+
+## 2. Related Work 
+
+Audio–Visual Representation Learning. A/V repre-sentations have evolved from masked unit prediction on speech–vision pairs to joint contrastive–masked objectives that explicitly align temporal granularity across streams [13, 15, 26]. Early masked clustering supplies lip–speech priors [26]. Contrastive MAE formulations then strengthen cross-modal invariances and transferability [13, 15]. Re-cent refinements decouple reconstruction from alignment and target fine-grained synchronization or tri-modal guid-ance, improving downstream consistency reasoning and in-terval sensitivity [1, 17, 27]. 
+
+Audio–Visual Deepfake Localization. BA-TFD [3] fol-lows a content-driven two-stage paradigm that generates proposals from audio–visual cues and applies lightweight temporal refinement to yield interval predictions; BA-TFD+ [4] extends this design with stronger heads and denser su-pervision to sharpen boundaries and stabilize training. UM-MAFormer [40] employs a multimodal-adaptive architec-ture that modulates fusion under reconstruction-style per-turbations, improving boundary sensitivity while retaining robustness to cross-stream asynchrony. DiMoDif [19] ex-plicitly models discourse-level inconsistencies beyond lip-sync, leveraging semantic conflicts to refine hypotheses and suppress spurious intervals. RegQAV [41] adopts a query-based decoder with register-enhanced tokens, regularizing decoding to tighten boundaries and maintain high-IoU pre-cision under a fixed proposal budget. Other baselines in-clude MMMS-BA [18], which uses strong cross-modal at-tention that boosts discrimination but can propagate noise under modality imbalance, and CFPRF [33], an audio-side coarse-to-fine proposal refinement that stabilizes hypothe-ses and runtime. Complementary resources stress longer clips and harder partial forgeries [5, 21]. 
+
+Diffusion and Schr¨ odinger Bridges for Event Bound-aries. Generative decoders offer step-controllable infer-ence and traceable denoising trajectories for boundary dis-covery [8, 16, 31, 35]. Beyond score-based diffusion, Schr¨ odinger Bridges provide entropy-regularized transport between prior and posterior distributions, enabling cali-brated progress measures that naturally couple detection confidence with compute budgeting [11, 12]. 
+
+## 3. Method 
+
+This section introduces IaMSB (Inconsistency-aware Mul-timodal Schr¨ odinger Bridge), summarizes Schr¨ odinger Bridge (SB) preliminaries that ground the formulation and fix notation, and then presents a cascaded bridge architec-ture. As shown in Fig. 2, IaMSB consists of: (i) Coarse SB (CSB) proposes per-modality interval candidates via few-step, minimal-compute updates; (ii) Witness SB (WSB) se-lects witnesses and gates fusion through a lightweight latent bottleneck, allocates events and steps; (iii) Refinement SB (RSB) refines selected queries with step-tunable updates, injects witnesses, and operates under a unified budget. Time  
+
+> Latent Query Audio Visual
+> Time
+> Time
+> Select
+> Time
+> Time
+> CSB
+> Time
+> Time
+> Time
+> Step+=1 Select
+> iter
+> CSB
+> RSB
+> Step+=1
+> iter
+> RSB
+> Cross-modal Witness
+> Merge Output
+> Iteration
+> Tied Shared Visual Audio Pooled
+> KV Cache Latent
+> CSB
+> Step+=1 if step <
+> R
+> T
+> U
+> H
+> C
+> Top-k
+> Decode
+> Select
+> Allocate Querys
+> Index
+> Allocate Steps
+> WSB
+> KV Cache
+> From WSB
+> Iteration
+> RSB
+> Witness
+> if step <
+> Cross-modal Witness
+> Coarse Events
+
+Figure 2. Overview of IaMSB. The extractors Ea and Ev produce modality–specific token sequences. The Coarse/ Witness/ Refinement Schr¨ odinger Bridges (CSB/WSB/RSB) are described in Secs. 3.3.2, 3.3.3, and 3.3.4. Heads μmc , μ mr follow Eq. (3); MHA( ·) follows Eq. 2, with Q/K/V roles indicated. The coarse stage yields Nev latent events; after WSB screening they reduce to ˆN a and ˆN v .
+
+3.1. Problem Definition and Formulation 
+
+For the i-th sample, the modality-specific backbones output feature tensors F a ∈ RLai ×C and F v ∈ RLvi ×C for audio (a) and visual ( v) modalities, respectively, with per-token time granularities ∆ta and ∆tv . Final outputs are normal-ized to intervals on [0 , 1] and mapped to absolute time. 
+
+Problem Definition. For localization, the model outputs, for the k-th event in modality m, the normalized start time 
+
+smi,k ∈ [0 , 1] , the event duration ℓmi,k ∈ (0 , 1] , and the confi-dence score πmi,k ∈ (0 , 1) , where Kmi denotes the predefined number of candidate events. Start and end times are 
+
+tmi, st = clip  smi,k Lmi ∆tm, 0, L mi ∆tm,tmi, ed = clip  (smi,k + ℓmi,k ) Lmi ∆tm, 0, L mi ∆tm, (1) where clip( x, a, b ) = min(max( x, a ), b ), Lmi ∆tm is abso-lute time duration (second). 
+
+Formulation. Let m ∈ { a, v }. For each stage, F m serves as the per-stage memory bank. Queries are initialized from latent codes Zm 
+
+> 0
+
+∈ RNev ×C with Nev event tokens, follow • CSB runs for Sc steps, yielding Zmt at the t-th step ( t =1, . . . , S c) and the coarse output ZmSc denote as Zm
+
+> out
+
+.• WSB computes cross-modal witnesses P m, and allo-cates the unified step budget Stgt and event budget Nev 
+
+across modalities, resulting in per-modality refinement steps Sar , S vr and selected counts ˆN a, ˆN v . WSB further produces an index matrix Im that selects ˆN m events from 
+
+Zm 
+
+> out
+
+and their corresponding witnesses from P m, form-ing the masked subsets ˆZm 
+
+> out
+
+and ˆP m for the refinement. • RSB runs for Smr steps, yielding ˆZmt at the t-th step ( t =1, . . . , S mr ), the final latent sequence is ˆZm 
+
+> out
+
+∈ RN m×C .• Output. For modality m, define Hm(·) as a modality-specific task head (FC layer) that maps ˆZmout to events set 
+
+Em. Each token is mapped to the start time s, duration ℓ
+
+and confidence score π, use ϕ(x) = 12 (1 + tanh x) limit the value to [0 , 1] and mitigate edge saturation. 
+
+3.2. Preliminaries: Schr¨ odinger Bridge 
+
+Let Ω be a continuous path space and let the reference mea-sure R be induced by a Wiener process Wt with noise in-tensity σ > 0, t is time step. Given endpoint marginals ν0
+
+and ν1, the Schr¨ odinger Bridge solves 
+
+min  
+
+> Q
+
+KL( Q∥R) s.t. Q0 = ν0, Q 1 = ν1,
+
+where Q is trajectory. An equivalent controlled diffusion is 
+
+dZt = ut(Zt) d t+σ dWt, E(Q) = EQ
+
+Z 10
+
+∥ut(Zt)∥22
+
+2σ2 dt, 
+
+where ut(·) is the control drift and E(Q) is the expected control energy. Partition [0 , 1] into S ∈ N steps. Condition-ing on X, define the discrete propagator 
+
+Z0 ∼ ν0, ZS = Φ S (Z0 | X) ≈ ν1(· | X).
+
+Given tolerance ε > 0 and a discrepancy D, define the min-imum step count 
+
+S⋆(ε) = min 
+
+n
+
+S ∈ N : D ΦS (ν0 | X), ν 1(· | X) ≤ ε
+
+o
+
+.
+
+In this work ν0 encodes a sparse interval prior (e.g., local-ization result) and ν1(· | X) encodes an observation aligned posterior (e.g., this modality or another’s ground truth). The bridge advances ν0 to ν1 through ΦS while evolving la-tent states Zt into concrete interval predictions via the task head. We use the pair  E(Q), S ⋆(ε) as an explicit scale for cross-modal resource allocation and interaction. 
+
+3.3. Localization and Budget Optimization 
+
+This subsection presents network structure and three stage (CSR, WSB, RSB) localization under a unified budget. 
+
+3.3.1. Model Architecture 
+
+The bridge uses standard multi head attention and aSwiGLU feed forward network. Let Q ∈ RB×Lq ×C and 
+
+K, V ∈ RB×Lk ×C , with H heads and per head dimension 
+
+d = C/H ∈ Z+. With weights Wq , W k, W v , W o ∈ RC×C
+
+split into Wq,h , W k,h , W v,h ∈ RC×d for h = 1 , . . . , H , we have MHA( Q, K, V ) = 
+
+h HM
+
+> h=1
+
+softmax 
+
+ (QW q,h )( KW k,h )⊤
+
+√d
+
+
+
+(V W v,h )
+
+i
+
+Wo. (2) Unless stated otherwise, these weights are intrinsic to the structure and not shared across modules. With intermediate dimension dff = αC (in this paper, α = 8 /3) and weights 
+
+W1, W 2 ∈ RC×dff and W3 ∈ Rdff ×C , define 
+
+FFN( x) =  SiLU( xW 1) ⊙ (xW 2) W3, (3) where SiLU( u) = u/ (1 + e−u).
+
+3.3.2. Coarse Schr¨ odinger Bridge (CSB) 
+
+CSB adopts a lightweight design that strengthens tempo-ral coherence and produces coarse event proposals to drive cross-modal interaction and budget allocation. Let Zmt ∈
+
+RNev ×C be the latent sequence at step t, F m ∈ RLm×C is the conditional observation features, and Nev the maximum candidate count. Coarse updates read features via cross at-tention and advance with a residual step for a fixed Sc steps per modality, producing Nev candidates via 
+
+U mt = LN 
+
+
+
+Zmt + MHA  Zmt , F m, F m
+
+,Zmt+1 = Zmt + ∆ um 
+
+> c
+
+(U mt ), um 
+
+> c
+
+(X) = FFN( X),
+
+where Wq ∈ RC×C in MHA is a shared query map and the rest are modality specific, LN is layer normalization, um
+
+> c
+
+approximates a continuous time drift at coarse scale, FFN 
+
+is implemented as in (3), and ∆ = 1 /S c > 0 is the step size. The control energy is 
+
+Em 
+
+> prior
+
+=
+
+> Sc−1
+
+X
+
+> t=0
+
+∆ ∥um 
+
+> c
+
+(U mt )∥22
+
+2σ2 , σ > 0. (4) Denote output Zm 
+
+> out
+
+= ZmSc , using head Hm (stop grad.) on 
+
+Zm 
+
+> out
+
+yields coarse candidates ˜Em = {(smn , ℓ mn , π mn )}Nev 
+
+> n=1
+
+.The complexity of CSB is O(Nev Lm), where Lm is the number of temporal tokens in modality m; it is more effi-cient than standard cross-attention [37, 40] with complexity 
+
+O(LaLv ) and does not sacrifice the temporal resolution of any modality. CSB provides coarse events at a lower cost. 
+
+3.3.3. Witness Schr¨ odinger Bridge (WSB) 
+
+WSB performs a static SB mapping on coarse events from the counterpart modality to drive budget allocation and es-tablish a bottleneck for cross-modal latent interaction. For intervals Iap = [ sap , s ap + ℓap ] and Ivq = [ svq , s vq + ℓvq ], define 
+
+IoU( I, J ) = |I∩J||I∪J| ,
+
+cpq = λt|sap − svq | + λℓ|ℓap − ℓvq |
+
++ λo
+
+ 1 − IoU( Iap , I vq ) + λπ (πap − πvq )2,λt, λ ℓ, λ o, λ π are learnable parameters, for p, q ∈{1, . . . , N ev }. Let C = [ cpq ] ∈ RNev ×Nev and normal-ize confidences to marginals a, b ∈ RNev −1. The entropy-regularized OT (a static SB) coupling is 
+
+Π = arg min  
+
+> Π≥0
+
+⟨Π, C ⟩ + X
+
+> p,q
+
+Πpq log Π pq 
+
+s.t. Π1Nev = a, Π⊤1Nev = b, 
+
+with Π ∈ RNev ×Nev . Define statistics 
+
+R = X
+
+> p,q
+
+Πpq cpq , T = X
+
+> p,q
+
+Πpq , U = 1 − T, ˜Πpq = Πpq 
+
+T + ε ,H = − X
+
+> p,q
+
+˜Πpq log( ˜Πpq + ε), C = 1 − X
+
+> p,q
+
+Πpq IoU( Iap , I vq ),
+
+where ε > 0 stabilizes normalization. Here R is a weighted residual, U an unmatched rate, H a normalized coupling entropy, and C an interval inconsistency rate. Row-wise keep only the top-k entries of ˜Π (zero the rest), yielding a 
+
+k-sparse row structure. For each modality m, collect the se-lected opposite latents into a witness set P m ∈ RNev ×k×C
+
+(the cross-modal bottleneck). Let Ψm = Ψ m(Zm
+
+> out
+
+) be a one-layer Transformer. Form tokens 
+
+G = [Ψ a, Ψv , Ψa − Ψv , Ψa ⊙ Ψv , W GΦw] ∈ R5×ds ,
+
+where Φw = [R, T, U, H, C ]⊤, WG ∈ R5×ds is learn-able. Self-interact with standard self-attention and FFN, then, through Softplus activation and a 1-layer MLP, ob-tain ˆS = [ ˆSa|v , ˆSv|a]. Combine with prior control energies (Em 
+
+> prior
+
+in (4)) to get cross-modal weights: 
+
+z = Wz [ ˆSa|v , ˆSv|a, Ev 
+
+> prior
+
+− E a 
+
+> prior
+
+]⊤ + bz ,
+
+get (wv , w a) = softmax( z). Subsequently, integer ap-proximate segmentation is performed on the total event 
+
+Nev and the total step budget Stgt , allocate budget Smr =2⌊ wmStgt  
+
+> 2
+
++ 0 .5⌋, ˆN m = 2 ⌊ wmNev  
+
+> 2
+
++ 0 .5⌋, selected ˆN m
+
+token runs exactly Smr refinement iterations. Next, we select cross-modal evidence, with rp =P 
+
+> q
+
+Πpq , cq = P 
+
+> p
+
+Πpq , define priorities 
+
+γ(a) 
+
+> p
+
+= 1 − rp, γ(v) 
+
+> q
+
+= 1 − cq , πmj = exp( γmj /τ )
+
+P 
+
+> j′
+
+exp( γmj′ /τ ) .Sample Im ⊂ {1, . . . , N ev }, |I m| = ˆN m without re-placement by πm. The outputs to the refinement stage are 
+
+˜Zm 
+
+> out
+
+= Zm
+
+> out
+
+[Im, :] ∈ R ˆN m×C , ˆP m = P m[Im, :, :] ∈
+
+R ˆN m×k×C . WSB always interacts with events, thus being time-independent with a constant complexity of O(1) .
+
+3.3.4. Refinement Schr¨ odinger Bridge (RSB) 
+
+Next, we refine coarse-grained events and introduce cross-modal witnesses. Given the selected coarse-stage latent se-quence ˜Zm 
+
+> out
+
+∈ R ˆN m×C (CSB), the witness tensor ˆP m ∈
+
+R ˆN m×k×C , and the observation features F m ∈ RLm×C ,the refinement stage (RSB) evolves the iterates { ˆZmt }Smr
+
+> t=0
+
+with initialization ˆZm 
+
+> 0
+
+= ˜Zm
+
+> out
+
+; let t ∈ { 0, . . . , S mr } denote the refinement iteration index. The refinement iterations are 
+
+U mt, 1 = LN 
+
+ ˆZmt + MHA shr 
+
+ Zmt , F m, F m
+
+, (5) 
+
+U mt, 2 = LN 
+
+
+
+U mt, 1 + MHA  U mt, 1, U mt, 1, U mt, 1
+
+
+
+,
+
+Here, MHA shr stands for shared KV . Inject opposing high confidence candidates as witnesses to shrink cross modal residuals and reach the target distribution in fewer steps. For each query n ∈ { 1, . . . , ˆN m},
+
+Rm 
+
+> wit ,n
+
+= MHA  U mt, 2[n, :] , ˆP m[n, :, :] , ˆP m[n, :, :]  ∈ RC ,
+
+which stacks to Rm 
+
+> wit
+
+∈ RN m  
+
+> ∗×C
+
+. Merge memory to obtain 
+
+U mt, 3 = LN 
+
+
+
+U mt, 2 + Rm 
+
+> wit
+
++ MHA shr 
+
+ U mt, 2, F m, F m
+
+.
+
+where MHA shr is modality-shared Q and share KV with Eq. (5).This serves as the drift input. Advance with residual updates using step size ∆ = 1 /S mr and drift 
+
+Zmt+1 = Zmt + ∆ um 
+
+> ref
+
+(U mt, 3), um 
+
+> ref
+
+(X) = FFN( X),
+
+where FFN is as in (3), output ˆZmSmr denote as ˆZm
+
+> out
+
+.Per time step t, the generation of U mt, 1 and U mt, 3 incurs 
+
+O( ˆN mLm) cost, U mt, 2 incurs O ( ˆN m)2, and computing 
+
+Rm 
+
+> wit ,n
+
+incurs O(nk ˆN m). All of these costs scale linearly with the temporal length. 
+
+3.3.5. Decoding and Optimizing Objective 
+
+Decode the RSB’s output ˆZm
+
+> out
+
+, updated candidates with 
+
+{(smk , ℓ mk , π mk )} ˆN m 
+
+> k=1
+
+= Hm( ˆZm
+
+> out
+
+).
+
+Map (smk , ℓ mk ) to the absolute timeline via Eq.(1). Fuse across modalities to obtain the final event predictions. The localization loss has matching, negative, and coverage terms with Mm the set of positive matches and Um the set of un-matched candidates, Lm 
+
+> loc
+
+=
+
+X
+
+> (p,g )∈M m
+
+h 1 − EIoU( p, g ) + H(p, g ) + BCE( πmp , 1) 
+
+i
+
++ X
+
+> k∈U m
+
+BCE( πmk , 0) + X
+
+> g
+
+exp  −β max  
+
+> p
+
+IoU( p, g ),
+
+where H is huber operator, β is hyper parameter. Margin-based ranking imposes identifiable, calibrated ordering on directional uncertainty, tracks true difficulty and steers bud-get to the harder side: 
+
+Lrank = max  0, m 0 − ( ˆSa|v − ˆSv|a).
+
+where m0 > 0 is the margin hyperparameter specifying the minimum separation between the directional scores. With step granularity ρ and selectable set S, we require that adding an extra ρ-step should not worsen the objective. Let the eligible index set be J (m) = { j ∈ I (m) | sj + ρ ∈S } and define the average marginal degradation 
+
+¯∆(m) = 1max {1,|J (m)|} 
+
+P 
+
+> j∈J (m)
+
+ κ(m) 
+
+> j
+
+(sj + ρ) − κ(m) 
+
+> j
+
+(sj ) 
+
+> +
+
+,
+
+where κ(m) 
+
+> j
+
+(s) denotes the objective value of candidate j
+
+at s steps. The regularizer compares the per-step marginal effects across modalities with budget weights: 
+
+Lsvn = ˆN aSar
+
+ρ
+
+ ¯∆(v)− ¯∆(a)  
+
+> +
+
++ ˆN v Svr
+
+ρ
+
+ ¯∆(a)− ¯∆(v) 
+
+> +
+
+.
+
+This form penalizes (i) violations of non-increase via the hinge on ¯∆(m), and (ii) cross-modal imbalance by weight-ing with the actual per-modality budget ˆN mSmr . Total loss 
+
+L = X
+
+> m∈{ a,v }
+
+Lm 
+
+> loc
+
++ λrank Lrank + λsvn Lsvn ,
+
+where λrank , λ svn > 0.
+
+## 4. Experiments 
+
+This section evaluates the performance of IaMSB. Through comparative analysis with baseline methods, supported by computational complexity assessment and visualization results, it provides a comprehensive characterization of IaMSB’s behavior and performance. Supplementary ma-terials provide more details. 
+
+4.1. Setup 
+
+Datasets. We evaluate on LAV-DF [3, 4], AV-Deepfake1M 
+
+[5], and TVIL [40]. LAV-DF is a widely used benchmark; AV-Deepfake1M stresses long-form and partial forgeries; TVIL is a unilateral forgery of the visual modality. For TVIL we use a visual resolution of 216 ×120 and an audio embedding rate of 540 Hz. For AV-Deepfake1M and LAV-DF we use 128 2 resolution and 640 Hz audio embeddings. 
+
+Hardware and Implement Details. All localization experiments are run on 4×V100 (32GB) GPUs (AV-DeepFake1M) + 16 ×R9 9950X CPUs and 2 ×RTX-4090 (24GB) GPUs + 12 ×R9 5900X CPUs (LAV-DF, TVIL) with bf16 precision and AdamW [22] optimizer sharding. The batch size of each GPU is 8, which accumulates to an equivalent 128. λrank , λ svn = 0 .2. We use a learning rate Table 1. Temporal localization on LAV-DF and TVIL . The best in each column is in bold .                                                                                                                 
+
+> Dataset Methods AP@0.5 AP@0.75 AP@0.95 AR@10 AR@20 AR@50 AR@100
+> LAV-DF MDS [10] 12.78 1.62 0.00 32.15 36.71 34.39 37.88 AVTFD [20] 94.89 74.87 1.94 71.24 72.17 74.24 76.12 BA-TFD [3] 93.10 71.22 1.32 69.80 71.01 73.55 75.40 BA-TFD+ [4] 96.30 84.96 4.44 78.75 79.40 80.48 81.62 ActionFormer [39] 85.23 59.05 0.93 76.93 77.19 77.23 77.23 UMMAFormer [40] 98.83 95.54 37.61 92.10 92.42 92.47 92.48 MMMS-BA [18] 97.56 95.25 39.02 89.42 95.93 93.45 94.05 DiMoDif [19] 95.50 87.90 20.60 91.40 92.70 93.70 94.20 RegQAV [41] 94.10 88.10 27.60 91.70 91.80 93.20 94.60
+> IaMSB (ours) 99.33 95.62 55.92 94.68 95.41 95.50 95.52
+> TVIL BA-TFD+ [4] 76.90 38.50 0.25 66.90 64.08 60.77 58.42 ActionFormer [39] 86.27 83.03 28.17 84.82 85.77 88.10 88.49 UMMAFormer [40] 88.68 84.70 62.43 87.09 88.21 90.43 91.16 MMMS-BA [18] 96.87 81.33 28.43 88.61 87.83 90.47 92.91
+> IaMSB (ours) 96.89 85.33 65.62 90.05 90.82 92.00 93.10
+
+of 2.5 × 10 −4 with a cosine warmup schedule, and train all models for 40 epochs. The coarse stage (CSB) uses 2 steps per modality with Nev = n, which is tied to the eval-uation metric AR@ n; the witness stage (WSB) applies a single Sinkhorn pass to compute cross-modal statistics and select top-16 (or top-Nev if Nev < 16 ) witnesses; the re-finement bridge (RSB)’s step budget is fixed to Stgt =12 .The selectable set S = {0, 2} and step granularity ρ = 2 .Encoders are ViT-S for both branches, initialized from VideoMAE [28] (visual) and WavLM [7] (audio) knowl-edge; token embeddings and positional encodings are re-trained, and for VideoMAE we insert a frame-wise group of 
+
+[CLS] tokens, while all other encoder weights are frozen. 
+
+4.2. Comparison on LAV-DF and TVIL 
+
+Metric. We compared with the baseline on LAV-DF and TVIL datasets, and the results are shown in Tab. 1. We re-port AP@ {0.5, 0.75 , 0.95 } and AR@ {10 , 20 , 50 , 100 } [4, 40] on LAV-DF/TVIL. The experiment results of the com-parison method are an official report or from Cai et al. [4]. 
+
+On LAV-DF , Proposal–refine baselines such as BA-TFD/BA-TFD + [3, 4] and anchor-free ActionFormer [39] provide strong recall; fusion-oriented UMMAFormer [40] and MMMS-BA [18] strengthen cross-modal coupling; DiMoDif [19] models discourse-level inconsistency; RegQAV [41] stabilizes query decoding. In the table, several methods reach similar AR yet differ markedly at AP@0.95, indicating boundary accuracy is sensitive to where the limited refinement is placed. IaMSB attains markedly higher performance at strict overlap (AP@0.95) than the baselines, suggesting that its temporally linear-complexity fusion yields finer boundary resolution and directly supports our central claim. At AR@20, the uniform choice of top-k = 16 likely intro-duces redundancy within the cross-modal bottleneck, which can dampen recall. This observation further underscores the necessity of selective evidence routing rather than broad, in-discriminate exchange. 
+
+TVIL is a visual-only forgery setting (audio clean, ma-nipulations in V as introduced with the benchmark in [40]); Methods that emphasize visual refinement or query regular-ization, including ActionFormer [39], UMMAFormer [40], RegQAV [41], and MMMS-BA [18], the last of which in-corporates a dedicated lip-movement sub-network for visual modality, achieve strong relaxed-IoU precision (AP@0.5), where visual boundary modeling dominates. However, in a stricter IoU scenario, this gap is signif-icantly magnified. The cross-attention of the three views enables MMMS-BA to make significant trade-in timing density. In contrast, UMMAFormer, which has a rela-tively lower cost of timing calculation, performs stably, while IaMSB still maintains the best performance. Because IaMSB allows for adaptive iteration, it consistently leads in the recall metric within a limited number of event tokens. On LAV-DF, pronounced cross-modal inconsistencies make transport-derived cues informative; thus non-uniform step allocation yields clear AP@0.95 gains at compara-ble AR. On TVIL (visual-only tampering), cross-modal evidence is weak, so budget placement chiefly boosts re-call and mid-range IoU, while strict-IoU tightening benefits more from visual-specialized decoders. For long clips, at-tention over sequences of length S ≈ LT scales as O(S2)
+
+and dominates compute; consequently, aggressive tempo-ral downsampling or surrogate views can aid coarse dis-crimination yet often erode boundary precision at high IoU. IaMSB mitigates this trade-off by concentrating refinement where transport residuals are large, rather than distributing steps uniformly across time or modalities. 
+
+4.3. Comparison on AV-Deepfake1M 
+
+Metrics. AV-Deepfake1M follows an official temporal lo-calization protocol that reports AP at multiple IoU thresh-olds (0.50/0.75/0.90/0.95) together with AR under different proposal budgets (50/30/20/10/5). Table 2. Temporal localization on AV-Deepfake1M . The best in each column is in bold . Comparison results are from Zhu et al. [41].                                                                          
+
+> Dataset Methods AP@0.5 AP@0.75 AP@0.90 AP@0.95 AR@50 AR@30 AR@20 AR@10 AR@5
+> AVDeepfake1M BA-TFD [3] 37.37 6.34 0.19 0.02 45.55 40.37 35.95 30.66 26.82 BA-TFD+ [4] 44.42 13.64 0.48 0.03 48.86 44.51 40.37 34.67 29.88 ActionFormer [39] 36.08 12.01 1.23 0.16 27.11 27.08 27.00 26.60 25.80 UMMAFormer [40] 51.64 28.07 7.65 1.58 44.07 43.93 43.45 42.09 40.27 DiMoDif [19] 86.93 75.95 28.72 5.43 81.57 80.85 80.25 78.84 76.64 RegQAV [41] 90.24 81.86 41.98 12.57 88.14 87.68 87.27 86.95 85.97
+> IaMSB (ours) 90.31 82.03 45.15 23.01 90.02 88.61 88.05 87.74 86.03
+
+In Table 2, proposal–refine and fusion-heavy methods show moderate AR but lower AP at stricter IoUs: BA-TFD [3] and BA-TFD + [4] rely on content-driven pro-posals with uniform refinement; ActionFormer [39] offers strong anchor-free proposals yet lacks target-aware bound-ary tightening in this setting; UMMAFormer [40] strength-ens cross-modal coupling but still spreads compute evenly across segments. Recent designs tuned for fine localization perform better across columns: DiMoDif [19] improves both strict-IoU AP and AR, and RegQAV [41] further raises all metrics under the same protocol by stabilizing query de-coding with register-enhanced tokens. Under the same evaluation, IaMSB improves strict-IoU AP while keeping AR competitive or higher across pro-posal budgets, yielding the best columns overall in Ta-ble 2. We observe the same pattern: coarse-grained lo-calizers (e.g., temporal striding [40], aggressive temporal downsampling [41], or surrogate text-level alignment [19]) are severely limited under strict-IoU (AP@0.90 or 0.95). This reinforces the need for a low-cost, budget-allocatable fusion architecture whose complexity is linear in time (or effectively time-agnostic), enabling fine-grained temporal decisions without prohibitive compute. Combine with the results in Tab. 1, it indicates the necessity of time resolution for high strict-IoU, as mentiond in Sec. 1, issue (iii) .
+
+4.4. Ablation and Resource Analyze 
+
+Structural. As shown in Tab. 3, we evaluate four vari-ants under the official LAV-DF protocol. Removing the coarse bridge (-CSB) mainly hurts recall due to missing pro-posals under the fixed extractor; using only CSB amplifies modality-imbalance errors and reduces high-IoU precision; dropping refinement (-RSB) preserves mid-range AP but loses boundary polish. Removing WSB eliminates cross-modal filtering and budget allocation, leading to a substan-tial degradation across AP/AR; this indicates that the cross-modal bottleneck and budgeting are necessary, and that each component’s functional role behaves as intended. 
+
+Coarse-bridge sensitivity ( Sc). As shown in Tab. 4, under a fixed refinement budget for RSB, increasing the number of CSB steps yields the most pronounced gain when moving from Sc = 1 to Sc = 2 , likely because the coarse stage pro-vides tighter initial intervals; beyond Sc = 2 , the observed differences are within experimental variance. Since CSB is 
+
+Table 3. Structural ablations on LAV-DF. ✓means bridges kept. * means CSB forward 2 times and per modality RSB forward 6 times. Bold is our default setting.                                                    
+
+> Bridges AP AR CSB WSB RSB @0.5 @0.75 @0.95 @10 @20 @50 @100
+> ✓✓✓99.33 95.62 55.92 94.68 95.41 95.50 95.52
+> ✓✓83.25 80.37 32.51 87.83 88.62 89.05 89.57
+> ✓86.33 78.56 22.07 85.25 86.01 87.16 87.43
+> ✓∗✓∗96.35 87.08 28.16 89.83 90.78 91.39 92.04
+> ✓✓86.75 83.23 23.39 85.77 87.05 87.52 87.97
+
+Table 4. Sensitivity to coarse steps Sc under a fixed budget. Bold 
+
+is our default setting.                             
+
+> ScAP@0.5 AP@0.75 AP@0.95 AR@10 AR@20 AR@50 AR@100 198.51 93.32 52.87 93.76 94.23 94.45 94.58 299.33 95.62 55.92 94.68 95.41 95.50 95.52
+> 399.35 95.54 55.98 94.82 95.55 95.63 95.68
+
+Table 5. Sensitivity to witness memory Top-k.           
+
+> Top-k
+> AP@0 .95 24816 32 64 50.98 52.31 54.93 55.92 54.35 53.97
+
+designed to furnish WSB with a coarse yet sufficiently in-formative candidate set, Sc = 2 meets this objective and is adopted as our default. 
+
+Witness Top-k selection. Tab. 5 reports performance under different top-k settings ( k ∈ { 2, . . . , 64 }). The results show that more interaction is not necessarily better: a narrow bot-tleneck (small k) can under-expose cross-modal evidence, whereas an overly wide bottleneck (large k) weakens se-lectivity and admits noise. These trends support our weak-interaction bottleneck, which reduces WSB compute while improving accuracy. Together with the AR@20 difference on LAV-DF (Tab. 1), this result suggests that fusion can ei-ther be improved or noise can be introduced, as mentiond in Sec. 1, issue (i) , selective interaction is a better solution. 
+
+Cost. We report two representative inference settings (Tab. 6): under avg (video R1×225 ×384 , audio R1×225 ×384 ,equal allocation), per-step costs are 0.428 GFLOPs (CSB per step), 3 × 10 −5 GFLOPs (single OT iteration), and 1.01 
+
+GFLOPs (RSB per step); under max (video R1×750 ×384 , au-dio R1×750 ×384 , all refinement on one side), they are 0.739 
+
+GFLOPs, 3 × 10 −5 GFLOPs, and 2.22 GFLOPs. Totally 90         
+
+> 92
+> 94
+> 96
+> 98
+> AP@0.5 (%)
+> Compute Scaling (AP@0.5)
+> LAV-DF
+> TVIL
+> 04812 16 20 24 28 32
+> Refinement Steps (S)
+> 30
+> 40
+> 50
+> 60
+> 70
+> AP@0.95 (%)
+> Compute Scaling (AP@0.95)
+> LAV-DF
+> TVIL
+
+(a) Compute scaling under a unified budget. 0 2 4 6 8 10 12                            
+
+> Pre-softmax Sa|v
+> 0
+> 200
+> 400
+> 600
+> 800
+> Count
+> LAV-DF Audio direction ( Sa|v)
+> Audio-True (AV-True, A-True V-Fake)
+> Audio-Fake (AV-Fake, V-True A-Fake)
+> 0246810 12
+> Pre-softmax Sv|a
+> 0
+> 200
+> 400
+> 600
+> 800
+> Count
+> LAV-DF Visual direction ( Sv|a)
+> Video-True (AV-True, V-True A-Fake)
+> Video-Fake (AV-Fake, A-True V-Fake)
+> 0246810 12
+> Pre-softmax Sa|v
+> 0
+> 20
+> 40
+> 60
+> Count
+> TVIL Audio direction ( Sa|v)
+> Audio-True (A-True V-Fake)
+> 0246810 12
+> Pre-softmax Sv|a
+> 0
+> 20
+> 40
+> 60
+> Count
+> TVIL Visual direction ( Sv|a)
+> Video-Fake (A-True V-Fake)
+
+(b) Directional scale tensors before softmax, map x-axis to RSB step. 
+
+Figure 3. Compute scaling and directional scales. (a) Step–accuracy trade-off of IaMSB under a fixed budget (sensitive of Stgt ). (b) Pre-softmax directional scales that drive cross-modal allocation, with LAV-DF exhibiting overlapped True/False groups and TVIL showing the more extreme A-True V-Fake pattern. Table 6. Resource requirements. ”max.” means 30 s video; ”avg.” meas ∼ 8.6s video, which is the average length of LAV-DF.                      
+
+> Method Total Params [M] Trainable Params [M] FLOPs [G] BA-TFD 5.5 5.5 948.1 BA-TFD+ 152.9 152.9 218.2 UMMAFormer 165.9 49.7 1,562.9 RegQAV 116.5 19 251.1 IaMSB(ours, avg.) 70.6 10.3 93.0 IaMSB(ours, max.) 70.6 10.3 311.2
+
+∼ 27 .1 GFLOPs, with 20ms for IaMSB, 100ms for ex-tractor per-sample on single RTX4090. We admit that the computational cost brought by the backbone network using 
+
+O(T 2) (ViTs) cannot be ignored. However, the analysis of the computational load of each part also indicates the linear correlation of the sample duration T of the cascade bridge. 
+
+4.5. Visualization 
+
+Cost scaling (Fig. 3a). Under a unified budget, increasing the number of refinement steps S yields a monotonic im-provement of AP across operating points, with clear dimin-ishing returns at higher S. The curves show consistent gains on both LAV-DF and TVIL, and the separation between AP@ 0.5 and AP@ 0.95 highlights how extra steps increas-ingly benefit boundary “polishing” rather than coarse detec-tion—evidence that compute is preferentially spent on hard, high-IoU cases. This visualization operationalizes a practi-cal knob: choose S to target either higher precision at strict IoU or faster throughput with minimal loss, but excessively high values yield diminishing returns. 
+
+Directional scales (Fig. 3b). The histograms of pre-softmax scales (Sa|v , S v|a) reveal dataset-dependent asym-metries in cross-modal evidence. On LAV-DF, True/False groups substantially overlap, indicating frequent near-symmetric interactions between modalities (e.g., benign asynchrony and short, subtle forgeries), whereas on TVIL the video-directed scale Sv|a is more skewed in the A-True/V-Fake regime, reflecting stronger reliance on visual refinement when audio offers reliable “witness” cues. These patterns motivate our step allocator to assign more budget toward the direction with larger pre-softmax scale, while preserving robustness when distributions overlap. 
+
+Strikingly , reallocation arises even when the audio stream is genuine and supervision offers no incentive to weight audio: transport statistics still assign a non-zero quota to audio. This indicates that compute placement should be adaptive rather than modality-fixed. Uniform al-location is not necessarily optimal, and a clean modality can still aid temporal alignment and suppress false positives without increasing the total budget. Consequently, IaMSB can roughly discriminate authenticity in latent space and di-rect steps toward suspicious modalities under a unified bud-get. The evidence highlights the prevalence of compute-placement sensitivity and motivates step-wise asynchronous fusion, as mentiond in Sec. 1, issue (ii) .
+
+## 5. Conclusion 
+
+We present IaMSB, a budgeted two-stage Schr¨ odinger Bridge framework for audio–visual deepfake localiza-tion that demonstrates the problems of symmetric fusion; IaMSB trades a smaller extractor and O(T ) fusion mod-ule for finer temporal granularity to obtain more precise in-tervals. In future work, we will support adaptive budgets (Stgt ), allowing the model to select the number of reason-ing steps per instance. This enables differential resource al-location between authentic inputs and synchronous inputs. 
+
+Acknows: This work is supported by the National Science and Technology Major Project of China (No. 2025ZD0219200), the National Natural Science Foundation of China (No. 62406225). References 
+
+[1] Edson Araujo, Andrew Rouditchenko, Yuan Gong, Saurab-hchand Bhati, Samuel Thomas, Brian Kingsbury, Leonid Karlinsky, Rogerio Feris, James R Glass, and Hilde Kuehne. Cav-mae sync: Improving contrastive audio-visual mask au-toencoders via fine-grained alignment. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 18794–18803, 2025. 2 [2] Divya Jyoti Bajpai and Manjesh Kumar Hanawal. Ceebert: Cross-domain inference in early exit BERT. In Findings of the Association for Computational Linguistics (ACL Find-ings) , pages 1736–1748, 2024. 1 [3] Zhixi Cai, Kalin Stefanov, Abhinav Dhall, and Munawar Hayat. Do you really mean that? content driven audio-visual deepfake dataset and multimodal method for temporal forgery localization. In International Conference on Digital Image Computing: Techniques and Applications (DICTA) ,pages 1–10, 2022. 1, 2, 5, 6, 7 [4] Zhixi Cai, Shreya Ghosh, Abhinav Dhall, Tom Gedeon, Kalin Stefanov, and Munawar Hayat. Glitch in the matrix: A large scale benchmark for content driven audio–visual forgery detection and localization. Computer Vision and Im-age Understanding (CVIU) , 236:103818, 2023. 1, 2, 5, 6, 7[5] Zhixi Cai, Shreya Ghosh, Aman Pankaj Adatia, Munawar Hayat, Abhinav Dhall, Tom Gedeon, and Kalin Stefanov. Av-deepfake1m: A large-scale llm-driven audio-visual deep-fake dataset. In Proceedings of the ACM International Con-ference on Multimedia (ACM MM) , 2024. 2, 5 [6] Jianjian Cao, Peng Ye, Shengze Li, Chong Yu, Yan-song Tang, Jiwen Lu, and Tao Chen. Madtp: Multi-modal alignment-guided dynamic token pruning for accel-erating vision-language transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 15710–15719, 2024. 1 [7] Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, et al. Wavlm: Large-scale self-supervised pre-training for full stack speech processing. 
+
+IEEE Journal of Selected Topics in Signal Processing , 16 (6):1505–1518, 2022. 6 [8] Wei Chen, Jianwei Niu, Xuefeng Liu, Zhendong Wang, Shaojie Tang, and Guogang Zhu. Diffdvc: Accurate event detection for dense video captioning via diffusion models. In Proceedings of the AAAI Conference on Artificial Intelli-gence (AAAI) , pages 2221–2229, 2025. 2 [9] Bobby Chesney and Danielle Citron. Deep fakes: A loom-ing challenge for privacy, democracy, and national security. 
+
+California Law Review (Cal. L. Rev.) , 107:1753, 2019. 1 [10] Komal Chugh, Parul Gupta, Abhinav Dhall, and Ra-manathan Subramanian. Not made for each other-audio-visual dissonance-based deepfake detection and localization. In ACM international conference on multimedia (ACM MM) ,pages 439–447, 2020. 1, 6 [11] Valentin De Bortoli, James Thornton, Jeremy Heng, and Ar-naud Doucet. Diffusion schr¨ odinger bridge with applications to score-based generative modeling. In Advances in Neural Information Processing Systems (NeurIPS) , pages 17695– 17709, 2021. 1, 2 [12] Wei Deng, Yu Chen, Nicole Tianjiao Yang, Hengrong Du, Qi Feng, and Ricky Tian Qi Chen. Reflected schr¨ odinger bridge for constrained generative modeling. In Uncertainty in Artificial Intelligence , pages 1055–1082, 2024. 2 [13] Yuan Gong, Andrew Rouditchenko, Alexander H Liu, David Harwath, Leonid Karlinsky, Hilde Kuehne, and James R Glass. Contrastive audio-visual masked autoencoder. In Pro-ceedings of the International Conference on Learning Rep-resentations (ICLR) , 2023. 2 [14] Bo Hu, Kai Zhang, Yanghai Zhang, and Yuyang Ye. Adap-tive multimodal fusion: Dynamic attention allocation for in-tent recognition. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , pages 17267–17275, 2025. 1 [15] Po-Yao Huang, Vasu Sharma, Hu Xu, Chaitanya Ryali, Yanghao Li, Shang-Wen Li, Gargi Ghosh, Jitendra Malik, Christoph Feichtenhofer, et al. Mavil: Masked audio-video learners. In Advances in Neural Information Processing Sys-tems (NeurIPS) , pages 20371–20393, 2023. 2 [16] Jaejun Hwang, Dayoung Gong, Manjin Kim, and Minsu Cho. Generic event boundary detection via denoising dif-fusion. In Proceedings of the International Conference on Computer Vision (ICCV) , pages 14084–14094, 2025. 2 [17] Yuchi Ishikawa, Shota Nakada, Hokuto Munakata, Kazuhiro Saito, Tatsuya Komatsu, and Yoshimitsu Aoki. Language-guided contrastive audio-visual masked autoencoder with automatically generated audio-visual-text triplets from videos. In Proc. Interspeech , pages 2605–2609, 2025. 2 [18] Vinaya Sree Katamneni and Ajita Rattani. Contextual cross-modal attention for audio-visual deepfake detection and lo-calization. In IEEE International Joint Conference on Bio-metrics (IJCB) , pages 1–11. IEEE, 2024. 1, 2, 6 [19] Christos Koutlis and Symeon Papadopoulos. Dimodif: Discourse modality-information differentiation for audio-visual deepfake detection and localization. arXiv preprint arXiv:2411.10193 , 2024. 2, 6, 7 [20] Miao Liu, Jing Wang, Xinyuan Qian, and Haizhou Li. Audio-visual temporal forgery detection using embedding-level fusion and multi-dimensional contrastive loss. IEEE Transactions on Circuits and Systems for Video Technology (TCSVT) , 34(8):6937–6948, 2023. 1, 6 [21] Weifeng Liu, Tianyi She, Jiawei Liu, Boheng Li, Dongyu Yao, Ziyou Liang, and Run Wang. Lips are lying: Spot-ting the temporal inconsistency between audio and visual in lip-syncing deepfakes. In Advances in Neural Information Processing Systems (NeurIPS) , pages 91131–91155, 2024. 2 [22] Ilya Loshchilov and Frank Hutter. Decoupled weight de-cay regularization. In International Conference on Learning Representations (ICLR) , 2019. 5 [23] Yisroel Mirsky and Wenke Lee. The creation and detection of deepfakes: A survey. ACM computing surveys (CSUR) ,54(1):1–41, 2021. 1 [24] Trevine Oorloff, Surya Koppisetti, Nicol` o Bonettini, Di-vyaraj Solanki, Ben Colman, Yaser Yacoob, Ali Shahriyari, and Gaurav Bharaj. Avff: Audio-visual feature fusion for video deepfake detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 27102–27112, 2024. 1 [25] Haseena Rahmath P, Vishal Srivastava, Kuldeep Chaurasia, Roberto G Pacheco, and Rodrigo S Couto. Early-exit deep neural network-a comprehensive survey. ACM Computing Surveys , 57(3):1–37, 2024. 1 [26] Bowen Shi, Wei-Ning Hsu, Kushal Lakhotia, and Abdelrah-man Mohamed. Learning audio-visual speech representa-tion by masked multimodal cluster prediction. arXiv preprint arXiv:2201.02184 , 2022. 2 [27] Licai Sun, Zheng Lian, Bin Liu, and Jianhua Tao. Hic-mae: Hierarchical contrastive masked autoencoder for self-supervised audio-visual emotion recognition. Information Fusion , 108:102382, 2024. 2 [28] Zhan Tong, Yibing Song, Jue Wang, and Limin Wang. Videomae: Masked autoencoders are data-efficient learners for self-supervised video pre-training. Advances in neural in-formation processing systems (NeurIPS) , 35:10078–10093, 2022. 6 [29] Luisa Verdoliva. Media forensics and deepfakes: an overview. IEEE journal of selected topics in signal process-ing , 14(5):910–932, 2020. 1 [30] Hongjie Wang, Bhishma Dedhia, and Niraj K Jha. Zero-tprune: Zero-shot token pruning through leveraging of the attention graph in pre-trained transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 16070–16079, 2024. 1 [31] Shuaibing Wang, Shunli Wang, Mingcheng Li, Dingkang Yang, Haopeng Kuang, Ziyun Qian, and Lihua Zhang. Faster diffusion action segmentation. arXiv preprint arXiv:2408.02024 , 2024. 1, 2 [32] Yake Wei, Siwei Li, Ruoxuan Feng, and Di Hu. Diagnosing and re-learning for balanced multimodal learning. In Euro-pean Conference on Computer Vision (ECCV) , pages 71–86, 2024. 1 [33] Junyan Wu, Wei Lu, Xiangyang Luo, Rui Yang, Qian Wang, and Xiaochun Cao. Coarse-to-fine proposal refinement framework for audio temporal forgery detection and local-ization. In ACM International Conference on Multimedia (ACM MM) , pages 7395–7403, 2024. 1, 2 [34] Renjie Wu, Hu Wang, Hsiang-Ting Chen, and Gustavo Carneiro. Deep multimodal learning with missing modality: A survey. arXiv preprint arXiv:2409.07825 , 2024. 1 [35] Mengmeng Xu, Mattia Soldan, Jialin Gao, Shuming Liu, Juan Manuel P´ erez-R´ ua, and Bernard Ghanem. Boundary denoising for video activity localization. In Proceedings of the International Conference on Learning Representations (ICLR) , 2024. 2 [36] Yating Xu, Conghui Hu, and Gim Hee Lee. Rethink cross-modal fusion in weakly-supervised audio-visual video pars-ing. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pages 5615–5624, 2024. 1 [37] Wenyuan Yang, Xiaoyu Zhou, Zhikai Chen, Bofei Guo, Zhongjie Ba, Zhihua Xia, Xiaochun Cao, and Kui Ren. Avoid-df: Audio-visual joint learning for detecting deepfake. 
+
+IEEE Transactions on Information Forensics and Security (TIFS) , 18:2015–2029, 2023. 1, 4 [38] Yang Yang, Fengqiang Wan, Qing-Yuan Jiang, and Yi Xu. Facilitating multimodal classification via dynamically learn-ing modality gap. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , pages 62108–62122, 2024. 1 [39] Chen-Lin Zhang, Jianxin Wu, and Yin Li. Actionformer: Localizing moments of actions with transformers. In Euro-pean Conference on Computer Vision (ECCV) , pages 492– 510, 2022. 6, 7 [40] Rui Zhang, Hongxia Wang, Mingshan Du, Hanqing Liu, Yang Zhou, and Qiang Zeng. Ummaformer: A univer-sal multimodal-adaptive transformer framework for tempo-ral forgery localization. In ACM International Conference on Multimedia (ACM MM) , pages 8749–8759, 2023. 1, 2, 4, 5, 6, 7 [41] Xiaodong Zhu, Suting Wang, Junqi Yang, Yuhong Yang, Weiping Tu, and Zhongyuan Wang. Query-based audio-visual temporal forgery localization with register-enhanced representation learning. In Proceedings of the ACM Interna-tional Conference on Multimedia (ACM MM) , pages 8547– 8556, 2025. 1, 2, 6, 7
