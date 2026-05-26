@@ -1,0 +1,737 @@
+Title: AnchorFlow: Editable SVG Reconstruction via Sparse Anchor Point Fields
+
+URL Source: https://arxiv.org/pdf/2605.19551v1
+
+Published Time: Wed, 20 May 2026 01:22:04 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# AnchorFlow: Editable SVG Reconstruction via Sparse Anchor Point Fields 
+
+Mengnan Jiang 
+
+Mercedes-Benz AG Technical University of Darmstadt 
+
+mengnan.jiang@mercedes-benz.com 
+
+Christian Franke 
+
+Mercedes-Benz AG 
+
+christian.franke@mercedes-benz.com 
+
+Michele Franco Adesso 
+
+Mercedes-Benz AG 
+
+michele_franco.adesso@mercedes-benz.com 
+
+Antonio Haas 
+
+Mercedes-Benz AG 
+
+antonio.haas@mercedes-benz.com 
+
+Grace Li Zhang 
+
+Technical University of Darmstadt 
+
+grace.zhang@tu-darmstadt.de 
+
+## Abstract 
+
+Image-to-SVG reconstruction aims to produce vector graphics that are faithful to raster inputs and easy to edit. Existing methods face a structural trade-off in how vector structure is parameterized, including how many paths represent an image and how many anchor points define each path. High-fidelity methods often rely on many paths or densely parameterized curves, whereas overly compact SVG generation may deviate from the input geometry. This issue becomes more pronounced when local raster evidence is imperfect, where boundary-following reconstruction can introduce redundant anchors and fragmented structures. We argue that this trade-off should be addressed at the level of anchor placement, since anchors on Bézier curves define local path structure and strongly affect both accuracy and editability. We propose AnchorFlow, an editable SVG reconstruction framework that models path-level anchor placement with sparse anchor point fields. Given path-like foreground components extracted from a raster image, AnchorFlow predicts an image-conditioned sparse anchor field for each component and resolves it into an ordered Bézier path. Rendering-guided feedback then corrects local structural errors before re-resolution. The recovered paths are then assembled and optimized into the final SVG. Experiments on isolated paths and full images show that AnchorFlow achieves a favorable fidelity-editability trade-off, substantially reducing editable complexity while preserving competitive raster fidelity. 
+
+## 1 Introduction 
+
+Scalable Vector Graphics (SVGs) are valuable not only because they are resolution independent, but also because they expose an explicit structure that designers can inspect and edit. In image to SVG reconstruction, visual similarity alone is therefore not sufficient. A useful SVG should also be compact, interpretable, and easy to modify. This requirement is largely controlled by the anchor points of each Bézier path: too many anchors turn an SVG into a dense pixel-fitting artifact, while too few or poorly placed anchors fail to preserve the input geometry. 
+
+> Preprint.
+> arXiv:2605.19551v1 [cs.GR] 19 May 2026 Editability
+> Fidelity
+> Tracing
+> Opt.
+> Gen.
+> Adapt.
+> AutoTrace
+> VTracer
+> DiffVG
+> LIVE
+> StarVector
+> OmniSVG
+> AdaVec
+> Ours
+
+Figure 1: Fidelity and editability trade-off. This leads to a central challenge in editable SVG reconstruction: how to preserve raster fidelity while keeping the vector structure sparse and ed-itable. Different method families naturally em-phasize different parts of this space, including tracing [ 1, 22 , 23 ], optimization-based vector-ization [ 10 , 14 , 17 ], adaptive reconstruction [ 19 ,31 , 32 ], and SVG code generation [ 2, 20 , 29 ], as conceptually illustrated in Figure 1. Tracing and optimization based methods are usually well grounded in the input raster, but they often fol-low local boundary details too closely, producing fragmented paths, redundant anchors, or dense curve parameters. This issue becomes more pronounced when the input foreground components come from segmentation-guided vectorization pipelines [ 32 , 33 ], noisy contours, or boundary perturbations. In contrast, generative SVG models can produce compact and visually regular programs, but their outputs may deviate from the exact input geometry. The open question is therefore how to recover SVG paths that are faithful to the input, compact to edit, and stable under imperfect local evidence. The common limitation is that existing methods do not explicitly model where editable anchors should be placed: tracing inherits local boundary noise, optimization can absorb residuals with dense or irregular parameters, and generative models may sacrifice instance-level alignment for program regularity. We argue that this problem should be addressed at the level of anchor placement. Instead of treating anchors as a byproduct of dense curve fitting or full SVG program generation, we model them explicitly as the structural scaffold of editable paths. To this end, we introduce a sparse anchor field ,an image-conditioned representation whose peaks indicate likely anchor locations and whose local support provides evidence for path connectivity. The field is not itself the final vector output. Rather, it is a learned structural intermediate that can guide stable anchor placement before being parsed into an ordered Bézier path. This allows the method to avoid directly tracing every local boundary fluctuation while remaining more input grounded than free-form SVG generation [9, 20, 29]. AnchorFlow builds on this representation with three core stages: anchor field prediction, field-conditioned hard resolution, and rendering-guided field refinement. Since a complete raster image may contain multiple paths, layers, and colors, we first decompose it into path-like foreground com-ponents, following the common use of component or segmentation guidance in recent vectorization pipelines [ 32 , 33 ], and reconstruct each component as a local path instance. In the first stage, a lightweight predictor, Anchor Field Net (AFNet), predicts a sparse anchor field for each local path instance. In the second stage, a field-conditioned hard resolver converts the predicted field into an explicit SVG path by selecting anchors, ordering them, establishing connectivity, and initializing Bézier segments. In the third stage, AnchorFlow introduces rendering-guided feedback refinement, where rendering errors are fed back to update the anchor field and re-resolve the path when needed. This turns sparse reconstruction from a one-shot prediction into an iterative correction process while preserving an explicit editable structure. We evaluate AnchorFlow at both the path level and the full-system level. The path-level benchmark isolates the core anchor field and resolver, while full-image reconstruction tests the complete pipeline on multi-path graphics. We further study robustness under boundary perturbations to test whether the learned anchor field preserves stable anchor placement under imperfect local evidence. Finally, we ablate the rendering-guided field refinement loop and conduct a user evaluation of visual quality and perceived editability. Our contributions are summarized as follows: • Sparse anchor fields for editable SVG reconstruction. We introduce an image-conditioned anchor field that represents the sparse structural scaffold of a Bézier path, together with a field-conditioned resolver that converts the continuous field into an ordered, connected, and compact SVG path. • Rendering-guided field refinement. We introduce an inference-time refinement mechanism that feeds rendering residuals back to the anchor field, enabling local structural correction through repeated field updates and hard resolution. This improves reconstruction quality while preserving a sparse editable SVG structure. 2• Robust editable reconstruction from imperfect path evidence. We show that the learned anchor field supports stable anchor placement even when local path evidence is noisy or boundary perturbed. This enables AnchorFlow to reconstruct compact editable SVGs from both isolated paths and full multi-part images without overfitting to local boundary artifacts. 
+
+## 2 Related Work 
+
+Tracing based vectorization. Image vectorization has been studied through both classical tracing and learning-compatible pipelines [ 6]. Classical methods commonly rely on contour extraction, boundary tracing, color quantization, and curve fitting. Potrace [ 22 ] approximates bitmap contours with compact Bézier curves and remains a standard reference for clean binary inputs. AutoTrace [ 1 ]and VTracer [ 23 ] are practical tools for broader bitmap and color vectorization. These methods are efficient, deterministic, and strongly grounded in boundaries. However, because they directly follow boundary evidence, complex icons or noisy contours can lead to fragmented paths and redundant anchors. Such outputs may reproduce appearance, but are often less convenient to edit. 
+
+Optimization based vectorization. Optimization based methods formulate vectorization as param-eter fitting in vector graphics space. DiffVG [ 14 ] enables raster losses to update vector primitives through differentiable rendering. LIVE [ 17 ] progressively constructs layer wise vector graphics, while Optimize and Reduce [ 10 ] improves compactness by removing less useful shapes. Related methods also address technical drawings [ 7 ], line drawings [ 15 ], and sketch-oriented curve recovery [ 5]. These approaches can achieve strong raster fidelity, but topology, anchor placement, and control points are usually optimized together. As a result, residual errors may be absorbed by adding paths or irregular curve parameters, improving pixel fit while weakening editability. 
+
+Generative SVG modeling. Recent work models SVGs in command, token, or program space. Early neural SVG models learn latent or hierarchical command representations [ 2 , 16 ], while IconShop [ 26 ] uses autoregressive transformers for text-guided icon synthesis. Diffusion- and language-guided methods generate vector graphics or SVG programs from text, images, or visual figures [ 9, 13 , 20 , 27 –29 ]. Rendering-aware training has also been explored through reinforcement learning from rendering feedback [ 21 ]. These methods can produce compact and semantically plausi-ble SVG programs, but code generation may weaken instance-level geometric grounding. For faithful raster-to-SVG reconstruction, a clean SVG is not sufficient if its contours deviate from the input. 
+
+Adaptive vectorization. Several methods improve vectorization through decomposition, segmen-tation guidance, layering, or adaptive parameter allocation. Im2Vec [ 19 ] learns vector graphics from raster supervision, while SuperSVG [ 12 ] uses superpixel-based synthesis. SAMVG [ 33 ] and SGLIVE [ 32 ] incorporate segmentation guidance, and Layered Image Vectorization via Semantic Simplification [ 24 ] and AmodalSVG [ 11 ] reconstruct images through semantic layering and com-pletion. Less is More [ 31 ] adaptively allocates paths and control points, and gradient reconstruction objectives further improve quality [ 3]. These works are closely related to editable reconstruction, but most operate at the level of decomposition, layering, primitive budgets, or global curve allocation. Taken together, existing vectorization methods provide complementary strengths but leave an anchor-level gap for editable reconstruction: tracing can turn boundary noise into redundant anchors, optimization often entangles topology with curve parameters, and generative or adaptive methods usually do not explicitly predict where editable anchors should be placed. AnchorFlow addresses this gap by treating anchor placement as an explicit structural variable: it predicts a sparse anchor field, resolves it into an ordered Bézier path, and uses rendering feedback to correct local structural errors. 
+
+## 3 Method 
+
+We formalize AnchorFlow as three coupled components: per-path anchor field prediction, field-conditioned hard resolution, and rendering-guided field refinement. Given a raster image X, our goal is to reconstruct an editable SVG that preserves visible geometry with a compact set of anchors. Since a complete image may contain multiple paths, layers, and colors, we follow the AdaVec-style decomposition procedure [ 31 ] to obtain path-like foreground components, while AnchorFlow focuses 3Raster Input Path-like Region Extraction    
+
+> Anchor Field Resolution Curve Fitting Path Assembly
+> ...
+> A0
+> A1
+> A2
+> A3
+> Sparse Anchor Field Prediction
+> ...
+> Resolved SVG Path Appearance Recovery and Global Re fi nement
+> A3
+> A1
+> A0A2
+> AFNet
+> Latent Space
+> z
+> Encoder Decoder
+> Sparse Anchor Field
+> Anchor Point
+> Bézier Control Point
+> Recon. Path
+> Input contour
+> Rendering-guided Field Re fi ne
+
+Figure 2: Overview of AnchorFlow. The input raster is decomposed into path-like foreground components. Each component is encoded into a latent feature, decoded into a sparse anchor field, and hard resolved into an editable Bézier path. A lightweight SDF-guided control point pulling step improves local curve alignment under the resolved anchor structure. Rendering-guided feedback optionally corrects the field before re-resolution. The recovered paths are assembled, colorized, and optionally refined into the final SVG. on reconstructing each component as a compact editable path through a sparse anchor field: 
+
+{Xm, T m}Mm=1 = D(X), zm, 0 = Eϕ(Xm), Fm, 0 = Gθ (zm, 0). (1) Here, Xm is the normalized crop of the m-th foreground component, Tm maps between the local crop and the original canvas, D denotes the component extraction procedure, and Gθ denotes the field decoder that predicts the sparse anchor field from the sample-specific latent feature zm, 0.The predicted field is converted into an explicit SVG path by a deterministic hard resolver: 
+
+(C0
+
+> m
+
+, s 0
+
+> m
+
+) = H(Fm, 0, X m), (2) where s0 
+
+> m
+
+contains the discrete path structure, including anchors, ordering, connectivity, and tangents, and C0 
+
+> m
+
+denotes the corresponding cubic Bézier control points. Since H contains discrete decisions, AnchorFlow does not differentiate through it. After hard resolution, SDF-guided control point pulling adjusts only the inner Bézier control points toward distance-field evidence while keeping the resolved anchor set, ordering, and connectivity fixed. The resulting path is rendered and evaluated; when local structural errors remain, rendering-guided feedback refines the anchor field before re-resolution. Figure 2 summarizes the complete pipeline. The recovered paths are later transformed back to the original canvas, assembled, colorized, and optionally refined globally. The sparse anchor field is the core representation, allowing correction before parsing into discrete editable paths. 
+
+3.1 Sparse anchor field representation 
+
+The key design of AnchorFlow is to model anchor placement before constructing the SVG path. In editable vector graphics, anchors define the path structure: dense or noisy anchors make an SVG difficult to edit, while too few or misplaced anchors lose geometric fidelity. Direct boundary tracing may follow local artifacts, and direct SVG generation may produce compact but input-misaligned geometry. We therefore introduce a sparse anchor field as an intermediate representation between raster evidence and editable vector structure. For a local path instance Xm, let Γm denote its target path contour and let A∗ 
+
+> m
+
+= {a∗ 
+
+> i
+
+}Km 
+
+> i=1
+
+be the target anchor set. Conceptually, the target field is built from sharp anchor peaks and weaker contour support: 
+
+F ∗
+
+> m
+
+(p) = clip 
+
+
+
+max  
+
+> a∗
+> i∈A ∗
+> m
+
+exp 
+
+
+
+− ∥p − a∗ 
+
+> i
+
+∥22
+
+2σ2
+
+> a
+
+
+
++ λΓ exp 
+
+
+
+− d(p, Γm)2
+
+2σ2Γ
+
+
+
+, 0, 1
+
+
+
+, (3) 4Accept Reconstruction     
+
+> Latent Space
+> z0+Δz
+> Decoder
+> Fδ>τF?
+> Initial Anchor Field
+> A4A0A1
+> A5A6
+> A3A2
+> Yes No
+> Re fi ned Anchor Field
+> A3
+> A1
+> A2
+> A6
+> A7A8
+> A0
+> A5
+> A4
+> Recon. Target
+
+Figure 3: Rendering-guided field refinement. Incomplete anchor evidence may lead the initial field to resolve into a path with missing local structures. Rendering residuals update only the sample-specific latent perturbation ∆z, producing a refined anchor field with corrected anchor evidence. In this example, additional anchors are activated near the missed structures, and the refined field is hard resolved again into a better path that is accepted by the tolerance-based stroke score Fδ .where p is a pixel location, d(p, Γm) is the distance from p to the target contour, σa controls anchor peak sharpness, and σΓ controls the width of contour support. The first term provides sparse evidence for anchor locations, while the second term supports path ordering and connectivity. Thus, the field is not a foreground mask: it does not represent object occupancy, but structural evidence for where an editable Bézier path should place and connect its anchors. 
+
+3.2 Field-conditioned hard resolution 
+
+Given a predicted field Fm, the hard resolver converts continuous structural evidence into an explicit SVG path. It first extracts anchor candidates as local maxima with non-maximum suppression: 
+
+Am = NMS r
+
+
+
+{p | Fm(p) ≥ τa, F m(p) = max   
+
+> q∈N r(p)
+
+Fm(q)}
+
+
+
+, (4) where τa is the anchor response threshold and NMS r removes nearby duplicate peaks. The resolver then infers ordering and connectivity using contour evidence from the input component. Let γm(s) denote an ordered contour or centerline parameterized by arc length. Each detected anchor is projected onto this curve, 
+
+si = arg min  
+
+> s
+
+∥γm(s) − ai∥2, ai ∈ A m, (5) and anchors are sorted by si and connected in this order. This contour-conditioned ordering avoids relying only on Euclidean proximity, which can be unstable for concave or self-approaching shapes. For each connected anchor pair, the resolver initializes a cubic Bézier segment whose endpoints are the adjacent anchors and whose inner control points are estimated from local tangents along γm. This yields a discrete structure sm containing anchors, ordering, connectivity, and tangents, together with cubic control points Cm.Finally, we apply SDF-guided control point pulling under the resolved anchor structure, adjusting only the inner Bézier control points while keeping the anchor set, ordering, and connectivity fixed. This improves local curve alignment without changing the sparse editable structure. 
+
+3.3 Rendering-guided field refinement 
+
+The initial anchor field may provide incomplete or locally ambiguous structural evidence, causing the hard-resolved path to miss local structures or include unsupported strokes. We therefore use true rendering feedback to refine the anchor field at inference time. The SVG renderer is used only for 5Figure 4: Qualitative comparison on full-image SVG reconstruction. AnchorFlow closely preserves the input appearance across diverse graphics. diagnosis and candidate acceptance; gradients are not propagated through either the hard resolver or the renderer. Figure 3 illustrates this closed-loop correction. In the example, the initial field resolves to a path that misses local structures; residual feedback updates the latent code and produces a refined field with additional anchor evidence. The updated field is then hard resolved again, and the resulting candidate is kept only when the reconstructed path better matches the input. We render the current SVG candidate and compare it with the input through stroke evidence maps 
+
+SY and SX . Missing and extra residuals are defined as 
+
+E+ = max( SX − SY , 0) , E− = max( SY − SX , 0) . (6) After smoothing, these residuals form fixed guidance maps W + and W −, where W + highlights missing evidence and W − highlights unsupported extra evidence. We refine the field by optimizing a bounded perturbation in the latent space: 
+
+zm(∆ z) = zm, 0 + α tanh(∆ z), Fm(∆ z) = Gθ (zm(∆ z)) . (7) Only the sample-specific variable ∆z is optimized, while the network parameters (ϕ, θ ) remain frozen. Let ψτ (u) = softplus( τ − u), Fm = Fm(∆ z), and zm = zm(∆ z). We minimize 
+
+Lrefine = λ+ W +, ψ τ (Fm) + λ− W −, F m + λf ∥Fm − Fm, 0∥1 + λz ∥zm − zm, 0∥22 . (8) The positive guidance term increases field responses in missing regions, while the negative guidance term suppresses unsupported activation. The remaining terms keep the updated field close to the initial prediction. After optimization, the updated field is hard resolved again. The resulting SVG candidate is kept only if it improves the tolerance-based stroke score Fδ or satisfies the acceptance threshold τF ; otherwise, AnchorFlow keeps the previous path. This closed-loop update corrects local structural errors by changing the anchor field before hard resolution, without directly optimizing the discrete resolver or turning the SVG into a dense unconstrained fit. 
+
+## 4 Experiments 
+
+We evaluate AnchorFlow in two complementary settings: single-path reconstruction isolates the proposed anchor field and resolver, while full-image reconstruction tests the complete system on multi-part graphics. 6Table 1: Quantitative comparison on Noto Emoji [ 8], Fluent Emoji [ 18 ], and ColorSVG-100K [ 4]. Best results are in bold, and second-best results are underlined.                                                                                                                                                              
+
+> Dataset Type Method Params ↓Paths ↓MSE ↓LPIPS ↓PSNR ↑SSIM ↑Time ↓
+> Noto Emoji [8] Tracing AutoTrace [1] 9533.5 1381.7 0.001799 0.04094 27.70 0.9473 0.14 VTracer [23] 2465.9 26.7 0.002535 0.02938 25.86 0.9418 0.01
+> Opt. DiffVG [14] 1792.0 64.0 0.003058 0.14081 23.97 0.9061 110.38 LIVE [17] 960.0 32.0 0.013970 0.06213 30.72 0.9566 959.90 Gen. StarVector [20] 335.7 6.8 0.140770 0.48348 11.27 0.6235 123.80 OmniSVG [29] 987.5 76.6 0.061300 0.34030 14.78 0.7581 27.20 Adapt. AdaVec [31] 1022.4 14.3 0.010808 0.07762 24.70 0.9238 21.42 Ours 856.5 15.7 0.007020 0.05318 26.52 0.9493 47.43 Fluent Emoji [18] Tracing AutoTrace [1] 7345.2 1034.5 0.002340 0.04681 27.50 0.9509 0.19 VTracer [23] 1915.5 26.1 0.004719 0.03941 24.71 0.9406 0.01
+> Opt. DiffVG [14] 1792.0 64.0 0.002980 0.13487 24.28 0.9175 109.57 LIVE [17] 960.0 32.0 0.005770 0.06044 34.21 0.9492 289.30 Gen. StarVector [20] 514.7 8.4 0.065710 0.36757 17.94 0.6989 117.80 OmniSVG [29] 594.3 61.3 0.044400 0.22110 17.27 0.8272 23.90 Adapt. AdaVec [31] 784.1 9.4 0.001718 0.04614 31.03 0.9589 18.75 Ours 565.4 10.9 0.001405 0.03080 32.66 0.9671 28.19 ColorSVG [4] AutoTrace [1] 33934 3280.0 0.001887 0.0366 30.46 0.9573 0.35 VTracer [23] 1920 14.0 0.001176 0.0145 32.33 0.9810 0.04
+> AdaVec [31] 1353 17.2 0.008006 0.0445 30.97 0.9612 33.01 Ours 1021 17.4 0.003815 0.0385 31.84 0.9700 68.22
+
+Datasets. AFNet is trained on a mixed corpus of 17K SVG-derived samples from synthetic shapes and SVG-Stack [ 20 ] graphics. For full-image reconstruction, we sample 200 images from each of Noto Emoji [8] and Fluent Emoji [18], and additionally evaluate on 2,000 clean, medium-sized examples selected from ColorSVG-100K [ 4]. For path-level evaluation, we use 2,500 clean, medium-sized SVG paths rasterized independently. 
+
+Baselines and Metrics. We compare with tracing AutoTrace [ 1] and VTracer [ 23 ], optimization based DiffVG [ 14 ] and LIVE [ 17 ], generative StarVector [ 20 ] and OmniSVG [ 29 ], and adaptive AdaVec [ 31 ]. We report Params, Paths, MSE, LPIPS [ 30 ], PSNR, SSIM [ 25 ], and Time(s); MSE and PSNR are averaged per image independently. All experiments use one NVIDIA A100 80GB GPU, with rendering guided field refinement capped at two attempts. 
+
+4.1 Full-image SVG reconstruction 
+
+We evaluate the complete reconstruction pipeline on Noto Emoji [ 8], Fluent Emoji [ 18 ], and the additional ColorSVG-100K [ 4] subset, including component extraction, per-path reconstruction, assembly, appearance recovery, and optional global refinement. This setting tests whether AnchorFlow can preserve raster fidelity while keeping the final SVG compact and editable. Table 1 shows that AnchorFlow achieves a favorable fidelity-editability trade-off across full-image SVG reconstruction benchmarks. Compared with the closely related AdaVec [ 31 ] baseline, An-chorFlow consistently uses fewer editable parameters on all three datasets. On Noto Emoji [ 8]and Fluent Emoji [ 18 ], it also improves over AdaVec [ 31 ] in MSE, LPIPS, PSNR, and SSIM. On ColorSVG-100K [ 4], AnchorFlow obtains the lowest parameter count and the second-best SSIM, while improving over AdaVec [ 31 ] in MSE and LPIPS. Although tracing methods can achieve strong pixel-level scores on some datasets, they often require substantially more editable parameters or many paths. Optimization-based methods are metric-dependent and slower, while generative SVG models are less reliable for instance-level reconstruction. Overall, AnchorFlow produces compact editable SVGs with competitive raster fidelity. 7Input Autotrace VTracer DiffVG LIVE StarVector OmniSVG AdaVec Ours                         
+
+> Par.:50 Par.:5862 Par.:90 Par.:150 Par.:150 Par.:50 Par.:3066 Par.:78 Par.:42
+> Par.:52 Par.:5512 Par.:180 Par.:150 Par.:150 Par.:58 Par.:1218 Par.:162 Par.:58
+> Par.:46 Par.:3790 Par.:144 Par.:150 Par.:150 Par.:54 Par.:32 Par.:78 Par.:38
+
+Figure 5: Qualitative comparison on controlled single-path reconstruction. Red points indicate editable anchors, and parameter counts are reported below each result. AnchorFlow recovers clean path geometry with compact and well-placed anchors, while several baselines introduce redundant local anchors, fragmented structures, or visible geometric artifacts. Table 2: Quantitative comparison on the single-path benchmark with 2.5K extracted SVG paths. 
+
+Type Method Params ↓ MSE ↓ LPIPS ↓ PSNR ↑ SSIM ↑ Time(s) ↓
+
+Tracing AutoTrace [1] 1913.7 0.000661 0.0117 35.32 0.9893 0.08 VTracer [23] 206.4 0.000511 0.0104 35.40 0.9907 0.01 
+
+Opt. DiffVG [14] 150.0 0.044975 0.2617 19.46 0.9191 25.46 LIVE [17] 150.0 0.000717 0.0321 39.76 0.9929 261.23 Gen. StarVector [20] 49.9 0.007016 0.0569 26.80 0.9577 9.09 OmniSVG [29] 849.6 0.068482 0.2873 17.38 0.8607 19.29 Adapt. AdaVec [31] 171.2 0.000097 0.0054 41.74 0.9973 18.45 Ours 61.2 0.000092 0.0039 43.04 0.9972 10.82 
+
+4.2 Single-path reconstruction 
+
+To isolate the core path reconstruction ability of the proposed anchor field, we evaluate on a controlled single-path benchmark. Each SVG path is rasterized and reconstructed independently, without component extraction, color recovery, or multi-path assembly. Table 2 shows that AnchorFlow achieves the best MSE, LPIPS, and PSNR while using substantially fewer parameters than AdaVec [ 31 ], AutoTrace [ 1], and VTracer [ 23 ]. This indicates that the anchor field and hard resolver can recover sparse editable path structure without relying on full-image post-processing. Figure 5 further shows that AnchorFlow preserves clean path geometry while avoiding dense local anchors. 
+
+4.3 Robustness to boundary perturbations 
+
+We further evaluate whether the reconstructed path structure remains stable when input boundaries are imperfect. To simulate noisy masks from automatic component extraction, we perturb single-path raster boundaries. All methods reconstruct SVGs from the perturbed inputs and are evaluated against the original clean rasters. Figure 6 shows that boundary-following methods tend to place extra anchors along irregular contours under perturbation. In contrast, AnchorFlow preserves a compact path structure because the learned anchor field remains stable and focuses on structural anchor locations rather than local boundary fluctuations. Table 3 further confirms this trend: AnchorFlow achieves the best reconstruction quality, while its parameter count increases by only 2.9%, compared with 20.7% for AdaVec [ 31 ] and 106.7% for VTracer [23]. 8Input. VTracer AdaVec Ours Anchor Field 
+
+> Clean Perturbed
+
+Figure 6: Robustness to boundary perturbations in single-path reconstruction. The top row uses a clean input, while the bottom row uses a boundary-perturbed input that simulates imperfect masks from automatic foreground extraction. Boundary-following methods introduce extra anchors along irregular contours, whereas AnchorFlow preserves stable anchor placement through a clean learned anchor field. Table 3: Quantitative robustness under boundary-perturbed single-path inputs. ∆Params measures the relative parameter increase over clean inputs. 
+
+Method Params ↓ ∆Params ↓ MSE ↓ LPIPS ↓ PSNR ↑ SSIM ↑
+
+VTracer [23] 426.6 +106.7% 0.001049 0.0256 32.81 0.9770 AdaVec [31] 206.6 +20.7% 0.000762 0.0214 33.67 0.9818 Ours 63.0 +2.9% 0.000718 0.0169 33.97 0.9822 0% 20% 40% 60% 80% 100%         
+
+> (a) Similarity
+> Ours vs
+> AutoTrace
+> Ours vs
+> LIVE
+> Ours vs
+> StarVector
+> Ours vs
+> AdaVec
+> 67%
+> 25%
+> 20%
+> 82%
+> 25%
+> 60%
+> 67%
+> 7%
+> 8%
+> 10%
+> 10%
+> 7%
+> 5%
+> 3%
+> 5%
+> 0% 20% 40% 60% 80% 100%
+> (b) Editability
+> 8%
+> 70%
+> 27%
+> 88%
+> 82%
+> 7%
+> 55%
+> 2%
+> 5%
+> 3%
+> 12%
+> 8%
+> 18%
+> 15%
+> Both Good Win Lose Both Poor
+
+Figure 7: Human evaluation on visual similarity and editability in anonymized pairwise trials. Table 4: Ablation of rendering-guided latent refinement and global refinement on the Noto Emoji [ 8]and Fluent Emoji [18] Datasets. 
+
+Method Params ↓ Paths ↓ MSE ↓ LPIPS ↓ PSNR ↑ SSIM ↑ Time(s) ↓
+
+w/o latent ref. 709.2 13.3 0.009877 0.0829 25.43 0.9178 30.8 w/o global ref. 710.9 13.3 0.006095 0.0859 26.22 0.9258 32.4 w/o latent/global ref. 709.2 13.3 0.013472 0.1244 22.83 0.8891 26.3 
+
+full 710.9 13.3 0.004212 0.0420 29.59 0.9582 37.8 
+
+We conduct an ablation of the two refinement stages: rendering-guided latent refinement before re-resolution and global refinement after assembly. All variants use the same component extraction, hard resolution, and fixed-structure curve refinement. Table 4 shows that removing either stage degrades raster fidelity, while removing both gives the worst MSE, LPIPS, PSNR, and SSIM. The full model achieves the best fidelity with nearly unchanged Params and Paths, indicating that the refinements improve alignment without increasing editable complexity. 
+
+Human evaluation. As complementary evidence, we conduct a user study on visual similarity and task-based editability with 15 participants and 60 responses per baseline. As shown in Figure 7, AnchorFlow is preferred over LIVE [ 17 ] and StarVector [ 20 ] in visual similarity, while AutoTrace [ 1]9and AdaVec [ 31 ] are more often judged as both good. For editability, AnchorFlow is preferred over AutoTrace [ 1], LIVE [ 17 ], and AdaVec [ 31 ], and remains competitive with StarVector [ 20 ] in the editing task. 
+
+## 5 Conclusion and limitations 
+
+We presented AnchorFlow, an editable SVG reconstruction framework based on sparse anchor point fields. By predicting anchor placement as an explicit structural scaffold and correcting it through rendering-guided feedback, AnchorFlow recovers compact and input-faithful SVGs from both isolated paths and full images. AnchorFlow has several limitations. It has a modest train-inference gap because the predictor is trained with fixed anchor targets but refined with rendering feedback at inference time. In full-image reconstruction, it can also inherit errors from the component extraction frontend, and highly ambiguous or detailed components may still produce imperfect local paths. The iterative correction loop is slower than single-pass tracing methods, motivating more efficient structure-aware refinement. 10 References 
+
+[1] AutoTrace Project. AutoTrace: Bitmap to vector graphics converter. https://autotrace.sourceforge. net/ , 2024. Open source software. [2] Alexandre Carlier, Martin Danelljan, Alexandre Alahi, and Radu Timofte. DeepSVG: A hierarchical generative network for vector graphics animation. In Advances in Neural Information Processing Systems ,volume 33, pages 16351–16361, 2020. URL https://proceedings.neurips.cc/paper/2020/hash/ bcf9d6bd14a2095866ce8c950b702341-Abstract.html .[3] Souymodip Chakraborty, Vineet Batra, Ankit Phogat, Vishwas Jain, Jaswant Singh Ranawat, Sumit Dhingra, Kevin Wampler, and Michal Lukáˇ c. Image vectorization via gradient reconstruction. Computer Graphics Forum , 44(2):e70055, 2025. doi: 10.1111/cgf.70055. URL https://onlinelibrary.wiley. com/doi/10.1111/cgf.70055 .[4] Zehao Chen and Rong Pan. Svgbuilder: Component-based colored svg generation with text-guided autoregressive transformers. In Proceedings of the AAAI Conference on Artificial Intelligence , 2025. [5] Ayan Das, Yongxin Yang, Timothy Hospedales, Tao Xiang, and Yi-Zhe Song. Cloud2curve: Generation and vectorization of parametric sketches. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7088–7097, 2021. [6] Maria Dziuba, Ivan Jarsky, Valeria Efimova, and Andrey Filchenkov. Image vectorization: A review. arXiv preprint arXiv:2306.06441 , 2023. [7] Vage Egiazarian, Oleg Voynov, Alexey Artemov, Denis Volkhonskiy, Aleksandr Safin, Maria Taktasheva, Denis Zorin, and Evgeny Burnaev. Deep vectorization of technical drawings. In Computer Vision – ECCV 2020 , pages 582–598, 2020. doi: 10.1007/978-3-030-58601-0_35. URL https://www.ecva.net/ papers/eccv_2020/papers_ECCV/html/123580579.php .[8] Google Fonts. Noto Emoji. https://github.com/googlefonts/noto-emoji , 2026. Open source emoji library with vector SVG and PNG assets. [9] Qijia He, Xunmei Liu, Hammaad Memon, Ziang Li, Zixian Ma, Jaemin Cho, Jason Ren, Daniel S. Weld, and Ranjay Krishna. Vfig: Vectorizing complex figures in svg with vision-language models. arXiv preprint arXiv:2603.24575 , 2026. [10] Or Hirschorn, Amir Jevnisek, and Shai Avidan. Optimize & reduce: A top-down approach for image vectorization. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 2148–2156, 2024. doi: 10.1609/aaai.v38i3.27987. URL https://ojs.aaai.org/index.php/AAAI/ article/view/27987 .[11] Juncheng Hu, Ziteng Xue, Guotao Liang, Anran Qi, Buyu Li, Sheng Wang, Dong Xu, and Qian Yu. Amodalsvg: Amodal image vectorization via semantic layer peeling. arXiv preprint arXiv:2604.10940 ,2026. [12] Teng Hu, Ran Yi, Baihong Qian, Jiangning Zhang, Paul L. Rosin, and Yu-Kun Lai. Supersvg: Superpixel-based scalable vector graphics synthesis. arXiv preprint arXiv:2406.09794 , 2024. [13] Ajay Jain, Amber Xie, and Pieter Abbeel. Vectorfusion: Text-to-svg by abstracting pixel-based diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1911–1920, 2023. [14] Tzu-Mao Li, Michal Lukáˇ c, Michaël Gharbi, and Jonathan Ragan-Kelley. Differentiable vector graphics rasterization for editing and learning. ACM Transactions on Graphics , 39(6):193:1–193:15, 2020. doi: 10.1145/3414685.3417871. URL https://people.csail.mit.edu/tzumao/diffvg/ .[15] Hanyuan Liu, Chengze Li, Xueting Liu, and Tien-Tsin Wong. End-to-end line drawing vectorization. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , volume 36, pages 4559–4566, 2022. doi: 10.1609/aaai.v36i4.20379. URL https://ojs.aaai.org/index.php/AAAI/article/view/20379 .[16] Raphael Gontijo Lopes, David Ha, Douglas Eck, and Jonathon Shlens. A learned representation for scalable vector graphics. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,2019. [17] Xu Ma, Yuqian Zhou, Xingqian Xu, Bin Sun, Valerii Filev, Nikita Orlov, Yun Fu, and Humphrey Shi. Towards layer-wise image vectorization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16314–16323, 2022. doi: 10.1109/CVPR52688. 2022.01583. URL https://openaccess.thecvf.com/content/CVPR2022/html/Ma_Towards_ Layer-Wise_Image_Vectorization_CVPR_2022_paper.html .
+
+11 [18] Microsoft. Fluent Emoji. https://github.com/microsoft/fluentui-emoji , 2026. Open source emoji collection, MIT license. [19] Pradyumna Reddy, Michaël Gharbi, Michal Lukáˇ c, and Niloy J. Mitra. Im2Vec: Synthesizing vector graphics without vector supervision. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops , pages 734–743, 2021. URL https://arxiv.org/abs/2102.02798 .[20] Juan A. Rodriguez, Abhay Puri, Shubham Agarwal, Issam H. Laradji, Pau Rodriguez, Sai Rajeswar, David Vazquez, Christopher Pal, and Marco Pedersoli. Starvector: Generating scalable vector graphics code from images and text. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16175–16186, 2025. doi: 10.1109/CVPR52734.2025.01508. URL https: //openaccess.thecvf.com/content/CVPR2025/html/Rodriguez_StarVector_Generating_ Scalable_Vector_Graphics_Code_from_Images_and_Text_CVPR_2025_paper.html .[21] Juan A. Rodriguez, Haotian Zhang, Abhay Puri, Rishav Pramanik, Aarash Feizi, Pascal Wichmann, Arnab Kumar Mondal, Mohammad Reza Samsami, Rabiul Awal, Perouz Taslakian, Spandana Gella, Sai Rajeswar, David Vazquez, Christopher Pal, and Marco Pedersoli. Rendering-aware reinforcement learning for vector graphics generation. In The Thirty-Ninth Annual Conference on Neural Information Processing Systems , 2025. URL https://openreview.net/forum?id=2Twzlf6qFv . OpenReview poster. [22] Peter Selinger. Potrace: A polygon-based tracing algorithm, September 2003. URL https://www. mathstat.dal.ca/~selinger/potrace/potrace.pdf . Technical report. [23] Vision Cortex. VTracer: Raster to vector graphics converter. https://github.com/visioncortex/ vtracer , 2024. Open source software. [24] Zhenyu Wang, Jianxi Huang, Zhida Sun, Yuanhao Gong, Daniel Cohen-Or, and Min Lu. Layered image vectorization via semantic simplification. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7728–7738, 2025. URL 
+
+https://openaccess.thecvf.com/content/CVPR2025/html/Wang_Layered_Image_ Vectorization_via_Semantic_Simplification_CVPR_2025_paper.html .[25] Zhou Wang, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. Image quality assessment: From error visibility to structural similarity. IEEE Transactions on Image Processing , 13(4):600–612, 2004. [26] Ronghuan Wu, Wanchao Su, Kede Ma, and Jing Liao. Iconshop: Text-guided vector icon synthesis with autoregressive transformers. ACM Transactions on Graphics , 42(6):230:1–230:14, 2023. [27] Ronghuan Wu, Wanchao Su, and Jing Liao. Chat2svg: Vector graphics generation with large language models and image diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. [28] Ximing Xing, Haitao Zhou, Chuang Wang, Jing Zhang, Dong Xu, and Qian Yu. Svgdreamer: Text guided svg generation with diffusion model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. [29] Yiying Yang, Wei Cheng, Sijin Chen, Xianfang Zeng, Jiaxu Zhang, Liao Wang, Gang Yu, Xingjun Ma, and Yu-Gang Jiang. Omnisvg: A unified scalable vector graphics generation model. arXiv preprint arXiv:2504.06263 , 2025. [30] Richard Zhang, Phillip Isola, Alexei A. Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2018. [31] Kaibo Zhao, Liang Bao, Yufei Li, Xu Su, Ke Zhang, and Xiaotian Qiao. Less is more: Efficient image vectorization with adaptive parameterization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 18166–18175, 2025. doi: 10.1109/CVPR52734.2025.01693. URL 
+
+https://openaccess.thecvf.com/content/CVPR2025/html/Zhao_Less_is_More_Efficient_ Image_Vectorization_with_Adaptive_Parameterization_CVPR_2025_paper.html .[32] Hengyu Zhou, Hui Zhang, and Bin Wang. Segmentation-guided layer-wise image vectorization with gradient fills. arXiv preprint arXiv:2408.15741 , 2024. [33] Haokun Zhu, Juang Ian Chong, Teng Hu, Ran Yi, Yu-Kun Lai, and Paul L. Rosin. Samvg: A multi-stage image vectorization model with the segment-anything model. arXiv preprint arXiv:2311.05276 , 2023. 
+
+12 A Supplementary experimental results 
+
+A.1 Failure cases 
+
+Figure 8 shows two representative failure modes of AnchorFlow. First, the AdaVec-style decomposi-tion frontend [ 31 ] used for path-like component extraction may miss or merge foreground components. Since AnchorFlow reconstructs the extracted components independently, such missing or merged regions can propagate to the final SVG. Second, inputs with strong gradient appearance remain challenging, since our default appearance recovery mainly assigns path-level colors and does not fully model spatially varying fills. Input Raster Segmented Raster Output SVG Input Raster Output SVG  
+
+> (a) Component extraction failure (b) Gradient appearance failure.
+
+Figure 8: Representative failure cases. (a) Component extraction failure: missed or merged foreground components from the AdaVec-style decomposition frontend [ 31 ] lead to missing or incorrect structures in the output SVG. (b) Gradient appearance limitation: strong spatially varying colors are not fully captured by simple path-level appearance recovery. Green boxes highlight the affected regions. 
+
+A.2 Additional qualitative results 
+
+Figure 9 shows additional full-image reconstruction examples on the ColorSVG-100K [4] dataset. Figure 10 and Figure 11 show additional full-image reconstruction examples on the Noto Emoji [8] and Fluent Emoji [18] dataset. 
+
+A.3 Additional single-path and robustness examples 
+
+Figure 12 shows additional clean single-path and robustness examples under boundary-perturbed single-path inputs. 
+
+Additional assembly-stage examples. Figure 13 shows additional assembly-stage examples in full-image reconstruction. From left to right, we show the ground truth, the assembled result after path curve fitting, the initially colored paths, and the final output after global refinement. 
+
+## B Evaluation protocol and baseline configuration 
+
+B.1 Metric computation and aggregation 
+
+MSE, LPIPS, PSNR, and SSIM are computed per image and then averaged over the dataset, MSE and PSNR are averaged per image independently. The reported average PSNR is not derived from the reported average MSE; each metric is aggregated independently. All SVG outputs are rendered back to the common evaluation resolution before metric computation. Invalid, empty, non-renderable, or timed-out outputs are included in the benchmark averages through the corresponding evaluated output or a fallback rendering when needed, rather than being removed (see failure statistics in Table 5). Table 5 reports failure rates for the full-image benchmarks. 13 Input Autotrace VTracer AdaVec Ours Input Autotrace VTracer AdaVec Ours Figure 9: Additional full-image reconstruction examples on the ColorSVG-100K [4] dataset. 14 Figure 10: Additional full-image reconstruction examples on the Noto Emoji [ 8] and Fluent Emoji [18] dataset (a). 15 Figure 11: Additional full-image reconstruction examples on the Noto Emoji [ 8] and Fluent Emoji [18] dataset (b). 16 Figure 12: Additional robustness examples under boundary-perturbed single-path inputs. Table 5: Failure rates on the Noto Emoji and Fluent Emoji subsets used in Table 1.             
+
+> Dataset Noto Fluent Overall StarVector [20] 13.0% 34.5% 23.8% OmniSVG [29] 15.0% 4.5% 9.8% LIVE [17] 11.5% 8.0% 9.8%
+
+17 Figure 13: Additional assembly-stage examples in full-image reconstruction. From left to right: ground truth, assembled result after path curve fitting, initially colored paths, and final output after global refinement. 18 Table 6: Fixed-budget settings for optimization-based and generative baselines.                       
+
+> Setting Method Path budget NToken budget Full-image DiffVG 64 –Full-image LIVE 32 –Single-path DiffVG 5–Single-path LIVE 5–Full-image StarVector –2K Full-image OmniSVG –2K
+
+B.2 Editable parameter and path counting 
+
+We report editable SVG parameters rather than neural network parameters. In our evaluation, geometry parameters are counted from the numeric scalar values in exported SVG path commands. Specifically, for each <path> element, we parse the d attribute and count all numeric coordinates appearing in the path commands. These values correspond to the exported 2D geometry degrees of freedom, including endpoints and Bézier control points. We additionally count four appearance parameters per path to account for a solid RGBA color. The reported parameter count is therefore 
+
+Params = Ngeom + 4 Npaths , (9) where Ngeom is the number of numeric scalar values in all SVG path commands and Npaths is the number of exported path elements. The Paths column in evaluation tables counts exported SVG 
+
+<path> elements, while Params is the primary compactness proxy for editability. More complex appearance attributes, such as gradients or transforms, are not separately expanded unless they are represented in the exported path geometry or the per-path color term. 
+
+B.3 Baseline settings 
+
+We use official implementations or released codebases for baselines when available. All baselines are evaluated on the same input images and with the same raster-based metrics used for AnchorFlow. For tracing and optimization baselines, the generated SVG is rendered back to the common evaluation resolution before metric computation. For generative SVG models, non-renderable or invalid SVG outputs are recorded as failures; renderable outputs are evaluated directly without manual correction. Runtime is measured for end-to-end inference under the hardware setting reported in the main paper. The same parameter-counting procedure is applied to all valid SVG outputs. 
+
+Fixed-budget baselines. For full image reconstruction on Noto Emoji [ 8] and Fluent Emoji [ 18 ], we use fixed budgets for optimization baselines: DiffVG [ 14 ] uses N = 64 paths, and LIVE [ 17 ]uses N = 32 paths/layers. These budgets provide practical reference points while keeping runtime tractable, especially for LIVE [ 17 ]. For the controlled single-path benchmark, both DiffVG [ 14 ] and LIVE [ 17 ] use N = 5 . For generative SVG baselines, StarVector [ 20 ] and OmniSVG [ 29 ] use a maximum token budget of 2K tokens. Table 6 summarizes these settings. 
+
+B.4 Boundary perturbation protocol 
+
+The robustness experiment tests whether a method recovers stable path structure from imperfect local evidence. Starting from clean single-path rasters, we create boundary-perturbed inputs and evaluate each reconstruction against the original clean raster. Thus, the metric measures robustness to noisy input evidence rather than agreement with the perturbed boundary. Perturbations are applied to the binary foreground mask. We add spatially smoothed contour jitter with amplitude sampled from [0 .7, 1.3] pixels, and optionally apply small boundary chips and bumps with probabilities 0.40 and 0.30, respectively. Small disconnected fragments are removed, and the perturbed mask is rendered back to an RGB raster using the average foreground color. To preserve object identity, we reject perturbations whose IoU with the clean mask is below 0.90, whose area ratio is outside [0 .93 , 1.07] , or whose connected components indicate major fragmentation. We resample until the topology guard is satisfied. 19 Table 7: Raw response counts for the human evaluation. Each row contains 60 responses from 15 participants and four examples. Win and lose are defined from the perspective of AnchorFlow.                                              
+
+> Question Baseline Both good Win Lose Both poor Similarity AutoTrace [1] 40 15 50Similarity LIVE [17] 15 36 63Similarity StarVector [20] 12 40 62Similarity AdaVec [31] 49 443Editability AutoTrace [1] 053 07Editability LIVE [17] 549 15Editability StarVector [20] 42 4311 Editability AdaVec [31] 16 33 29
+
+We report the relative parameter increase under perturbation: 
+
+∆Params = Params pert − Params clean 
+
+Params clean 
+
+× 100% . (10) A low ∆Params indicates that the method does not simply add anchors to follow local contour noise. 
+
+B.5 Human evaluation details 
+
+We provide additional details for the human evaluation reported in the main paper. The study is designed as a pairwise preference test for two aspects of SVG reconstruction: visual similarity to the input raster and task-based editability of the reconstructed SVG structure. 
+
+Protocol. We recruited 15 participants. Each participant evaluated the same set of sixteen pairwise comparisons. The comparisons cover four representative baselines, namely AutoTrace [ 1 ], LIVE [ 17 ], StarVector [ 20 ], and AdaVec [ 31 ], with four examples for each baseline. In each comparison, participants were shown the input raster image, a task-level editing target, and two anonymized SVG reconstruction results, denoted as A and B. One result was produced by AnchorFlow and the other by the corresponding baseline. The display order of AnchorFlow and the baseline was randomized to avoid positional bias. 
+
+Questions. For each pair, participants answered two questions. The first question evaluates visual similarity: Which result better matches the input image? The second question evaluates task-based editability: Which SVG appears easier to edit for the given editing target? Participants are given a concrete edit target and asked which SVG appears easier to edit for that target. The edit targets include moving a part or path to a specified position, extending a selected path, and changing the color of a selected path. For both questions, participants chose one of four responses: A is better, both are good, both are poor, or B is better. After collection, A/B responses were mapped to four method-level categories according to the randomized display order: both good, AnchorFlow wins, the baseline wins, and both poor. 
+
+Aggregation. For each baseline and each question, we aggregate responses over 15 participants and four examples, resulting in 60 responses per baseline. The main paper visualizes the normalized response percentages. Table 7 reports the raw response counts used to generate the figure. The terms “Win” and “Lose” are defined from the perspective of AnchorFlow. 
+
+## C Supplementary method details 
+
+C.1 Cubic Bézier representation 
+
+Each reconstructed path segment is represented as a cubic Bézier curve with four control points: 
+
+Bj (t) = (1 − t)3Pj, 0 + 3(1 − t)2tP j, 1 + 3(1 − t)t2Pj, 2 + t3Pj, 3, t ∈ [0 , 1] . (11) The endpoints Pj, 0 and Pj, 3 are determined by the hard-resolved anchor structure. During fixed-structure curve fitting, only the inner control points Pj, 1 and Pj, 2 are adjusted, so the editable anchor set, ordering, and connectivity remain unchanged. 20 C.2 Sparse anchor field target and hard resolution C.2.1 Sparse anchor field target and predictor training 
+
+For a local path instance Xm, let Γm denote its target path contour and let A∗ 
+
+> m
+
+= {a∗ 
+
+> i
+
+}Km 
+
+> i=1
+
+be the target anchor set. The sparse anchor field target combines localized anchor peaks with weaker contour support: 
+
+F ∗
+
+> m
+
+(p) = clip 
+
+
+
+max  
+
+> a∗
+> i∈A ∗
+> m
+
+exp 
+
+
+
+− ∥p − a∗ 
+
+> i
+
+∥22
+
+2σ2
+
+> a
+
+
+
++ λΓ exp 
+
+
+
+− d(p, Γm)2
+
+2σ2Γ
+
+
+
+, 0, 1
+
+
+
+. (12) Here p is a pixel location, d(p, Γm) is the distance from p to the target contour, σa controls the sharpness of anchor peaks, and σΓ controls the width of contour support. The field is therefore not an occupancy mask. It encodes structural evidence for where an editable Bézier path should place anchors and how local contour support should guide downstream ordering. AFNet is trained to predict this field from the normalized raster crop: 
+
+min 
+
+> ϕ,θ
+
+X
+
+> m
+
+Lfield 
+
+
+
+Gθ (Eϕ( eXm)) , eF ∗
+
+> m
+
+
+
+, (13) where eXm and eF ∗ 
+
+> m
+
+denote consistently augmented input and target pairs. In the reported warmup training, Lfield is implemented as a weighted pixel wise field reconstruction loss, 5.0 MSE + 1 .0 ℓ1.The loss encourages localized anchor responses while suppressing dense background activation, making the predictor a sparse structural initializer rather than a direct SVG generator. 
+
+C.2.2 Field-conditioned hard resolution 
+
+Given a predicted field Fm, the hard resolver converts continuous structural evidence into an explicit SVG path. Anchor candidates are extracted as local maxima after thresholding and non-maximum suppression: 
+
+Am = NMS r
+
+
+
+{p | Fm(p) ≥ τa, F m(p) = max   
+
+> q∈N r(p)
+
+Fm(q)}
+
+
+
+, (14) where τa is the anchor response threshold and NMS r removes nearby duplicate peaks. To infer ordering and connectivity, the resolver uses contour evidence from the input component. Let 
+
+γm(s) be an ordered contour or centerline parameterized by arc length s. Each detected anchor is projected onto this path coordinate, 
+
+si = arg min  
+
+> s
+
+∥γm(s) − ai∥2, ai ∈ A m, (15) and anchors are sorted by si and connected in this order. This contour-conditioned ordering avoids relying only on Euclidean proximity, which can be unstable for concave or self-approaching shapes. For each adjacent anchor pair, we initialize a cubic Bézier segment whose endpoints are fixed by the anchors. The inner control points are initialized from local tangent directions estimated along the routed contour between the two anchors. This produces a discrete structure sm containing anchors, ordering, connectivity, and tangents, together with cubic control points Cm.
+
+C.3 Fixed-structure control point fitting 
+
+After hard resolution, AnchorFlow applies a fixed-structure control point fitting stage. In the im-plementation, the default backend is SDF-guided control point pulling. The target distance field is constructed from the input centerline by thresholding the input stroke, optionally applying a light morphological close, skeletonizing the stroke, and computing a distance transform. The code also supports input-edge and predicted-field-band targets, but the default part-wise inference setting uses the input-centerline target. The pulling stage first identifies poorly aligned curve segments using the true-render error map. For selected segments, the endpoints Pj, 0 and Pj, 3 remain fixed, and only the inner control points are optimized. Let B denote the selected curve set and let ΦX be the target distance field. The geometric term samples each Bézier curve and penalizes distance to the target evidence: 
+
+Lgeo = 1
+
+|B| K
+
+X
+
+> j∈B
+> K
+
+X
+
+> k=1
+
+ΦX (Bj (tk)) . (16) 21 The complete objective is 
+
+Lcp = Lgeo + λhLhandle + λlLlength + λtLtangent 
+
++ λpLprogress + λsLside + λsep Lsep . (17) The handle term keeps the refined handles close to the initialization, the length term discourages excessively long handles, and the tangent term preserves the local tangent directions estimated during hard resolution. The progress, same-side, and separation terms are lightweight anti-folding regularizers that discourage backward progress, inconsistent handle side changes, and near-collapsed inner control points. In the baseline fitting stage, an additional self-intersection projection can move unstable handles toward a chord-aligned fallback when sampled curves self-intersect. These operations affect only curve geometry under the fixed anchor structure and are not backpropagated to the field predictor. 
+
+C.4 Rendering-guided field refinement C.4.1 Tolerance-based stroke score 
+
+Rendering-guided refinement uses a tolerance-based stroke score to decide whether a candidate needs correction and whether a regenerated candidate should be accepted. We convert the input raster and the rendered SVG into binary stroke masks: 
+
+MX = {p | X(p) < η }, MY = {p | Itrue (p) < η }. (18) Let d(p, M ) denote the Euclidean distance from pixel p to the nearest foreground pixel in mask M .Under tolerance radius δ, precision and recall are 
+
+Pδ = 1
+
+|MY |
+
+X
+
+> p∈MY
+
+1[d(p, M X ) ≤ δ] , Rδ = 1
+
+|MX |
+
+X
+
+> p∈MX
+
+1[d(p, M Y ) ≤ δ] . (19) The resulting score is 
+
+Fδ = 2Pδ Rδ
+
+Pδ + Rδ + ϵ . (20) This score is less sensitive to minor antialiasing and rasterization offsets than direct pixel matching, and is used as a conservative structural acceptance signal. 
+
+C.4.2 Residual guidance and latent field refinement 
+
+When the current SVG candidate has insufficient stroke agreement, AnchorFlow constructs residual guidance maps from the input stroke evidence and the true-rendered SVG evidence: 
+
+SX = 1 − X, SY = 1 − Itrue . (21) Missing and extra residuals are defined as 
+
+E+ = max( SX − SY , 0) , E− = max( SY − SX , 0) , (22) and smoothed to obtain guidance maps W + and W −. In the implementation, missing evidence can also be replaced by a more structured birth-guidance map derived from curve split diagnostics. This map places high positive guidance near under-resolved curve regions where adding anchor evidence is expected to improve the reconstruction. The field is refined by optimizing only a sample-specific latent perturbation: 
+
+zm(∆ z) = zm, 0 + α tanh(∆ z), Fm(∆ z) = Gθ (zm(∆ z)) . (23) The model parameters are frozen. Let Fm = Fm(∆ z) and zm = zm(∆ z). The optimized objective is Lrefine = λ+ W +, ψ τ (Fm) + λ− W −, F m
+
++ λf ∥Fm − Fm, 0∥1 + λz ∥zm − zm, 0∥22. (24) The positive guidance term increases field response in missing or under-resolved regions, while the negative guidance term suppresses unsupported activation. The regularization terms keep both the updated field and latent code close to the initial prediction. After optimization, the updated field is hard-resolved again and fitted with the same fixed-structure control point pulling stage. The candidate is accepted only if it satisfies the tolerance-based stroke criterion; otherwise the previous accepted state is restored. This rollback rule prevents a failed latent update from corrupting the sparse SVG structure. 22 C.5 Optional repair, assembly, and global refinement 
+
+This subsection describes an optional and conservative repair stage followed by assembly and global polishing. These stages do not introduce new structural contributions; they serve as post-processing for the sparse anchor field output. 
+
+C.5.1 Optional contour-guided densification and simplification 
+
+When residual-guided latent refinement is insufficient, an optional final repair stage can insert an additional anchor into an under-parameterized segment. For each anchor pair, the resolver keeps the routed contour polyline πij . A midpoint anchor is inserted at half arc length: 
+
+amid  
+
+> ij
+
+= πij 
+
+ 12 L(πij )
+
+
+
+, (25) and the original segment is replaced by two segments: 
+
+(ai, a j ) → (ai, a mid  
+
+> ij
+
+), (amid  
+
+> ij
+
+, a j ). (26) The densified structure is then fitted and refined. To preserve editability, an optional simplification step removes anchors only when the increase in true-render loss or local geometric error remains below conservative thresholds: 
+
+∆Ltrue ≤ ϵabs or ∆Ltrue 
+
+Ltrue 
+
+≤ ϵrel . (27) This stage is a last-resort repair mechanism for locally under-parameterized paths and is separate from the main sparse anchor field prediction route. 
+
+C.5.2 Assembly, appearance recovery, and global refinement 
+
+After all local path instances are reconstructed, each path is transformed back to the original canvas using its inverse crop transform: 
+
+Ysvg = Assemble  {T −1 
+
+> m
+
+(Cm)}Mm=1 
+
+ . (28) The assembled paths follow the ordering produced by the component extraction frontend. Appearance is recovered from the corresponding raster components. For each component, we estimate a robust representative color from pixels inside the part mask and assign it to the SVG path. For non-uniform components, a local appearance fitting stage may fit simple gradients or adjust colors before global assembly. We optionally apply a final global pydiffvg refinement after assembly and colorization. This stage is separate from residual-guided latent field refinement. It operates directly on the assembled SVG and serves as final polishing for geometry and appearance. It does not add new paths and does not change the sparse anchor structure produced by AnchorFlow. Let Θg denote SVG geometry parameters and 
+
+Θc denote appearance parameters. The objective is 
+
+min  
+
+> Θg,Θc
+
+λphoto Lphoto + λsil Lsil + λedge Ledge + λg ∥Θg − Θ0 
+
+> g
+
+∥22 + λc∥Θc − Θ0 
+
+> c
+
+∥22. (29) The implementation uses a geometry-only stage followed by a joint geometry-and-color stage. The regularizers keep the refined SVG close to the assembled initialization and reduce unstable color or geometry drift. 
+
+## D Training and implementation details 
+
+D.1 Training sample preparation 
+
+The AFNet training set is constructed from SVG-derived local path instances rather than full as-sembled SVG images. For each source SVG, we extract path-level geometry, rasterize the selected path or component into a normalized crop, and build a paired sparse anchor field target from the corresponding SVG structure. The raster crop is used as the network input, and the field target provides supervision for anchor evidence and local contour support. This preparation produces aligned pairs (Xm, F ∗
+
+> m
+
+), where Xm is the local raster evidence and F ∗ 
+
+> m
+
+is the target sparse anchor field. For each local path instance, the preparation procedure is: 23 Table 8: Composition of the training corpus. The corpus contains 17,000 SVG-derived samples from two sources: procedurally generated synthetic shapes and samples curated from SVG-Stack [20]. Source Subset All Train Val Procedural Synthetic shapes 6000 5398 602 SVG-Stack [20] Font glyphs 4969 4472 497 Emojis 2840 2555 285 Icons 1001 901 100 Other graphics 2190 1971 219 Total 17000 15297 1703 1. Parse the SVG path geometry and obtain the editable anchor positions from the path structure. 2. Rasterize the local path or component into a grayscale crop and normalize it to the training resolution. 3. Sample the target contour and construct the sparse field target using anchor peaks and weaker contour support, as defined in Eq. 12. 4. Store the raster crop, the field target, and metadata needed for reproducible splitting and validation. This construction ensures that the predictor is trained on structural evidence for anchor placement rather than on object occupancy masks or final SVG code. 
+
+D.2 Training corpus composition 
+
+We train the anchor field predictor on a lightweight mixed SVG-derived corpus with 17,000 samples, split into 15,297 training samples and 1,703 validation samples. The corpus contains two main sources. First, we procedurally generate 6,000 clean synthetic shape samples, including basic geometric primitives such as circles, ellipses, rectangles, rounded rectangles, triangles, trapezoids, pentagons, hexagons, stars, rings, frames, and other simple polygonal or curved shapes. These samples provide clean supervision and help the predictor learn basic anchor structures. The remaining 11,000 samples are curated from SVG-Stack [ 20 ], and are organized into font glyphs, emojis, icons, and other general SVG graphics. Font glyphs provide clean path-dominant contours, emojis and icons introduce stylized multi-part shapes, and the remaining SVG-Stack [ 20 ] graphics increase structural diversity with more varied and complex vector layouts. This corpus is used only to train the anchor field predictor; all quantitative comparisons are reported on separate evaluation sets. 
+
+D.3 Data augmentation and reproducibility 
+
+The training pipeline uses online augmentation rather than storing a fixed augmented copy of the dataset. Importantly, augmentation is applied only to the raster input, while the anchor field target remains tied to the original clean structure. This design encourages the predictor to recover stable anchor placement from imperfect raster evidence, instead of overfitting to local boundary artifacts. To mimic imperfect masks produced by automatic segmentation, we apply boundary degradation augmentation during training. Each input is first converted into a binary foreground mask using a fixed foreground threshold. We then apply a set of lightweight perturbations with independent probabilities: random erosion or dilation to simulate stroke width changes and local missing regions, random opening or closing to remove small protrusions or fill small gaps, local boundary jitter produced by a low-resolution displacement field, and down-up resampling to introduce jagged staircase-like contours. After these mask-level perturbations, the mask is converted back to a grayscale raster. We also apply mild appearance perturbations, including Gaussian blur, small Gaussian noise, and contrast scaling. In the main training configuration, online augmentation is enabled for all training samples. The default probabilities are 0.30 for erosion/dilation, 0.25 for opening/closing, 0.22 for boundary jitter, and 24 Table 9: V9 warmup training configuration for the reported 64-base AFNet model.                                 
+
+> Setting Value Model AFNet base64 Architecture single-head U-Net field predictor Base width 64 Encoder widths 64, 128, 256, 512 Downsampling MaxPool2d Upsampling bilinear interpolation with skip connections Block design Conv + GroupNorm + SiLU Trainable parameters 13,283,265 Warmup objective 5.0·MSE + 1 .0·ℓ1
+> Optimizer AdamW Weight decay 1×10 −4
+> Betas (0 .9,0.999)
+> Initial learning rate 1.6×10 −4
+> Scheduler cosine annealing Minimum learning rate 5×10 −8
+> Epochs 140 Batch size 24 Gradient clipping 1.0 Random seed 42 Best validation total loss 0.009643
+
+0.45 for jagged down-up resampling. The down-up scale is sampled from [0 .20 , 0.60] . Appearance perturbations use probabilities 0.12 for blur, 0.45 for noise, and 0.35 for contrast scaling. Validation augmentation, when used, is deterministic with a fixed seed so that the same sample receives the same augmented version across epochs. The dataset split is defined by fixed index files for the full corpus, training split, and validation split. All reported predictor training runs use the same split. The final model checkpoint is selected according to validation performance and then used unchanged in the downstream part-wise SVG reconstruction pipeline. 
+
+D.4 Network architecture and predictor training setup 
+
+We pretrain the reported AFNet checkpoint with the V9 warmup training strategy. The predictor is a single-head U-Net field predictor, denoted as UNetFieldPredictorV9_1 . It takes a one-channel raster crop as input and predicts a one-channel sparse anchor field. The network has a four-level encoder-decoder structure. With base width b = 64 , the encoder widths are b, 2b, 4b, and 8b.Downsampling uses max pooling, while upsampling uses bilinear interpolation followed by skip connections from the corresponding encoder levels. Each convolutional block uses convolution, GroupNorm, and SiLU activation. The 64-base warmup model has 13,283,265 trainable parameters. The warmup stage is used to obtain a stable structural initializer before applying the inference-time hard resolution and rendering-guided correction described in the main paper. During this stage, we optimize only pixel-wise anchor-field reconstruction and do not enable the structured inference losses used later by the resolver and refinement loop. Let P be the predicted anchor field and G the target field. The warmup objective is 
+
+Lwarmup = wmse MSE( P, G ) + wℓ1 ∥P − G∥1, (30) with wmse = 5 .0 and wℓ1 = 1 .0. We use AdamW with weight decay 10 −4 and betas (0 .9, 0.999) .The initial learning rate is 1.6 × 10 −4 and is annealed by a cosine schedule to 5 × 10 −8. Training runs for 140 epochs with batch size 24, random seed 42, and gradient clipping threshold 1.0. The best validation total loss of this warmup run is 0.009643. Table 9 summarizes the model and training configuration used for the reported checkpoint. Model selection is performed on the fixed validation split, and the selected checkpoint is then used unchanged in all downstream reconstruction experiments. 25 Table 10: End-to-end AnchorFlow inference pipeline. The procedure is written as pseudocode to clarify how the implementation connects component extraction, part-wise reconstruction, field refinement, assembly, appearance recovery, and optional global refinement. 
+
+Input: raster image X, trained AFNet (Eϕ, G θ ), maximum refinement rounds R.
+
+Output: reconstructed SVG Ysvg .1. Decompose X into path-like foreground components {Xm, T m}Mm=1 = D(X), where Xm is a normal-ized crop and Tm stores the crop-to-canvas transform. 2. For each component m = 1 , . . . , M :2.1 Encode and decode the crop to obtain an initial sparse anchor field: zm, 0 = Eϕ(Xm) and Fm, 0 =
+
+Gθ (zm, 0).2.2 Hard resolve the field into anchors, ordering, connectivity, tangents, and cubic Bézier controls: 
+
+(C0
+
+> m
+
+, s 0
+
+> m
+
+) = H(Fm, 0, X m).2.3 Apply SDF-guided control point pulling under the fixed anchor structure. Only inner Bézier control points are adjusted. 2.4 Render the candidate with the true SVG renderer and compute the tolerance-based stroke score Fδ .2.5 If the score is insufficient, build residual guidance maps and optimize only the sample-specific latent perturbation ∆z while keeping network weights frozen. 2.6 Decode the updated latent, hard resolve the updated field, refit the fixed structure, and accept the candidate only if it improves the tolerance-based stroke criterion. 2.7 If residual-guided regeneration remains insufficient and the repair option is enabled, apply conservative contour-guided midpoint densification followed by curve fitting and simplification. 3. Transform all accepted component paths back to the original canvas using T −1 
+
+> m
+
+.4. Assemble the transformed paths according to the part order, assign appearance from the raster components, and optionally fit simple gradients for non-uniform parts. 5. Optionally apply global pydiffvg polishing to the assembled SVG without adding new paths. 
+
+Table 11: Default inference settings used in the implementation. Setting Value Maximum field refinement rounds 2Latent update variable ∆z only Acceptance score tolerance-based stroke Fδ
+
+Control point refinement SDF-guided control point pulling Final repair optional midpoint densification and simplification Global refinement optional pydiffvg polishing 
+
+D.5 Inference settings 
+
+Algorithm 10 gives the full reconstruction procedure used for full-image SVG reconstruction. The pipeline first decomposes the raster image into path-like foreground components, reconstructs each component independently, and then maps all recovered paths back to the original canvas. The residual-guided field refinement is local to each component and is applied only when the hard-resolved candidate does not satisfy the tolerance-based stroke criterion. Table 11 summarizes the default inference settings used by the implementation. The hard-resolved baseline is followed by SDF-guided control point pulling. Rendering-guided field refinement then runs as a finite conservative loop: each candidate is re-resolved, fitted under fixed structure, rendered, and accepted only if it satisfies the tolerance-based stroke criterion. Unless otherwise specified, thresholds and loss weights are fixed across the evaluation set. 26

@@ -1,0 +1,365 @@
+Title: Physics-Aware 3D Gaussian Editing for Driving Scene Generation
+
+URL Source: https://arxiv.org/pdf/2605.25373v1
+
+Published Time: Tue, 26 May 2026 02:36:54 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+> 1
+
+# Physics-Aware 3D Gaussian Editing for Driving Scene Generation 
+
+Feng Zhou 1,3, Jian Zhang 2,3, Yuhang Sun 3, He Wang 1, Qiong Wen 3, Debao Kong 3, Tieru Wu 1,∗, Rui Ma 1,∗
+
+Abstract —3D Gaussian Splatting (3DGS) has shown great potential in autonomous driving simulation and data generation, enabling photorealistic reconstruction and flexible scene manip-ulation. However, existing 3DGS scene editing methods have limited support for road geometry editing (e.g., inserting speed humps or sunken roads), and generally do not couple such edits with plausible vehicle-road interaction dynamics. Such editing is essential for generating training data under extreme driving scenarios or evaluating system reliability under these road irreg-ularities. Moreover, many optimization-based methods require minutes of per-edit refinement, while existing efficient alternatives mainly focus on appearance-level or object-level manipulation rather than physics-aware road irregularity editing. To address these limitations, we propose RoVES, a Road-and-Vehicle Editing System for physics-aware 3D Gaussian editing in driving scenes. RoVES enables single-image-driven road geometry insertion and couples the edited road profile with a 4-DOF half-car vehicle dynamics model to achieve physics-aware vehicle pose correction in vertical displacement and pitch. RoVES inserts road elements in a one-shot, optimization-free pipeline (1.84 s), and the full pipeline (including color transfer and vehicle-dynamics-based pose correction) completes in 6.24 s; it edits dynamic vehicles via pose editing and corrects poses frame-by-frame to approximate dynamics-consistent vertical displacement and pitch responses. Experiments on the Waymo dataset show that RoVES provides practical efficiency and competitive visual consistency for physics-aware driving scene generation. 
+
+Index Terms —3DGS, physics-aware scene editing, driving scene generation, vehicle dynamics. 
+
+I. I NTRODUCTION 
+
+# THE development of autonomous driving technology relies heavily on massive training and testing data under diverse and challenging conditions to train robust models and verify safety assurance [1]. Among these conditions, discrete road structures such as speed humps, potholes and sunken roads are critical long-tail scenarios: they induce vertical displacement and pitch of the vehicle body, causing pose jitter and sensor data offsets that degrade perception, localization and control, and may even lead to instability accidents [2]. However, real-world collection of such data is costly, risky and sparse, making real-scene 3D reconstruction with controllable editing a scalable path to generate both training data and simulation environments for these critical conditions. 3DGS [3] has become a widely adopted representation for driving scene reconstruction, enabling photorealistic recon-structions of static and dynamic elements [4], [5]. However, existing 3DGS editing methods have not fully addressed two critical aspects required by physics-aware driving scene generation. First, current driving-scene editing methods mainly 
+
+> 1School of Artificial Intelligence, Jilin University, Changchun, China.
+> 2National Key Laboratory of Automotive Chassis Integration and Bionics, Jilin University, Changchun, China.
+> 3China FAW Group Co., Ltd., Changchun, China.
+> ∗Corresponding authors
+
+focus on appearance modification, weather simulation, tra-jectory editing, or object-level manipulation, but they do not explicitly model metric road-height irregularities as excitation for vehicle-road interaction dynamics [6]–[8]. Consequently, edited road irregularities cannot induce dynamics-consistent vehicle responses, limiting their suitability for physics-aware driving scene generation. Second, iterative gradient-based methods often require minutes of per-edit optimization [9]– [11], while efficient direct-editing alternatives [12], [13] mainly support object-level operations such as translation, rotation, deletion, or insertion, and lack the specialized func-tionality needed for road-geometry insertion with vehicle-pose correction. Although recent work has integrated 3DGS with physics for rigid-object manipulation in indoor scenes (e.g., RoboSimGS [14] which adopts a hybrid representation to handle rigid and articulated objects), such coupling for driving scenes—specifically continuous road geometry editing and vehicle vertical dynamics—remains underexplored because the latter imposes fundamentally different requirements on geometric representation and vehicle-response modeling. To fill these gaps, we propose RoVES, a novel 3DGS road and vehicle editing framework that explicitly integrates vehicle-road interaction dynamics for physics-aware scene editing. RoVES adopts an optimization-free editing archi-tecture that couples a half-car dynamics model with edited road geometry to perform physics-aware, dynamics-consistent vehicle pose correction, while inserting static road elements in a single forward pass and manipulating dynamic vehicles via pose editing. Example editing results are shown in Fig. 1. The core contributions of this paper are as follows:  
+
+> •
+
+A physics-aware coupling between 3DGS road editing and a classic vehicle dynamics model: the edited road height profile provides physical excitation, and frame-wise pose correction yields dynamics-consistent vertical displacement and pitch responses, linking visual editing with physics-aware pose correction.  
+
+> •
+
+An optimization-free, geometry-pose decoupled editing framework that separates static road Gaussian insertion from dynamic vehicle pose adjustment, requiring no backpropagation or fine-tuning (1.84 s object insertion, 6.24 s full pipeline).  
+
+> •
+
+A single-image and text-driven insertion pipeline with KNN adaptive scale and Lab color transfer that sup-presses monocular point-cloud artifacts for high-fidelity fusion. Extensive comparative and ablation studies on the Waymo dataset indicate that our method provides practical efficiency and physics-aware vehicle responses, with competitive geo-metric and visual quality.  
+
+> arXiv:2605.25373v1 [cs.CV] 25 May 2026 2
+> Fig. 1. Editing results of RoVES. (a) Original view; (b)–(d) demonstrate progressively more complex editing capabilities achieved by our method: (b) Road editing with physics-aware vehicle response; (c) Dynamic vehicle pose editing; (d) Ego-view road editing with physics-aware ego-vehicle pose correction.
+
+II. R ELATED WORK 
+
+We review related work from two directions: 3DGS scene editing and vehicle-road interaction physics for data genera-tion. 
+
+A. 3D Gaussian Splatting Scene Editing Methods 
+
+3DGS scene editing methods are broadly categorized into optimization-based and optimization-free approaches, repre-senting a fundamental trade-off between flexibility and effi-ciency. Optimization-based methods, the current mainstream, itera-tively fine-tune Gaussian parameters via rendering loss. Full-scene approaches such as GaussianEditor [10], GaussCtrl [11] and 3DSceneEditor [15] offer high flexibility through text- or image-driven loss guidance, but require 2–10 minutes per edit due to the costly gradient-based optimization. Local methods like On-the-Fly GS [16] and EditSplat [17] reduce runtime to 1–3 minutes by confining updates to user-specified regions, yet the iterative refinement still cannot match the batch generation throughput demanded by autonomous driving simulation. Optimization-free methods achieve second-level editing by eliminating gradient optimization and relying solely on object-level Gaussian decoupling and geometric transformations. Gaussian Grouping [12] and GaussianCut [13] enable instant translation, rotation, and deletion without retraining, though they depend on high-quality instance segmentation (which degrades in occluded driving scenes) and only support basic pose adjustments and object addition/deletion. 
+
+B. Vehicle-Road Interaction Physics and Data Generation 
+
+Autonomous driving simulation benefits from visually real-istic scenes and plausible vehicle-road interaction dynamics for algorithm verification and data generation. Mainstream platforms such as CarSim, Prescan, and CARLA provide mature multi-degree-of-freedom vehicle dynamics [18], [19], but they suffer from a significant Sim-to-Real gap due to manually modeled scenes that lack real-world texture and geometric fidelity, limiting their usefulness for generating realistic training data. Real-road reconstruction-based simulation (e.g., using NeRF/3DGS) improves visual realism, yet most works focus solely on rendering and trajectory planning, neglecting dynam-ics induced by road roughness [20], [21]. Existing kinematics simulations (e.g., lane changing, translation) on reconstructed scenes also ignore vertical displacement and sensor jitter [22], [23]. Recent efforts like RoboSimGS [14] integrate 3DGS with physics for robotic manipulation, but their hybrid represen-tation (3DGS background + mesh objects) is inefficient for 3 
+
+> Fig. 2. Overview of our pipeline. The scene is reconstructed into static background, dynamic objects, and sky. Our framework decouples into two branches: (static) road geometry elements inserted from a single image and text prompt using detection-segmentation, monocular depth lifting, and scale-corrected Gaussian merging in a one-shot forward pass; (dynamic) vehicles support direct pose editing (translation, rotation, deletion) and physics-aware pose correction via vehicle dynamics: a half-car dynamics model uses the edited road profile to compute dynamics-consistent vertical displacement and pitch responses. Ego-centric videos are then rendered.
+
+large-scale outdoor road editing and does not address vehicle dynamics, thus cannot generate road-editing data with physics-aware, dynamics-consistent vehicle responses. In summary, existing methods still lack an efficient frame-work that jointly supports realistic road editing, rapid batch generation, and physics-aware vehicle response modeling—the gap addressed by RoVES. III. M ETHODOLOGY 
+
+Our editing framework explicitly integrates vehicle-road interaction dynamics for physics-aware scene editing. Specif-ically, a half-car dynamics model is coupled with the edited road geometry: the road height profile serves as the external excitation input to the model, and the solved body displace-ment and pitch are superimposed onto vehicle poses. To realize this coupling efficiently, we build RoVES around a 
+
+geometry–pose decoupled framework (Fig. 2) that enables optimization-free editing: static road structures are inserted through a one-shot pipeline; dynamic vehicles are manipulated in two modes—direct pose editing (translation, rotation, dele-tion of object instances) by simply updating pose sequences, and physics-aware pose correction via vehicle dynamics as described above. The entire process requires no retraining. 
+
+A. 3DGS Scene Representation 
+
+We reconstruct driving scenes from the Waymo Open Dataset [24] using the Street Gaussians [4] framework, which decouples the scene into static background, dynamic objects, 
+
+> Fig. 3. Comparison of editing pipelines. Left: traditional iterative optimization converges per edit. Right: our optimization-free approach decouples static one-shot insertion from dynamic pose updates, requiring no retraining.
+
+and sky branches. After one-time reconstruction, all Gaussian parameters (position, covariance, color, opacity) are frozen; only per-frame object poses are retained independently. This frozen, pose-decoupled representation is the prerequisite for our editing framework, described next. 
+
+B. Geometry–Pose Decoupled Editing Framework 
+
+Since the core editing tasks in driving scenes mainly involve spatial pose changes, we adopt an optimization-free strategy. As illustrated in Fig. 3, traditional pipelines (left) iteratively optimize Gaussian parameters for every edit, costing minutes. Our framework (right) decouples editing into two independent branches that operate directly on the frozen pre-trained scene: 4
+
+Static structure editing. For road structures not modeled as independent dynamic entities, a one-shot forward pass performs geometric generation and Gaussian primitive initial-ization on the ROI region of the input image. The resulting Gaussians are merged into the background by replacing prim-itives within the projected area, without any gradient back-propagation. See Section III-C for details on depth estimation, mask projection, and appearance alignment. 
+
+Dynamic object editing. Dynamic editing covers two cases: pose editing (deletion, translation, rotation, treated uniformly as per-frame pose modifications) and physics-aware pose cor-rection driven by road excitation. All Gaussian parameters of dynamic vehicles remain fixed. At render time, primitives in object coordinates are transformed to world coordinates via the updated extrinsic parameters. When the road geometry is edited (Section III-C), the dynamics module (Section III-D) samples the road height at ground contact points, solves the vehicle’s vertical displacement and pitch angle, and superim-poses them onto the ego/target vehicle poses, enabling coupled visual editing and physics-aware pose response. 
+
+C. Static Branch: Single-Image Driven Road Geometry Inser-tion 
+
+Following the static branch of our decoupled framework, we insert typical road structures from a single reference image and text prompt, avoiding the need for 3D assets or retraining. The pipeline comprises three lightweight steps: object texture extraction, monocular depth estimation with local 3D point cloud generation, and scale-corrected Gaussian merging. 
+
+1) Object Texture Extraction: To isolate the target road structure from cluttered backgrounds and avoid color bleeding during fusion, we adopt the Grounding DINO [25]+SAM [26] cascade: DINO is driven by text prompts (such as speed bump/sunken pavement, etc.) to complete target localization, and then SAM obtains fine foreground masks. Based on this, the background is removed and pure object textures are cropped to reduce the impact of edge color mixing on subsequent geometric and visual fusion. 
+
+2) Depth Estimation and Local 3D Point Cloud Generation: 
+
+To lift the 2D object texture to metric 3D geometry from a single view, we use the Depth Anything [27] model to perform depth prediction on the texture map and the original scene image synchronously, generating a pixel-wise dense depth map. We use the segmentation mask to remove background and noisy depth values, then normalize and scale the remaining relative depth to absolute metric depth based on preset real-world dimensions. Given the preset real-world dimensions, 2D pixels are converted into local 3D point-cloud coordinates ( xlocal , ylocal ,
+
+zlocal ): 
+
+xlocal =
+
+ row h − 1 − 0.5
+
+
+
+Lx (1) 
+
+ylocal =
+
+ col w − 1 − 0.5
+
+
+
+Ly (2) 
+
+zlocal = d − dmin 
+
+dmax − dmin 
+
+Lz (3) where h and w are the height and width of the depth map (identical to those of the cropped object texture), and 
+
+row ∈ [0 , h −1] , col ∈ [0 , w −1] are the zero-based pixel indices; Lx, Ly , Lz denote the real-world physical length, width, and height preset for the target road geometry element; 
+
+d is the per-pixel depth value from Depth Anything within the foreground mask; dmin and dmax are the minimum and maximum depth values across the foreground region after background removal. 
+
+3) Scale Correction and Gaussian Merging for Monocular Depth–derived Point Clouds: To resolve the scale mismatch and blurring caused by overly dense monocular depth-derived point clouds, we modify the original 3DGS scale initializa-tion. The inserted geometry is obtained by back-projecting monocular depth to get dense point clouds. The local sampling density far exceeds the sparse SfM point clouds used in the 3DGS training stage. If the original KNN scale initialization formula log  √d2 + ϵ (where d is the Euclidean distance to the nearest neighbor in the point cloud, ϵ = 10 −7)is directly applied, dense point clouds will cause excessive overlap of Gaussian primitives in local areas, and obvious color bleeding and blurring artifacts will be generated after 
+
+α-blending during rendering. Therefore, on the premise of retaining neighborhood geometric adaptability, a global scaling factor σ ∈ (0 , 1] is introduced to uniformly tighten the scale to reduce the effective radiation range and suppress excessive mixing: 
+
+s = log 
+
+p d2 + ϵ
+
+
+
++ log (σ) , σ = 0 .01 (4) After scale initialization, the remaining Gaussian attributes are assigned as follows and merged into the static background Gaussian set. The three-dimensional point cloud coordinates are rigidly transformed to world coordinates ( Xw, Y w, Z w). Color is represented by spherical harmonics: the zero-order (DC) coefficient is taken from the texture RGB, while higher-order coefficients are set to zero to match the monocular appearance prior and avoid ambiguity under missing multi-view constraints. Opacity is uniformly set to 0.95. The new primitives are merged into the static background Gaussian set and the updated checkpoint is written back, completing road element insertion without retraining. 
+
+4) Statistical Color Transfer in Lab Space: To eliminate color discrepancy between the inserted object and the sur-rounding road surface, we adopt the statistical color transfer method [28]. The method performs mean-variance matching in Lab space, combined with brightness fine-tuning and linear blending to preserve local texture contrast. Let the source point cloud RGB be csrc and the reference background color be cref (sampled from the original road surface, clipped to 2%–98% quantiles to exclude outliers). After converting both to Lab space, we obtain the per-channel means (μL, μ a, μ b) and standard deviations (σL, σ a, σ b). The 
+
+a and b channels are linearly mapped via: 
+
+anew = asrc − μasrc 
+
+σasrc 
+
+· σaref + μaref (5) 
+
+bnew = bsrc − μbsrc 
+
+σbsrc 
+
+· σbref + μbref (6) 5𝑧 𝑠     
+
+> 𝑚 𝑠
+> 𝑙 𝑓 𝑙 𝑟
+> θ
+> 𝑚 𝑢𝑓
+> 𝑘 𝑠𝑓
+> 𝑘 𝑡𝑓
+> 𝑐 𝑠𝑓
+> 𝑧 𝑢𝑓
+> 𝑚 𝑢𝑟
+> 𝑘 𝑠𝑟
+> 𝑘 𝑡𝑟
+> 𝑐 𝑠𝑟
+> 𝑧 𝑢𝑟
+> 𝑧 𝑟𝑓 𝑧 𝑟𝑟 𝑟𝑜𝑎𝑑
+> Fig. 4. Definition of the half-car model.
+
+To avoid flattening texture contrast, we apply only a mean shift to the L channel: 
+
+Lnew = Lsrc + λ  μLref − μLsrc 
+
+ (7) with λ = 0 .2. The transferred values are converted back to RGB, and the final color is obtained by linearly blending the source and transferred colors: 
+
+cf inal = (1 − β)csrc + β · cnew (8) where β = 0 .75 . This strategy naturally integrates the inserted road element while balancing color consistency and texture retention. 
+
+D. Dynamic Branch: Physics-Aware Pose Correction via Ve-hicle Dynamics 
+
+Besides direct pose editing (deletion, translation, rotation) which simply updates the pose sequences of dynamic vehicles, our framework also supports physics-aware pose correction via vehicle dynamics. Following the dynamic branch of our decoupled framework, edited road geometry provides the excitation input for our vehicle dynamics model. We solve the vehicle body pose in real time, directly correcting the 3DGS rendering pose to couple visual editing with physics-consistent vehicle motion. 
+
+1) Standard Half-Car 4-DOF Dynamics Model: To in-stantiate the proposed physics-aware correction, we compute dynamics-consistent vertical displacement and pitch angle un-der road excitation using the classic 4-DOF half-car dynamics model [29], illustrated in Fig. 4. This model balances accuracy and efficiency, and is widely used in vehicle-road vibration and ride comfort analysis. The model has four independent degrees of freedom: the vertical displacement zs at the center of mass and the pitch angle θ of the sprung mass, and the vertical displacements zuf , zur of the front and rear unsprung masses. Based on Newton’s second law and the rigid body rotation law, the system dynamics differential equations are established as follows: 
+
+
+
+ms ¨zs = −ksf (zs − zuf − lf θ) − csf 
+
+
+
+˙zs − ˙zuf − lf ˙θ
+
+
+
+−ksr (zs − zur + lr θ) − csr 
+
+
+
+˙zs − ˙zur + lr ˙θ
+
+
+
+Iy ¨θ = lf ksf (zs − zuf − lf θ) + lf csf 
+
+
+
+˙zs − ˙zuf − lf ˙θ
+
+
+
+−lr ksr (zs − zur + lr θ) − lr csr 
+
+
+
+˙zs − ˙zur + lr ˙θ
+
+
+
+muf ¨zuf = ksf (zs − zuf − lf θ) + csf 
+
+
+
+˙zs − ˙zuf − lf ˙θ
+
+
+
+−ktf (zuf − zrf )
+
+mur ¨zur = ksr (zs − zur + lr θ) + csr 
+
+
+
+˙zs − ˙zur + lr ˙θ
+
+
+
+−ktr (zur − zrr )
+
+(9) The symbols and units are defined as follows. ms (kg) is the sprung mass, Iy (kg ·m2) is the pitch moment of inertia, 
+
+lf and lr (m) are the distances from the barycenter to the front and rear axles, muf and mur (kg) are the front and rear unsprung masses, ksf and ksr (N/m) are the front and rear suspension stiffnesses, csf and csr (N ·s/m) are the front and rear suspension damping coefficients, and ktf and ktr (N/m) are the front and rear tire stiffnesses. Dotted and double-dotted variables denote first and second time derivatives. zrf and zrr 
+
+(m) are the road heights at the front and rear contact points. We solve the above differential equations using the fourth-order Runge-Kutta (RK4) method. The resulting vehicle state curves are then sampled at each video frame timestamp and applied as pose corrections to the corresponding Gaussians. 
+
+2) Road Height Field and Pose Correction: To couple the edited road geometry with the dynamics model, we build a dense height field from Gaussians and sample contact-point excitations. We first project the edited road Gaussians onto a ground-plane grid and compute a signed height residual with respect to the local road plane. For protruding structures such as speed humps, we retain the maximum residual per cell; for depressions such as sunken roads, we retain the minimum residual per cell. When the vehicle moves, the heights at the front and rear contact points are sampled frame by frame as the road excitation zrf and zrr . Eq. (9) is then solved numerically via RK4 to yield the body vertical displacement zs and pitch angle 
+
+θ, which are directly superimposed onto the 3DGS vehicle poses to produce physics-aware, dynamics-consistent vertical displacement and pitch responses. IV. E XPERIMENTS 
+
+This section evaluates our method through comparative and ablation experiments using both quantitative and qualitative analyses. 
+
+A. Experimental Setup 
+
+All experiments are conducted on an NVIDIA RTX 4090 GPU with PyTorch. We evaluate on 10 scenes from the Waymo Open Dataset, inserting two typical road structures (speed humps and sunken roads) for comparison with other editing methods. 6                                                           
+
+> TABLE I REFERENCE -L EVEL COMPARISON WITH REPRESENTATIVE 3D E DITING METHODS
+> Method Application Scenario Optimization-Free Physics-Aware Response Running Time Devices CLIPdir ↑
+> Instruct-NeRF2NeRF [9] General scenarios ××≈60 min Titan RTX 0.16 GaussianEditor [10] General scenarios ××≈5-10 min RTX A6000 0.2071 GaussCtrl [11] General scenarios ××≈9 min A5000 0.192 3DSceneEditor [15] General scenarios ××≈2-5 min A100 0.232 GaussianCut [13] General scenarios ✓×≈1.5 min RTX 4090 –DrivingGaussian++ [6] Driving scene editing ××≈8 min 8×RTX 8000 0.2327 Ours Driving scene editing ✓✓≈6.24 s RTX 4090 0.257
+> Note: All comparison values (CLIPdir, Running Time, Devices) are taken or derived from the respective original papers. Since hardware varies across methods, this table serves as a reference-level comparison. The GaussCtrl CLIPdir value is averaged over multiple scenes as reported in [11].
+
+Evaluation metrics : 
+
+> •
+
+CLIP Direction Similarity (CLIPdir) [6]: Measures the cosine between image feature changes and text prompt feature changes. Higher is better.  
+
+> •
+
+CIEDE2000 [30]: Quantifies the color difference be-tween edited and reference road surfaces. Lower is better.  
+
+> •
+
+Sharpness : Laplacian variance and Tenengrad gradient [31] are adopted to quantify edge sharpness. Higher is sharper.  
+
+> •
+
+Dynamic response error : We report RMSE and extrema error (Ext. Err, peak/trough discrepancy) for pitch angle 
+
+θ and vertical displacement zs against CarSim. Lower is better.  
+
+> •
+
+User study [10]: 10 subjects rate visual naturalness on a 1–5 scale (5 = best). Higher is better. 
+
+B. Comparative Experiments 
+
+We first provide a reference-level comparison with represen-tative 3D editing methods, then evaluate dynamics-response consistency against CarSim and rendering realism via user study. 
+
+1) Reference-Level Comparison with 3D Editing Meth-ods: Since existing methods differ in datasets, edit types, hardware, prompt settings, and supported operations, we use Table I as a reference-level comparison rather than a controlled benchmark. Adapting appearance-level or object-level editing methods to metric road-height insertion with dynamics would require nontrivial extensions beyond their original scope. Gaussian Grouping [12], HorizonForge [7], and Horizon-Weaver [8] are omitted due to unavailable comparable metrics or different edit settings. RoVES instead targets physics-aware road-height insertion coupled with vehicle dynamics for vertical displacement and pitch responses. 
+
+Efficiency analysis : Table II shows that object insertion takes 1.84 s on our platform, and the full pipeline takes 6.24 s. Although cross-paper runtimes in Table I are not directly comparable, our breakdown shows that RoVES completes road editing and vehicle-dynamics-based pose correction within seconds, supporting rapid batch generation. 
+
+2) Evaluation of Dynamic Response and Rendering Re-alism: We evaluate two key aspects of our framework: the response consistency of the half-car dynamics model against CarSim, and the visual realism of the rendered scenes with vehicle-dynamics-based pose correction (evaluated via user study). For dynamics validation, we select Scene 150 from the                                                
+
+> TABLE II RUNTIME BREAKDOWN OF THE PROPOSED EDITING PIPELINE
+> Module Running Time Texture extraction 0.04 s Depth estimation 0.94 s Point cloud generation 0.09 s Statistical Lab color transfer (optional) 2.67 s Gaussian primitive initialization and scene merging 0.77 s Vehicle-dynamics solving and pose correction 1.73 s Total 6.24 s TABLE III VEHICLE PARAMETERS USED IN DYNAMICS SIMULATION
+> Parameters Ego Vehicle Front Vehicle Unit
+> ms1200 2600 kg
+> Iy1800 4800 kg ·m²
+> lf1.2 1.1 m
+> lr1.5 1.9 m
+> muf /m ur 54 110 kg
+> ksf /k sr 18000 52000 N/m
+> csf /c sr 3200 6500 N·s/m
+> ktf /k tr 180000 380000 N/m Note: Derived from typical ranges in the literature [29].
+
+10 edited Waymo scenes as a representative case and insert a sunken road. We then simulate a front vehicle (light truck) followed by the ego vehicle (sedan) traversing the edited road. Vehicle parameters are listed in Table III, and the same road profile and vehicle parameters are used for both RoVES and CarSim. 
+
+Quantitative comparison. Fig. 5 compares the time-domain responses of our model (ego and front vehicles) against the CarSim reference, and Table IV reports the corresponding error metrics. For pitch angle, the extrema error (Ext. Err.) is below 0.14 ◦, with RMSEs of 0.125 ◦ and 0.055 ◦ for the front and ego vehicles, respectively. For the vertical displacement of the center of mass, the extrema error is below 8.2 mm, with RMSEs of 2.87 mm and 1.87 mm, respectively. These results indicate that our half-car solver closely matches the CarSim response in both amplitude and temporal trend. 
+
+Qualitative comparison (rendering realism). Fig. 6shows the rendered driving scenes with and without vehicle-dynamics-based pose correction. The physics-aware correction produces visually plausible pitch and vertical displacement (user study score 4.7), while the uncorrected case lacks plausi-7
+
+Fig. 5. Comparison of pitch and vertical response trends between our model and CarSim. The “No dynamics” case (zero curves) is omitted. TABLE IV DYNAMIC RESPONSE AGREEMENT WITH CAR SIM 
+
+Vehicle Pitch RMSE Pitch Ext. Err. zs RMSE zs Ext. Err. (deg) (deg) (mm) (mm) Front vehicle 0.125 0.139 2.87 8.11 Ego vehicle 0.055 0.114 1.87 4.13 
+
+Fig. 6. Visual comparison of rendered driving scenes. (a) Original scene; (b) Rendering without vehicle-dynamics-based pose correction; (c) Rendering with physics-aware pose correction (Ours). 
+
+ble vehicle response (user study 2.1), confirming the necessity of our dynamics module. 
+
+C. Ablation Experiments 
+
+We further ablate the KNN adaptive scale factor σ and the color transfer module, as these components directly affect rendering sharpness and visual consistency. 
+
+1) Ablation Experiment on KNN Adaptive Scale Control Scaling Factor: We evaluate the impact of the global scaling factor σ (see Sec. III-C3) on the rendering sharpness of inserted objects. Speed humps of various textures are inserted into the same scene, and we test σ ∈ { 1.0, 0.5, 0.1, 0.01 },where σ = 1 .0 reproduces the original 3DGS scale initializa-tion as a fair baseline. 
+
+Quantitative analysis. Table V reports the Laplacian vari-ance and Tenengrad gradient under different scaling factors. 
+
+TABLE V ABLATION STUDY ON GAUSSIAN SCALE PARAMETER σσ Laplacian Variance ↑ Tenengrad Gradient ↑ User Study ↑
+
+1 (Original) 113.14 9823.82 3.8 0.5 376.99 15856.15 4.2 0.1 666.07 18313.65 4.5 
+
+0.01 (Ours) 700.35 18483.72 4.5 
+
+Note: All values are averaged over three speed hump instances. σ =0.001 yields results highly similar to σ = 0 .01 (both quantitatively and qualitatively) and is therefore omitted. 
+
+Fig. 7. Visualization of the effect of Gaussian scale parameter σ on rendering sharpness. (a) Input textures; (b)-(e) Rendering results with σ =1, 0.5, 0.1, 0.01 (from top to bottom), respectively. TABLE VI QUANTITATIVE COMPARISON OF DIFFERENT COLOR TRANSFER 
+
+STRATEGIES 
+
+Method PC-RGB PC-Lab Img-RGB Img-Lab (Ours) CLIPdir ↑ 0.2256 0.2175 0.0564 0.2631 
+
+CIEDE2000 ↓ 17.9592 6.6190 1.7976 3.0623 User Study ↑ 2.52 3.82 2.73 4.16 
+
+Note: PC/Img: reference source; RGB/Lab: color space for transfer. 
+
+Fig. 8. Color transfer results under different strategies. (a) No color transfer; (b) PC-RGB; (c) PC-Lab; (d) Img-RGB; (e) Img-Lab (Ours). 
+
+Our KNN adaptive strategy ( σ = 0 .01 ) achieves the highest scores on both metrics, significantly outperforming the original 3DGS initialization ( σ = 1 .0) across all three speed hump instances. This demonstrates effective alleviation of the scale mismatch caused by dense monocular point cloud insertion. 
+
+Qualitative analysis. Fig. 7 shows the local magnification comparison. The original 3DGS ( σ = 1 .0) produces blurred edges and lost texture details; σ = 0 .5 improves edge sharp-ness with slight residual blurring; σ = 0 .01 and σ = 0 .1
+
+both yield clear edges and distinct textures with negligible visual difference. Considering the numerical improvement and parameter robustness, we select σ = 0 .01 as the default value. 
+
+2) Ablation Experiment on Color Transfer: To verify the effectiveness of the color transfer module on visual consistency after sunken road insertion, we compare four strategies that vary by reference source (point cloud vs. rendered image) and color space (RGB vs. Lab) . The quantitative results are reported in Table VI. 
+
+Quantitative analysis. As shown in Table VI, PC-RGB 8
+
+performs worst overall, while PC-Lab achieves higher user ratings but with larger color difference. Img-RGB yields the lowest CIEDE2000 at the cost of semantic alignment. Img-Lab (Ours) obtains the best balance across all three metrics, validating its advantage in perceptual consistency and texture preservation. 
+
+Qualitative analysis. Fig. 8 shows the color transfer results under different strategies. PC-RGB produces obvious color discrepancy from the background road; PC-Lab yields visually acceptable results but retains noticeable color differences; Img-RGB suppresses color discrepancy at the cost of texture detail; Img-Lab (Ours) naturally blends the inserted object with the road while preserving local contrast and texture. V. C ONCLUSION 
+
+We presented RoVES, a novel physics-aware 3D Gaussian editing framework for driving scene generation. By decou-pling static Gaussian insertion from dynamic pose updates and coupling edited road geometry with a half-car vehicle dynamics model, RoVES unifies visual scene editing with physics-aware vehicle pose correction. It achieves second-level editing (6.24 s) while producing dynamics-consistent vertical displacement and pitch responses. Experiments on the Waymo dataset suggest that RoVES provides a practical step toward bridging 3DGS-based visual scene editing and physics-aware driving scene generation, particularly for road geometry edit-ing, vehicle-response modeling, and efficient batch generation. VI. L IMITATIONS AND FUTURE WORK 
+
+The current physics-aware module considers only vertical vehicle dynamics, including vertical displacement and pitch, and requires manually specified vehicle parameters. This limits its direct applicability to diverse vehicle types without per-vehicle tuning. Moreover, when edited road structures induce extreme vehicle pose deviations, the resulting viewpoints can fall outside the well-reconstructed regions of the original 3DGS scene, leading to rendering artifacts that degrade visual quality. Future work will address these limitations by au-tomating vehicle parameter identification from visual cues and extending the model with lateral dynamics for more complete vehicle motion modeling, and by exploring diffusion-based inpainting or generation to faithfully restore artifact regions under large-amplitude viewpoint changes, while preserving the one-shot nature of 3DGS insertion. REFERENCES [1] Y. Li, ”Choose your simulator wisely: A review on open-source simu-lators for autonomous driving,” IEEE Trans. Intell. Veh. , vol. 9, no. 5, pp. 4861–4876, May 2024. [2] P. Sadeghi and A. Goli, ”Investigating the impact of pavement condition and weather characteristics on road accidents,” Int. J. Crashworthiness ,vol. 2024, pp. 1–17, Jan. 2024. [3] B. Kerbl, G. Kopanas, T. Leimkuehler, and G. Drettakis, ”3D Gaussian splatting for real-time radiance field rendering,” ACM Trans. Graph. ,vol. 42, no. 4, pp. 1–14, Jul. 2023. [4] Y. Yan et al., ”Street Gaussians: Modeling Dynamic Urban Scenes with Gaussian Splatting,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 156-173. [5] P. Liu et al., ”Omni-Scene: Omni-Gaussian Representation for Ego-Centric Sparse-View Scene Reconstruction,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 22317-22327. [6] Y. Xiong, X. Zhou, Y. Wan, D. Sun, and M.-H. Yang, ”DrivingGaus-sian++: Towards realistic reconstruction and editable simulation for surrounding dynamic driving scenes,” 2025, arXiv:2508.20965 .[7] Y. Wang, F. Pittaluga, Z. Tasneem, et al., ”HorizonForge: Driv-ing Scene Editing with Any Trajectories and Any Vehicles,” 2026, 
+
+arXiv:2602.21333 .[8] S. Liu, H. Zhang, et al., ”HorizonWeaver: Generalizable Multi-Level Semantic Editing for Driving Scenes,” 2026, arXiv:2604.04887 .[9] A. Haque, M. Tancik, A. A. Efros, et al., ”Instruct-NeRF2NeRF: Editing 3D Scenes with Instructions,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. 
+
+, 2023, pp. 19740–19750. [10] Y. Chen, Z. Chen, C. Zhang, et al., ”GaussianEditor: Swift and Con-trollable 3D Editing with Gaussian Splatting,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 10206-10215. [11] J. Wu, ”GaussCtrl: Multi-view consistent text-driven 3D Gaussian splat-ting editing,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 55–71. [12] M. Ye et al., ”Gaussian grouping: Segment and edit anything in 3d scenes,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 162-179. [13] U. Jain, A. Mirzaei, and I. Gilitschenski, ”GaussianCut: Interactive segmentation via graph cut for 3D Gaussian splatting,” in Proc. Adv. Neural Inf. Process. Syst. , vol. 37, 2025, pp. 89184–89212. [14] H. Zhao, C. Zeng, L. Zhuang, et al., ”High-Fidelity Simulated Data Generation for Real-World Zero-Shot Robotic Manipulation Learning With Gaussian Splatting,” IEEE Robot. Automat. Lett. , vol. 11, no. 5, pp. 5310-5317, Mar. 2026. [15] Z. Yan, L. Li, Y. Shao, et al., ”3dsceneeditor: Controllable 3d scene editing with gaussian splatting,” 2024, arXiv:2412.01583 .[16] Y. Xu, H. Cheng, Y. Yu, et al., ”Gaussian On-the-Fly Splatting: A Pro-gressive Framework for Robust Near Real-Time 3DGS Optimization,” 
+
+IEEE Robot. Automat. Lett. , vol. 11, no. 1, pp. 426-433, Nov. 2025. [17] D. I. Lee et al., ”EditSplat: Multi-view fusion and attention-guided optimization for view-consistent 3D scene editing with 3D Gaussian splatting,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. ,2025, pp. 11135–11145. [18] J. Pahk, ”Lane segmentation data augmentation for heavy rain sensor blockage using realistically translated raindrop images and CARLA simulator,” IEEE Robot. Automat. Lett. , vol. 9, no. 6, pp. 5488–5495, Jun. 2024. [19] P. Lin and M. Tsukada, ”Model predictive path-planning controller with potential function for emergency collision avoidance on highway driving,” IEEE Robot. Automat. Lett. , vol. 7, no. 2, pp. 4662–4669, Apr. 2022. [20] Y. Feng et al., ”Gaussian Splashing: Unified Particles for Versatile Motion Synthesis and Rendering,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 518-529. [21] Y. Ma et al., ”FastPhysGS: Accelerating Physics-based Dynamic 3DGS Simulation via Interior Completion and Adaptive Optimization,” 2026, 
+
+arXiv:2602.01723 .[22] H. Tian et al., ”SimScale: Learning to Drive via Real-World Simulation at Scale,” 2025, arXiv:2511.23369 .[23] H. Gao, ”RAD: Training an end-to-end driving policy via large-scale 3DGS-based reinforcement learning,” 2025, arXiv:2502.13144 .[24] P. Sun, ”Scalability in perception for autonomous driving: Waymo open dataset,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2020, pp. 2446–2454. [25] S. Liu et al., ”Grounding dino: Marrying dino with grounded pre-training for open-set object detection,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 38–55. [26] A. Kirillov et al., ”Segment anything,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. , 2023, pp. 3992–4003. [27] H. Lin, S. Chen, J. Liew, et al., ”Depth anything 3: Recovering the visual space from any views,” 2025, arXiv:2511.10647 .[28] E. Reinhard, M. Adhikhmin, B. Gooch, and P. Shirley, ”Color transfer between images,” IEEE Comput. Graph. Appl. , vol. 21, no. 4, pp. 34–41, 2001. [29] R. Rajamani, Vehicle Dynamics and Control . New York, NY, USA: Springer Science & Business Media, 2011. [30] M. Tejada-Casado, J. Ruiz-L´ opez, R. I. Ghinea, et al., ”Exploring the CIEDE2000 thresholds for lightness, chroma, and hue differences in dentistry,” J. Dent. , vol. 150, 2024, Art. no. 105327. [31] D. Kong et al., ”Progressive Multi-Scale Perception Network for Non-Uniformly Blurred Underwater Image Restoration,” Sensors , vol. 25, no. 17, p. 5439, 2025.

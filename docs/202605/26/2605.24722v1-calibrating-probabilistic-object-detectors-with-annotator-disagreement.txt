@@ -1,0 +1,474 @@
+Title: Calibrating Probabilistic Object Detectors with Annotator Disagreement
+
+URL Source: https://arxiv.org/pdf/2605.24722v1
+
+Published Time: Tue, 26 May 2026 01:07:13 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Calibrating Probabilistic Object Detectors with Annotator Disagreement 
+
+Zhi Qin Tan ∗, Owen Addison, Yunpeng Li 
+
+> Faculty of Dentistry, Oral & Craniofacial Sciences, King’s College London, London, United Kingdom
+
+Abstract 
+
+High degrees of disagreement among annotators can exist for ambiguous objects, e.g. in medical images, underscoring the challenges of establishing ground truth annotations in object detection tasks. Despite this, all existing object detectors implicitly require access to ground truth annotations for either training or evaluation. The fundamental questions we target are: How can we learn an object detector with multiple annotators’ annotations but without objective ground truth annotations due to object ambiguity, and how can we enable the learned detector to express meaningful model predictive uncertainties in detecting ambiguous objects? To answer these questions, we present an interpretable approach to calibrate probabilistic object detectors, where the calibration goal is to align the class confidence and bounding box variance estimates to the annotators’ annotation distribution. We introduce an efficient yet effective framework to calibrate probabilistic object detectors by designing four evaluation metrics to measure calibration errors regarding classification and localization, and proposing a train-time calibration and post-hoc calibrator, all without the need to access any ground truth. This framework is generalizable to many existing probabilistic object detectors, such as the YOLO families and two-stage detectors. Empirical results with real-world and synthetic datasets of medical and natural images demonstrate the superior performance of the proposed framework with three popular object detectors. 
+
+Keywords: Model calibration, Probabilistic object detectors, Annotators’ disagreement, Annotators’ uncertainty 
+
+1. Introduction 
+
+Object detection is a common task in various appli-cations, including medical imaging [1–3] and natural im-ages [4–6]. Conventional object detectors are trained with properly annotated ground truths, often acquired using majority voting of multiple annotators [5]. Nevertheless, in complex domains such as medical images, interobserver variability [7] and disagreement among expert annotators lead to difficulty when defining ground truths. The dis-agreement can be due to differences in annotator exper-tise, viewing conditions, and more fundamentally, object ambiguity. For instance, a 2D X-ray image displays av-eraged projections of 3D objects, which often makes it impossible to annotate an early disease object with com-plete certainty. To illustrate this, we visualize in Figure 1 real-world disease annotations of dental X-rays in our DX-20 dataset (See Section 5 for details of the dataset). We observe a high degree of annotation disagreement on the same images by different expert dentists. This is evident through an average Krippendorff’s Alpha (K-α) score [8] of 0.109, indicating extremely low inter-annotator agree-ment in the DX-20 dataset, which makes it highly chal-lenging to obtain ground truth. In this paper, we define the ground truth as the single final true label, which is   
+
+> ∗Corresponding author
+> Email address: zhi_qin.tan@kcl.ac.uk (Zhi Qin Tan)
+
+often expensive and difficult to obtain. For example, in the medical imaging domain, ground truth is usually es-tablished through a panel discussion to unify multiple ex-pert annotations. Several prior works [9–11] investigated improved annotation aggregation strategies using crowd-sourced annotations. However, aggregated annotations to approximate ground truth may overlook valuable informa-tion revealed by disagreement between annotators, which can be useful for model training and calibration. One direction of capturing annotation uncertainty is akin to the task of calibrating object detectors. Conven-tional methods rely on or implicitly assuming access to ground truth annotations to evaluate calibration results, whereas our problem setup does not assume such access. Specifically, existing approaches for calibrating object de-tectors typically aim to match the model confidence to the precision of the detector (D-ECE [12]) or consider the joint task of matching the precision and intersection over union (IoU) of the detector (LaECE [13]). While these methods are widely used, they require ground truth annotations to compute the precision and IoU. Additionally, explaining concepts such as precision and IoU to a lay audience may not be straightforward. In contrast, annotators’ annota-tion distribution offers a more intuitive approach to inter-pret and explain model confidence to end-users involved in subsequent decision-making [14–16]. To the best of our knowledge, there was only one ini-tial attempt on the calibration of probabilistic object de-
+
+> arXiv:2605.24722v1 [cs.CV] 23 May 2026 Figure 1: Top: Visualization of annotations on the DX-20 dataset. Annotations from different annotators are shown in different colors. Bottom: Histogram of the inter-annotator agreement score, K-α.
+
+tectors despite its significance, where Feng et al. [17] first converted each element of the bounding box distribution to a confidence score using the inverse cumulative distri-bution function, then calibrated the predicted confidence to the empirical confidence similar to the calibration setup in classification tasks. However, the method requires the ground truth, and the predicted bounding box variances remain uncalibrated, as their method operates directly on the output of the inverse cumulative distribution function, overlooking the underlying bounding box distribution. In this work, we offer a new perspective on calibrat-ing object detectors by leveraging annotators’ annotation uncertainty . Specifically, we present a calibration frame-work for probabilistic object detectors where the objective is to align the predicted class probabilities and bounding box variances to the annotation distributions among the annotators, without using any ground truth annotations .Probabilistic object detectors are used as they can out-put probability distributions for both object localization and object classification tasks, in contrast to deterministic object detectors that only output class probabilities and point estimates of bounding boxes. Our main contribu-tions include: 
+
+• We formally define the task of calibrating proba-bilistic object detectors with annotators’ annotation uncertainty and propose four evaluation metrics to measure the alignment between the model’s predic-tive uncertainty and the annotation distribution am-ong the annotators, without the requirement to ac-cess ground truth annotations. 
+
+• We propose a simple but effective calibration method for probabilistic object detectors by designing train-ing loss functions that align with the calibration ob-jective and incorporating isotonic regression for post-hoc calibration. 
+
+• Extensive experiments demonstrate the effectiveness of the proposed method on both real and synthetic datasets of medical and natural images. Moreover, the method introduces negligible computational over-head and achieves an improvement in the mean cal-ibration metric by 4.0 − 11 .5 in the experimental se-tups evaluated, while preserving detection accuracy. 
+
+2. Related Work 
+
+Object Detection with Noisy Annotations . Recent object detection research increasingly focuses on mitigat-ing noisy annotations across the entire pipeline. To un-derstand data limitations, Nowak et al. [18] analyzed the inter- and intra-observer variability and proposed a valida-tion method to identify noisy annotations from human an-notators, while Tschirschwitz and Rodehorst [19] used con-tradictory annotations to define theoretical performance upper bounds for object detection datasets. Moreover, distribution-aware calibration [20] to handle bounding box inaccuracies for robust model training and noise-aware eval-uation protocols [21] for reliable assessment under noisy ground truth are also introduced. Besides, noise is also present when data is collected through crowdsourcing or compiled from multiple anno-tators. Several previous works [9–11] proposed to lever-age crowdsourced object annotations [22] by aggregating them to approximate the ground truth. For example, Hu and Meina [9] proposed Crowd R-CNN, where the crowd-sourced annotations are first pre-processed via a clustering algorithm, then learning the sensitivity of each annota-tor to different object classes. Besides, in [11], the au-thors model the annotators’ annotations with categorical and Gaussian distributions, then aggregate the annota-tions based on the learned posterior distributions. These methods are not applicable to the proposed work as they are designed for deterministic object detectors and disre-gard the annotator disagreement information when anno-tations are aggregated. 
+
+Calibration of Deterministic Object Detectors . Gen-erally, calibration refers to the alignment of model accu-racy and confidence for the classification task [23–27]. An object detector is considered calibrated if it has a preci-sion of p for all predictions with confidence of p, ∀p ∈ [0 , 1] 
+
+[12]. LaECE [13] further enhanced the calibration objec-tive by considering the product of model precision and av-erage IoU. Kuzucu et al. [28] proposed LaACE 0, utilizing an adaptive binning approach instead of a fixed number of bins. Further, Park et al. [29] introduced Object-level Cal-ibration Error, which overcomes the weakness of prior cali-bration metrics on Detection Transformer (DETR) models that produce a much larger number of predictions than the 2number of ground truth objects. Although these evalua-tion metrics are related, their calibration objectives are fundamentally different from ours, i.e . they match model confidence to the model precision and IoU, and ignore the bounding box distribution, while our goal is to align model confidence with annotators’ agreement. Prior methods for calibrating deterministic object de-tectors can be grouped into two types: 1) Train-time cal-ibration techniques which typically introduce an auxiliary regularization loss to calibrate confidence scores during the training stage [30–34].; 2) Post-hoc calibration approaches which fit a calibration function that maps the predicted confidence to the calibrated confidence scores [13, 23]. Re-cent work [28] has also shown that when implemented cor-rectly, post-hoc methods can yield better calibration re-sults compared to train-time calibration methods. On the other hand, Alexandridis et al. [35] proposed FRACAL, which aims to calibrate model outputs to improve object detection of rare categories. These methods are not di-rectly applicable to our task as they all require ground truth annotations. 
+
+Calibration of Probabilistic Object Detectors . Un-like deterministic object detectors, probabilistic object de-tectors aim to quantify uncertainty for object localization and classification [36, 37]. They can be broadly catego-rized into two groups: 1) Sampling-based methods [38– 40] which utilize Monte Carlo approximation of Bayesian neural networks [41] ( e.g . ensemble of deep neural net-works [40]) to produce multiple object predictions, and approximate the predictive uncertainty; 2) Gaussian ob-ject detectors [42–49] directly model the distribution of bounding boxes by treating them as Gaussian variables, thus enabling the models to capture bounding box uncer-tainty in object localization. Probabilistic object detectors are evaluated using the probability-based detection quality (PDQ) [36] measure. Feng et al. [17] present the first at-tempt to calibrate probabilistic object detectors by using the confidence computed with the inverse cumulative dis-tribution function to estimate a confidence interval, then aligning the class confidence and the percentage of ground truth bounding boxes within the estimated interval. This method is not directly applicable to our work as it requires the ground truth position of object instances. 
+
+3. Calibration of Probabilistic Object Detectors 
+
+In this section, we first introduce the calibration task of matching probabilistic object detection uncertainty out-puts to the annotation distributions of the annotators. We then define four evaluation metrics suitable for the task, all without the presence of ground truths. Note that the cal-ibration task addresses multiple expert annotations ( i.e .
+
+> 1 annotations for each object instance) but does not re-quire the final definitive ground truth ( i.e . one annotation only for each object instance). 
+
+3.1. Problem Statement and Notations 
+
+We assume a dataset {(xi, y i)}Ni=1 with pairs of in-put image xi and annotations from multiple annotators 
+
+yi = {yim}M i
+
+> m=1
+
+, where N is the total number of training samples and M i is the total number of annotations of the 
+
+i-th image from all annotators. Each annotation is a tu-ple of a bounding box, class label, and the annotator ID, 
+
+yim = ( bim, c im, k im) in which bim ∈ R4 contains the x-y coor-dinates of the top-left and bottom right corners of the box, 
+
+cim ∈ { 1, ..., J } represents the annotated class label of the object and kim ∈ { 1, ..., K } is the annotator ID. J denotes the number of object classes while K is the total number of annotators. Note that each annotator can have anno-tation sets of varying cardinality. For brevity, notations in the rest of the paper are simplified to a single training sample. For the remainder of the paper, superscripts are used to index vectors or matrices. The Gaussian object detector outputs a varying num-ber of P predictions, ˆy = {(ˆ μn, ˆΣn, ˆpn)}Pn=1 , given an input image, x, where ˆμn ∈ R4 is the predicted bounding box mean as the x-y coordinates of the top-left and bottom right corners, ˆΣn ∈ R4×4 is the predicted bounding box co-variance (a symmetric positive semi-definite matrix), and 
+
+ˆpn ∈ [0 , 1] J is the predicted class probability of the n-th object. The bounding box and class label are modeled as Gaussian and categorical variables, respectively, in a Gaus-sian object detector. We aim to learn a Gaussian object detector to predict an uncertainty output ( i.e . class prob-ability and bounding box distributions) that aligns with the annotators’ annotation distributions. 
+
+3.2. Pre-processing of Annotations 
+
+Before presenting the calibration metrics, we introduce a pre-processing module that forms groups of annotations representing annotations of the same object instance from different annotators. This module constructs sets of refer-ence annotation to train and evaluate a Gaussian object detector. Similar to previous approaches [8, 9, 11], we first em-ploy a clustering algorithm to pre-process the annotations from multiple annotators. We utilize the Hungarian algo-rithm to perform annotation matching by assuming that the annotations from different annotators are unique sets of annotations. Then, to perform matching between any two pairs of annotation sets, we compute a cost matrix be-tween the entries with the IoU cost function, 1−IoU (bi, b j ),where bi and bj are the bounding boxes of any annota-tion pair from the two annotator sets. While the optimal solution for a multipartite graph ( > 2 annotators) does not exist [50], we can assume that for a sufficiently small number of annotators, an optimal solution can be found with a simple greedy matching [8]. After matching the annotations, we obtain annotation clusters, A = {ah}Hh=1 ,representing annotations from different annotators for the object instances in the image. Here, H is the total number of clusters, and ah is a set containing tuples of bounding 3box, bh, and class label, ch, that belong to the h-th anno-tation cluster. Then, for each cluster of annotations, we compute its soft class probability label as follows: 
+
+tjh = 1
+
+K
+
+X
+
+> (bh,c h)∈ah
+
+1[ch = j] , (1) where tjh is the target class probability of the j-th class for the h-th cluster, and 1[·] is the indicator function. When a cluster does not contain an annotation from a cer-tain annotator, they are assumed to have annotated the ‘background’ class (with class index j = 0 ) for the cluster. Hence, we obtain a class probability vector of length J + 1 ,
+
+i.e . th ∈ [0 , 1] J+1 . Finally, we calculate the top-left and bottom-right corners’ mean x-y coordinates of each anno-tation cluster, denoted as ¯bh for the h-th cluster, which is used to match each annotation cluster to the predicted bounding boxes for model training and evaluation. 
+
+3.3. Measuring Calibration Error 
+
+Given a test image with annotation clusters from the pre-processing module and object predictions (bounding box mean, covariance matrix, and class probabilities) from a Gaussian object detector, we propose four evaluation metrics to reward predictions that align well with the an-notators’ uncertainty. To this end, we first match the annotation clusters to the predicted bounding boxes by adopting the Hungarian algorithm. To account for the pre-dicted bounding box distribution, we use the mean squared Mahalanobis distance [51] of each annotated bounding box in the cluster, ah, and the predicted distribution, repre-sented as ˆμh and ˆΣh, as the cost function: 
+
+ℓh = 1
+
+K
+
+X
+
+> (bh,c h)∈ah
+
+(bh − ˆμh)T ˆΣh
+
+> −1
+
+(bh − ˆμh) . (2) Since the optimization algorithm will always match a clus-ter when there are more predicted objects, we modify the matching algorithm to avoid matches with a zero IoU be-tween the annotated bounding box mean and the predicted bounding box mean. Similar to the COCO evaluation met-ric, the matching procedure results in true positives (TP, a prediction-annotation cluster match), false positives (FP, a prediction with no matched annotation cluster), and false negatives (FN, an annotation cluster without a cor-responding prediction). 
+
+Classification metrics . We evaluate the model’s classi-fication uncertainty by computing the total variation dis-tance (TVD) [52] between the predicted class probabilities and soft class probabilities labels of the matched annota-tion cluster: 
+
+T V D = 1
+
+|S|
+
+X 
+
+> (t, ˆp)∈S
+
+12 || t − ˆp|| 1 , (3) where S is the set that contains all pairs of target and pre-dicted class probability vectors. TVD is chosen as the eval-uation metric because it is easy to interpret and bounded within 0 and 1, though any distance or divergence metrics that quantify the statistical distance between two categor-ical distributions can be considered ( e.g ., Jensen–Shannon divergence). When no match is found for either the object prediction ( i.e . FP) or the annotation cluster ( i.e . FN), the missing component in Equation (3) is set to the one-hot encoding for the background class. Since the number of TP and FN is the same across all object detectors, we report their TVD metric together ( i.e . S is the union of all TP and FN instances). For FP, we substitute S with the set of all FP instances and compute the TVD FP metric separately, as different object detectors can predict varying numbers of objects on the same image, resulting in differ-ent amounts of FP. Note that Equation (3) includes the background class probability ( j = 0 ) to reward object de-tectors that correctly predict the probability of annotators not annotating the object instance. 
+
+Localization metrics . To evaluate the model’s localiza-tion uncertainty, we compute the object detector’s pre-diction certainty ( i.e ., confidence score of the predictions containing an object), ˆo, either by using the predicted foreground probability (one minus the background prob-ability), the objectness score or the maximum predicted class probability, depending on the model architecture. We note that as different architectures have different semantic meanings of prediction certainty, the calibration metrics should only be used to compare against their uncalibrated counterparts of the same architecture. The prediction cer-tainty is used as the confidence interval along with the predicted bounding box mean and variance to compute the predicted bounding box interval, [ˆl, ˆu] [53]. The local-ization uncertainty error (LUE) is then computed as the absolute difference between the prediction certainty and the percentage of annotated bounding boxes that is within the predicted bounding box interval: 
+
+LU E = 1
+
+|ST P |
+
+X
+
+> (ˆ o, ˆl, ˆu,a )∈ST P
+
+ˆo
+
+− 1
+
+|a|
+
+X
+
+> (b,c )∈a
+
+1[( ˆl < b ) ∧ (b < ˆu)] , (4) where ST P is the set of TP instances (prediction-annotation matches) containing the prediction certainty, ˆo, the pre-dicted bounding box lower interval, ˆl ∈ R4, and upper interval, ˆu ∈ R4, that are matched to the annotation clus-ter, a, which contains tuples of annotated bounding box, b,and class label, c, while ∧ is the “AND” boolean operator. Furthermore, to account for FN of the object detector, we compute a penalizing term denoted as FNE for the set of FN, SF N , containing all annotation clusters without a 4prediction match as follows: 
+
+F N E = 1
+
+|SF N |
+
+X
+
+> a∈SF N
+
+|a|
+
+K . (5) Here, h is a cluster index with no matched prediction. 
+
+Overall . The evaluation metrics are reported as TVD, TVD FP , LUE, and FNE, as well as their geometric mean. Each metric has a range between 0 and 1, with a score of 0 indicating a perfect capture of annotators’ uncertainty, while a score of 1 indicates the opposite. Since lower is bet-ter for the evaluation metrics, we calculate the geometric mean of the metrics’ complement ( i.e ., 1 − metric ), then invert the result back to the original scale. This ensures that a model must perform well across all four metrics to achieve a low overall calibration error, and it heavily pe-nalizes the model if any single component performs poorly (approaching one). We note that, depending on the appli-cation or imaging domain, different weights can be applied to the four metrics to balance the importance of calibrat-ing the classification versus localization uncertainty. 
+
+4. Calibration Methodology 
+
+Figure 2 presents an overview of our proposed calibra-tion methodology, which combines train-time and post-hoc calibration to align the model’s uncertainty output with the annotators’ uncertainty. We first train a Gaussian ob-ject detector by learning the categorical and Gaussian dis-tributions of the annotations clusters in a supervised fash-ion, then adopt post-hoc isotonic regression to calibrate the predicted distributions further to match the annota-tors’ agreement. 
+
+4.1. Train-time Calibration 
+
+Before we can compute the training loss terms, the matching algorithm that the base Gaussian object detec-tor adopts is applied between the predicted bounding box mean, ˆμn, and the bounding box mean of each annotation cluster, ¯bh, from the pre-processing module (Section 3.2). As a result, we obtain pairs of object predictions and an-notation clusters to compute classification and localization regression losses. 
+
+Classification loss . Following previous Gaussian object detectors, the loss function used in their deterministic coun-terpart, i.e . cross-entropy loss, is used to train the clas-sification head (and objectness head for YOLO models) [42–48]: 
+
+Lc(th, ˆph) = −
+
+> J
+
+X
+
+> j=1
+
+tjh ln ˆ pjh , (6) where ˆph is the predicted class probability that is matched to the h-th annotations cluster. The key difference is that our training target is the soft class probability labels, th, of the h-th annotation cluster instead of hard one-hot labels. Depending on the model architecture, the additional +1 
+
+background class probability ( i.e . t0
+
+> h
+
+) can be left as is ( e.g .Faster R-CNN [54]), converted to objectness score target as one minus the background probability ( e.g . YOLO mod-els [55, 56]) or removed entirely ( e.g . RetinaNet [57]). 
+
+Regression loss . For the object localization regression task, existing Gaussian object detectors [42–48] utilize the negative log-likelihood (NLL) loss to learn the mean and covariance matrix of the predicted Gaussian distributions by treating the ground truth bounding boxes as individ-ual samples from the Gaussian distributions. However, this neither captures the annotators’ uncertainty nor aligns the annotators’ bounding box distributions with the pre-dicted distributions. Moreover, LUE (Equation (4)) is not differentiable and cannot be used directly as the loss func-tion. Instead, we propose a modification to the Direct Moment Matching (DMM) [48] loss function to align the annotators’ bounding box distributions with the predicted distributions. Specifically, we match the predictive distri-bution to the annotators’ statistics, rather than the sample statistics obtained using the ground truth values. For each annotation cluster, we first compute the target variance, 
+
+σh, for the h-th cluster as follows: 
+
+αh = min 
+
+ |ah|
+
+K , γ 
+
+
+
+, zh = F −1
+
+
+
+1 − 1 − αh
+
+2
+
+
+
+(7) 
+
+σh = `bh − ´bh
+
+2zh
+
+!2
+
+. (8) Here, |ah|/K is the annotator certainty ( i.e . percentage of annotators agreeing on the bounding box location in the 
+
+h-th cluster) and γ is a maximum confidence threshold set at 0.999 for numerical stability. F −1(·) is the inverse cumulative distribution function of a standard Gaussian distribution while ´bh ∈ R4 and `bh ∈ R4 are the minimum and maximum bounding box values of the h-th cluster, ah,respectively. In short, Equations (7) and (8) computes the expected variance given the confidence interval and the specified level of certainty (annotator certainty). The variances of each bounding box component are calculated to construct the target diagonal covariance matrix, Σh. Then, the lo-calization loss is defined as: 
+
+Lr (¯bh, Σh, ˆμh, ˆΣh) = || ¯bh − ˆμh|| 1 + || Σh − ˆΣh|| 1 , (9) where ˆμh and ˆΣh are the predicted bounding box mean and covariance matrix matched to the h-th annotations cluster, respectively, while || · || 1 is the L1 norm. In short, given the annotator certainty, we train the model to predict a mean and covariance matrix such that all bounding boxes of the h-th cluster are within the predicted αh confidence interval. 5Pre-processing Module  Train-time Calibration  Post-hoc Calibration   
+
+> All Annotations
+> Clustering /
+> Matching
+> ...
+> Annotation
+> Clusters
+> Probabilistic
+> Object Detector
+> Classification
+> Loss
+> Regression
+> Loss
+> Box Mean,
+> and Covariance
+> Matrix,
+> Soft Class
+> Probabilities, Predicted Class
+> Probabilities,
+> Predicted Box
+> Covariance
+> Matrix,
+> Predicted Box
+> Mean,
+> Variances Isotonic
+> Regression
+> Class Confidences
+> Isotonic Regression
+> Calibrated Class
+> Probabilities,
+> Calibrated Box
+> Covariance
+> Matrix, x
+> Calibrated
+> Outputs
+
+Figure 2: Overall framework of the proposed calibration method, where all annotations are first pre-processed to obtain annotation clusters, then a combination of train-time and post-hoc calibration is employed to produce the final calibrated predictions. Different annotators are visualized in different colors in the pre-processing module. Best viewed in color. 
+
+Finally, the parameter of the Gaussian object detector is optimized by minimizing the loss terms of each pair of object prediction and annotation cluster: 
+
+Lt = λLr + Lc , (10) where λ is a hyperparameter to balance the two loss terms. Algorithm 1 provides the pseudocode of the training steps for a single image. 
+
+Algorithm 1 Pseudocode for the training steps of the train-time calibration method. 
+
+Require: The annotation clusters, A = {ah}Hh=1 , where H
+
+is the number of clusters; The object predictions, ˆy =
+
+{(ˆ μn, ˆΣn, ˆpn)}Pn=1 , where P is the number of predictions; The number of annotators, K; The weight loss balancing hyperparameter, λ.
+
+1: M ← match (A, ˆy) ▷
+
+Match the annotation clusters and object predictions with the base detector’s matching algorithm. 
+
+2: L ← 0;
+
+3: for i = 1 to |M | do 
+
+4: (ai, ˆyi) ← Mi;
+
+5: (ˆ μi, ˆΣi, ˆpi) ← ˆyi;
+
+6: Compute the soft class probability, ti, with Equa-tion (1); 
+
+7: Compute classification loss, Lc(ti, ˆpi), with Equa-tion (6); 
+
+8: ¯bi = 1
+
+> |ai|
+
+P 
+
+> (b,c )∈ai
+
+b;
+
+9: Construct the expected annotator covariance, Σi, ac-cording to Equations (7) and (8); 
+
+10: Compute regression loss, Lr (¯bi, Σi, ˆμi, ˆΣi), with Equa-tion (9); 
+
+11: Lt = λLr + Lc;
+
+12: L := L + Lt;
+
+13: end for 
+
+14: L := L|M | ;
+
+15: Optimize model by minimizing the overall loss, L;
+
+4.2. Post-Hoc Calibration 
+
+The predicted class confidences and bounding box vari-ances of the trained Gaussian object detector are further calibrated with a post-hoc calibrator. We adopt isotonic regression (IR) [58] since it models the calibration task as a monotonic regression problem and is easy to implement with scikit-learn [59]. 
+
+Training phase . Using a trained Gaussian object detec-tor, we obtain object predictions on a held-out validation set. Following the matching steps in Section 3.3, we can construct pairs of object prediction and annotation cluster to form the training dataset for the IR model. To prevent low-scoring predictions from dominating the training of the calibrator, we propose using the prediction certainty, ˆo,as the sample weight for each prediction during the train-ing phase. The true annotators’ agreement in terms of class probabilities and bounding box variances are calcu-lated using Equation (1) and Equation (8), respectively. We train a class-specific confidence score calibrator ζj :[0 , 1] → [0 , 1] for each class j where the input is the pre-dicted j-th class probability, ˆpjn, while the target is the percentage of annotators that annotated the j-th class, 
+
+tjn. On the other hand, we train multiple variance cali-brators ξi : R+ → R+ for each bounding box component, 
+
+i ∈ { 1, ..., 4}, using the predicted variance, ˆΣ(i,i ) 
+
+> n
+
+, as input and the annotators’ bounding box variance, σin, as the tar-get. Overall, we obtain J + 4 calibrators after the training phase. 
+
+Inferencing phase . Here, we consider a single instance of predicted class probability, ˆp, and bounding box co-variance matrix, ˆΣ. When calibrating the class confidence during the inference stage, we must ensure that the cali-brated class probability vector, ˜p, is still a valid categorical distribution, i.e . the probability vector should sum to one after any calibration. To achieve this, for each calibrated confidence with predicted class j, we compute ˜pj = ζj (ˆ pj )
+
+and modify the class probability of the other classes as follows: 
+
+˜pc = ˆpc
+
+(1 − ˜pj ) , ∀c ∈ { 1, ..., J } ∧ c̸ = j . (11) Then, the calibrated bounding box covariance matrix, 
+
+˜Σ, is obtained by first setting ˜Σ := ˆΣ, then applying the 6learned variance IR models: 
+
+˜Σ(i,i ) = ξi( ˆΣ(i,i )), ∀i ∈ { 1, ..., 4} . (12) 
+
+5. Experiments and Results 
+
+5.1. Experiments Setup 
+
+Training details . To show that the proposed calibration framework can be generalized to different object detectors, we first extend YOLOX [55] into a Gaussian object detec-tor and use the probabilistic extension of Faster R-CNN [54] and RetinaNet [57] implemented in [48, 60]. We chose these 3 architectures to demonstrate the generalizability of our proposed framework to any object detector, includ-ing object detectors that predict objectness scores (YOLO detectors), a background class with the foreground classes (R-CNN detectors), and only the foreground classes (Reti-naNet). We then integrate them with the proposed frame-work, denoted as, YOLOX-G †, FRCNN-G †, and RetinaNet-G†, by following the training settings of the original YOLOX, Faster R-CNN, and RetinaNet. Table 1 shows the training settings for each object de-tection algorithm. During training, we apply random data augmentation such as rotation, translation, zooming, and horizontal flipping to the training images and annotations. The loss weight to balance the regression and classification losses, λ, is set to 0.1, similar to previous works in object detection ( e.g . YOLOX [55]). We follow the training hy-perparameters of the original implementation closely, but the batch size and learning rate are scaled according to the available GPU memory. Code 1 is implemented with PyTorch version 1.9 [61] and runs on an RTX 4090 GPU. 
+
+Datasets . We evaluate detectors’ performance in three different tasks and datasets, all with low annotator agree-ment. Our in-house dataset, DX-20, consists of 3,755 dental radiographs from various dental practices with 20 classes representing different types of dental diseases, such as five grades of caries, four stages of bone loss, etc . DX-20 is annotated by 28 dentists of various backgrounds and levels of experience. We randomly assigned five dentists to annotate each image. 600 images with equal propor-tions from different dental practices were selected as the test dataset. Besides, we evaluate on VBD-CXR [1], a thoracic ab-normalities detection dataset consisting of 15,000 chest ra-diographs. VBD-CXR is annotated with 14 abnormality classes by 17 experienced radiologists, where three anno-tators are randomly assigned to each image. As the VBD-CXR test dataset is private, we perform a 9:1 split on the 15,000 images to obtain our test dataset. Moreover, we use VOC-MIX [11], a Pascal VOC [4] dataset with synthetic crowdsourced annotations. In the 
+
+> 1https://github.com/zhiqin1998/calib-prob-od
+
+VOC-MIX dataset, all 5,011 natural images were anno-tated by 25 simulated annotators of different annotating accuracy with 20 object classes ( e.g . car, chair, dog, per-son, etc .). Lastly, to understand the inter-annotator agreement of the datasets, we compute the K-α score [8]. The K-α
+
+score evaluates the class level agreement after performing annotations matching between annotators, where 1 is a perfect agreement, and 0 means no agreement. DX-20, VBD-CXR, and VOC-MIX have a K-α of 0.109, 0.305, and 0.339, respectively. See Appendix A for further details of the datasets. 
+
+Baselines . We compare the proposed method against mul-tiple baselines. Since the training datasets only have an-notations from multiple annotators and do not have real ground truths, we slightly modified them so that conven-tional object detectors can be used. First, we duplicate each training image and separate the annotations of dif-ferent annotators. The duplicated images and separated annotations are then treated as individual data samples to train probabilistic object detectors with the NLL loss following [48], denoted as FRCNN-G, RetinaNet-G, and YOLOX-G. Further, using the same duplicated dataset, we train the deterministic object detectors to compare them against their probabilistic counterparts, denoted by FRCNN, RetinaNet, and YOLOX. Lastly, we adopt a deep ensemble [62] of the deterministic object detectors, trained using labels from the different annotators of each dataset (i.e ., five for DX-20, three for VBD-CXR, and five subsets of five annotators for VOC-MIX), denoted as FRCNN-DE, RetinaNet-DE, and YOLOX-DE. The object predictions from the different models are ensembled using the cluster-ing procedure defined in Section 3.2 to compute the pre-dictive distribution of the class label and bounding box. 
+
+5.2. Results and Discussion 
+
+Quantitative results . Table 2 reports the evaluation met-rics introduced in Section 3.3 for the deterministic object detectors, their probabilistic counterpart trained via NLL (*-G), and our proposed method (*-G †). We cannot re-port the LUE for the deterministic object detectors since they predict bounding boxes as point estimates. However, to perform the matching step during evaluation (in Sec-tion 3.3), we assume a constant bounding box variance for the deterministic object detectors. Table 2 shows that the deep ensemble models obtain the best mean calibration error in most of the experiment settings. However, the training and inference costs of these models increase linearly with the number of annotators, making them not scalable in real-world applications. In contrast, the models calibrated with our proposed frame-work perform on par against the deep ensemble models, with the largest mean calibration error difference of 3.1 only. Additionally, our results highlight the flexibility of the proposed calibration framework in adapting to differ-ent object detection architectures for medical images ( i.e .7(a) YOLOX (b) YOLOX-G (c) YOLOX-G † (ours) (d) Annotators’ agreement 
+
+Figure 3: Comparison of the detection results of (a) YOLOX, (b) YOLOX-G, and (c) YOLOX-G † where the labels above each box are the predicted class, its probability, and the background (BG) class’s probability. (d): The annotators’ agreement obtained from the pre-processing module where the labels above each box represent the percentage of annotators agreeing with the majority class and those not annotating any class for the bounding box ( i.e . background class). Rows 1-2: DX-20; Row 3-4: VBD-CXR; Row 5-6: VOC-MIX. 
+
+8Table 1: Training configuration for Faster R-CNN (FRCNN) [54], RetinaNet [57], and YOLOX [55] object detectors (including both deter-ministic and probabilistic variants).                                                                                                                                                                                                                                     
+
+> Setting FRCNN RetinaNet YOLOX Pre-training data ImageNet ImageNet ImageNet Learning rate (LR) 0.001 0.001 0.0001 LR scheduler Multi-step w/ warmup Multi-step w/ warmup Cosine decay w/ warmup Optimizer AdamW AdamW SGD w/ momentum Weight decay 0.0001 0.0001 0.0005 Image size 800 800 640 Batch size 816 16 Training iteration 70k 40k 100k
+> Table 2: Calibration evaluation metrics for quantifying annotators’ uncertainty. *-G and *-G †denote Gaussian object detectors trained with the NLL loss and our proposed framework, respectively. Lower is better for all metrics, and bold indicates the best results.
+> Model DX-20 VBD-CXR VOC-MIX
+> TVD TVD FP LUE FNE Mean TVD TVD FP LUE FNE Mean TVD TVD FP LUE FNE Mean FRCNN 37.4 32.0 -36.1 -38.0 40.1 -45.5 -41.8 38.4 -56.9 -FRCNN-DE 39.7 31.5 40.2 35.5 36.8 39.7 29.2 18.7 45.8 34.1 40.3 36.5 23.9 43.7 36.5
+> FRCNN-G 38.1 32.4 55.2 36.3 41.2 39.0 41.0 22.6 46.0 37.7 49.6 39.7 26.0 48.0 41.5 FRCNN-G †(ours) 36.6 29.0 41.3 31.7 34.8 44.9 27.3 19.0 44.8 35.0 38.6 38.4 24.6 44.7 37.0 RetinaNet 43.8 42.7 -26.6 -48.1 34.1 -42.2 -66.2 39.3 -40.0 -RetinaNet-DE 41.2 32.5 43.2 25.9 38.6 47.3 33.8 26.0 42.3 37.9 60.4 37.0 49.4 36.3 46.8
+> RetinaNet-G 44.4 45.4 51.7 25.8 42.3 48.5 34.5 27.5 49.3 40.7 64.1 40.0 56.7 38.1 50.9 RetinaNet-G †(ours) 40.4 29.3 44.7 25.9 35.5 46.0 33.6 28.7 40.1 37.4 64.6 33.1 50.8 37.3 48.0 YOLOX 40.6 8.4 -24.3 -43.2 9.3 -41.3 -57.0 10.6 -42.4 -YOLOX-DE 37.5 8.5 47.0 24.3 30.8 40.4 8.8 58.9 41.6 39.9 47.8 10.2 50.5 43.2 40.0
+> YOLOX-G 40.6 8.9 51.4 24.0 33.1 43.5 9.5 65.6 41.5 43.4 53.0 10.4 56.5 45.3 43.8 YOLOX-G †(ours) 38.1 9.1 47.5 23.6 31.1 47.2 7.7 59.6 41.0 41.6 55.2 10.3 50.4 39.9 41.2
+
+DX-20 and VBD-CXR) while consistently outperforming other alternatives. Incorporating our calibration method generally leads to improvement across all metrics where our gains on the mean metric range from 1.8 to 6.8 when compared to training Gaussian object detectors with the NLL loss. Furthermore, our method is robust to natural images and a higher number of annotators per image ( i.e . 25), as demonstrated using the VOC-MIX dataset. We observe performance improvement with the proposed YOLOX-G †
+
+achieving a mean calibration error of 32 .7. Besides, the proposed method reduces the mean calibration error by 
+
+2.6 − 4.5 from Gaussian object detectors trained with the NLL loss on the VOC-MIX dataset. This exemplifies our method’s superior performance and generalizability to more annotators and object detection in natural images. Lastly, we note that other calibration metrics ( e.g ., D-ECE, LaECE, etc .) are not directly applicable to our problem setup, as they have different calibration objec-tives, are designed for deterministic object detectors, re-quire ground truth annotations, and do not calibrate to predicted bounding box distributions. However, by us-ing majority voting to obtain reference ground truth, we can report the results of additional calibration metrics and methods to supplement our analysis. Since the DX-20 and VBD-CXR datasets only contain annotations from mul-tiple annotators (no well-defined ground truth), we use majority voting on the annotation clusters obtained from Section 3.2 to generate a consensus annotation as a proxy ground truth for evaluation. We note that many anno-tation clusters in the DX-20 dataset are dropped when the majority class is the ‘background’ class or unable to achieve majority agreement due to low inter-annotator agree-ment. For the VOC-MIX dataset, we use the original ground truth of the Pascal VOC [4] dataset to compute the calibration metrics. Table 3 reports the calibration evaluation metrics LaECE 0
+
+and LaACE 0 of the isotonic regression (*-IR) and Platt scaling (*-PS) calibration methods used by Kuzucu et al. [28], with the calibration objective explicitly optimized to reduce LaECE 0 and LaACE 0. Unsurprisingly, the IR and PS calibration methods achieve the best calibration results. Despite the difference in the calibration objec-tive, our proposed method is still able to improve both the LaECE 0 and LaACE 0 metrics when compared to the uncalibrated deterministic object detector baselines, while having similar performance to the deep ensemble models. 
+
+Qualitative results . Figure 3 visualizes the detection results of YOLOX, YOLOX-G, and YOLOX-G † on the test datasets. Since the display of full predicted distri-butions will overcrowd the images, we only visualize the highest class probability and the probability of the back-ground class for each predicted object. In Figure 3, we observe that the detection results from YOLOX-G † are more similar to the annotators’ agreement (obtained from the pre-processing module) than YOLOX and YOLOX-G. Moreover, Figure 4 presents the reliability diagrams of YOLOX-G and YOLOX-G † on VOC-MIX and shows that our method improves the calibration quality towards 9Table 3: Comparison of our proposed method to calibration methods that are designed for deterministic object detectors, and with the presence of ground truth, evaluated with calibration metrics that require ground truth. For the DX-20 and VBD-CXR datasets, ground truth is approximated by majority voting, while for VOC-MIX, we use the original ground truth of the Pascal VOC dataset. Lower is better for all metrics, and bold indicates the best results.                                                                                                         
+
+> Model DX-20 VBD-CXR VOC-MIX
+> LaECE 0LaACE 0LaECE 0LaACE 0LaECE 0LaACE 0
+> FRCNN 20.7 30.0 39.9 44.5 18.0 27.5 FRCNN-IR 11.5 27.0 20.6 34.3 10.2 20.8
+> FRCNN-PS 14.2 27.3 24.0 33.9 11.5 20.9 FRCNN-DE 16.3 27.7 34.1 39.2 15.7 23.3 FRCNN-G †(ours) 16.7 27.6 31.3 37.2 14.6 22.5 RetinaNet 26.8 40.7 29.1 42.1 17.5 29.3 RetinaNet-IR 14.7 27.1 18.3 30.0 10.7 20.8
+> RetinaNet-PS 15.9 27.4 19.0 30.5 12.3 21.4 RetinaNet-DE 15.5 28.9 21.3 32.1 14.9 24.6 RetinaNet-G †(ours) 15.3 29.7 22.5 32.6 15.2 23.1 YOLOX 18.5 27.8 20.1 35.7 17.8 28.8 YOLOX-IR 14.4 19.1 15.3 27.4 9.0 20.6
+> YOLOX-PS 13.8 18.8 15.8 28.5 10.8 20.6
+> YOLOX-DE 14.5 20.8 17.8 29.3 13.4 22.7 YOLOX-G †(ours) 14.5 21.2 17.9 29.5 14.9 23.1
+> (a) YOLOX-G (b) YOLOX-G †(ours)
+> Figure 4: The reliability diagrams of YOLOX on VOC-MIX. The annotators’ agreement refers to the percentage of annotators anno-tating the same class label as the predicted class label while the % of samples is the proportion of predictions in each bin.
+
+the reference line ( i.e . dashed line). We refer readers to Appendix B for the reliability diagrams of all other exper-iments. 
+
+Model interpretation and explainability . Our cali-brated model can be interpreted by end-users more eas-ily than uncalibrated alternatives, while the calibration metrics can explain the model’s overall alignment to the annotators’ agreement. We present an example of inter-preting the model output and explaining the calibrated model, specifically, the YOLOX-G † model on the DX-20 dataset. A prediction of class “Peri. Radiol.” with 48.7% confidence and 32.4% background probability (Figure 3 Row 1) can be interpreted as 48.7% of annotators agree-ing with class “Peri. Radiol.”, 32.4% believing there is no object in the bounding box, while the remaining 18.9% an-notating other class labels. Annotators thinking that an object is present would place their bounding boxes within the 67.6% (the foreground probability) confidence interval of the predicted bounding box Gaussian distribution. In addition, as shown in Table 2, YOLOX-G † leads to a 38.1 TVD and 9.1 TVD FP on DX-20. They can be un-derstood as the largest difference between the predicted class probability and the percentage of annotators agree-ing on the prediction on average, which are 38.1 and 9.1 for all annotated objects and FP, respectively. Further, an LUE of 47.5 indicates the mean absolute error of the pre-dicted certainty to represent the percentage of annotated bounding boxes lying within the predicted bounding box interval, while an FNE of 23.5 can be interpreted as 23.5% of annotators would annotate an object when the model missed it. 
+
+Detection accuracy is uncompromised by calibra-tion . Typically, model performance in terms of accuracy and calibration are both important, i.e ., the accuracy of a calibrated model should not deteriorate significantly from its uncalibrated version [28]. To analyze the model’s de-tection accuracy, we supplement our calibration metric by computing the mean AP metric under various IoU thresh-olds ( i.e . AP .5, AP .75 , AP .5: .95 ), the LRP metric [63], and the PDQ measure [36] which evaluates the detection qual-ity based on spatial and class probabilities. The reference ground truth is obtained similarly to Table 3. Addition-ally, for the VBD-CXR dataset, we report the AP 0.4 metric obtained via server-side submission on Kaggle 2.Table 4 presents the AP, LRP, and PDQ results for the test datasets. We observe that training object detec-tors with our proposed calibration method (*-G †) does not significantly reduce detection performance. Particu-larly, the drop in AP .5: .95 ranges between 0.2 − 1.2, LRP only increases by 2.1 at most, while the worst decrease in PDQ is 1.77, when compared to their deterministic or deep ensemble counterparts. This validates that our proposed models can achieve similar performance as their counter-parts while yielding well-calibrated class confidence scores 
+
+> 2https://www.kaggle.com/competitions/ vinbigdata-chest-xray-abnormalities-detection
+
+10 Table 4: Detection accuracy metrics. Ground truth of DX-20 and VBD-CXR are approximated by majority voting, while we use the original ground truth of the Pascal VOC dataset for VOC-MIX. *AP .4 is the evaluation metric of the private test set of VBD-CXR, obtained via server-side submission on Kaggle. Higher is better for all metrics except LRP, and bold indicates the best results.                                                                                                                                                                                                                                                                                          
+
+> Model DX-20 VBD-CXR VOC-MIX
+> AP .5AP .75 AP .5: .95 LRP ↓PDQ *AP .4AP .5AP .75 AP .5: .95 LRP ↓PDQ AP .5AP .75 AP .5: .95 LRP ↓PDQ FRCNN 25.9 6.7 10.3 91.0 -17.0 34.9 17.0 17.6 84.9 -82.0 59.5 53.7 54.6 -FRCNN-DE 25.9 6.1 9.8 90.7 9.33 16.8 34.3 16.1 17.7 84.9 5.25 82.7 60.2 54.0 54.6 12.02
+> FRCNN-G 23.9 5.8 9.7 91.4 5.76 16.5 34.5 15.8 17.7 85.1 5.05 82.1 59.1 53.0 54.9 6.48 FRCNN-G †(ours) 25.8 6.1 10.1 90.7 8.30 16.2 33.6 16.0 17.1 85.4 4.94 81.7 59.3 53.2 55.8 11.53 RetinaNet 23.7 6.9 10.2 91.2 -14.9 32.2 14.9 17.0 86.4 -80.9 59.6 54.0 54.5 -RetinaNet-DE 23.5 6.3 9.7 90.7 2.16 15.2 33.7 15.3 17.3 85.4 2.97 80.8 60.1 54.3 54.0 9.96
+> RetinaNet-G 20.8 5.8 8.8 92.1 1.15 14.3 31.3 15.2 16.7 86.0 1.02 78.8 58.4 53.2 54.3 7.01 RetinaNet-G †(ours) 23.4 5.7 9.4 91.6 1.02 14.8 31.7 14.5 16.1 85.7 1.94 79.2 59.1 53.8 55.1 9.76 YOLOX 38.8 16.8 19.1 83.7 -18.1 38.9 20.5 21.0 82.7 -81.3 66.0 59.0 48.9 -YOLOX-DE 38.6 16.2 18.5 83.8 10.25 19.5 42.5 23.7 22.5 80.0 11.36 81.4 66.3 58.6 48.6 15.55
+> YOLOX-G 35.6 14.2 17.3 85.0 7.64 18.9 40.3 22.9 21.8 81.9 7.24 80.0 63.8 57.1 50.0 10.41 YOLOX-G †(ours) 38.6 15.9 18.4 83.9 9.33 18.8 41.9 23.4 22.6 81.0 9.51 82.1 65.9 58.0 50.7 13.78
+> Table 5: Calibration evaluation metrics for the ablation study and the total training and inference computational time. The standard deviation of the calibration metrics across the test samples in the DX-20 dataset is shown in brackets. TTCL: Train-time calibration loss.
+> Model Calibration Metric Time (s) TVD TVD FP LUE FNE Mean Train Infer. RetinaNet-G 44.4 (±12 .5) 45.4 (±8.7) 51.7 (±10 .7) 25.8 (±12 .9)42.3 (±6.8) 11005.0 26.2 + TTCL 42.1 (±12 .1) 30.8 (±11 .8) 52.5 (±11 .1) 27.0 (±14 .0) 38.9 (±7.2) 12229.1 26.2 + Post-hoc IR 38.8 (±14 .7)42.6 (±13 .9) 43.5 (±18 .1) 27.5 (±11 .6) 38.4 (±7.4) 11006.2 29.9 + TTCL & Post-hoc IR 42.1 (±12 .2) 28.1 (±10 .8)50.7 (±10 .7) 25.8 (±13 .4)37.5 (±6.9) 12230.3 29.9 + sample weights 40.4 (±11 .6) 29.3 (±10 .3) 44.7 (±12 .7)25.9 (±13 .3) 35.5 (±6.6) 12230.3 29.9
+
+and bounding box variances that align with the annota-tors’ annotations distribution. 
+
+Ablation study . We study the effects of each component in the proposed framework by analyzing RetinaNet-G †, as it leads to the largest reduction in the mean calibration error on the DX-20 dataset. As shown in Table 5, we first add the train-time calibration loss to the RetinaNet-G model, which improves the mean evaluation metric by 3.4. Supervising the model directly with the annotators’ agreement significantly improves our model confidence es-timates for FP by 14.6 TVD FP while only incurring 1224.1 seconds total training time or 0.03 seconds of additional training iteration time. Besides, we incorporate only the post-hoc IR calibrator to the RetinaNet-G model, which leads to a notable drop in LUE of 8.2 compared to the RetinaNet-G model. The post-hoc calibrator improves the mean calibration error of the RetinaNet-G model by 3.9 and takes only 1.2 and 3.7 additional seconds for the IR model training and inference time, respectively. Then, implementing both train-time and post-hoc cal-ibration further improves the mean metric to 37.5, while using sample weights when training the IR model brings about an extra 2.0 improvement, demonstrating the capa-bility of our method in capturing and aligning the model’s uncertainty output to the annotators’ agreement. In short, by utilizing both the train-time calibration loss and the IR calibrator trained with sample weights, we can enhance the mean calibration metric by 6.8 with minimal compu-tational overhead. 
+
+6. Conclusion 
+
+We presented a novel and interpretable approach for calibrating probabilistic object detectors by aligning the model’s uncertainty outputs to the annotators’ annota-tion distributions. It enables model training and cali-bration evaluation without requiring ground truth anno-tations, which can be unavailable for ambiguous objects. To achieve this, we introduced four evaluation metrics and proposed a calibration method that incorporates a train-time calibration loss and a post-hoc isotonic regression cal-ibrator. The proposed method is generalizable to medical and natural image domains and different types of object detector architectures. Our results showed that the pro-posed calibration method achieves the best performance on the calibration metrics without compromising detec-tion accuracy and is computationally efficient. Despite the promising results, our study has limitations in that our calibration metrics, specifically the localization metrics, cannot be directly compared across architectures. Further, we also assume that the annotators’ uncertainty in terms of class labels and bounding boxes is linearly cou-pled. This assumption may be true in certain cases, where the class label is related to the object location ( e.g ., in the dentistry domain, the severity grades of dental caries are related to its extent or location in the tooth), but they are often orthogonal in practice. Future work should improve the formulation of the calibration error by considering the localization uncertainty without involving the classifica-tion uncertainty. 11 CRedit authorship contribution statement Zhi Qin Tan: Data curation, formal analysis, method-ology, software, validation, visualization, writing - original draft. Owen Addison: Conceptualization, funding ac-quisition, supervision, writing - review & editing. Yun-peng Li: Conceptualization, funding acquisition, project administration, supervision, writing - review & editing. 
+
+Declaration of competing interest 
+
+The authors declare that they have no known compet-ing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+Acknowledgments 
+
+Z.Q. T. acknowledges the support of an ICASE stu-dentship from the EPSRC. The authors acknowledge the support of the National Institute for Health and Care Re-search (NIHR) through grant NIHR204566. 12 Supplementary Material 
+
+This supplementary material provides further details about the dataset used in this work in Appendix A, while Appendix B presents additional reliability diagrams, showcasing our calibrated probabilistic object detector’s predictive uncertainty in alignment with the annotators’ agreement. 
+
+Appendix A. Dataset Details 
+
+Appendix A.1. DX-20 Dataset 
+
+Our in-house dental radiograph dataset, DX-20, contains 3,755 bitewing and periapical radiographs collected from 3 different dental practices. 28 specialist dentists with various levels of clinical experience annotated the images with 20 classes of dental diseases ( e.g . five grades of dental caries, four stages of periodontal bone loss, calculus, etc .). Each image was randomly assigned to 5 different annotators for annotations. Annotators labeled bounding boxes around the disease regions and could assign the label “Unsure” in case of ambiguity ( e.g . low image quality). The distribution of the class labels is shown in Figure A.5, and we observe significant class imbalance. Besides that, an experienced dentist manually selects 600 images with equal proportions from the different dental practices and similar percentages of image difficulties as the testing dataset. In summary, the DX-20 dataset consists of 3,755 images with 467 healthy radiographs ( i.e . no annotations from any annotator), while the testing set contains 600 images with 101 being healthy radiographs. 
+
+> Figure A.5: Bar chart of the class label frequency for all annotations of the DX-20 dataset. Caries G1 - G4 and Bone Loss S1 - S4 represent different grades or severity of dental caries and bone loss, respectively.
+
+Appendix A.2. VBD-CXR Dataset 
+
+VBD-CXR [1] is a thoracic abnormalities detection dataset with chest (postero-anterior) radiographs, consisting of 15,000 images. The images are annotated by 17 experienced radiologists with 14 classes of abnormalities such as aortic enlargement, atelectasis, calcification, cardiomegaly, etc . The radiologists are randomly assigned such that there are at least three annotators per image. If no abnormality is found, the radiologist will annotate it with a ‘no finding‘ class. Lastly, since the test dataset is not publicly available, we perform a 9:1 split, ensuring similar distribution of object classes on the 15,000 images to obtain our training and testing datasets. 13 Appendix A.3. VOC-MIX Dataset 
+
+VOC-MIX [11] is a synthetic crowdsourced dataset based on the Pascal VOC [4] dataset (object detection in natural images), consisting of 5,011 training and 4,952 testing images. In the VOC-MIX dataset, 25 annotators were simulated to annotate 20 object classes of the Pascal VOC dataset, where 5 annotators have a high annotating accuracy (74%) and the remaining 20 have an average annotating accuracy (55%). All annotators annotated every image in the dataset, resulting in 25 distinct sets of annotations. 14 Appendix B. Additional Reliability Diagrams 
+
+Figures B.6 to B.8 present the reliability diagrams of probabilistic object detectors trained with the NLL loss (*-G) and our proposed calibration method (*-G †). The annotators’ agreement in Columns (a) and (c) ( i.e . class label) refers to the percentage of annotators annotating the same class label as the predicted class label, while in Columns (b) and (d) (i.e . bounding box), it indicates the percentage of annotators that annotated their bounding boxes within the predicted bounding box interval calculated with the prediction certainty, ˆo, as the confidence interval. The bar height of the annotators’ agreement is the average percentage in each bin, while the % of samples is the proportion of predictions in each bin. We observe that our proposed calibration method (*-G †) significantly improves the calibration quality, demonstrated by the closer alignment between the annotators’ agreement and the reference line ( i.e . dashed line) across multiple probabilistic object detectors and datasets. 15 FRCNN-G FRCNN-G †
+
+RetinaNet-G RetinaNet-G †
+
+YOLOX-G YOLOX-G †
+
+(a) Class Label (b) Bounding Box (c) Class Label (d) Bounding Box 
+
+Figure B.6: The reliability diagram of probabilistic object detectors trained with the NLL loss (*-G) and our proposed calibration method (*-G †) on the DX-20 dataset. 
+
+16 FRCNN-G FRCNN-G †
+
+RetinaNet-G RetinaNet-G †
+
+YOLOX-G YOLOX-G †
+
+(a) Class Label (b) Bounding Box (c) Class Label (d) Bounding Box 
+
+Figure B.7: The reliability diagram of probabilistic object detectors trained with the NLL loss (*-G) and our proposed calibration method (*-G †) on the VBD-CXR dataset. 
+
+17 FRCNN-G FRCNN-G †
+
+RetinaNet-G RetinaNet-G †
+
+YOLOX-G YOLOX-G †
+
+(a) Class Label (b) Bounding Box (c) Class Label (d) Bounding Box 
+
+Figure B.8: The reliability diagram of probabilistic object detectors trained with the NLL loss (*-G) and our proposed calibration method (*-G †) on the VOC-MIX dataset. 
+
+18 References 
+
+[1] D. Nguyen, D. B. Nguyen, H. Q. Nguyen, J. Elliott, N. T. Nguyen, P. Culliton, VinBigData chest x-ray abnormalities detection, https://kaggle.com/competitions/vinbigdata-chest-xray-abnormalities-detection , 2020. Kaggle. [2] I. E. Hamamci, S. Er, E. Simsar, A. E. Yuksel, S. Gultekin, S. D. Ozdemir, K. Yang, H. B. Li, S. Pati, B. Stadlinger, et al., DENTEX: An abnormal tooth detection with dental enumeration and diagnosis benchmark for panoramic x-rays, 2021. arXiv:2305.19112 .[3] R. Dibo, A. Galichin, P. Astashev, D. V. Dylov, O. Y. Rogov, DeepLOC: Deep learning-based bone pathology localization and classification in wrist x-ray images, in: Proc. Anal. Images Social Netw. Texts, 2024, pp. 199–211. [4] M. Everingham, C. K. I. W. Luc Van Gool, J. Winn, A. Zisserman, The PASCAL Visual Object Classes Challenge 2007 (VOC2007), Int. J. Comput. Vis. (IJCV) 88 (2010) 303–338. [5] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Dollar, L. Zitnick, Microsoft COCO: Common objects in context, in: Proc. Eur. Conf. Comput. Vis. (ECCV), Zurich, Switzerland, 2014, pp. 740–755. [6] P. Sun, H. Kretzschmar, X. Dotiwalla, A. Chouard, V. Patnaik, P. Tsui, J. Guo, Y. Zhou, Y. Chai, B. Caine, V. Vasudevan, W. Han, J. Ngiam, H. Zhao, A. Timofeev, S. Ettinger, M. Krivokon, A. Gao, A. Joshi, Y. Zhang, J. Shlens, Z. Chen, D. Anguelov, Scalability in perception for autonomous driving: Waymo open dataset, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), 2020. [7] L. Quinn, K. Tryposkiadis, J. Deeks, H. C. De Vet, S. Mallett, L. B. Mokkink, Y. Takwoingi, S. Taylor-Phillips, A. Sitch, Interobserver variability studies in diagnostic imaging: a methodological systematic review, Brit. J. Radiol. 96 (2023) 20220972. [8] D. Tschirschwitz, F. Klemstein, B. Stein, V. Rodehorst, A dataset for analysing complex document layouts in the digital humanities and its evaluation with krippendorff’s alpha, in: Proc. German Conf. Pattern Recog., Konstanz, Germany, 2022, p. 354–374. [9] Y. Hu, S. Meina, Crowd R-CNN: An object detection model utilizing crowdsourced labels, in: Proc. Int. Conf. Vis. Image Sig. Process. (ICVISP), Bangkok, Thailand, 2020, pp. 1–7. [10] K. Le, T. Tran, H. Pham, H. Nguyen Trung, T. Le, H. Q. Nguyen, Learning from multiple expert annotators for enhancing anomaly detection in medical image analysis, IEEE Access 11 (2023) 14105–14114. [11] Z. Q. Tan, O. Isupova, G. Carneiro, X. Zhu, Y. Li, Bayesian detector combination for object detection with crowdsourced annotations, in: Proc. Eur. Conf. Comput. Vis. (ECCV), Milan, Italy, 2024, pp. 329–346. [12] F. Kuppers, J. Kronenberger, A. Shantia, A. Haselhoff, Multivariate Confidence Calibration for Object Detection, in: IEEE Conf. Comput. Vis. Pattern Recog. (CVPR) Worksh., 2020, pp. 1322–1330. [13] K. Oksuz, T. Joy, P. K. Dokania, Towards building self-aware object detectors via reliable uncertainty quantification and calibration, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Vancouver, Canada, 2023, pp. 9263–9274. [14] A. Mehrtash, W. M. Wells, C. M. Tempany, P. Abolmaesumi, T. Kapur, Confidence calibration and predictive uncertainty estimation for deep medical image segmentation, IEEE Trans. Med. Imag. 39 (2020) 3868–3878. [15] X. Chen, X. Wang, K. Zhang, K.-M. Fung, T. C. Thai, K. Moore, R. S. Mannel, H. Liu, B. Zheng, Y. Qiu, Recent advances and clinical applications of deep learning in medical image analysis, Med. Image Anal. 79 (2022) 102444. [16] J. Gawlikowski, C. R. N. Tassi, M. Ali, J. Lee, M. Humt, J. Feng, A. Kruspe, R. Triebel, P. Jung, R. Roscher, M. Shahzad, W. Yang, R. Bamler, X. X. Zhu, A survey of uncertainty in deep neural networks, Artif. Intell. Rev. 56 (2023) 1513–1589. [17] D. Feng, L. Rosenbaum, C. Glaeser, F. Timm, K. Dietmayer, Can we trust you? on calibration of a probabilistic object detector for autonomous driving, in: Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst. (IROS), Macao, China, 2019. [18] M. K. Nowak, J. Cyranka, N. Maslany, A. Kostuch, J. Derbisz, M. Komorkiewicz, P. Siwck, M. J. Wojcik, D. Marchewka, P. Skruch, How Much Noise is There in Labels Generated by Humans? A Method to Validate Automatically Generated Bounding Boxes , in: IEEE Conf. Comput. Vis. Pattern Recog. (CVPR) Worksh., Los Alamitos, CA, USA, 2025, pp. 4371–4380. [19] D. Tschirschwitz, V. Rodehorst, Label Convergence: Defining an Upper Performance Bound in Object Recognition Through Contradictory Annotations , in: Proc. IEEE Winter Conf. Appl. Comput. Vis. (WACV), Tucson, AZ, USA, 2025, pp. 6848–6857. 
+
+19 [20] D. Zhou, J. Li, J. Li, J. Huang, Q. Nie, Y. Liu, B.-B. Gao, Q. Wang, P.-A. Heng, G. Chen, Distribution-aware calibration for object detection with noisy bounding boxes, in: Proc. Brit. Mach. Vis. Conf. (BMVC), Glasgow, UK, 2024. [21] J. Murrugarra-Llerena, C. R. Jung, Noise-aware evaluation of object detectors, in: Proc. IEEE Winter Conf. Appl. Comput. Vis. (WACV), Tucson, AZ, USA, 2025, pp. 9322–9331. [22] H. Su, J. Deng, L. Fei-Fei, Crowdsourcing annotations for visual object detection, in: AAAI Workshop, Human Computation, Ontario, Canada, 2012, pp. 40–46. [23] C. Guo, G. Pleiss, Y. Sun, K. Q. Weinberger, On calibration of modern neural networks, in: Proc. Int. Conf. Mach. Learn. (ICML), Sydney, Australia, 2017, pp. 1321–1330. [24] A. Kumar, P. S. Liang, T. Ma, Verified uncertainty calibration, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), volume 32, Vancouver, Canada, 2019. [25] J. Nixon, M. W. Dusenberry, L. Zhang, G. Jerfel, D. Tran, Measuring calibration in deep learning, in: IEEE Conf. Comput. Vis. Pattern Recog. (CVPR) Worksh., Long Beach, CA, USA, 2019, pp. 38–41. [26] J. Mukhoti, V. Kulharia, A. Sanyal, S. Golodetz, P. H. S. Torr, P. K. Dokania, Calibrating deep neural networks using focal loss, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), 2020, pp. 15288–15299. [27] D.-B. Wang, L. Feng, M.-L. Zhang, Rethinking calibration of deep neural networks: Do not be afraid of overconfidence, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), 2021, pp. 11809–11820. [28] S. Kuzucu, K. Oksuz, J. Sadeghi, P. K. Dokania, On calibration of object detectors: Pitfalls, evaluation and baselines, in: Proc. Eur. Conf. Comput. Vis. (ECCV), Milan, Italy, 2024. [29] Y.-J. Park, C. Sobolewski, N. Azizan, Uncertainty quantification in detection transformers: Object-level calibration and image-level reliability, 2026. arXiv:2412.01782 .[30] M. A. Munir, M. H. Khan, M. Sarfraz, M. Ali, Towards improving calibration in object detection under domain shift, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), New Orleans, LA, USA, 2022, pp. 38706–38718. [31] B. Pathiraja, M. Gunawardhana, M. H. Khan, Multiclass confidence and localization calibration for object detection, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Vancouver, Canada, 2023, pp. 19734–19743. [32] M. A. Munir, S. Khan, M. H. Khan, M. Ali, F. Khan, Cal-DETR: Calibrated detection transformer, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), New Orleans, LA, USA, 2023. [33] M. A. Munir, M. H. Khan, S. Khan, F. S. Khan, Bridging precision and confidence: A train-time loss for calibrating object detection, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Vancouver, Canada, 2023, pp. 11474–11483. [34] T. Popordanoska, A. Tiulpin, M. B. Blaschko, Beyond classification: Definition and density-based estimation of calibration in object detection, in: Proc. IEEE Winter Conf. Appl. Comput. Vis. (WACV), Waikoloa, HI, USA, 2024, pp. 574–583. [35] K. P. Alexandridis, I. Elezi, J. Deng, A. Nguyen, S. Luo, Fractal calibration for long-tailed object detection, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Nashville, TN, USA, 2025. [36] D. Hall, F. Dayoub, J. Skinner, H. Zhang, D. Miller, P. Corke, G. Carneiro, A. Angelova, N. Sünderhauf, Probabilistic object detection: Definition and evaluation, in: Proc. IEEE Winter Conf. Appl. Comput. Vis. (WACV), Snowmass Village, CO, USA, 2020, pp. 1020–1029. [37] D. Feng, A. Harakeh, S. L. Waslander, K. Dietmayer, A review and comparative study on probabilistic object detection in autonomous driving, IEEE Trans Intell. Transportation Syst. 23 (2022) 9961–9980. [38] D. Miller, L. Nicholson, F. Dayoub, N. Sünderhauf, Dropout sampling for robust object detection in open-set conditions, in: Proc. IEEE Int. Conf. Robot. Automat. (ICRA), Brisbane, Australia, 2018, pp. 3243–3249. [39] D. Miller, F. Dayoub, M. Milford, N. Sünderhauf, Evaluating merging strategies for sampling-based uncertainty techniques in object detection, in: Proc. IEEE Int. Conf. Robot. Automat. (ICRA), Montreal, Canada, 2019, pp. 2348–2354. [40] Z. Lyu, N. Gutierrez, A. Rajguru, W. J. Beksi, Probabilistic object detection via deep ensembles, in: Eur. Conf. Comput. Vis. (ECCV) Workshop, 2020, pp. 67–75. [41] R. M. Neal, Bayesian Learning for Neural Networks, Springer-Verlag, 1996. [42] M. T. Le, F. Diehl, T. Brunner, A. Knoll, Uncertainty estimation for deep neural object detectors in safety-critical applications, in: Proc. IEEE Intell. Transportation Syst. Conf., Maui, HA, USA, 2018, pp. 3873–3878. 
+
+20 [43] J. Choi, D. Chun, H. Kim, H.-J. Lee, Gaussian YOLOv3: An accurate and fast object detector using localization uncertainty for autonomous driving, in: Proc. IEEE Int. Conf. Comput. Vis. (ICCV), Seoul, Korea, 2019, pp. 502–511. [44] Y. He, C. Zhu, J. Wang, M. Savvides, X. Zhang, Bounding box regression with uncertainty for accurate object detection, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Long Beach, CA, USA, 2019, pp. 2883–2892. [45] F. Kraus, K. Dietmayer, Uncertainty estimation in one-stage object detection, in: Proc. IEEE Intell. Transportation Syst. Conf., Auckland, New Zealand, 2019, pp. 53–60. [46] A. Harakeh, M. Smart, S. L. Waslander, Bayesod: A bayesian approach for uncertainty estimation in deep object detectors, in: Proc. IEEE Int. Conf. Robot. Automat. (ICRA), 2020, pp. 87–93. [47] Y. He, J. Wang, Deep mixture density network for probabilistic object detection, in: Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst. (IROS), 2020, pp. 10550–10555. [48] A. Harakeh, S. L. Waslander, Estimating and evaluating regression predictive uncertainty in deep object detectors, in: Proc. Int. Conf. Learn. Represent. (ICLR), 2021. [49] S. Su, Y. Li, S. He, S. Han, C. Feng, C. Ding, F. Miao, Uncertainty quantification of collaborative detection for self-driving, in: Proc. IEEE Int. Conf. Robot. Automat. (ICRA), London, United Kingdom, 2023, pp. 5588–5594. [50] G. Ausiello, P. Crescenzi, G. Gambosi, V. Kann, A. Marchetti-Spaccamela, M. Protasi, Complexity and Approximation: Combinatorial Optimization Problems and Their Approximability Properties, Springer Publishing Company, 2013. [51] P. C. Mahalanobis, On the generalized distance in statistics, Proceedings of the National Institute of Sciences of India 2 (1936) 49–55. [52] A. B. Tsybakov, Introduction to Nonparametric Estimation, Springer Series in Statistics, Springer, New York, NY, USA, 2009, p. 83. [53] K. Krishnamoorthy, Normal distribution, in: Handbook of Statistical Distributions with Applications, CRC Press, Boca Raton, FL, USA, 2006, p. 151. [54] S. Ren, K. He, R. Girshick, J. Sun, Faster R-CNN: Towards real-time object detection with region proposal networks, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), Montréal, Canada, 2015, pp. 91–99. [55] Z. Ge, S. Liu, F. Wang, Z. Li, J. Sun, YOLOX: Exceeding YOLO series in 2021, 2021. arXiv:2107.08430 .[56] C.-Y. Wang, A. Bochkovskiy, H.-Y. M. Liao, YOLOv7: Trainable bag-of-freebies sets new state-of-the-art for real-time object detectors, in: Proc. IEEE Conf. Comput. Vis. Pattern Recog. (CVPR), Vancouver, Canada, 2023, pp. 7464–7475. [57] T.-Y. Lin, P. Goyal, R. Girshick, K. He, P. Dollar, Focal loss for dense object detection, in: Proc. IEEE Int. Conf. Comput. Vis. (ICCV), Venice, Italy, 2017. [58] T. Robertson, F. T. Wright, R. Dykstra, Order Restricted Statistical Inference, Wiley, 1988. [59] F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos, D. Cournapeau, M. Brucher, M. Perrot, E. Duchesnay, Scikit-learn: Machine learning in Python, J. Mach. Learn. Res. (JMLR) 12 (2011) 2825–2830. [60] A. Kendall, Y. Gal, What uncertainties do we need in bayesian deep learning for computer vision?, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), Long Beach, California, USA, 2017, pp. 5580––5590. [61] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, A. Desmaison, A. Kopf, E. Yang, Z. DeVito, M. Raison, A. Tejani, S. Chilamkurthy, B. Steiner, L. Fang, J. Bai, S. Chintala, Pytorch: An imperative style, high-performance deep learning library, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), Vancouver, Canada, 2019, pp. 8024–8035. [62] B. Lakshminarayanan, A. Pritzel, C. Blundell, Simple and scalable predictive uncertainty estimation using deep ensembles, in: Proc. Adv. Neural Inform. Process. Syst. (NeurIPS), Long Beach, California, USA, 2017, pp. 6405—-6416. [63] K. Oksuz, B. C. Cam, S. Kalkan, E. Akbas, One metric to measure them all: Localisation recall precision (LRP) for evaluating visual detection tasks, IEEE Trans. Pattern Anal. Mach. Intell. (TPAMI) 44 (2022) 9446–9463. 
+
+21

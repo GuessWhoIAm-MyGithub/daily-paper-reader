@@ -1,0 +1,374 @@
+Title: CLIP-Guided SAM: Parameter-Efficient Semantic Conditioning for Promptable Segmentation
+
+URL Source: https://arxiv.org/pdf/2605.24807v1
+
+Published Time: Tue, 26 May 2026 01:00:29 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# CLIP-Guided SAM: Parameter-Efficient Semantic Conditioning for Promptable Segmentation 
+
+Shayan Jalilian and Abdul Bais 
+
+University of Regina, Regina, SK, Canada 
+
+sjs949@uregina.ca, Abdul.Bais@uregina.ca 
+
+Abstract. Promptable foundation models such as the Segment Any-thing Model (SAM) produce high-quality masks but remain semantically blind, relying on external prompts to specify categories. Existing vision– language approaches address this limitation by using external prompt coupling, in which a vision–language model generates spatial prompts for SAM as a separate stage. We propose CLIP-Guided SAM , a parameter-efficient segmentation framework built on internal semantic conditioning. Instead of using se-mantic signals only to generate prompts, we inject CLIP-derived text, vision, and similarity features directly into SAM’s image encoder via lightweight multi-modal semantic adapters. These adapters condition SAM’s internal feature representations, allowing semantic information to influence mask prediction while preserving SAM’s original prompt-able interface. Our framework is designed for low labelled-data settings and applies to both general-domain benchmarks and specialized downstream tasks. It supports two operating modes: Manual mode, for interactive segmenta-tion with both text and spatial prompts, and Semi-Automatic (text-only) mode, for applications that require concept-specific segmentation using only textual input. We show that robustness depends on aligning training with the type of prompts used at inference, making train–test prompt consistency an important design principle. Through extensive experiments and ablations, we evaluate our method against SAM+PEFT baselines without semantic conditioning, vision– language + SAM pipelines, SAM 3, and strong semi-supervised segmen-tation methods that rely on large amounts of unlabelled data. Across these settings, CLIP-Guided SAM consistently achieves superior or com-petitive performance while remaining parameter-efficient in both training and deployment. 
+
+Keywords: Promptable Segmentation · Segment Anything · CLIP ·
+
+Parameter-Efficient Fine-Tuning · Vision-Language Models 
+
+## 1 Introduction 
+
+Prompt-based segmentation, popularized by the Segment Anything Model (SAM) [15], has significantly expanded the flexibility of visual localization. With mini-mal spatial input—such as a point, box, or mask—SAM can produce high-quality  
+
+> arXiv:2605.24807v1 [cs.CV] 24 May 2026 2S. Jalilian and A. Bais
+
+object masks across diverse scenes. However, SAM is intentionally class-agnostic :it excels at grouping visual structures but does not encode semantic category in-formation. As a result, identifying what to segment remains an external problem. Furthermore, SAM is sometimes adapted via Parameter-Efficient Fine-Tuning (PEFT) methods for specific tasks to enhance performance and address label scarcity or computational constraints. Vision–language models (VLMs) such as Contrastive Language–Image Pre-training (CLIP) [28] provide complementary strengths, offering semantic rep-resentations aligned with natural language but lacking the spatial precision re-quired for dense segmentation. This complementarity has motivated VLM+SAM systems based on external prompt coupling , where a VLM generates spatial prompts—points, boxes, or masks—that are provided to a frozen or lightly adapted SAM. While effective in some settings, this stage-wise and shallow integration keeps semantic reasoning and spatial segmentation architecturally separate. Semantic information influences SAM only indirectly through sparse or noisy prompts, leaving its internal feature representations semantically uninformed. This lim-itation is even more pronounced in low-label regimes and text-only scenarios, where supervision is limited and spatial cues are suboptimal. Figure 1 illus-trates the difference between existing approaches—such as SAM with PEFT or training-free VLM+SAM pipelines—and our proposed framework, which injects semantic signals directly into SAM’s internal representations. In this work, we propose CLIP-Guided SAM , a parameter-efficient framework that unifies internal semantic conditioning with external spatial prompt-ing . Rather than relying solely on prompt-level guidance, we inject CLIP-derived text, vision, and similarity features directly into SAM’s image encoder via se-mantic adapters. This design allows semantic information to influence feature formation during segmentation, while spatial prompts remain complementary for boundary refinement and localization. A central component of our framework is the joint co-adaptation of SAM and CLIP. Through systematic ablations, we show that effective semantic con-ditioning requires optimizing CLIP not merely as a prompt generator, but as an internal semantic guide tailored to SAM’s feature space. Freezing CLIP or pre-fine-tuning it independently beforehand to improve spatial prompt quality leads to inferior performance, whereas end-to-end co-adapting both models enables CLIP to learn to produce semantic signals useful for segmentation and better aligned with SAM’s feature space. We further observe asymmetric sensitivity in tuning budgets: performance saturates quickly with additional SAM backbone tuning, whereas increasing the number of trainable parameters in CLIP produces larger gains. CLIP-Guided SAM is designed to support multiple deployment scenarios. In an interactive mode, the framework combines text prompts with user-provided point inputs, modelling user-in-the-loop segmentation or annotation workflows. In a text-only (semi-automatic) mode, segmentation is driven solely by class de-scriptions, without human spatial input. In this setting, spatial prompts serve as CLIP-Guided SAM 3      
+
+> Fig. 1: CLIP-Guided SAM Overview. Comparison of (top) SAM with PEFT , (mid-dle) typical VLM+SAM pipelines , and (bottom) our CLIP-Guided SAM . Existing ap-proaches either rely on spatial prompting alone or couple a VLM to SAM externally via prompt generation, leaving SAM’s internal representations semantically uninformed. Our approach introduces internal semantic conditioning by injecting CLIP-derived features directly into SAM’s image encoder through multi-modal adapters, enabling joint SAM–CLIP co-adaptation.
+
+model-generated inputs rather than supervision. We therefore introduce a train-test-prompt-aligned training strategy that trains directly on noisy prompts sampled from CLIP similarity maps. This alignment mitigates the train–test mismatch introduced by idealized ground-truth clicks and yields substantially more robust inference under text-only prompting. We evaluate CLIP-Guided SAM on general semantic segmentation bench-marks (COCO, ADE20K, PASCAL VOC) and specialized downstream tasks such as camouflaged object detection. Under limited supervision, our method consistently outperforms SAM-based parameter-efficient baselines and achieves competitive performance relative to heavier vision–language systems. With only a few hundred labelled images, our modular co-adaptation framework approaches the zero-shot performance of large-scale models such as SAM 3, while using sub-stantially fewer parameters and enabling efficient tuning on commodity GPUs. 
+
+Contributions. In summary, we make the following contributions: 
+
+– We introduce a framework for internal semantic conditioning of SAM, shifting VLM+SAM integration from external prompt coupling to joint feature-level co-adaptation. 4 S. Jalilian and A. Bais 
+
+– We analyze co-adaptation dynamics between SAM and CLIP, showing that adapting the semantic guide is critical, whereas additional tuning of the SAM backbone yields diminishing returns. 
+
+– We propose a train-test prompt alignment strategy for text-only segmen-tation that improves robustness by matching training and inference prompt distributions. 
+
+– We present a parameter-efficient system applicable to both general and spe-cialized segmentation tasks, supporting interactive (text + spatial prompts) and text-only deployment modes under low-label and modest-compute set-tings. 
+
+– We demonstrate strong performance on different comparisons and exper-iments, along with comprehensive ablations, highlighting an efficient and strong alternative to SAM-PEFT baselines, VLM+SAM pipelines, large foun-dation models, and even strong semi-supervised methods in certain contexts. 
+
+– We demonstrate strong empirical performance across diverse comparisons and ablations, providing an efficient and competitive alternative to SAM-PEFT baselines, VLM+SAM pipelines, large segmentation foundation mod-els, and, in certain regimes, semi-supervised methods. 
+
+## 2 Related Works 
+
+2.1 SAM and Parameter-Efficient Fine-Tuning 
+
+SAM is a powerful prompt-based segmentation foundation model, but often re-quires adaptation for specialized downstream tasks [5]. Because full fine-tuning is costly in low-label regimes, parameter-efficient fine-tuning (PEFT) methods such as adapters [11], LoRA [13], and prompt tuning [19] are widely used. Prior work adapts SAM via lightweight modules or modified heads, e.g., SAM-Adapter [4], Conv-Meets-LoRA [42], SU-SAM [32], and TS-SAM [40], while others provide light semantic conditioning through text embeddings, e.g., SAM-PTx [14]. In contrast, we keep SAM’s prompt encoder and mask decoder intact and inject CLIP-derived text, vision, and similarity features into the image en-coder via semantic adapters, enabling text-prompted semantic conditioning with minimal architectural change. 
+
+2.2 Vision–Language Models for Semantic Segmentation 
+
+Vision–language models such as CLIP [28] align images and text in a shared embedding space and have been widely used for segmentation. Zero-shot and weakly supervised approaches derive activation maps or grouped regions from CLIP representations [3, 6, 10, 26, 30, 34, 43], but often suffer from coarse bound-aries due to limited spatial precision [12]. Open-vocabulary segmentation methods instead train large models with lan-guage supervision to generalize to unseen classes [7,9,20,23,35,44]. SemiVL [12] is an example that combines limited dense labels with a large unlabelled pool for semi-supervised learning. CLIP-Guided SAM 5
+
+CLIPSurgery [22] improves CLIP’s spatial localization by modifying its infer-ence pathway to produce sharper similarity maps, which can be used to sample spatial prompts for SAM, and is a training-free method. Unlike methods that treat CLIP either as the primary segmentation engine or solely as an external prompt generator, we use CLIP as a provider of seman-tic priors, whose features are injected directly into SAM’s encoder and jointly optimized with SAM. 
+
+2.3 Integration of SAM and CLIP for Text-to-Mask Segmentation 
+
+Existing VLM+SAM systems generally follow two strategies. The first relies on cascaded pipelines where a VLM converts text prompts into spatial prompts for SAM. Examples include GroundedSAM [29], which uses GroundingDINO [25] to generate box prompts, and CLIP-based methods that derive points or masks from similarity maps [16,17,21,22]. Other approaches use SAM to propose masks, which are then filtered or scored using CLIP [1,38]. In most cases, SAM and the VLM operate as separate stages. A smaller body of work explores tighter feature-level coupling between SAM and VLMs by injecting language signals directly into SAM’s internal represen-tations [24, 27, 33, 39, 41]. These approaches typically fuse text embeddings or activation maps through additional tokens, modified decoders, or auxiliary mod-ules, often departing from the original SAM architecture or requiring substantial supervision and training, and are sometimes tailored to specific domains. Our approach bridges these directions. We build on CLIPSurgery-style prompt strategy while also injecting CLIP-derived semantic features directly into SAM’s encoder via adapters, enabling internal semantic conditioning and joint SAM and CLIP co-adaptation with minimal architectural changes. 
+
+## 3 Method 
+
+We propose CLIP-Guided SAM , which uses CLIP to produce (i) spatial se-mantic prompts and (ii) feature-level conditioning prompts that are injected into SAM’s image encoder via semantic adapters. We support two usage modes de-pending on whether point prompts come from CLIP (text-only inference) or from user/GT clicks (interactive setting). 
+
+3.1 Generating Semantic Prompts with CLIP 
+
+Given an image and a class prompt, CLIP produces: (i) patch-level image em-beddings V ∈ RN ×Cc (after discarding the [CLS] token, where N = HW ), and (ii) a global text embedding t ∈ RCc .We compute patch-wise cosine similarity: 
+
+sp =
+
+ Vp
+
+∥Vp∥ , t
+
+∥t∥
+
+
+
+, p = 1 , . . . , N,  (1) 6 S. Jalilian and A. Bais  
+
+> Fig. 2: Semantic Prompt Generation with CLIP. Shows the process of how we use CLIP to generate our semantic prompts, which include similarity maps (dense mask prompt), vision+similarity features, text features, and point prompts. Point prompts are sampled either from similarity maps or GT labels, depending on the design mode (manual vs semi-automatic)
+
+yielding similarity scores s ∈ RN ×1.Reshaping s to H × W gives a similarity map S. We upsample and min–max normalize S, then threshold it to obtain a binary prompt mask B.We use these CLIP semantic signals in three ways (Fig. 2): 
+
+– Dense prompt: resize B to SAM’s mask-prompt resolution and feed it to the prompt encoder. 
+
+– Point prompts: sample K=5 positive points from B (semi-automatic mode); in manual mode, points are sampled from GT masks. 
+
+– Feature injection: inject the text embedding t and fused vision–similarity features into SAM’s image encoder via semantic adapters. 
+
+3.2 Two Design Modes 
+
+We provide two design modes in our integration framework (Fig. 3): 
+
+Semi-automatic (text-only). Points and dense prompts are derived from 
+
+B during both training and inference, yielding train–test consistency under im-perfect CLIP localization. 
+
+Manual (interactive). CLIP feature injection remains enabled and similar-ity maps are still used as dense prompts, but point prompts come from GT/user clicks (oracle) during both training and inference. 
+
+3.3 Semantic Adapters 
+
+We insert semantic adapters in parallel to the MLP of each ViT block (regular adapters remain parallel to attention). See Fig. 4 for an overview of adapter placement and the internal structure of the semantic adapters. Let Fℓ ∈ RHℓ×Wℓ×Cℓ denote the feature map entering the MLP at layer 
+
+ℓ. CLIP provides patch embeddings V ∈ RN ×Cc , a text embedding t ∈ RCc ,CLIP-Guided SAM 7
+
+Fig. 3: Overall integration framework. CLIP extracts text and image embeddings, which produce similarity features and maps via cosine similarity. Points prompts are derived either from similarity masks or GT labels, depending on our design mode (manual or semi-automatic), while text, vision, and similarity features are injected into SAM through our semantic adapter modules. 
+
+and similarity scores s ∈ RN ×1. We fuse vision and similarity via broadcasted addition, 
+
+U = V + s,
+
+project to SAM’s channel dimension, 
+
+U′ = UW v ∈ RN ×Cℓ ,
+
+reshape to H × W × Cℓ, and interpolate to obtain Uℓ ∈ RHℓ×Wℓ×Cℓ . The text embedding is projected and activated, 
+
+t′ = GELU( Wtt) ∈ RCℓ ,
+
+and broadcast spatially to Tℓ ∈ RHℓ×Wℓ×Cℓ . Semantic conditioning is injected through residual addition: 
+
+ˆFℓ = Fℓ + Uℓ + Tℓ,
+
+after which the adapter output is merged back into the main pathway by adding it to the output of the MLP block. 
+
+3.4 Joint Optimization & Training Objective 
+
+We train SAM and CLIP end-to-end using supervision only on SAM’s out-put masks. Since thresholding used for binary similarity mask prompt is non-differentiable, gradients reach CLIP only through the injected feature pathway. We optimize a standard segmentation loss L = LBCE +LDice +LIoU . We fine-tune only CLIP’s vision encoder’s attention blocks while freezing the MLP blocks and the text encoder; for SAM, we fine-tune the prompt encoder, mask decoder, and the inserted adapters. 
+
+3.5 Efficiency and Trainable Parameter Accounting 
+
+Table 1 reports total vs. trainable parameters. Overall, we train 49.0M param-eters and deploy SAM+CLIP-vision (197.1M) under a closed-set assumption where class text embeddings are cached. 8 S. Jalilian and A. Bais  
+
+> Fig. 4: Adapter Placement and Internal Structure. The figure on the left shows the structure of a ViT block in SAM’s image encoder, and how our adapters are placed in parallel to the Attention and MLP blocks. The semantic adapter is in parallel to the MLP and receives the semantic inputs generated from CLIP. The right side shows the design of our semantic adapters. Inside each semantic adapter, text features are projected and fused through GELU, while vision–similarity (vis–sim) features are pro-jected, spatially aligned, and added to SAM’s representation.
+
+## 4 Experiments 
+
+We evaluate on (i) camouflaged object detection (COD10K, CAMO, and CHAM-ELEON) and (ii) low-label multi-class segmentation (COCO, ADE20K, and Pas-cal VOC), with four experiments: SAM-PEFT baselines, VLM+SAM pipelines, comparison to SAM 3, and comparison to modern multi-class segmentation (semi-supervised and labelled-only). Unless noted, we use SAM ViT-B, and use the CLIPSurgery [22] architecture for CLIP except in a few ablations; bold and underline mark best/second-best. We use the semi-automatic (text-only) mode in all experiments except Experiment 1, where we use both modes. For COCO, ADE20K, and Pascal VOC datasets, we use low-labelled-data splits commonly used in semi-supervised segmentation settings to simulate low-labelled-data sce-narios [12, 36, 37, 45]. 
+
+Experiment 1: SAM PEFT baselines. We follow standard COD protocols on COD10K [8], CAMO [18], and CHAMELEON [31]: train on COD10K+CAMO train splits; evaluate on their test splits and CHAMELEON; report MAE, Sα,
+
+Eϕ, and F wβ following [8]. Table 2 shows that our manual and text-only variants achieve the best over-all results, outperforming SAM-only PEFT baselines with and without manual prompts, supporting the value of active semantic supervision (both vision and text encoders of CLIP, and fine-tuning CLIP) and encoder-level semantic con-ditioning of SAM. 
+
+Experiment 2: VLM+SAM baselines. We compare against representative vi-sion–language SAM pipelines, including GroundedSAM [29] and CLIPSurgery [22] with SAM, across COCO, ADE20K, PASCAL VOC, and camouflaged object benchmarks. GroundedSAM performs external grounding via GroundingDINO [25], while CLIPSurgery uses CLIP-based similarity maps to generate prompts for SAM. For CLIPSurgery, we report the original zero-shot model as well as progres-sively stronger variants that add dense mask prompts from similarity maps, CLIP-Guided SAM 9                    
+
+> Table 1: Parameter accounting of CLIP-Guided SAM (in millions). “Train-able” denotes parameters updated during training. “Deployment” refers to the closed-set inference configuration where CLIP text embeddings are cached and only CLIP-vision is required at runtime.
+> Component Total (M) Trainable (M) SAM (overall) 110.3 20.6 Image encoder (incl. adapters) 106.2 16.6 Mask decoder 4.1 4.1
+> CLIP (overall) 150.3 28.4 CLIP-vision 86.8 28.3 CLIP-text 63.4 0
+> Full system total 260.5 49.0
+> Deployment total (SAM + CLIP-vision) 197.1 49.0
+> Adapter overhead. The SAM image-encoder adapters introduce 16.6M parameters, corresponding to an 18.5% increase relative to the vanilla SAM backbone. In closed-set inference, CLIP text embeddings are precomputed once and the text encoder is not required at runtime.
+
+decoder fine-tuning, and adapters. For COCO/ADE20K/VOC, our model is trained on the split with the least supervision. Table 3 shows that our jointly trained framework consistently outperforms CLIPSurgery variants across all datasets and GroundedSAM on all benchmarks except COCO (by a small margin). Notably, even when CLIPSurgery is strength-ened with decoder fine-tuning and adapters, our method achieves substantially better performance despite using the same CLIP backbone, indicating that the gains arise from internal semantic conditioning and joint SAM–CLIP co-adaptation rather than from model size or training alone. The largest improvements appear on camouflaged object benchmarks, where purely spatial grouping is insufficient. While fine-tuning improves CLIPSurgery variants, external semantic grounding alone remains insufficient; jointly adapting SAM and CLIP through internal semantic conditioning proves critical for robust segmentation in these challenging scenarios. 
+
+Experiment 3: Direct Comparison with SAM 3. SAM 3 [2] is a large-scale segmen-tation foundation model with built-in text-prompt capability trained on massive datasets. Unlike SAM 3, which is trained end-to-end for concept segmentation on massive datasets, our method relies on parameter-efficient semantic injection and co-adaptation using limited supervision. We evaluate SAM 3 both zero-shot and with light fine-tuning on COCO 1/512, training only its segmentation head and transformer-based fusion com-ponents (23M parameters). Even under this limited fine-tuning regime, SAM 3 achieves strong performance. For fair comparison, predictions are converted to per-class binary masks and evaluated using the same class-wise mIoU protocol as our method. 10 S. Jalilian and A. Bais 
+
+Table 2: First-experiment results on camouflaged object datasets: CHAMELEON, CAMO, and COD10K. 
+
+Method CHAMELEON CAMO COD10K 
+
+Sα
+
+(↑)
+
+Eϕ
+
+(↑)
+
+F wβ
+
+(↑)MAE (↓)
+
+Sα
+
+(↑)
+
+Eϕ
+
+(↑)
+
+F wβ
+
+(↑)MAE (↓)
+
+Sα
+
+(↑)
+
+Eϕ
+
+(↑)
+
+F wβ
+
+(↑)MAE (↓)
+
+(A) Methods requiring manual point prompts 
+
+SAM [15] 0.727 0.734 0.639 0.081 0.684 0.687 0.606 0.132 0.783 0.798 0.701 0.050 SU-SAM-Series [32] 0.762 0.824 0.552 0.083 0.671 0.779 0.489 0.139 0.720 0.729 0.455 0.073 SU-SAM-Mix [32] 0.915 0.918 0.819 0.029 0.861 0.895 0.763 0.065 0.881 0.868 0.751 0.029 SU-SAM-Parallel [32] 0.930 0.940 0.856 0.024 0.890 0.925 0.815 0.053 0.915 0.909 0.818 0.020 SU-SAM-LoRA [32] 0.689 0.764 0.384 0.130 0.641 0.747 0.379 0.168 0.671 0.669 0.324 0.097 SAM-PTx [14] 0.930 0.940 0.853 0.024 0.891 0.921 0.810 0.053 0.915 0.906 0.813 0.020 Ours (manual) 0.927 0.967 0.903 0.017 0.896 0.944 0.855 0.035 0.914 0.965 0.874 0.015 
+
+(B) Methods without manual point prompts 
+
+†SINetV2 [8] 0.888 0.942 0.816 0.030 0.820 0.882 0.743 0.070 0.815 0.887 0.680 0.037 SAM-Adapter [4] 0.896 0.919 0.824 0.033 0.847 0.873 0.765 0.070 0.883 0.918 0.801 0.025 Conv-LoRA [42] 0.891 0.922 0.790 0.031 0.832 0.865 0.741 0.073 0.861 0.903 0.747 0.031 TS-SAM [40] 0.912 0.947 0.849 0.023 0.826 0.862 0.753 0.073 0.863 0.909 0.771 0.029 Ours (text-only) 0.923 0.970 0.905 0.018 0.877 0.924 0.845 0.044 0.899 0.951 0.854 0.018 
+
+† Note: SINetV2 is not SAM-based but is included as a key baseline for camouflaged object detection, as it was introduced by the authors of the COD10K dataset and remains a strong benchmark reference. 
+
+Table 3: Second-experiment results across datasets. Class mIoU is reported for PASCAL, ADE20K, and COCO; MAE is reported for COD10K, CAMO, and CHAMELEON.                                                     
+
+> Method Fine-tuning SAM? VLM Size PASCAL
+> (mIoU %)
+> ADE20K
+> (mIoU %)
+> COCO
+> (mIoU %)
+> COD10K
+> (MAE)
+> CAMO
+> (MAE)
+> CHAMELEON
+> (MAE) GroundedSAM [29] No 172M (GroundingDINO) 72.0 42.4 61.3 0.500 0.146 0.249 CLIPSurgery+SAM (vanilla) [22] No 87M (CS-CLIP-Base) 41.2 20.0 23.9 0.533 0.478 0.253
+> †CLIPSurgery+SAM (modified) [22] No 87M (CS-CLIP-Base) 48.6 23.4 28.0 0.287 0.527 0.501 CLIPSurgery+SAM [22] Yes (decoder) 87M (CS-CLIP-Base) 58.8 23.1 34.6 0.045 0.100 0.046 CLIPSurgery+SAM [22] Yes (adapters + decoder) 87M (CS-CLIP-Base) 61.4 24.8 36.2 0.026 0.063 0.020 CLIP-Guided SAM (ours) Yes 87M (CS-CLIP-Base) 78.5 47.9 60.5 0.018 0.044 0.018
+> †Note: the modified, training-free CLIPSurgery+SAM baseline includes binary similarity maps as mask prompts in addition to points prompts. The fine-tuned results use the dataset with the least amount of data for COCO/ADE/PASCAL, which are 1/512, 1/64, and 1/16 respectively.
+
+Table 4 shows that with limited supervision, our smaller system (197M de-ployment parameters) approaches or surpasses SAM 3 zero-shot performance and remains competitive as supervision increases. To examine scaling behaviour, we also evaluate two larger backbone vari-ants: CLIP(ViT-L/14)+SAM(ViT-B) and CLIP(ViT-B/16)+SAM(ViT-H). In-creasing CLIP capacity yields a substantial improvement (65.0 mIoU on COCO 1/512), whereas increasing SAM capacity alone provides a smaller gain (61.2 mIoU). This suggests that strengthening the semantic guide is more beneficial than scaling the segmentation backbone within our framework. 
+
+Experiment 4: Comparison to multi-class segmentation. This comparison is not task-identical: prior methods predict all classes jointly, whereas we predict a binary mask per class prompt and assume image-level class presence via text CLIP-Guided SAM 11 
+
+Table 4: Direct comparison with SAM 3 [2] on COCO. Results are mIoU. 
+
+Method Total Params Trainable Params Zero-shot 1/512 
+
+(232) 
+
+1/256 
+
+(463) 
+
+1/128 
+
+(925) 
+
+1/64 
+
+(1849) 
+
+1/32 
+
+(3697) SAM 3 840M 23M* 63.7 68.8 – – – –Ours (CLIP-B + SAM-B) 197M † 49M 28.0 60.5 63.2 65.8 67.7 69.2 Ours (CLIP-L + SAM-B) 543M 126M – 65.0 – – – –Ours (CLIP-B + SAM-H) 809M 50M – 61.2 – – – –
+
+*SAM 3 fine-tuning trains the segmentation head and transformer layers only. †197M corresponds to SAM-B + added adapters + CLIP vision backbone at inference. Text embeddings can be precomputed under closed-set assumptions. 
+
+Table 5: Experiment 4: Comparison to multi-class segmentation. Class mIoU (%) on COCO, ADE20K, and PASCAL VOC under varying label fractions. Baselines perform joint multi-class prediction, whereas our method predicts a binary mask per class prompt using labelled data only (no unlabelled data).                                                                                   
+
+> Method Unlab data? Img-level prompts? Encoder # Params COCO (mIoU %) ADE20K (mIoU %) PASCAL VOC (mIoU %) 1/512
+> (232)
+> 1/256
+> (463)
+> 1/128
+> (925)
+> 1/64
+> (1849)
+> 1/32
+> (3697)
+> 1/64
+> (316)
+> 1/32
+> (631)
+> 1/16
+> (1262)
+> 1/8
+> (2526)
+> 1/4
+> (5052)
+> 1/16
+> (92)
+> 1/8
+> (183)
+> 1/4
+> (366)
+> 1/2
+> (732)
+> Full
+> (1464)
+> SemiVL [12] Yes No CLIP-Base 88M 50.1 52.8 53.6 55.4 56.5 33.7 35.1 37.2 39.4 –84.0 85.6 86.0 86.7 87.3 UniMatchV2 [37] Yes No DINOv2-B 97.5M 47.9 55.8 58.7 60.4 63.3 38.7 45.0 46.7 49.8 52.0 86.3 87.9 88.9 90.0 90.8
+> UniMatchV2 [37] (labelled-only) No No DINOv2-B 97.5M 36.8 45.8 52.1 56.2 59.5 26.1 39.3 42.8 46.4 49.0 76.9 82.1 85.3 87.2 88.3 Our Method (labelled-only) No Yes CLIP-B+SAM-B 197M 60.5 63.2 65.8 67.7 69.2 47.9 51.6 55.2 57.7 61.1 78.3 81.7 82.9 83.9 85.0
+
+prompts. Nevertheless, it provides a useful reference point for the extent to which prompt-conditioned segmentation can go when class intent is available. Table 5 shows strong gains on COCO and ADE20K, despite our method using no unlabelled data while several baselines rely on large semi-supervised training sets (SemiVL [12], UniMatchV2 [37]). Compared to the labelled-only variant of UniMatchV2, our results highlight the effectiveness of prompt-conditioned seg-mentation even without additional data. Importantly, these improvements are not explained by backbone capacity alone: a CLIP+SAM baseline with simi-lar backbones but without semantic adapters performs substantially worse (see Experiment 2 and Table 3). Performance differences are smaller on PASCAL VOC, a simpler dataset where prompt-based conditioning offers less advantage and factors such as back-bone capacity and semi-supervised training become more influential. 
+
+4.1 Ablation Studies 
+
+Unless stated otherwise, ablations use PASCAL VOC 1/16 in the semi-automatic setting and are evaluated using mIoU. 
+
+Which injected modality matters? Table 6 shows that similarity features provide the dominant signal: removing similarity causes a sharp performance drop, while similarity-only remains strong (77.5 mIoU) and almost matches the full method. In contrast, text-only and vision-only variants perform substantially worse. This means that similarity features carry the main semantic localization, and text and vision features refine it slightly. Furthermore, adapters without semantic inputs 12 S. Jalilian and A. Bais 
+
+Table 6: Ablation on feature modalities injected into adapters (VOC 1/16).                                                   
+
+> Text Vision Sim. Adapt. Config mIoU
+> ✓✓✓✓Full fusion 78.3
+> ✓✓✗✓Text+Vision 69.5
+> ✓✗✓✓Text+Similarity 78.1
+> ✗✓✓✓Vision+Similarity 77.5
+> ✓✗✗✓Text only 67.2
+> ✗✓✗✓Vision only 68.8
+> ✗✗✓✓Sim. only 77.5
+> ✗✗✗✓Parallel only 67.1
+> ✗✗✗✗No adapters 66.6
+
+Table 7: Co-adaptation budget study on PASCAL VOC 1/16 (mIoU %). 
+
+(C, S ) denotes the number of CLIP vision blocks (attention weights fine-tuned) and SAM blocks equipped with trainable semantic adapters. 
+
+SAM/CLIP C=4 C=8 C=12 
+
+S=4 77.4 77.2 78.2 
+
+S=8 77.0 77.6 78.0 
+
+S=12 77.1 77.17 78.1 
+
+provide minimal benefit (67.1 vs. 66.6 without adapters), confirming that seman-tic injection—rather than having regular adapters alone—is the main source of improvement. 
+
+Co-adaptation budget. We vary (C, S ): the number of trainable CLIP vision blocks (attention) and the number of SAM blocks equipped with semantic adapters. Table 7 reveals an asymmetric effect: performance is more sensitive to CLIP adaptation than to increasing SAM semantic depth. While increasing the number of trainable CLIP blocks consistently improves or stabilizes perfor-mance, expanding semantic adapters across SAM layers yields only marginal gains, suggesting that SAM requires only modest semantic capacity once strong semantic guidance is available. This trend is consistent with the scaling results in Experiment 3, where increasing CLIP capacity (CLIP-L) provided larger gains than scaling the SAM backbone (SAM-H), indicating that the semantic encoder plays a dominant role in the framework’s performance. 
+
+Train-test prompt alignment and dense similarity prompting. Using similar-ity maps as dense mask prompts provides additional spatial conditioning be-yond point prompts (78.3 →77.6). More importantly, training with CLIP-sampled points significantly improves robustness: models trained on GT points but eval-uated on CLIP prompts drop sharply (78.3 →69.8), supporting our strategy of training with noisy prompts for text-only inference. 
+
+Analyzing CLIP adaptation. We analyze how the choice and training strategy of the semantic guide (CLIP) affects performance. Replacing CLIPSurgery with CLIP-Guided SAM 13 
+
+Table 8: Effect of pre-finetuning CLIP on our CLIP+SAM framework (VOC 1/16). Values are mIoU.                 
+
+> Setup Stage Start Final ∆
+> CLIP pre-finetune 100 epochs –58 –SAM+CLIP (no pre) Joint 38.7 78.3 +35.7 SAM+CLIP (with pre) Joint 54.1 67.5 +12.4–14.4
+
+Table 9: Ablation on loss function (VOC 1/16). Values are mIoU (%).       
+
+> Loss mIoU (%)
+> BCE 76.1 BCE + Dice 77.7 BCE + IoU 78.1 Dice + IoU 76.8 BCE + Dice + IoU 78.3
+
+standard CLIP reduces accuracy substantially (78.3 →72.8 mIoU), confirming that spatially aligned similarity maps are critical for effective conditioning. Freez-ing CLIPSurgery also degrades performance (73.7 mIoU), indicating that jointly optimizing the semantic guide and the segmentation backbone is important. Interestingly, pre-fine-tuning CLIPSurgery on the target dataset improves its standalone mask quality but leads to worse final performance after joint training (Table 8). Although the pre-adapted model starts from a stronger initialization, it converges to a substantially lower final accuracy (67.5 mIoU vs. 78.3), sug-gesting that strong prior specialization can hinder SAM–CLIP co-adaptation and may even underperform weaker semantic guides such as standard CLIP (72.8) when integrated into the joint system. This suggests that maximizing the stan-dalone performance of a vision–language model does not necessarily translate to better segmentation performance when the model is later integrated into a jointly trained system. Overall, these results indicate that effective semantic conditioning emerges from joint optimization rather than from independently maximizing the quality of the semantic encoder. 
+
+Loss. Table 9 shows that combining BCE, Dice, and IoU yields the best perfor-mance. 
+
+4.2 Qualitative Analysis 
+
+Figure 5 shows qualitative comparisons on ADE20K (1/16 split) across vanilla SAM, CLIP- and CLIPSurgery-driven variants, and our CLIP-Guided SAM with and without fine-tuning. The jointly fine-tuned model produces more complete and semantically consistent masks, recovering fine object boundaries and clut-tered regions where baselines either miss objects or leak into distractors, cor-roborating the quantitative gains of our multi-modal encoder injection and joint SAM-CLIP training. 14 S. Jalilian and A. Bais  
+
+> Fig. 5: Qualitative analysis on ADE20K (1/16 split). Comparison of vanilla SAM, CLIP-based prompting variants, and our CLIP-Guided SAM before and after fine-tuning.
+
+## 5 Conclusion 
+
+We introduced CLIP-Guided SAM , a parameter-efficient framework for enabling 
+
+semantic conditioning in the Segment Anything Model under limited supervi-sion and compute. Instead of treating a vision–language model as an external prompt generator, our approach injects CLIP-derived semantic signals directly into SAM’s image encoder through semantic adapters, allowing semantics to in-fluence feature formation while preserving SAM’s promptable design. The same mechanism supports both interactive segmentation with user-provided points and a semi-automatic text-only regime, in which spatial prompts are derived from CLIP similarity maps. Our experiments show that effective semantic conditioning requires joint co-adaptation between the segmentation backbone and its semantic guide. Freezing or independently pre-training CLIP degrades performance, while end-to-end co-adaptation enables CLIP to serve as a task-aligned semantic guide for SAM. Across camouflaged object benchmarks and low-label segmentation datasets, in-CLIP-Guided SAM 15 
+
+cluding COCO, ADE20K, and Pascal VOC, CLIP-Guided SAM consistently outperforms SAM-based PEFT methods and VLM+SAM pipelines while re-maining competitive with powerful promptable segmentation foundation models such as SAM 3 under limited compute and supervision. Overall, these results suggest that internal semantic co-adaptation provides a practical alternative to shallow prompt-based coupling when adapting prompt-able segmentation models under limited data and compute. 
+
+## References 
+
+1. Aleem, S., Wang, F., Maniparambil, M., Arazo, E., Dietlmeier, J., Curran, K., Connor, N.E., Little, S.: Test-time adaptation with SALIP: A cascade of SAM and CLIP for zero-shot medical image segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 5184–5193 (2024) 2. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., Lei, J., Ma, T., Guo, B., Kalla, A., Marks, M., Greer, J., Wang, M., Sun, P., Rädle, R., Afouras, T., Mavroudi, E., Xu, K., Wu, T.H., Zhou, Y., Momeni, L., Hazra, R., Ding, S., Vaze, S., Porcher, F., Li, F., Li, S., Kamath, A., Cheng, H.K., Dollár, P., Ravi, N., Saenko, K., Zhang, P., Feichtenhofer, C.: Sam 3: Segment anything with concepts (2025), https://arxiv. org/abs/2511.16719 
+
+3. Cha, J., Mun, J., Roh, B.: Learning to generate text-grounded mask for open-world semantic segmentation from only image-text pairs. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 11165– 11174 (2023) 4. Chen, T., Zhu, L., Deng, C., Cao, R., Wang, Y., Zhang, S., Li, Z., Sun, L., Zang, Y., Mao, P.: Sam-adapter: Adapting segment anything in underperformed scenes. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 3367–3375 (2023) 5. Chen, T., Zhu, L., Ding, C., Cao, R., Wang, Y., Li, Z., Sun, L., Mao, P., Zang, Y.: Sam fails to segment anything?–sam-adapter: Adapting sam in underper-formed scenes: Camouflage, shadow, medical image segmentation, and more. arXiv preprint arXiv:2304.09148 (2023) 6. Cho, S., Shin, H., Hong, S., Arnab, A., Seo, P.H., Kim, S.: Cat-seg: Cost aggregation for open-vocabulary semantic segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 4113–4123 (2024) 7. Ding, J., Xue, N., Xia, G.S., Dai, D.: Decoupling zero-shot semantic segmenta-tion. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 11583–11592 (2022) 8. Fan, D.P., Ji, G.P., Cheng, M.M., Shao, L.: Concealed object detection. IEEE Transactions on Pattern Analysis and Machine Intelligence 44 (10), 6024–6042 (Oct 2022). https://doi.org/10.1109/tpami.2021.3085766 , http://dx.doi.org/10. 1109/TPAMI.2021.3085766 
+
+9. Ghiasi, G., Gu, X., Cui, Y., Lin, T.Y.: Scaling open-vocabulary image segmentation with image-level labels. In: European conference on computer vision. pp. 540–557. Springer (2022) 10. Gu, X., Lin, T.Y., Kuo, W., Cui, Y.: Open-vocabulary object detection via vision and language knowledge distillation. arXiv preprint arXiv:2104.13921 (2021) 16 S. Jalilian and A. Bais 11. Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., De Laroussilhe, Q., Ges-mundo, A., Attariyan, M., Gelly, S.: Parameter-efficient transfer learning for nlp. In: International conference on machine learning. pp. 2790–2799. PMLR (2019) 12. Hoyer, L., Tan, D.J., Naeem, M.F., Van Gool, L., Tombari, F.: Semivl: semi-supervised semantic segmentation with vision-language guidance. In: European Conference on Computer Vision. pp. 257–275. Springer (2024) 13. Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W., et al.: Lora: Low-rank adaptation of large language models. ICLR 1(2), 3 (2022) 14. Jalilian, S., Bais, A.: Sam-ptx: Text-guided fine-tuning of sam with parameter-efficient, parallel-text adapters. IEEE Access 14 , 31732–31746 (2026). https:// doi.org/10.1109/ACCESS.2026.3668182 
+
+15. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4015–4026 (2023) 16. Koleilat, T., Asgariandehkordi, H., Rivaz, H., Xiao, Y.: Medclip-samv2: Towards universal text-driven medical image segmentation. arxiv 2024. arXiv preprint arXiv:2409.19483 (2024) 17. Kollias, D., Arsenos, A., Wingate, J., Kollias, S.: Sam2clip2sam: Vision language model for segmentation of 3d ct scans for covid-19 detection. arXiv preprint arXiv:2407.15728 (2024) 18. Le, T.N., Nguyen, T.V., Nie, Z., Tran, M.T., Sugimoto, A.: Anabranch network for camouflaged object segmentation. Computer vision and image understanding 
+
+184 , 45–56 (2019) 19. Lester, B., Al-Rfou, R., Constant, N.: The power of scale for parameter-efficient prompt tuning. arXiv preprint arXiv:2104.08691 (2021) 20. Li, B., Weinberger, K.Q., Belongie, S., Koltun, V., Ranftl, R.: Language-driven semantic segmentation. arXiv preprint arXiv:2201.03546 (2022) 21. Li, S., Cao, J., Ye, P., Ding, Y., Tu, C., Chen, T.: ClipSAM: CLIP and SAM collaboration for zero-shot anomaly segmentation. Neurocomputing 618 , 129122 (2025) 22. Li, Y., Wang, H., Duan, Y., Zhang, J., Li, X.: A closer look at the explainability of contrastive language-image pre-training. Pattern Recognition 162 , 111409 (2025) 23. Liang, F., Wu, B., Dai, X., Li, K., Zhao, Y., Zhang, H., Zhang, P., Vajda, P., Mar-culescu, D.: Open-vocabulary semantic segmentation with mask-adapted clip. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 7061–7070 (2023) 24. Liu, K., Wang, J., Jin, R., Hwang, W., Chung, T.S.: Schnet: Sam marries clip for human parsing. arXiv preprint arXiv:2503.22237 (2025) 25. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., et al.: Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In: European conference on computer vision. pp. 38–55. Springer (2024) 26. Luo, H., Bao, J., Wu, Y., He, X., Li, T.: Segclip: Patch aggregation with learnable centers for open-vocabulary semantic segmentation. In: International Conference on Machine Learning. pp. 23033–23044. PMLR (2023) 27. Ma, X., Fu, J., Liao, W., Zhang, S., Wang, G.: Clisc: Bridging clip and sam by enhanced cam for unsupervised brain tumor segmentation. In: 2025 IEEE 22nd International Symposium on Biomedical Imaging (ISBI). pp. 1–5. IEEE (2025) 28. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from CLIP-Guided SAM 17 natural language supervision. In: International conference on machine learning. pp. 8748–8763. PmLR (2021) 29. Ren, T., Liu, S., Zeng, A., Lin, J., Li, K., Cao, H., Chen, J., Huang, X., Chen, Y., Yan, F., Zeng, Z., Zhang, H., Li, F., Yang, J., Li, H., Jiang, Q., Zhang, L.: Grounded sam: Assembling open-world models for diverse visual tasks (2024) 30. Shin, G., Xie, W., Albanie, S.: Reco: Retrieve and co-segment for zero-shot transfer. Advances in Neural Information Processing Systems 35 , 33754–33767 (2022) 31. Skurowski, P., Abdulameer, H., Błaszczyk, J., Depta, T., Kornacki, A., Kozieł, P.: Animal camouflage analysis: Chameleon database 2(6), 732. Song, Y., Zhou, Q., Lu, X., Shao, Z., Ma, L.: Su-sam: A simple unified framework for adapting segment anything model in underperformed scenes. arXiv preprint arXiv:2401.17803 (2024) 33. Wang, H., Vasu, P.K.A., Faghri, F., Vemulapalli, R., Farajtabar, M., Mehta, S., Rastegari, M., Tuzel, O., Pouransari, H.: Sam-clip: Merging vision foundation mod-els towards semantic and spatial understanding. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3635–3647 (2024) 34. Xu, J., De Mello, S., Liu, S., Byeon, W., Breuel, T., Kautz, J., Wang, X.: Groupvit: Semantic segmentation emerges from text supervision. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 18134– 18144 (2022) 35. Xu, M., Zhang, Z., Wei, F., Lin, Y., Cao, Y., Hu, H., Bai, X.: A simple baseline for open-vocabulary semantic segmentation with pre-trained vision-language model. In: European Conference on Computer Vision. pp. 736–753. Springer (2022) 36. Yang, L., Qi, L., Feng, L., Zhang, W., Shi, Y.: Revisiting weak-to-strong consistency in semi-supervised semantic segmentation (2023), https://arxiv.org/abs/2208. 09910 
+
+37. Yang, L., Zhao, Z., Zhao, H.: Unimatch v2: Pushing the limit of semi-supervised semantic segmentation. IEEE Transactions on Pattern Analysis and Machine In-telligence (2025) 38. Yang, X., Gong, X.: Foundation model assisted weakly supervised semantic seg-mentation. In: Proceedings of the IEEE/CVF winter conference on applications of computer vision. pp. 523–532 (2024) 39. Yu, X., Elazab, A., Ge, R., Jin, H., Jiang, X., Jia, G., Wu, Q., Shi, Q., Wang, C.: Ich-scnet: Intracerebral hemorrhage segmentation and prognosis classification network using clip-guided sam mechanism. In: 2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM). pp. 2795–2800. IEEE (2024) 40. Yu, Y., Xu, C., Wang, K.: Ts-sam: Fine-tuning segment-anything model for down-stream tasks. In: 2024 IEEE International Conference on Multimedia and Expo (ICME). pp. 1–6. IEEE (2024) 41. Yuan, H., Li, X., Zhou, C., Li, Y., Chen, K., Loy, C.C.: Open-vocabulary sam: Seg-ment and recognize twenty-thousand classes interactively. In: European Conference on Computer Vision. pp. 419–437. Springer (2024) 42. Zhong, Z., Tang, Z., He, T., Fang, H., Yuan, C.: Convolution meets lora: Parameter efficient finetuning for segment anything model. arXiv preprint arXiv:2401.17868 (2024) 43. Zhou, C., Loy, C.C., Dai, B.: Extract free dense labels from clip. In: European conference on computer vision. pp. 696–712. Springer (2022) 44. Zhou, Z., Lei, Y., Zhang, B., Liu, L., Liu, Y.: Zegclip: Towards adapting clip for zero-shot semantic segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 11175–11185 (2023) 18 S. Jalilian and A. Bais 45. Zou, Y., Zhang, Z., Zhang, H., Li, C.L., Bian, X., Huang, J.B., Pfister, T.: Pseudoseg: Designing pseudo labels for semantic segmentation. arXiv preprint arXiv:2010.09713 (2020)
