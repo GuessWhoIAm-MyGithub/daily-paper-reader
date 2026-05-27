@@ -1,0 +1,655 @@
+Title: D3S2: Diffusion-Guided Dataset Distillation for Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2605.25022v1
+
+Published Time: Tue, 26 May 2026 01:34:53 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# D3S2: Diffusion-Guided Dataset Distillation for Semantic Segmentation 
+
+Wenjie Zheng Haoji Hu ∗ Jiali Lu Xingze Zou Jing Wang 
+
+Zhejiang University, China 
+
+{wenjie_zheng, haoji_hu, zeezou, j_wang}@zju.edu.cn jiali.23@intl.zju.edu.cn 
+
+## Abstract 
+
+Dataset distillation (DD) aims to compress large-scale datasets into compact syn-thetic sets while preserving training efficacy. However, existing studies mainly focus on image classification, leaving dense prediction tasks such as semantic seg-mentation largely underexplored. In this work, we identify three key challenges for segmentation DD: ( i) long-tailed class imbalance, ( ii ) the need for strict pixel-wise alignment between images and dense labels, and ( iii ) the high computational cost of optimizing high-resolution data with complex models. To address these challenges, we propose D3S2, a Diffusion-guided Dataset Distillation framework for Semantic 
+
+Segmentation. Our method adopts a two-stage design. In Class-Balanced Mask Selection , we construct a representative mask set via a greedy strategy that priori-tizes underrepresented classes. In Diffusion-Guided Image Synthesis , we employ a pretrained layout-to-image diffusion model to generate images conditioned on the selected masks, naturally ensuring spatial alignment. To further enhance the training utility of synthesized data, we introduce guided diffusion sampling with two complementary objectives: a segmentation-consistency loss for pixel-level alignment, and a class-wise feature matching loss for aligning per-class feature statistics across layers. Extensive experiments demonstrate the superiority of D 3S2.Notably, at an extremely compression rate of 1%, our method achieves 24.99% and 35.49% mIoU on ADE20K and COCO-Stuff with Mask2Former (Swin-S), outperforming random selection by 9.34% and 5.70%, respectively. 
+
+## 1 Introduction 
+
+Dataset Distillation (DD) [ 41 , 46 , 12 ] aims to compress large-scale datasets into compact synthetic sets while preserving training efficacy. By reducing storage and computational costs, DD has emerged as a promising paradigm for efficient model training under resource constraints. Recent advances have achieved strong performance in image classification via data matching techniques (see Figure 1 (a)), including Gradient Matching [ 50 , 48 , 17 ], Distribution Matching [ 40 , 49 , 51 ], and Training Trajectory Matching [ 4, 10 ]. More recently, decoupled methods [ 44 , 28 , 31 ] (see Figure 1 (b)) disentangle model training from data optimization, avoiding costly bi-level optimization and improving scalability. Despite these advances, DD remains largely limited to classification, leaving dense prediction tasks such as semantic segmentation underexplored. Extending DD to segmentation is non-trivial due to three key challenges: ( i) Long-tailed Class Imbalance. Unlike relatively balanced classification datasets [ 11 , 18 ], segmentation datasets [ 52 , 2] exhibit highly skewed pixel distributions (Figure 1 (d)), making it difficult to allocate a limited distillation budget effectively. ( ii ) Dense Label Coupling with Locality Requirement. In contrast to classification-based DD methods that operate on global image-level supervision, existing paradigms (e.g., SRe2L [ 44 ]) mainly rely on aligning global feature                          
+
+> ∗Corresponding author. Preprint. Under review.
+> arXiv:2605.25022v1 [cs.CV] 24 May 2026 (c) Our D 3S2Framework
+> Initialized
+> Classifier
+> Original Set
+> Synthetic Set ℒmatch
+> Gradient
+> Distribution
+> Trajectory
+> Original Set
+> pretrain
+> Synthetic Set
+> {𝐁𝐁𝐁𝐁 𝑙𝑙 RM }Global
+> Feature Stats
+> (b) Decoupled Framework
+> {𝝁𝝁 𝑙𝑙 BN }Local
+> Feature Stats
+> ℒreg
+> (a) Data matching Framework
+> Classification Semantic Segmentation
+> Long-tailed Mask Pool
+> Stage I: Class-Balanced Mask Selection
+> Class-Balanced
+> Greedy Selection
+> Diverse Mask Set
+> Stage II: Diffusion-Guided Image Synthesis
+> Layout-to-Image Diffusion Model
+> Segmentor
+> Mask
+> Noise
+> 𝑥𝑥 𝑇𝑇−1 �𝑥𝑥 𝑇𝑇−1
+> Guided Sampling
+> ×(𝑇𝑇 − 1)
+> Synthesized
+> Image (d) Class Distribution
+> ADE20K (IF=277)
+> Count
+> 0
+> 3k
+> 6k
+> 9k
+> 12k
+> COCO-Stuff (IF=528)
+> Class Index
+> 0
+> 20
+> 40
+> 60
+> 80
+> Class: wall
+> Count: 11,664 Class: escalator
+> Count: 42
+> Count
+> 0
+> 20k
+> 40k
+> 60k
+> 80k
+> Class Index
+> 0
+> 200
+> 400
+> 600
+> 800
+> Class: person
+> Count: 63,965 Class: waterdrops
+> Count: 121
+
+Figure 1: (a) Data-matching methods; (b) Decoupled methods; (c) Our proposed D 3S2, the first DD framework tailored for semantic segmentation, which generates distilled data via a layout-to-image diffusion model; (d) Class distributions of ADE20K [52] and COCO-Stuff [2]. statistics such as BatchNorm statistics, which inherently discard spatial structure. However, semantic segmentation requires pixel-wise supervision, where object semantics are tightly coupled with spatial layouts. This introduces a fundamental gap: DD methods designed for classification optimize images at a global representation level, while segmentation demands fine-grained, region-aware consistency between synthesized images and masks, making purely global feature alignment insufficient. ( iii )
+
+High Computational Overhead. The increased complexity of segmentation models and high-resolution supervision makes per-sample optimization (typically 1k–4k iterations) prohibitively expensive, limiting the direct applicability of existing DD paradigms. To address these challenges, we propose D3S2, a Diffusion-guided Dataset Distillation framework tailored for Semantic Segmentation. As shown in Figure 1 (c), our method follows a two-stage design. 
+
+Stage I: Class-Balanced Mask Selection. To combat long-tailed class imbalance, we construct a compact yet representative mask set. Specifically, we introduce a class-balanced greedy selection strategy that iteratively selects samples using a scoring function prioritizing underrepresented classes, promoting class diversity and coverage under a limited distillation budget. Stage II: Diffusion-Guided Image Synthesis. To enforce strict pixel-wise alignment while avoiding prohibitive per-sample optimization, we build on recent advances in Generative Dataset Distillation [ 5, 39 , 13 , 34 ,7, 20 , 6 ] and exploit the strong generative priors of diffusion models [ 33 , 14 , 32 , 25 ]. We employ a layout-to-image diffusion model [ 43 ] pretrained on the target dataset to synthesize images conditioned on selected masks, naturally enforcing pixel-level alignment. To further improve the training utility of the synthesized data, we introduce guided diffusion sampling [ 1 , 45 ] with two complementary objectives. A segmentation-consistency loss enforces pixel-level alignment with target masks via a pretrained segmentation model, while a class-wise feature matching loss aligns per-class feature statistics across layers. Unlike conventional global BatchNorm statistics matching [ 44 ], we compute per-class feature statistics from the full dataset and align them with those extracted from the generated samples. This design captures class-specific characteristics and promotes localized feature refinement. Notably, all guidance objectives are integrated directly into the diffusion sampling process. This enables highly time-efficient generation of high-quality distilled data within a small number of sampling steps, requiring less than one minute to synthesize a single image. We conduct extensive experiments on ADE20K [ 52 ] and COCO-Stuff [ 2]. Across a wide range of distillation ratios, D 3S2consistently achieves top-tier performance on multiple segmentation architectures, including Mask2Former [ 9] and SegFormer [ 42 ] with various backbones, demonstrating strong robustness and generalization. For instance, the full COCO-Stuff training set contains 118,287 images, and training Mask2Former (Swin-S) typically requires about two days to reach 48.19% mIoU. In contrast, with only 0.25% data (295 distilled images), D 3S2finishes training in roughly 3 hours and achieves 26.87% mIoU, outperforming random selection by 7.99%. Although a performance gap remains compared to full-data training, reflecting the challenge of DD for semantic segmentation, these results suggest that diffusion-guided DD for semantic segmentation is a promising direction, with substantial room for improvement. Our main contributions are summarized as follows: • To the best of our knowledge, we propose D3S2, the first dataset distillation framework tailored for semantic segmentation. It adopts a two-stage design, where Class-Balanced 
+
+2Mask Selection constructs a representative mask set, and Diffusion-Guided Image Synthesis 
+
+efficiently generates high-quality distilled data via guided diffusion sampling. • We introduce two complementary guidance objectives within the diffusion sampling process: a segmentation-consistency loss for pixel-level alignment and a class-wise feature matching loss for class-specific feature fidelity through localized statistics alignment. • Extensive experiments demonstrate the superiority of D 3S2. Notably, at a 1% compression ratio, it achieves 24.99% and 35.49% mIoU on ADE20K and COCO-Stuff, respectively, using Mask2Former (Swin-S), surpassing random selection by 9.34% and 5.70%. 
+
+## 2 Related Works 
+
+Dataset Distillation. Early DD methods formulate the problem as a meta-learning task [ 41 , 22 , 19 ,53 ], optimizing a compact synthetic set that models trained on it generalize well to the original dataset. Subsequent works move toward a more scalable data matching paradigm, aligning training dynamics between synthetic and real data. Representative approaches include Gradient Matching [ 50 , 48 , 17 ], Distribution Matching [ 40 , 49 , 51 ], and Training Trajectory Matching [ 4, 10 ], which respectively match gradients, feature distributions, and long-range optimization trajectories. 
+
+Decoupled Methods. Decoupled approaches improve scalability by separating model training from data optimization. SRe2L [ 44 ] proposes a Squeeze-Recover-Relabel pipeline, which first squeezes dataset statistics into a model, then recovers synthetic data via BatchNorm statistics matching, and finally refines them with soft labels. Follow-up works [ 29 , 36 , 30 ] extend statistical matching to broader architectures and further enhance sample quality and diversity. Despite their success, these methods are mainly designed for image classification. Inspired by SRe2L, we argue that dense pixel-wise information in semantic segmentation can also be encoded into a segmentor and subsequently recovered. However, extending decoupled methods to segmentation is non-trivial. First, pixel-wise optimization becomes computationally expensive for high-resolution dense prediction. Second, BN statistics rely on globally averaged features and thus fail to capture class-specific semantics. To address these issues, we replace explicit pixel optimization with guided diffusion sampling [ 1, 45 ], enabling efficient data recovery while preserving pixel-level alignment with masks. In addition, we introduce a class-wise feature matching objective that aligns per-class statistics, providing more discriminative supervision than global BN matching. 
+
+Diffusion-based Dataset Distillation. Recent works [ 13 , 34 , 7, 26 , 38 , 54 , 20 , 35 , 6] leverage diffusion models to synthesize realistic and representative datasets, alleviating the limitations of direct pixel-space optimization. Several methods incorporate guided diffusion sampling to improve data quality and training effectiveness. For example, IGD [ 7] adopts influence-guided sampling, MGD 3 [ 26 ] introduces mode guidance to enhance diversity, and LGD [ 6 ] employs learnability-aware guidance to generate complementary samples. Despite their promising performance, these methods are primarily designed for image classification and do not account for the structured pixel-level supervision required by semantic segmentation. 
+
+Layout-to-Image Diffusion. Diffusion models [ 33 , 14 , 32 , 25 ] have achieved remarkable success in image synthesis and can be extended to conditional generation with structural guidance such as semantic layouts. ControlNet [ 47 ] introduces additional branches for condition injection, while T2I-Adapter [ 21 ] employs lightweight adapters with minimal architectural changes. In this work, we adopt the Freestyle [ 43 ], which enables precise layout-conditioned generation without additional modules, making it a lightweight and efficient choice for our framework. 
+
+## 3 Preliminaries 
+
+Dataset Distillation for Semantic Segmentation. DD aims to compress a large real dataset T into a compact synthetic dataset S. We extend the standard DD formulation to semantic segmentation, where each image is associated with dense, pixel-wise annotations. The real dataset T with N
+
+labeled images is defined as T = {(xi, mi)}Ni=1 , where xi ∈ RHi×Wi×3 is the input image and 
+
+mi ∈ RHi×Wi is the corresponding segmentation mask, with mi(u, v ) ∈ { 0, 1, . . . , K − 1} and 
+
+K denoting the number the classes. The distilled dataset S is formulated as S = {( ˆ xj , ˆmj )}|IPD | 
+
+> j=1
+
+,where ˆxj and ˆmj denote the synthesized images and masks, respectively, and |IPD | ≪ N represents 3Stage I: Class-Balanced Mask Selection    
+
+> Real Dataset 𝒯𝒯 = {( 𝒙𝒙 𝑖𝑖 ,𝒎𝒎 𝑖𝑖 )} 𝑖𝑖=1 𝑁𝑁
+> Class counts
+> Class index
+> Long-tailed
+
+Class-Balanced Greedy Selection 
+
+𝑖𝑖 ∗ = arg max  
+
+> 𝑖𝑖∉ℳ
+
+�𝑐𝑐∈ 𝒞𝒞 𝑖𝑖 𝑤𝑤 𝑐𝑐 � exp( − 𝑛𝑛 𝑐𝑐 𝑇𝑇 )  
+
+> Prioritize Rare Classes
+> Prioritize Rare Classes
+> 𝒎𝒎 𝑖𝑖
+> 𝒙𝒙 𝑖𝑖
+> Selected Mask Set ℳ= { 𝒎𝒎 𝑗𝑗 }𝑗𝑗=1
+> |IPD |
+> Class counts
+> Class index
+> More
+> Class-balanced
+
+Stage II: Diffusion-Guided Image Synthesis  
+
+> 𝒎𝒎 𝑗𝑗
+> 𝒄𝒄 𝑗𝑗
+> DDIM Inversion
+> 𝒙𝒙 𝑗𝑗
+> 𝒛𝒛 𝑗𝑗 ,𝑇𝑇
+
+Layout-to-Image Diffusion Model  𝜖𝜖 𝜙𝜙                                      
+
+> Reverse Denoising Process
+> 𝒛𝒛 𝑗𝑗 ,𝑇𝑇
+> Guided Diffusion Sampling ̂
+> 𝜖𝜖 𝜙𝜙 𝒛𝒛 𝑗𝑗 ,𝑡𝑡 ,𝑡𝑡 ,𝒄𝒄 𝑗𝑗 ,𝒎𝒎 𝑗𝑗 =𝜖𝜖 𝜙𝜙 𝒛𝒛 𝑗𝑗 ,𝑡𝑡 ,𝑡𝑡 ,𝒄𝒄 𝑗𝑗 ,𝒎𝒎 𝑗𝑗 +∇𝒛𝒛 𝑗𝑗 ,𝑡𝑡 ℒguided
+> 𝜌𝜌 𝑡𝑡 � ∇ 𝒛𝒛 𝑗𝑗 ,𝑡𝑡 ℒseg +𝛾𝛾 𝑡𝑡 � ∇ 𝒛𝒛 𝑗𝑗 ,𝑡𝑡 ℒfeat
+> 𝒛𝒛 𝑗𝑗 ,𝑇𝑇−1 𝒛𝒛 𝑗𝑗 ,𝑡𝑡+1 𝒛𝒛 𝑗𝑗 ,𝑡𝑡 𝒛𝒛 𝑗𝑗 ,𝑡𝑡−1 𝒛𝒛 𝑗𝑗 ,0
+> Pretrained Segmentor 𝑓𝑓 (·)
+> �𝒙𝒙 𝑗𝑗
+> Synthesized Images
+> Relabeling
+> 𝑓𝑓 (·)
+> �𝒎𝒎 𝑗𝑗
+> 𝒛𝒛 𝑗𝑗 ,𝑡𝑡
+> Distilled Dataset
+> 𝒮𝒮 = {( �𝒙𝒙 𝑗𝑗 ,�𝒎𝒎 𝑗𝑗 )} 𝑖𝑖=1
+> |IPD |
+> Segmentation-Consistency
+> Loss ℒseg
+
+𝜖𝜖 𝜙𝜙  �𝒙𝒙 𝑗𝑗 ,0        
+
+> Class-wise Feature Matching Loss ℒfeat
+> �𝒙𝒙 𝑗𝑗 ,0𝒎𝒎 𝑗𝑗
+> pixel-
+> wise
+> Estimate
+> Feature map �𝐹𝐹 𝑗𝑗 𝑙𝑙 �Ω𝑗𝑗 ,𝑐𝑐 𝑙𝑙
+> �𝝁𝝁 𝑗𝑗 ,1𝑙𝑙
+> 𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐 𝑖𝑖 𝑐𝑐
+> (�𝝁𝝁 𝑗𝑗 ,𝑐𝑐 𝑙𝑙 ,𝝁𝝁 𝑐𝑐 𝑙𝑙 )
+> �𝝁𝝁 𝑗𝑗 ,𝑐𝑐 𝑙𝑙
+> �𝝁𝝁 𝑗𝑗 ,| 𝒞𝒞 𝑗𝑗 |
+> 𝑙𝑙
+
+Figure 2: Overview of the D 3S2. In the first stage, we construct a compact mask set that captures long-tailed semantic distributions. In the second stage, we generate layout-aligned images via a layout-to-image diffusion model, further enhanced by guided sampling with segmentation-consistency and class-wise feature matching losses to produce high-quality distilled data. 
+
+images per dataset , reflecting the compression ratio [ 16 ]. The goal of DD is to ensure that a model with weights θS trained on S achieves performance comparable to a model trained on T with weights 
+
+θT . Formally, the performance gap is bounded by: 
+
+sup {|L θT − L θS |} (xv ,mv )∈T ′ ≤ ϵDD , (1) where L denotes the loss function, and (xv , mv ) ∈ T ′ is some test or val set associated with T .
+
+Guided Diffusion Sampling. We adopt latent diffusion models [ 25 ], where images are encoded into latent representations via an autoencoder D(E(·)) and generated through an iterative denoising process [14, 32]. Given a noisy latent zt, DDIM [32] predicts the clean sample as: 
+
+ˆz0|t = 1
+
+√αt
+
+ zt − √1 − αtϵϕ(zt, t ) , (2) where ϵϕ denotes the predicted noise. Guided diffusion sampling further steers the denoising trajectory using task-specific objectives [1, 45]. More details are provided in Appendix A. 
+
+## 4 Method 
+
+To address the challenges of dataset distillation for semantic segmentation, we propose D3S2, a diffusion-guided framework with a two-stage pipeline, as illustrated in Figure 2. Specifically, our framework consists of Class-Balanced Mask Selection and Diffusion-Guided Image Synthesis , which together enable efficient generation of high-quality distilled data. 
+
+4.1 Stage I: Class-Balanced Mask Selection 
+
+Given the long-tailed class distribution in segmentation datasets (see Figure 1 (d)), a key challenge is to construct a compact yet representative mask set under a limited distillation budget. A naive strategy that enforces strict class-wise balance (e.g., selecting one sample per class) is suboptimal, as segmentation images typically contain multiple co-occurring classes. Such rigid allocation ignores contextual diversity and inter-class relationships. This issue is illustrated in Figure 3, which compares different mask selection strategies on ADE20K under a 1% budget. Random selection severely underrepresents tail classes, with several rare categories never appearing in the selected subset. Rigid uniform selection slightly improves tail coverage by iteratively selecting samples for each class, but still suffers from severe imbalance, yielding an Imbalance Factor (IF) of 129. To address this, we propose a Class-Balanced Greedy Selection strategy that progressively builds a mask subset by jointly considering class rarity and coverage. Let T = {(xi, mi)}Ni=1 denote 4(a) Random (IF= ∞)              
+
+> Count
+> 0
+> 40
+> 80
+> 120
+> 160
+> Class Index
+> 0
+> 20
+> 40
+> 60
+> 80
+> Class: wall
+> Count: 133
+> Class: booth
+> Count: 0
+> Class Index
+> Class: wall
+> Count: 129
+> Class: skyscraper
+> Count: 1
+> Class: tent
+> Count: 0
+> (b) Uniform (IF=129)
+> Class Index
+> Class: wall
+> Count: 119
+> Class: hill
+> Count: 8
+> (c) Greedy (IF=14)
+
+Figure 3: Class distribution comparison under 1% compression ratio on ADE20K. the full dataset, and Ci ⊂ { 0, 1, . . . , K − 1} be the set of classes present in mask mi. Each class 
+
+c is assigned a weight wc inversely proportional to its frequency, reflecting its importance under long-tailed distributions. At each step, we select a mask that maximizes the following score: 
+
+i∗ = arg max 
+
+> i / ∈M
+
+X
+
+> c∈C i
+
+wc · exp 
+
+
+
+− nc
+
+T
+
+
+
+, (3) where M is the current selected set, nc denotes the coverage count of class c, and T is a temperature hyperparameter. The exponential term encourages selecting masks containing underrepresented classes while gradually reducing redundancy as coverage increases. The selection process is repeated until the distillation budget is reached, yielding the final mask subset M = {mj }|IPD | 
+
+> j=1
+
+. Compared to rigid per-class sampling, our strategy better exploits the multi-class nature of segmentation images by favoring masks with diverse and complementary semantic information. As shown in Figure 3 (c), our method substantially improves tail coverage, where even the rarest classes appear at least 8 times and the IF is reduced to 14. However, due to inherent class co-occurrence, achieving a perfectly uniform class distribution is infeasible; instead, our method balances diversity and coverage. The full class distribution statistics are provided in Appendix B. 
+
+4.2 Stage II: Diffusion-Guided Image Synthesis Layout-to-Image Diffusion Model. Given the selected mask set from Stage I, we employ a layout-to-image diffusion model to synthesize images aligned with the semantic layouts. Specifically, we adopt Freestyle [ 43 ], which enables precise mask-conditioned generation based on a Stable Diffusion [ 25 ] backbone without introducing additional modules. To reduce domain discrepancy, the model is pretrained on the target dataset T . During sampling, the noise predictor is formulated as 
+
+ϵϕ(zj,t , t, cj , mj ), where mj denotes the input mask and cj is a textual condition constructed by concatenating the class names present in mj . This design ensures semantically coherent images that are well aligned with the given layouts. 
+
+DDIM Inversion. Despite effective layout conditioning, we observe that small objects (e.g., barrel ,
+
+bench ) are occasionally missing in the generated images (see Figure 4), likely due to being dominated by large-scale structures during the early denoising. To alleviate this issue, we employ DDIM inver-sion [ 32 ] to initialize the sampling from a more informative latent. Given a real image corresponding to mask mj , we invert it into zj,T via the deterministic DDIM trajectory: 
+
+zj,t +1 = √αt+1 ˆzj, 0|t + p1 − αt+1 ϵϕ(zj,t , t, cj , mj ). (4) This initialization provides stronger structural priors, improving the preservation of small objects. 
+
+4.2.1 Guided Diffusion Sampling 
+
+While the diffusion model enforces spatial alignment with masks, it does not explicitly guarantee that the synthesized samples are informative for training. To further enhance the training utility of the distilled data, we introduce guided diffusion sampling with two complementary objectives. 
+
+Segmentation-Consistency Loss. We further enforce pixel-wise alignment using a pretrained segmentation model f (·) (readily available from public checkpoints 2) as guidance. At each step, we estimate the clean latent ˆzj, 0|t via Equation (2) and decode it into the image space as ˆxj, 0 = D( ˆ zj, 0|t).
+
+> 2https://github.com/open-mmlab/mmsegmentation
+
+5Real Image  Mask  Direct  ＋ DDIM Inv.  ＋ ℒseg  ＋ ℒ feat Figure 4: Effect of DDIM Inversion and guided diffusion losses on layout-conditioned image synthesis. We compare generated results under different settings: direct mask-conditioned sampling, with DDIM inversion, and with additional guidance signals using Lseg and Lfeat . Notably, DDIM inversion improves the preservation of small objects (e.g., barrel and bench ), while the proposed guidance further enhances structural completeness and semantic fidelity. The ˆxj, 0 and mj are then fed into f to compute a standard segmentation loss Lseg 
+
+ f ( ˆ xj, 0), mj
+
+ [ 9,42 ], which encourages consistency between generated images and target masks throughout the denoising process, enhancing class-specific representations (e.g., see the bench in Figure 4). 
+
+Class-wise Feature Matching Loss. Global BatchNorm statistics [ 44 ] are insufficient for capturing class-specific features due to spatial averaging. To overcome this, we propose a class-wise feature matching loss that enforces alignment at a finer granularity. We denote by F li ∈ RHl×Wl×Cl the feature map at the l-th stage of f for image xi. For each class c, we resize the mask mi to match the spatial resolution of F li , and compute the channel-wise mean over its spatial region: 
+
+μli,c = 1
+
+|Ωli,c |
+
+X
+
+> (u,v )∈Ωli,c
+
+F li (u, v ), (5) where Ωli,c denotes the set of spatial locations belonging to class c and then average over the dataset: 
+
+μlc = 1
+
+Nc
+
+X
+
+> i:c∈C i
+
+μli,c . (6) During sampling, we compute ˆμlj,c from ˆxj, 0 in the same manner and define Lfeat :
+
+Lfeat = X
+
+> c∈C j
+
+X
+
+> l
+
+ 1 − cosSim ( ˆ μlj,c , μlc) , (7) which encourages class-specific feature consistency across multiple network stages and cosSim (·, ·)
+
+denotes the cosine similarity. We incorporate both objectives into the diffusion process by modifying the noise prediction as: 
+
+ˆϵϕ(zj,t , t, cj , mj ) = ϵϕ(zj,t , t, cj , mj ) + ρt · ∇ zj,t Lseg + γt · ∇ zj,t Lfeat , (8) where ρt and γt control the guidance strength and are normalized to stabilize optimization [7] as: 
+
+ρt = λseg · √1 − αt
+
+|| ϵϕ(zj,t , t, cj , mj )|| ||∇ zj,t Lseg || , γt = λfeat · √1 − αt
+
+|| ϵϕ(zj,t , t, cj , mj )|| ||∇ zj,t Lfeat || . (9) Overall, Lseg enforces pixel-level consistency, while Lfeat promotes discriminative, class-aware representations. Notably, both objectives are integrated directly into the sampling process, avoiding costly per-sample pixel optimization. In practice, high-quality distilled samples can be generated within 50 sampling steps ( ∼ 1 minute per image), achieving both efficiency and effectiveness. 
+
+Relabeling. Following the practice of decoupled methods [ 44 ], we further refine the supervision of the synthesized data via relabeling. Given a generated image ˆxj , we employ the same segmentation model f (·) used during guided sampling to predict its label: 
+
+˜mj = arg max f ( ˆ xj ). (10) The final distilled dataset is thus given by S = {( ˆ xj , ˜mj )}|IPD | 
+
+> j=1
+
+. This step corrects potential inconsis-tencies and provides more informative supervision, leading to improved downstream performance. 6Table 1: mIoU (%) on ADE20K [ 52 ] under different distillation ratios. Distilled data are generated using a fixed guidance model (Swin-T for Mask2Former and MiT-B2 for SegFormer). 
+
+Ratio Method Mask2Former [9] SegFormer [42] Res-50 Swin-T Swin-S Swin-B MiT-B2 MiT-B4 0.5% Random 9.53 ±0.5 9.57 ±0.4 10.98 ±0.5 13.27 ±0.3 12.59 ±0.5 15.04 ±0.6 
+
+K-Center 7.92 ±0.4 8.66 ±0.3 10.52 ±0.4 11.92 ±0.5 12.31 ±0.4 14.83 ±0.4 
+
+Herding 9.75 ±0.5 10.50 ±0.4 12.47 ±0.4 13.63 ±0.3 13.30 ±0.4 15.78 ±0.3 
+
+Uniform 12.54 ±0.2 12.51 ±0.3 15.04 ±0.2 16.15 ±0.4 16.32 ±0.3 19.53 ±0.2 
+
+Ours 15.87 ±0.6 16.59 ±0.4 19.45 ±0.5 22.55 ±0.6 20.28 ±0.3 24.45 ±0.5 
+
+1% Random 12.99 ±0.4 13.32 ±0.3 15.65 ±0.5 18.09 ±0.3 16.86 ±0.2 19.74 ±0.4 
+
+K-Center 9.88 ±0.4 11.14 ±0.3 13.76 ±0.4 15.09 ±0.2 14.90 ±0.3 18.95 ±0.3 
+
+Herding 13.46 ±0.4 14.43 ±0.5 16.32 ±0.3 17.94 ±0.3 16.78 ±0.4 19.88 ±0.2 
+
+Uniform 17.20 ±0.3 17.94 ±0.2 21.42 ±0.3 22.70 ±0.4 20.36 ±0.3 23.48 ±0.4 
+
+Ours 20.96 ±0.3 21.69 ±0.3 24.99 ±0.5 27.48 ±0.5 23.82 ±0.4 28.17 ±0.5 
+
+2% Random 17.50 ±0.3 19.16 ±0.4 21.70 ±0.4 24.00 ±0.3 20.72 ±0.3 24.53 ±0.2 
+
+K-Center 13.75 ±0.2 14.67 ±0.2 17.67 ±0.3 20.74 ±0.2 19.14 ±0.4 22.56 ±0.3 
+
+Herding 18.34 ±0.3 18.98 ±0.2 22.81 ±0.3 24.61 ±0.4 22.56 ±0.4 26.48 ±0.3 
+
+Uniform 21.63 ±0.3 23.19 ±0.2 27.59 ±0.3 29.10 ±0.4 25.22 ±0.3 28.46 ±0.4 
+
+Ours 24.67 ±0.4 26.13 ±0.6 30.28 ±0.5 32.63 ±0.7 28.15 ±0.3 31.46 ±0.4 
+
+Full Dataset 47.03 ±0.2 48.92 ±0.2 51.22 ±0.1 52.82 ±0.2 45.14 ±0.3 48.20 ±0.2 
+
+Table 2: mIoU (%) on COCO-Stuff [ 2] under different distillation ratios. Distilled data are generated using a Swin-T guidance model for sampling and relabeling. 
+
+Method 0.25% 0.5% 1% Swin-T Swin-S Swin-T Swin-S Swin-T Swin-S Random 15.62 ±0.5 18.88 ±0.6 21.33 ±0.4 24.75 ±0.5 26.43 ±0.5 29.79 ±0.4 
+
+K-Center 15.11 ±0.4 18.97 ±0.4 20.58 ±0.5 24.58 ±0.4 26.30 ±0.3 30.19 ±0.2 
+
+Herding 18.75 ±0.3 22.59 ±0.3 23.50 ±0.2 27.14 ±0.1 28.98 ±0.2 32.50 ±0.3 
+
+Uniform 17.54 ±0.4 20.63 ±0.5 22.83 ±0.5 27.54 ±0.3 28.96 ±0.3 32.46 ±0.3 
+
+Ours 22.34 ±0.5 26.87 ±0.5 26.16 ±0.6 30.66 ±0.4 31.19 ±0.5 35.49 ±0.4 
+
+Full Dataset 46.69 ±0.2 48.19 ±0.2 46.69 ±0.2 48.19 ±0.2 46.69 ±0.2 48.19 ±0.2 
+
+## 5 Experiments 
+
+5.1 Experiment Setup Datasets and Evaluation Models. We evaluate D 3S2 on ADE20K [ 52 ] and COCO-Stuff [ 2 ], with all images resized to 512 × 512 . ADE20K contains 20,210 training and 2,000 validation images with 150 semantic classes, while COCO-Stuff includes 118,287 training and 5,000 validation images with 182 classes. To evaluate the quality of distilled data, we adopt two representative architectures, Mask2Former [ 9] and SegFormer [ 42 ], with multiple backbones. For each setting, we repeat training five times and report the mean Intersection-over-Union (mIoU) as ¯x ± std. 
+
+Implementation Details. Following common practice in DD, we evaluate compression ratios around 1%. Specifically, we consider 0.5%, 1%, and 2% on ADE20K, and 0.25%, 0.5%, and 1% on COCO-Stuff. The temperature parameter in mask selection is set to T = 0 .5. For image synthesis, we use two pretrained checkpoints from FreeStyle [ 43 ] and adopt the DDIM sampler [ 32 ] with 50 denoising steps. The classifier-free guidance [ 15 ] scale is set to 2.0, while DDIM inversion also use 50 steps with a scale of 1.0. During guided sampling, we set λseg = 0 .05 and λfeat = 0 .2, and apply guidance at all steps. For segmentation training, we follow the MMSegmentation codebase 3 with minor adjustments to accommodate the limited data size; full detailed are provided in the Appendix C. All experiments are conducted on a single NVIDIA RTX 6000 Ada GPU (48GB). 
+
+Baselines. We adapt representative core-set selection methods from classification [ 41 , 50 ], including Random [ 24 ], K-center [ 27 ], and Herding [ 3, 8 ]. Random randomly selects samples from the original training. K-center and Herding are adapted by extracting global image features using a pre-trained 
+
+> 3https://github.com/open-mmlab/mmsegmentation
+
+7Real Image Mask Synthesized Image  
+
+> (a) ADE20K (b) COCO -Stuff
+
+Figure 5: Qualitative visualization of synthesized samples on (a) ADE20K and (b) COCO-Stuff. The synthesized results exhibit strong alignment with the input layouts under both simple and complex scenes, while highlighting class-discriminative features and suppressing irrelevant visual variations. Swin-S backbone (from Mask2Former) and measuring distances with the L2 norm [ 23 ]. In addition, we include a class-balanced baseline, Uniform , which iteratively traverses classes from tail to head and selects one image per class in a round-robin manner until the budget is exhausted. 
+
+5.2 Experimental Results 
+
+Table 1 and Table 2 report quantitative results on ADE20K and COCO-Stuff. Overall, D 3S2 consis-tently outperforms all baselines across architectures and data regimes, demonstrating its effectiveness. On ADE20K, D 3S2achieves clear gains at all compression ratios. At 1%, it surpasses Uniform by 3.57% on Mask2Former (Swin-S) and 4.69% on SegFormer (MiT-B4), and remains strong at 0.5%, improving over Random by up to 9.41%. Notably, these gains are consistent across backbones despite using a fixed guidance model, indicating strong cross-architecture generalization. In contrast, coreset-based methods perform worse, as they rely on global image-level features and fail to capture dense pixel-level semantics. Although Uniform benefits from class balance, it still lags behind, highlighting the advantage of combining structured mask selection with diffusion-based synthesis. Similar trends appear on COCO-Stuff. At 0.25%, D 3S2outperforms Uniform by 4.80% and 6.24% on Swin-T and Swin-S, respectively, with consistent gains at higher ratios (e.g., +3.33% / +3.12% at 1%), showing the robustness of our framework. Despite these improvements, a gap to full-data training remains. For example, on ADE20K, full-data training achieves 51.22% mIoU on Mask2Former (Swin-S), whereas our best result at 2% reaches 30.28%, indicating room for further improvement. 
+
+Visualization. Figure 5 shows qualitative results. The generated images exhibit strong spatial align-ment with input masks, with well-preserved object boundaries and spatial structures, demonstrating effective pixel-level consistency. Beyond fidelity, our method produces more informative training samples: multiple classes are clearly expressed within a single image, emphasizing discriminative features while suppressing irrelevant variations. Compared to real images with cluttered backgrounds or dataset-specific artifacts, the synthesized samples are cleaner and more canonical, which benefits segmentation training by enhancing class-specific patterns and reducing noise. Our approach is particularly beneficial for long-tailed classes. For instance, in ADE20K, the conveyer belt category is extremely rare (ratio < 0.005% ), whereas under a 2% budget, our method increases its presence to ∼ 0.3% . The synthesized samples exhibit clear and discriminative conveyer belt features with reduced noise, which improves the mIoU of this category from 11.33% (Uniform) to 30.13%. Despite these strengths, some limitations remain. Fine-grained structures (e.g., human hands) may exhibit artifacts, likely due to the inherent limitations of the pretrained layout-to-image diffusion model. Improving the underlying generative quality is an important direction for future work. 
+
+5.3 Ablation Study Effectiveness of Each Component. We perform an ablation study on ADE20K at a 1% ratio, as shown in Table 3, to evaluate the contribution of each component. Starting from a baseline with randomly selected real images (13.32%), introducing our Stage I mask selection significantly 8Table 3: Ablation study on ADE20K (1% ratio) using Mask2Former (Swin-T).                                                             
+
+> Mask Sel. Diff. DDIM Inv. Lseg Lfeat Relabel mIoU
+> ××××××13.32 ±0.8
+> ✓×××××18.29 ±0.4
+> ✓✓××××16.75 ±0.5
+> ✓××××✓18.34 ±0.5
+> ✓✓✓×××17.84 ±0.3
+> ✓✓✓✓××18.75 ±0.6
+> ✓✓✓×✓×19.36 ±0.5
+> ✓✓✓✓✓×20.95 ±0.4
+> ✓✓✓✓✓✓21.69 ±0.3
+
+Figure 6: Ablation of λseg and 
+
+λfeat on ADE20K (1% ratio) using Mask2Former (Swin-T). improves performance to 18.29%, highlighting the importance of constructing a class-balanced subset. Directly applying diffusion-based synthesis without additional guidance degrades performance to 16.75%, suggesting that naive generation alone is insufficient for producing effective training samples. Incorporating DDIM inversion alleviates this issue (17.84%) by providing better structural initialization. Introducing the proposed guidance brings consistent gains: Lseg improves pixel-level alignment (+0.91%), while Lfeat yields a larger gain (+1.52%), indicating the importance of class-wise feature consistency. Combining both losses further boosts performance to 20.95%. Finally, relabeling improves the result to 21.69%, suggesting that refining supervision helps correct residual inconsistencies in generated data. Overall, each component contributes positively, and their combination achieves the best performance, validating the effectiveness of our design. Table 4: Cross-architecture generalization on ADE20K. Distilled datasets generated with Mask2Former (Swin-T) or SegFormer (MiT-B2) are evaluated on both architectures.              
+
+> Ratio Source Archi. Mask2Former SegFormer 0.5% Mask2Former 16.59 ±0.4 20.27 ±0.4
+> SegFormer 16.25 ±0.5 20.28 ±0.3
+> 1% Mask2Former 21.69 ±0.3 23.57 ±0.3
+> SegFormer 21.42 ±0.4 23.82 ±0.4
+
+Cross-architecture Generalization. We fur-ther evaluate whether the distilled data general-izes across different segmentation architectures. As shown in Table 4, datasets distilled with Mask2Former and SegFormer achieve highly consistent performance when evaluated on both models. Under both 0.5% and 1% compression ratios, the performance gap between the two source architectures remains small. This sug-gests that D 3S2captures architecture-agnostic se-mantic information rather than overfitting to a specific model. Such strong transferability high-lights the robustness of our diffusion-guided distillation framework. 
+
+Sensitivity of Hyper-Parameters. We analyze the effect of λseg and λfeat on ADE20K at a 1% ratio (Figure 6). Overall, introducing moderate feature guidance improves performance, highlighting the importance of class-wise feature alignment. As λfeat increases, mIoU steadily improves until 0.2,but drops at λfeat = 0 .5, suggesting that overly strong feature constraints may harm the generation quality. For λseg , moderate values perform best. Specifically, λseg = 0 .05 consistently yields the highest results across different λfeat . This indicates that appropriate pixel-level guidance is beneficial, but excessive constraints can limit the flexibility of diffusion sampling. The best performance is achieved at λseg = 0 .05 and λfeat = 0 .2, which is the default setting. 
+
+## 6 Conclusion 
+
+This paper presents D 3S2, a diffusion-guided dataset distillation framework for semantic segmentation. It addresses the unique challenges of dense prediction via a two-stage design: (i) a class-balanced greedy selection strategy that constructs a compact and representative mask set for long-tailed distributions, and (ii) layout-to-image diffusion synthesis that generates images aligned with semantic layouts. By integrating segmentation-consistency and class-wise feature matching losses, our method ensures pixel-level alignment and feature fidelity. Extensive experiments on ADE20K and COCO-Stuff demonstrate consistent mIoU improvements over strong baselines across architectures and compression ratios. Overall, this work demonstrates the power of diffusion priors for dataset distillation in semantic segmentation, with substantial room to further improve. 9References 
+
+[1] A. Bansal, H.-M. Chu, A. Schwarzschild, S. Sengupta, M. Goldblum, J. Geiping, and T. Gold-stein. Universal guidance for diffusion models. In CVPR , 2023. [2] H. Caesar, J. Uijlings, and V. Ferrari. Coco-stuff: Thing and stuff classes in context. In CVPR ,2018. [3] F. M. Castro, M. J. Marín-Jiménez, N. Guil, C. Schmid, and K. Alahari. End-to-end incremental learning. In ECCV , 2018. [4] G. Cazenavette, T. Wang, A. Torralba, A. A. Efros, and J.-Y. Zhu. Dataset distillation by matching training trajectories. In CVPR , 2022. [5] G. Cazenavette, T. Wang, A. Torralba, A. A. Efros, and J.-Y. Zhu. Generalizing dataset distillation via deep generative prior. In CVPR , 2023. [6] J. A. Chan-Santiago and M. Shah. Learnability-guided diffusion for dataset distillation. arXiv preprint arXiv:2604.00519 , 2026. [7] M. Chen, J. Du, B. Huang, Y. Wang, X. Zhang, and W. Wang. Influence-guided diffusion for dataset distillation. In ICLR , 2025. [8] Y. Chen, M. Welling, and A. Smola. Super-samples from kernel herding. arXiv preprint arXiv:1203.3472 , 2012. [9] B. Cheng, I. Misra, A. G. Schwing, A. Kirillov, and R. Girdhar. Masked-attention mask transformer for universal image segmentation. In CVPR , 2022. [10] J. Cui, R. Wang, S. Si, and C.-J. Hsieh. Scaling up dataset distillation to imagenet-1k with constant memory. In ICLR , 2023. [11] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei. Imagenet: A large-scale hierarchical image database. In CVPR , 2009. [12] J. Geng, Z. Chen, Y. Wang, H. Woisetschläger, S. Schimmler, R. Mayer, Z. Zhao, and C. Rong. A survey on dataset distillation: approaches, applications and future directions. In IJCAI , 2023. [13] J. Gu, S. Vahidian, V. Kungurtsev, H. Wang, W. Jiang, Y. You, and Y. Chen. Efficient dataset distillation via minimax diffusion. In CVPR , 2024. [14] J. Ho, A. Jain, and P. Abbeel. Denoising diffusion probabilistic models. In NeurIPS , 2020. [15] J. Ho and T. Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 ,2022. [16] S. K. A. Khatib, A. ElHagry, S. Shao, and Z. Shen. Od3: Optimization-free dataset distillation for object detection. arXiv preprint arXiv:2506.01942 , 2025. [17] J.-H. Kim, J. Kim, S. J. Oh, S. Yun, H. Song, J. Jeong, J.-W. Ha, and H. O. Song. Dataset condensation via efficient synthetic-data parameterization. In ICLR , 2022. [18] A. Krizhevsky and G. Hinton. Learning multiple layers of features from tiny images. Technical report, University of Toronto, 2009. [19] N. Loo, R. Hasani, A. Amini, and D. Rus. Efficient dataset distillation using random feature approximation. In NeurIPS , 2022. [20] B. B. Moser, F. Raue, S. Palacio, S. Frolov, and A. Dengel. Unlocking dataset distillation with diffusion models. arXiv preprint arXiv:2403.03881 , 2024. [21] C. Mou, X. Wang, L. Xie, Y. Wu, J. Zhang, Z. Qi, and Y. Shan. T2i-adapter: Learning adapters to dig out more controllable ability for text-to-image diffusion models. In AAAI , 2024. [22] T. Nguyen, Z. Chen, and J. Lee. Dataset meta-learning from kernel ridge-regression. arXiv preprint arXiv:2011.00050 , 2020. 10 [23] D. Qi, J. Li, J. Peng, B. Zhao, S. Dou, J. Li, J. Zhang, Y. Wang, C. Wang, and C. Zhao. Fetch and forge: Efficient dataset condensation for object detection. In NeurIPS , 2024. [24] S.-A. Rebuffi, A. Kolesnikov, G. Sperl, and C. H. Lampert. icarl: Incremental classifier and representation learning. In CVPR , 2017. [25] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. [26] J. A. C. Santiago, P. Tirupattur, G. K. Nayak, G. Liu, and M. Shah. Mgd 3: Mode-guided dataset distillation using diffusion models. In ICLR , 2025. [27] O. Sener and S. Savarese. Active learning for convolutional neural networks: A core-set approach. arXiv preprint arXiv:1708.00489 , 2017. [28] S. Shao, Z. Yin, M. Zhou, X. Zhang, and Z. Shen. Generalized large-scale data condensation via various backbone and statistical matching. In CVPR , 2024. [29] S. Shao, Z. Yin, M. Zhou, X. Zhang, and Z. Shen. Generalized large-scale data condensation via various backbone and statistical matching. In CVPR , 2024. [30] S. Shao, Z. Zhou, H. Chen, and Z. Shen. Elucidating the design space of dataset condensation. In NeurIPS , 2024. [31] Z. Shen, A. Sherif, Z. Yin, and S. Shao. Delt: A simple diversity-driven earlylate training for dataset distillation. In CVPR , 2025. [32] J. Song, C. Meng, and S. Ermon. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. [33] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 ,2020. [34] D. Su, J. Hou, W. Gao, Y. Tian, and B. Tang. D4m: Dataset distillation via disentangled diffusion model. In CVPR , 2024. [35] D. Su, H. Wu, H. Chen, Y. Shi, Y. Wang, X. Ye, and J. Zhu. Diffusion models as dataset distillation priors. arXiv preprint arXiv:2510.17421 , 2025. [36] P. Sun, B. Shi, D. Yu, and T. Lin. On the diversity and realism of distilled dataset: An efficient dataset distillation paradigm. In CVPR , 2024. [37] H. Wang, L. Zhang, W. Liu, D. Jiang, W. Wei, and C. Ding. Jodiffusion: Jointly diffusing image with pixel-level annotations for semantic segmentation promotion. In AAAI , 2026. [38] H. Wang, Z. Zhao, J. Wu, Y. Shang, G. Liu, and Y. Yan. Cao2: Rectifying inconsistencies in diffusion-based dataset distillation. In ICCV , 2025. [39] K. Wang, J. Gu, J. Gu, H. Zhang, D. Zhou, Z. Zhu, W. Jiang, and Y. You. Dim: Distilling dataset into generative model. In ECCV , 2024. [40] K. Wang, B. Zhao, X. Peng, Z. Zhu, S. Yang, S. Wang, G. Huang, H. Bilen, X. Wang, and Y. You. Cafe: Learning to condense dataset by aligning features. In CVPR , 2022. [41] T. Wang, J.-Y. Zhu, A. Torralba, and A. A. Efros. Dataset distillation. arXiv preprint arXiv:1811.10959 , 2018. [42] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo. Segformer: Simple and efficient design for semantic segmentation with transformers. In NeurIPS , 2021. [43] H. Xue, Z. Huang, Q. Sun, L. Song, and W. Zhang. Freestyle layout-to-image synthesis. In 
+
+CVPR , 2023. [44] Z. Yin, E. Xing, and Z. Shen. Squeeze, recover and relabel: Dataset condensation at imagenet scale from a new perspective. In NeurIPS , 2023. 11 [45] J. Yu, Y. Wang, C. Zhao, B. Ghanem, and J. Zhang. Freedom: Training-free energy-guided conditional diffusion model. In ICCV , 2023. [46] R. Yu, S. Liu, and X. Wang. Dataset distillation: A comprehensive review. IEEE TPAMI ,46:150–170, 2023. [47] L. Zhang, A. Rao, and M. Agrawala. Adding conditional control to text-to-image diffusion models. In ICCV , 2023. [48] B. Zhao and H. Bilen. Dataset condensation with differentiable siamese augmentation. In ICLR ,2021. [49] B. Zhao and H. Bilen. Dataset condensation with distribution matching. In WACV , 2023. [50] B. Zhao, K. R. Mopuri, and H. Bilen. Dataset condensation with gradient matching. In ICLR ,2021. [51] G. Zhao, G. Li, Y. Qin, and Y. Yu. Improved distribution matching for dataset condensation. In 
+
+CVPR , 2023. [52] B. Zhou, H. Zhao, X. Puig, S. Fidler, A. Barriuso, and A. Torralba. Scene parsing through ade20k dataset. In CVPR , 2017. [53] Y. Zhou, E. Nezhadarya, and J. Ba. Dataset distillation using neural feature regression. In 
+
+NeurIPS , 2022. [54] Y. Zou, G. Li, D. Su, Z. Wang, J. Yu, and C. Zhang. Dataset distillation via vision-language category prototype. In ICCV , 2025. 
+
+## A More Details on Guided Diffusion Sampling 
+
+Diffusion models [ 14 , 33 ] learn a parameterized data distribution through a forward noising and reverse denoising process. Given a clean sample z0, the forward process gradually perturbs it with Gaussian noise: 
+
+zt = √αtz0 + √1 − αtϵ, ϵ ∼ N (0, I ), (11) where αt controls the noise scale at timestep t.The diffusion model is trained to predict the injected noise ϵϕ(zt, t, c) under condition c using a mean squared error objective. During sampling, DDIM [32] estimates the clean latent: 
+
+ˆz0|t = 1
+
+√αt
+
+ zt − √1 − αtϵϕ(zt, t, c) , (12) and progressively reconstructs the sample through iterative denoising steps. In this work, we adopt latent diffusion models [ 25 ], where images are encoded into latent represen-tations z = E(x) and reconstructed using a decoder D(·), significantly improving computational efficiency. To further steer generation toward desired properties, guided diffusion sampling [ 1, 45 ] modifies the denoising trajectory using gradients from external objectives. Given a guidance function f (·) and loss function ℓ(·, ·), the predicted noise is adjusted as: 
+
+ˆϵϕ(zt, t, c) = ϵϕ(zt, t, c) + s(t) · ∇ zt ℓ f (zt), C , (13) where s(t) controls the guidance strength and C denotes additional conditions. This formulation enables flexible integration of task-specific objectives into the sampling process. 12 (d) Greedy Selection 
+
+> IF=14
+> (a) Full Dataset
+> IF=282
+> (c) Uniform Selection
+> IF=129
+> (b) Random Selection
+> IF= ∞
+
+Figure 7: Class distribution comparison on ADE20K under a 1% selection ratio (202 images). We compare (a) the original dataset, (b) Random selection, (c) Uniform selection, and (d) the proposed Class-Balanced Greedy Selection. The imbalance factor (IF) is reported in each subfigure. Our method significantly reduces class imbalance and improves coverage of tail classes. 13 (d) Greedy Selection 
+
+> IF=12
+> (a) Full Dataset
+> IF=528
+> (c) Uniform Selection
+> IF=78
+> (b) Random Selection
+> IF= ∞
+
+Figure 8: Class distribution comparison on COCO-Stuff under a 0.5% selection ratio (591 images). We compare (a) the original dataset, (b) Random selection, (c) Uniform selection, and (d) the proposed Class-Balanced Greedy Selection. The imbalance factor (IF) is shown in each subfigure. Our method achieves a much more balanced distribution, especially for rare classes. 14 Algorithm 1: Class-Balanced Greedy Selection 
+
+Input: Dataset T = {(xi, mi)}Ni=1 , class sets {C i}, budget B = |IPD |, temperature T
+
+Output: Selected mask set M
+
+Initialize M ← ∅ ; nc ← 0 for all classes c ;Compute class weights wc ∝ 1/freq (c) ;
+
+while |M| < B do foreach i / ∈ M do 
+
+Compute score: 
+
+si = X
+
+> c∈C i
+
+wc · exp 
+
+
+
+− nc
+
+T
+
+
+
+end 
+
+Select i∗ = arg max i si ;
+
+M ← M ∪ { mi∗ } ;
+
+foreach c ∈ C i∗ do 
+
+nc ← nc + 1 
+
+end end return M
+
+## B Dataset Distributions 
+
+In this section, we analyze the class distributions of different selection strategies on ADE20K [ 52 ]and COCO-Stuff [ 2], as shown in Figure 7 and Figure 8, respectively. For each dataset, we compare four settings: (a) the original dataset, (b) Random selection, (c) Uniform selection, and (d) our Class-Balanced Greedy Selection. The imbalance factor (IF) is reported in each subfigure. 
+
+ADE20K. ADE20K contains 20,210 training images with 150 classes. We fix the compression ratio to 1%, resulting in 202 selected samples. As shown in Figure 7 (a), the original dataset exhibits a highly long-tailed distribution with IF=282. Random selection (Figure 7 (b)) fails to cover all classes, leading to an infinite IF. Uniform selection (Figure 7 (c)) partially alleviates the imbalance (IF=129), but tail classes are still severely underrepresented, with only 1–2 samples per class. In contrast, our greedy selection (Figure 7 (d)) significantly improves the balance, reducing IF to 14 and ensuring that even the rarest classes are sampled at least 8 times. 
+
+COCO-Stuff. COCO-Stuff contains 118,287 training images with 182 classes. We use a 0.5% compression ratio, corresponding to 591 selected samples. The original dataset (Figure 8 (a)) has an even more skewed distribution with IF=528. Similar to ADE20K, Random selection (Figure 8 (b)) leads to missing classes, while Uniform selection (Figure 8 (c)) improves the distribution (IF=78) but still provides limited coverage for tail classes (4–5 samples). Our greedy strategy (Figure 8 (d)) further reduces the imbalance to IF=12, with tail classes appearing at least 29 times, demonstrating substantially improved coverage. 
+
+Discussion. Despite the improved balance, achieving a perfectly uniform class distribution is inherently infeasible in semantic segmentation due to frequent class co-occurrence within images. A single image often contains multiple classes with varying spatial extents, making independent per-class allocation impractical. From a dataset distillation perspective, our strategy is also more principled under extreme compression. Dominant classes (e.g., person , wall , sky ) already appear abundantly in the original dataset and contribute less marginal information. Allocating excessive budget to such classes is inefficient. Instead, our method prioritizes underrepresented categories, leading to a more informative and balanced distilled set. This design better utilizes the limited budget and provides more comprehensive supervision, which is crucial for dense prediction tasks like semantic segmentation. 15 Algorithm 2: D3S2: Diffusion-Guided Dataset Distillation for Semantic Segmentation 
+
+Input: Dataset T = {(xi, mi)}Ni=1 , budget B, pretrained layout-to-image diffusion model ϵϕ,segmentation model f (·)
+
+Output: Distilled dataset S
+
+Stage I: Mask Selection ;Obtain mask set M ← MaskSelection (T , B ) using Algorithm 1 ; 
+
+Stage II: Diffusion-Guided Image Synthesis ;Initialize S ← ∅ ;
+
+foreach mj ∈ M do 
+
+Construct condition cj from class names in mj ;
+
+// DDIM Inversion ;Obtain latent zj,T by inverting corresponding real image xj ;
+
+// Guided Sampling ;
+
+for t = T to 1 do 
+
+Predict noise ϵϕ(zj,t , t, cj , mj ) ;Estimate ˆzj, 0|t and decode ˆxj, 0 ;Compute Lseg and Lfeat ;Update noise with guidance: 
+
+ˆϵϕ = ϵϕ + ρt∇L seg + γt∇L feat 
+
+Sample zj,t −1 using DDIM update ; 
+
+end 
+
+Decode final image ˆxj = D(zj, 0) ;
+
+// Relabeling ;Obtain ˜mj = arg max f ( ˆ xj ) ;
+
+S ← S ∪ { ( ˆ xj , ˜mj )} ;
+
+end return S
+
+## C More Implementation Details 
+
+For downstream evaluation, we train segmentation models using the official MMSegmenta-tion codebase. 4 Specifically, we adopt Mask2Former [ 9] and SegFormer [ 42 ] as the evalua-tion architectures. For training on the full dataset, we follow the official configurations pro-vided by MMSegmentation, such as mask2former_r50_8xb2-160k_ade20k-512x512.py and 
+
+segformer_mit-b2_8xb2-160k_ade20k-512x512.py . All models are retrained on a server with 8 NVIDIA GeForce RTX 3090 GPUs to ensure a fair comparison. For training on the distilled datasets, we adjust the training schedule to account for the significantly reduced data size. Specifically, we reduce the number of training iterations from 160k to 20k while keeping all other hyperparameters unchanged. This modification ensures efficient training while maintaining consistency with the original setup. Our code is currently available at an anonymous repository for reproducibility: https://anonymous. 4open.science/r/Anonymous_code-1F8A/README.md .
+
+## D Method Algorithm 
+
+Algorithm 1 presents our proposed Class-Balanced Greedy Selection. It progressively constructs a representative mask subset by balancing class rarity and coverage. The class weights prioritize underrepresented categories, while the exponential decay term discourages repeatedly selecting already well-covered classes. This dynamic trade-off enables the selection of diverse and comple-mentary samples under a limited budget. Unlike rigid class-wise sampling, the proposed strategy naturally leverages multi-class co-occurrence in segmentation data, resulting in a more balanced yet contextually rich mask set. 
+
+> 4https://github.com/open-mmlab/mmsegmentation
+
+16 Table 5: Efficiency analysis of D 3S2. We report runtime per stage and peak GPU memory.                                                                    
+
+> Dataset Ratio (#Images) Mask Selection DDIM Inv. (per / total) Synthesis (per / total) Relabel (per / total) Total Time ADE20K 0.5% (101) ∼1.5 min 5 s / ∼9 min ∼50 s / ∼1h 20m <1s / <1m∼1h 30m 1% (202) ∼3 min 5 s / ∼18 min ∼50 s / ∼2h 40m <1s / <1m∼3h 2% (404) ∼6 min 5 s / ∼36 min ∼50 s / ∼5h 20m <1s / <2m∼6h COCO-Stuff 0.25% (295) ∼8 min 5 s / ∼26 min ∼50 s / ∼4h <1s / <1m∼4h 30m 0.5% (591) ∼16 min 5 s / ∼52 min ∼50 s / ∼8h <1s / <2m∼9h 1% (1182) ∼32 min 5 s / ∼1h 44m ∼50 s / ∼16h <1s / <3m∼18h Peak Memory —∼8GB ∼28GB ∼3GB —
+
+Algorithm 2 summarizes the overall pipeline of D 3S2. The framework first constructs a representative mask set via class-balanced selection, and then synthesizes high-quality training samples through diffusion-based generation with guidance. Compared to existing dataset distillation approaches, D 3S2
+
+offers several advantages. First, it explicitly accounts for long-tailed distributions through adaptive mask selection. Second, it avoids costly pixel-level optimization by integrating task-specific objectives directly into the diffusion sampling process. Finally, the combination of segmentation-consistency and class-wise feature matching enables the generation of structurally aligned and semantically discriminative samples, leading to strong performance and generalization across architectures. 
+
+## E Efficiency Analysis 
+
+Table 5 summarizes the runtime and memory consumption of each component in D 3S2. Overall, the proposed framework achieves a favorable efficiency–performance trade-off. The mask selection 
+
+stage is highly efficient, requiring only a few minutes even for larger subsets, as it operates on lightweight statistics without involving model training or GPU-intensive computation. The DDIM inversion stage introduces negligible overhead, taking only ∼5 seconds per sample with moderate memory usage ( ∼8GB). The primary computational cost lies in the diffusion-based image synthesis ,which requires ∼50 seconds per sample and dominates the total runtime. This is expected, as guided sampling involves gradient backpropagation through the diffusion model, leading to higher memory consumption ( ∼28GB). Nevertheless, this requirement remains practical on modern GPUs (e.g., 48GB), and can be further reduced via techniques such as gradient checkpointing [ 5, 20 ]. The 
+
+relabeling stage introduces negligible overhead in both time and memory (less than 1 second per sample and ∼3GB), owing to the use of lightweight segmentation models. Importantly, the overall distillation time scales linearly with the number of samples and remains manageable in practice (e.g., 
+
+∼3 hours for 1% ADE20K on a single GPU). Compared to prior dataset distillation methods that rely on costly per-sample pixel optimization or bi-level training, D 3S2 avoids iterative optimization loops and instead performs one-pass guided generation. As a result, it provides a significantly more efficient and scalable solution for dense prediction tasks. 
+
+## F Limitations and Future Works 
+
+Despite the strong empirical performance, D 3S2 has several limitations that suggest promising directions for future research. First, our framework relies on a layout-to-image diffusion model pretrained on the target dataset. When such a model is unavailable, a domain gap may arise, leading to degraded generation quality and reduced effectiveness of the distilled data. In future work, this limitation could be alleviated by leveraging more general-purpose diffusion models with stronger cross-domain generalization or by introducing lightweight adaptation techniques (e.g., parameter-efficient fine-tuning) to quickly align pretrained models with new target domains. Second, the proposed guided sampling strategy requires a pretrained segmentation model as the guidance network. For datasets lacking publicly available checkpoints, training such a model from scratch introduces additional computational overhead. A potential direction is to reduce this dependency by exploring self-supervised or weakly supervised alternatives for guidance, or by distilling transferable segmentation priors from large-scale foundation models to new domains with minimal supervision. Finally, our method directly selects masks from the original dataset, which may not be optimal under 17 Real Image  Mask  Synthesized Image  Real Image  Mask  Synthesized Image Figure 9: Additional qualitative results on ADE20K. Each example shows the real image, segmenta-tion mask, and synthesized image generated by D 3S2, demonstrating strong layout alignment and clear semantic structures. extreme compression ratios. The selected layouts are constrained by existing data distributions and cannot fully explore the space of informative semantic configurations. A promising direction is to move beyond selection-based strategies and instead jointly synthesize images and layouts [ 37 ]. Such a layout–image co-generation could enable more flexible and diverse semantic compositions, potentially leading to more compact and informative distilled datasets. 
+
+## G Broader Impacts 
+
+This work introduces a diffusion-based framework for dataset distillation in semantic segmentation, enabling efficient training with significantly reduced data. By lowering the data and computational requirements, our method can facilitate research and deployment in resource-constrained settings, such as edge devices or domains where large-scale annotation is costly (e.g., medical or environmental applications). However, as the method relies on generative models, it may inherit biases present in the original dataset, potentially amplifying class imbalance or under-representation in downstream tasks. In addition, synthesized data may introduce artifacts or unrealistic patterns that could affect model robustness if not properly controlled. There is also a risk that synthetic datasets could be misused to obscure data provenance or bypass data governance policies. Future work should explore 18 Real Image  Mask  Synthesized Image  Real Image  Mask  Synthesized Image Figure 10: Additional qualitative results on COCO-Stuff. The synthesized images exhibit consistent alignment with input masks and emphasize class-discriminative features across diverse and complex scenes. bias mitigation, improved controllability of generation, and mechanisms for ensuring transparency and traceability of synthetic data. Overall, we believe this line of research has the potential to make data-efficient learning more accessible while highlighting the importance of responsible use of generative models. 
+
+## H More Visualizations 
+
+Figure 9 and Figure 10 present additional qualitative results on ADE20K and COCO-Stuff, re-spectively. Each example includes the real image, the corresponding segmentation mask, and the synthesized image generated by D 3S2. Consistent with the observations in the main paper, the syn-thesized images exhibit strong spatial alignment with the input masks across diverse scenes. Object boundaries and spatial structures are well preserved, indicating effective pixel-level consistency during generation. Moreover, the generated samples highlight class-discriminative features while suppressing irrelevant variations, resulting in cleaner and more canonical representations compared to real images. Even in complex layouts with multiple co-occurring objects, the synthesized images maintain clear foreground structures and semantic coherence. These results further demonstrate that 19 the proposed diffusion-guided framework produces structurally faithful and semantically informative samples, which are well-suited for training segmentation models. 
+
+## I Large Language Model Usage 
+
+We use ChatGPT (GPT-5, by OpenAI) as a writing assistant to polish the language of this paper. Specifically, it was employed to improve clarity, grammar, and style in certain sections, but it did not contribute to research ideation, technical content, experiments, or analysis. All scientific contributions, methods, and conclusions are solely the work of the authors. The authors take full responsibility for the accuracy and integrity of the paper’s contents. 20 NeurIPS Paper Checklist 
+
+1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: Our abstract and introduction accurately reflect the paper’s contributions to diffusion-guided dataset distillation for semantic segmentation. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: Yes, we discuss this in Appendix F. Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an impor-tant role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 3. Theory assumptions and proofs 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [N/A] 21 Justification: This paper does not include theorems or lemmas. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-perimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: Yes, we provide sufficient implementation details in Section 5.1 and Ap-pendix C. Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submis-sions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instruc-tions to faithfully reproduce the main experimental results, as described in supplemental material? 22 Answer: [Yes] Justification: We provide code in the supplementary materials, and provide anonymous Github link in Appendix C. Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/ public/guides/CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https: //neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-rameters, how they were chosen, type of optimizer) necessary to understand the results? Answer: [Yes] Justification: Experimental setting is described in Section 5.1 and Appendix C. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: We report error bars in Tables 1 to 4. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. 23 • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the com-puter resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer: [Yes] Justification: We provide the computer resources in Section 5.1 and Appendix C. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: Our research conform with the NeurIPS Code of Ethics. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consid-eration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? Answer: [Yes] Justification: We discuss the broader impact in Appendix G. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. 24 • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: The paper poses no such risks. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] Justification: All assets used in the paper, including datasets, are publicly available. Proper credits are given to the creators or original owners of these datasets where applicable. The licenses and terms of use for these datasets are explicitly mentioned and respected in accordance with their respective guidelines. Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets 
+
+has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. 25 • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [Yes] Justification: We have attached our code and user instructions in the supplementary materials. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: The paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribu-tion of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? Answer: [N/A] Justification: The paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 26 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [N/A] Justification: The core method development in this research does not involve LLMs as any important, original, or non-standard components. Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 27
