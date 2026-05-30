@@ -1,0 +1,590 @@
+Title: REVEAL: Reference-Grounded Reasoning for Multimodal Manipulation Detection
+
+URL Source: https://arxiv.org/pdf/2605.28459v1
+
+Published Time: Thu, 28 May 2026 01:32:43 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+## REVEAL: Reference-Grounded Reasoning for Multimodal Manipulation Detection 
+
+Jun Zhou Bingwen Hu * Yaxiong Wang Zhedong Zheng Yongzhen Wang Yuchen Zhang Ping Liu Abstract 
+
+Multimodal manipulation detection aims to si-multaneously identify forged image–text pairs and localize tampered regions, yet existing methods typically rely on memorizing isolated artifacts and struggle with imperceptible ma-nipulation traces or domain shifts. Inspired by human comparative reasoning, we reformu-late this task as a reference-grounded verifica-tion problem, where authenticity is assessed by comparing a query against retrieved authentic evidence. We propose REVEAL (Reference-
+
+Enabled Verification for Evidence Analysis and Localization), a framework explicitly de-signed for this comparative paradigm. To sup-port this paradigm, we construct a large-scale reference library comprising 170K authentic news image–text pairs featuring over 40K pub-lic figures. Technically, REVEAL employs a difference-aware fusion mechanism to capture fine-grained discrepancies between the query and retrieved evidence. Furthermore, we in-troduce a task-decoupled Mixture-of-Experts (MoE) architecture to jointly execute instance-level detection and fine-grained grounding, ef-fectively mitigating optimization conflicts be-tween these heterogeneous objectives. Exten-sive experiments demonstrate that REVEAL significantly outperforms state-of-the-art meth-ods, and notably enables training-free domain adaptation by simply updating the reference library, offering a robust and practical solution for detecting evolving misinformation. Code is available at https://anonymous.4open. science/r/REVEAL-Reference-A006 .
+
+1 Introduction 
+
+The rapid progress of generative models has made fabricated media increasingly realistic, posing seri-ous threats to information authenticity and pub-lic trust (Huang et al., 2024; Yan et al., 2025;  
+
+> *
+
+Corresponding author. REVEAL                      
+
+> Artifact Analysis
+> Retrieved Evidence Query Features
+> Dual-Chain Reasoning
+> Single-Chain Reasoning
+> Existing Methods
+> Prediction
+> Artifact Analysis
+> Encode Input
+> Reference-Grounded
+> Reasoning
+> Differences
+> Musk ... Trump ...
+> Face/Name Mismatch
+> Authenticity: Fake?
+> Confidence: Low
+> Reason: Missing
+> Evidence: Unknown
+> Authenticity: Fake
+> Confidence: High
+> Reason: Reference
+> Mismatch
+> Automatic Familiarity
+> Input News Pair
+> Musk raises fist after
+> assassination attempt
+> at Pennsylvania rally.
+> Automatic Familiarity + Active Recollection
+> Trump raises fist after
+> assassination attempt at
+> Pennsylvania rally.
+> Evidence:
+> Poor Generalization Robust Generalization
+> Reference Library
+> Encode Input
+> 1
+> 2
+> 3
+> 4
+> Plug-and-Play
+> Library
+> Library
+> World
+> knowledge
+> Traceable Verification
+> Query Reference
+> Retrieve
+> Reference-Grounded
+> Reasoning
+> Query Reference
+> Mismatch
+> Unseen Domain
+> Others ：Real
+> REVEAL ：Fake
+> GroundTruth ：Fake
+> 1234
+> Why REVEAL
+> Works
+
+Figure 1: Artifact-centric vs. Reference-grounded reasoning . While existing methods rely on isolated, artifact-centric cues that often yield opaque and low-confidence predictions, REVEAL shifts to a reference-grounded paradigm. By mimicking active recollection via a plug-and-play memory, REVEAL explicitly con-trasts the input against retrieved authentic evidence. This mechanism inherently exposes semantic inconsis-tencies (e.g., face/name mismatches), delivering highly interpretable decisions with traceable manipulation rea-soning and robust generalization to unseen domains. 
+
+Zhang et al., 2025c). Among different misinfor-mation formats, image–text news pairs are espe-cially important due to their wide use on social platforms (Zeng et al., 2024; Rahman et al., 2025; Tonglet et al., 2024), where effective analysis de-mands multi-granularity reasoning to determine authenticity, identify manipulation types, and local-ize tampered regions across modalities (Shao et al., 2023, 2024). However, two limitations are emerging for ex-isting detectors. First, visual artifacts that once served as reliable cues, such as boundary incon-sistencies or frequency anomalies, are becoming increasingly imperceptible as generative models improve (Corvi et al., 2023; Ricker et al., 2022). Second, detectors that memorize training-specific 
+
+> arXiv:2605.28459v1 [cs.CV] 27 May 2026
+
+artifact patterns generalize poorly to unseen news sources or novel manipulation pipelines (Cozzolino et al., 2024a; Yan et al., 2024b). This raises a key question: when intrinsic artifacts are neither per-ceptible nor transferable, what other signal can be exploited? Inspired by human studies showing that deepfake judgments are influenced not only by cog-nitive tendencies such as truth bias, but also by prior knowledge when familiar figures or events are involved (Groh et al., 2022; Diel et al., 2024; Somoray et al., 2025), we introduce a comparison-based verification paradigm as a complementary reasoning pathway. For example, a manipulated news photograph showing Elon Musk raising his fist after an assassination attempt would be ques-tioned not because of visual artifacts, but because the authentic event involved Donald Trump. To op-erationalize this verification pattern, Figure 1 distin-guishes between two reasoning modes: Automatic Familiarity , which judges plausibility through inter-nal artifact analysis, and Active Recollection , which validates the query against external authentic evi-dence. Most existing methods rely solely on the former (Cozzolino et al., 2024b; Yan et al., 2024b; Cui et al., 2025). By performing single-chain rea-soning purely from learned artifact patterns, they often yield opaque decisions and exhibit brittle be-havior under distribution shifts. In contrast, REVEAL augments automatic fa-miliarity with active recollection via an informa-tion retrieval paradigm. Here, an external memory serves as an authentic reference library, where rec-ollection is driven by similarity-based retrieval, and verification proceeds through cross-reference rea-soning. Given a query, our framework synthesizes internal artifact cues with retrieved references. By applying difference-aware reasoning across these signals, it effectively exposes visual, textual, and cross-modal inconsistencies. Consequently, RE-VEAL delivers authenticity predictions grounded in interpretable evidence, explicitly highlighting the retrieved references and detected mismatches. Crucially, this dual-chain architecture inherently resolves the generalization bottleneck. Because the reference library updates independently of the model parameters, REVEAL achieves training-free domain adaptation, seamlessly handling unseen news sources or novel manipulation pipelines. To realize the above reference-grounded ver-ification paradigm, two challenges must be ad-dressed: constructing an informative authen-tic reference library and effectively integrating retrieved evidence for multi-granularity detec-tion. We therefore present REVEAL (Reference-
+
+Enabled Verification for Evidence Analysis and 
+
+Localization), which retrieves authentic image–text evidence at inference time and verifies the query through cross-reference comparison. Built upon a reference library of 170K authentic news image– text pairs covering over 40K public figures, RE-VEAL employs difference-aware fusion and a task-decoupling Mixture-of-Experts architecture (Chen et al., 2023; Shazeer et al., 2017; Lepikhin et al., 2021) to support both global detection and fine-grained grounding. In summary, our main contributions are as fol-lows: • We propose Reference-Grounded Verification, shifting the paradigm of multimodal foren-sics from isolated artifact memorization to retrieval-conditioned comparative reasoning. • We construct a comprehensive reference li-brary comprising 170K authentic news image-text pairs across over 40K public figures. This foundation preserves high-fidelity cross-modal correspondences, enabling scalable, evidence-driven verification. • We develop a difference-aware fusion mecha-nism to capture fine-grained query-evidence discrepancies, alongside a task-decoupled Mixture-of-Experts (MoE) architecture that jointly handles global detection and fine-grained grounding. • Extensive evaluations demonstrate that RE-VEAL consistently outperforms existing methods in both detection and localization. Crucially, our paradigm achieves training-free domain adaptation simply by updating the ex-ternal reference library. 
+
+2 Related Work 
+
+2.1 Retrieval-Augmented Learning 
+
+Retrieval-augmented learning incorporates exter-nal evidence at inference time to reduce reliance on parametric knowledge. In NLP, methods im-prove factual grounding via self-reflective or cor-rective retrieval, e.g., Self-RAG (Asai et al., 2024) and CRAG (Yan et al., 2024a), while others refine when and how retrieved evidence is used, such as RankRAG (Yu et al., 2024b) and FLARE (Jiang Multimodal             
+
+> Encoder
+> DGM 4Task Pool
+> Router 1
+> Router 2
+> Router n
+> Trump Pence lost after
+> introducing him at a
+> news conference in New
+> York
+> ( x 1, y 1, x 2, y 2)
+> Exp. 1
+> Exp. 2
+> Exp. 3
+> Exp. 4
+> Exp. T
+> Exp. n
+> Real or Fake
+> Task Ⅰ
+
+: BIC  
+
+> FS
+> FA
+> TS
+> TA
+> Task Ⅱ
+
+: IMG  
+
+> Task Ⅲ
+
+: MLC  
+
+> Task Ⅳ
+
+: TMG    
+
+> (a-d) DGM 4Tasks (a-b) Authenticity-Aware Feature
+> Fusion (a-c) Reference-Distilled Task-Adaptive
+> Experts
+> T
+> I
+> (a-a) Reference Retrieval
+> Trump Pence lost after
+> introducing him at a news
+> conference in New York
+> Trump embraces Pence after
+> introducing him at a news
+> conference in New York
+> Inference : Offline Gallery
+> Training : Dynamic Memory Bank MatMul
+> cls
+
+t tok t ref 
+
+> cls
+
+t ref 
+
+> tok
+
+t     
+
+> Layer Norm Layer Norm
+> Self-Attn Block
+> QKV
+> FC
+> SoftMax
+> Scale
+> 1
+> 1
+> 111
+> 1
+> 1
+> 0
+> 0
+> 00
+> 0
+> 0
+> 0
+> 00
+> Anchor Map
+> Attn Map
+> ACCA L
+> Cross-Attn Block
+> FC
+> a
+> cls
+
+t a
+
+> tok
+
+t
+
+(b) Authenticity Conditioned Cross Attention 
+
+> Manipulation
+> Image Embed dings
+> Authenticity-Aware
+> Text Embeddings
+> Authenticity-Aware
+> Image Embeddings
+
+...   
+
+> cls vpat v
+> ref
+> cls vref
+> pat v
+
+... 
+
+> Manipulation
+> Text Embeddings
+
+...   
+
+> cls ttok t
+> ref
+> cls tref
+> tok t
+
+... ... ... 
+
+...   
+
+> Self-Attn Block
+> QKV
+> FC
+> (-)
+> FC
+> GELU
+> FC
+> Layer Norm
+> Layer Norm
+> diff
+> cls
+
+v diff 
+
+> pat
+
+v
+
+> Cross-Attn Block
+> QK&V
+> a
+> cls
+
+v a
+
+> pat
+
+v
+
+> cls
+
+v pat v
+
+... 
+
+... 
+
+... 
+
+> ref
+> cls
+
+v ref 
+
+> pat
+
+v
+
+... 
+
+...  
+
+> ......... .......... .......... .........
+
+.. ....... .......   
+
+> Query
+> Input News Pair
+> Queried Reference Pair
+> Multimodal
+> Encoder
+> ref I
+> ref T
+> a
+> cls va
+> pat v
+> a
+> cls ta
+> tok t
+
+... 
+
+... 
+
+> Fused Features
+
+(a) Primary Pipeline of REVEAL        
+
+> Authenticity
+> Conditioned
+> Cross Attention
+> ACCA iii
+> ori ori ori {(I ,T , f )}
+
+Figure 2: Overview of the proposed REVEAL framework. (a) Primary Pipeline: (a-a) Reference Retrieval obtains semantically related reference pairs from a dynamic memory bank during training or an offline retrieval gallery during inference ; (a-b) Authenticity-Aware Feature Fusion employs the proposed ACCA module to fuse query and reference features, producing authenticity-conditioned representations; (a-c) Reference-Distilled Task-Adaptive Experts leverages a router-based Mixture-of-Experts architecture within the DGM 4 task pool, where each expert specializes in different manipulation patterns; (a-d) DGM 4 Tasks include four objectives: binary classification (BIC), image manipulation grounding (IMG), multi-label classification (MLC), and text manipulation grounding (TMG). (b) Detailed architecture of Authenticity Conditioned Cross Attention (ACCA), which computes cross-modal attention between query and reference to produce authenticity-aware representations. 
+
+et al., 2023). Multimodal extensions further ground visual reasoning with retrieved knowledge, e.g., MuRAG (Chen et al., 2022) for image–document reasoning and Wiki-LLaVA (Caffagni et al., 2024) for knowledge-grounded VQA, with recent work exploring retrieval over visual documents (Yu et al., 2024a) and knowledge-guided multimodal genera-tion (Yang et al., 2024). However, these approaches use retrieval to enrich generation . In contrast, re-trieval in our framework serves verification : re-trieved references act as authentic anchors for ex-posing contradictions, inconsistencies, and manip-ulations, rather than augmenting output content. 
+
+2.2 Multimodal Manipulation Detection 
+
+Early manipulation detection focused on unimodal forgery, particularly face manipulation, leverag-ing spatial artifacts, frequency inconsistencies, and temporal coherence to identify deepfakes (Rossler et al., 2019; Li et al., 2020). As real-world misin-formation increasingly involves coordinated cross-modal manipulation (Hu et al., 2023), recent work has shifted toward multimodal detection. HAM-MER (Shao et al., 2023) performs joint detec-tion and grounding via shallow cross-modal fu-sion with modality-specific decoders. Building on this, ASAP (Zhang et al., 2025b) introduces hier-archical cross-modal alignment to capture subtle manipulation traces, while UFAFormer (Liu et al., 2025a) incorporates frequency-aware analysis to expose generation artifacts imperceptible in the spatial domain. More recently, IDseq (Liu et al., 2025b) adopts a decoupled sequential pipeline that first detects manipulation at the instance level and then grounds manipulated regions in each modality separately. Despite these advances, existing meth-ods fundamentally operate in an instance-isolated 
+
+manner: each sample is judged primarily from pat-terns learned during training, without access to authentic external references for comparative veri-fication (Cozzolino et al., 2024a; Yan et al., 2024b). 
+
+3 Methodology 
+
+3.1 Problem Formulation 
+
+We formulate multimodal manipulation detec-tion as reference-grounded verification. Let 
+
+(I, T ) denote a query image–text pair and R =
+
+{(Ik, T k)}Nk=1 an authentic reference library. In-stead of judging (I, T ) in isolation, our detector conditions its prediction on retrieved evidence: 
+
+Dθ(I, T ; R) = Dθ(I, T | Iref , T ref ), (1) where (Iref , T ref ) ∈ R is the retrieved authentic reference. Thus, manipulation cues are modeled as query-reference inconsistencies rather than abso-lute artifacts within a single sample. Figure 2 shows the overall architecture of RE-VEAL . Given a query image–text pair (I, T ), RE-VEAL first retrieves semantically relevant authen-tic references (Iref , T ref ) from a reference library, then compares the query with the retrieved evi-dence through an authenticity-aware fusion module, and finally feeds the fused discrepancy features into a Mixture-of-Experts predictor for authenticity ver-ification and multimodal grounding. Through this pipeline, REVEAL detects manipulations by rea-soning over query-reference inconsistencies rather than isolated artifact patterns. 
+
+3.2 Reference Retrieval 
+
+As shown in Figure 2(a-a), REVEAL retrieves se-mantically relevant authentic references from a dy-namic memory bank during training and an offline gallery at inference. The reference gallery is plug-and-play: for domain-specific detection, it can be constructed from target news sources, while for general-purpose detection, we build a universal gallery containing 170K authentic image–text pairs covering over 40K public figures. This design en-ables training-free domain adaptation by updating the gallery without modifying model parameters. During training, we maintain a memory bank of authentic pairs with cached visual embeddings. Crucially, to guarantee strict data isolation and pre-vent any potential data leakage, each sample in the training set is exclusively paired with its cor-responding authentic reference from the training partition. For each query image Iq, candidate references are retrieved by top-K cosine similarity: 
+
+K = TopK j cos( ϕ(Iq), fj ), (2) where ϕ(·) is the visual encoder and fj denotes the cached embedding of the j-th reference. To improve retrieval quality, we impose a Visual Retrieval Contrastive loss LVRC following In-foNCE (Oord et al., 2018), which encourages queries to be close to their authentic counterparts in the embedding space. At inference time, the selected reference library is indexed as an offline retrieval gallery, and ref-erences are retrieved using FAISS (Johnson et al., 2019) for efficient approximate nearest-neighbor search over large-scale authentic evidence. 
+
+3.3 Authenticity-Aware Feature Fusion 
+
+The retrieved reference provides an authentic an-chor for detecting query-reference discrepancies. As shown in Figure 2 (a-b), we propose Authentic-ity Conditioned Cross Attention (ACCA) to com-pare query and reference features and produce discrepancy-aware representations. For textual comparison, query caption tokens attend to the retrieved reference caption, yielding a discrepancy-aware textual representation: 
+
+Tdiff = CrossAttn( Tq, Tref , Tref ), (3) where Tdiff = [ ta
+
+> cls
+
+, t a
+
+> tok
+
+], Tq = [ tcls , t tok ] and 
+
+Tref = [ tref cls , t ref tok ]. We further introduce Reference-Guided Attention Supervision (RGAS) to regular-ize this attention, encouraging authentic tokens to align with matched reference evidence while guid-ing manipulated tokens to search broader reference context. The RGAS loss is formulated as: 
+
+LRGAS = 1
+
+|V| 
+
+X
+
+> (i,j )∈V
+
+ℓ(Ai,j , G i,j ), (4) where V denotes valid non-padding positions. For the visual modality, we retrieve the top-ranked authentic sample and use it as the refer-ence anchor for discrepancy modeling. We model anchor-relative discrepancies by comparing the query image with the retrieved reference in the feature space. Specifically, the query and reference features are compared through element-wise sub-traction and transformed into manipulation-aware visual representations. Finally, textual and visual discrepancy features are fused through cross-modal attention, enabling the model to jointly reason over semantic and visual evidence for detection and grounding. 
+
+3.4 Reference-Distilled Task-Adaptive Experts 
+
+As shown in Figure 2(a-c), we design a Reference-Distilled Task-Adaptive Experts architecture to ad-dress the multi-granularity demands of multimodal verification. Detection tasks rely on holistic se-mantic reasoning, while grounding tasks require fine-grained local alignment. We therefore adopt an MoE architecture with task-aware routing, where explicit task identifiers guide experts to specialize in task-specific feature patterns. 
+
+Expert Network Design. To address the heterogeneous demands of reference-grounded verification, we define a task pool T =
+
+{BIC , IMG , MLC , TMG }, as illustrated in Fig-ure 2. Recognizing that classification and ground-ing inherently require distinct feature granulari-ties, we allocate a dedicated pool of N experts to each task t ∈ T . This isolation enables classification-oriented experts to extract holistic representations, while grounding-oriented experts isolate fine-grained spatial or token-level cues. For-mally, each expert is instantiated as an independent feed-forward network: 
+
+E(t) 
+
+> n
+
+(x) = FFN (t) 
+
+> n
+
+(x), n ∈ { 1, . . . , N }. (5) This task-decoupled design allows each expert pool to learn task-specific transformations and mit-igates interference between global detection and fine-grained grounding objectives. 
+
+Task-Aware Routing. To address heterogeneous sub-task requirements, we adopt a task-aware MoE head whose routing is conditioned on both input features and task identity. For each task t ∈ T ,we use an independent expert pool {E (t) 
+
+> n
+
+}Nn=1 and a learnable task embedding et ∈ Rd/ 4. The MoE head is applied separately to each task with input 
+
+X(t) ∈ RLt×d, where Lt = 1 for BIC, IMG, and MLC using xcls , and Lt = L for TMG using Xtok .The router mean-pools the input and concatenates it with the task embedding: 
+
+h(t) = MeanPool( X(t)) ⊕ et. (6) A lightweight gating network then produces the routing distribution over the N experts: 
+
+p(t) = softmax 
+
+
+
+Gate( h(t))
+
+
+
+. (7) We select the top-K experts according to p(t) and re-normalize their weights: 
+
+˜p(t) 
+
+> n
+
+= p(t)
+
+> n
+
+P 
+
+> j∈S (t)
+
+p(t)
+
+> j
+
+, n ∈ S (t), (8) where S(t) = TopK( p(t)). The task output is ob-tained by aggregating the selected experts: 
+
+Y(t) = X
+
+> n∈S (t)
+
+˜p(t) 
+
+> n
+
+E(t) 
+
+> n
+
+(X(t)). (9) For BIC, MLC, and IMG, the MoE operates on sentence-level features to produce global classifica-tion or box regression outputs, while for TMG, it is applied to token-level features to generate manip-ulation logits for each token. Thus, the router per-forms task-conditioned expert selection, and each task-specific expert pool learns features suited to its own reasoning granularity. 
+
+Reference-Enhanced Expert Distillation. Text Manipulation Grounding (TMG) is challenging because manipulated tokens are sparse and can be weakened during multi-task optimization. To improve token-level sensitivity, we introduce a reference-enhanced teacher for TMG. Unlike the student head, the teacher directly takes the query-reference text pair [Tq; Tref ] as input, preserving fine-grained discrepancy cues between the query and authentic evidence. The teacher’s predictions are then distilled to the MoE student through a temperature-scaled KL divergence loss: 
+
+Ldistill = τ 2DKL (σ(zteacher /τ )∥σ(zstudent /τ )) .
+
+(10) By providing soft supervision, this distillation mechanism forces the student to maintain acute sensitivity to subtle textual manipulations. 
+
+3.5 Objective Function 
+
+Following prior works (Shao et al., 2023, 2024), we define LTask as the sum of four task losses: 
+
+LTask = LBIC + LMLC + LIMG + LTMG , (11) where classification objectives are optimized with cross-entropy losses, image grounding with L1
+
+and Generalized IoU losses (Rezatofighi et al., 2019), and text grounding with class-weighted cross-entropy. To empower the framework with reference-grounded verification and high-recall optimization, we integrate our proposed contrastive, attention-guided, and distillation constraints. The overall optimization objective is formulated as: 
+
+Ltotal = LTask + αLVRC + LRGAS + βLdistill , (12) where LVRC denotes a unified contrastive term consisting of the visual retrieval contrastive loss, 
+
+LRGAS supervises the cross-modal attention pat-terns for verification, and Ldistill transfers recall-centric knowledge from the teacher expert. α and 
+
+β are trade-off hyperparameters to balance these objectives. 
+
+4 Experiments 
+
+Experimental Setup. For reference-grounded verification, we build an inference-time library from VisualNews (Liu et al., 2021), containing 170K authentic image–text pairs covering over 40K public figures. Table 1: Performance comparison with state-of-the-art methods on DGM 4 dataset (Shao et al., 2023). Bold indicates best performance, and underlined indicates second-best. ↑/↓ indicates higher/lower is better, and ∆AVG denotes the average improvement compared to HAMMER.                                                                                                                                                  
+
+> Methods Binary Cls Multi-Label Cls Image Grounding Text Grounding ∆AVG
+> AUC ↑EER ↓ACC ↑mAP ↑CF1 ↑OF1 ↑IoU m↑IoU 50 ↑IoU 75 ↑Precision ↑Recall ↑F1 ↑
+> CLIP (Radford et al., 2021) 83 .22 24 .61 76 .40 66 .00 59 .52 62 .31 49 .51 50 .03 38 .79 58 .12 22 .11 32 .03 –VILT (Kim et al., 2021) 85 .16 22 .88 78 .38 72 .37 66 .14 66 .00 59 .32 65 .18 48 .10 66 .48 49 .88 57 .00 –HAMMER (Shao et al., 2023) 93 .19 14 .10 86 .39 86 .22 79 .37 80 .37 76 .45 83 .75 76 .06 75 .01 68 .02 71 .35 0.00 HAMMER++ (Shao et al., 2024) 93 .33 14 .06 86 .66 86 .41 79 .73 80 .71 76 .46 83 .77 76 .03 73 .05 72 .14 72 .59 +0.35 ViKI (Li et al., 2024) 93 .51 13 .87 86 .67 86 .58 81 .07 80 .10 76 .51 83 .95 75 .77 77 .79 66 .06 72 .44 +0.38 UFAFormer (Liu et al., 2025a) 93 .81 13 .60 86 .80 87 .85 80 .31 81 .48 78 .33 85 .39 79 .20 73 .35 70 .73 72 .02 +1.13 ASAP (Zhang et al., 2025b) 94 .38 12 .73 87 .71 88 .53 81 .72 82 .89 77 .35 84 .75 76 .54 79.38 73.86 76.52 +2.40 IDseq (Liu et al., 2025b) 94.55 11.40 88.94 90.01 83.00 84.90 83.33 89.39 86.19 75 .96 71 .23 73 .52 +3.96
+> REVEAL (Ours) 97.82 3.75 93.18 91.37 85.13 86.68 85.51 93.53 86.52 79.31 74.45 75.34 +6.92
+
+Table 2: Comparison with state-of-the-art methods on the SAMM dataset using the original SAMM image reference gallery. Bold indicates best and underlined indicates second-best. ↑/↓ indicates higher/lower is better, and ∆AVG denotes the average improvement compared to HAMMER.                                                                                                                        
+
+> Methods Binary Cls Multi-Label Cls Image Grounding Text Grounding ∆AVG
+> AUC ↑EER ↓ACC ↑mAP ↑CF1 ↑OF1 ↑IoU m↑IoU 50 ↑IoU 75 ↑Precision ↑Recall ↑F1 ↑
+> VILT (Kim et al., 2021) 96 .10 11 .02 88 .83 96 .03 90 .21 89 .84 65 .38 71 .91 54 .49 77 .42 69 .78 73 .40 –HAMMER (Shao et al., 2023) 97 .85 7.80 92 .43 97 .98 93 .77 93 .44 77 .68 84 .41 78 .44 85 .94 82 .74 84 .31 0.00 HAMMER++ (Shao et al., 2024) 97 .60 7.99 92 .26 97 .72 93 .70 93 .34 77 .66 84 .12 78 .62 85 .86 82 .89 84 .35 -0.09 Qwen2.5VL-72b (Liu et al., 2024) 76 .67 44 .93 55 .06 ––––––––––FKA-Owl (Liu et al., 2024) 98 .09 7.19 92 .60 2.53 13 .97 13 .84 66 .40 73 .54 54 .82 19 .16 49 .71 27 .66 -38.01 RamDG (Shen et al., 2025) 98.79 5.42 94.66 98.86 95.52 95.33 80.90 87.56 82.00 86.16 83.54 84.83 +1.80
+> REVEAL (Ours) 99.83 0.65 97.04 99.56 96.43 96.19 82.69 87.68 82.84 87.25 85.12 86.17 +3.25
+
+4.1 Quantitative Results 
+
+We evaluate REVEAL from four perspectives: in-domain performance on DGM 4 (Shao et al., 2023), robustness on SAMM (Shen et al., 2025), cross-domain generalization across news sources, and zero-shot cross-dataset transfer to MDSM. 
+
+(1) Superiority on DGM 4 (Tab. 1). By us-ing our comprehensive reference library, RE-VEAL achieves consistent improvements across all four task families, including binary classifica-tion, multi-label classification, image grounding, and text grounding. It obtains an average gain of +6.92% over HAMMER (Shao et al., 2023), with 97.82% AUC and 93.18% ACC for binary classification. Notably, REVEAL reduces EER from 14.10% to 3.75% compared with HAMMER, showing that reference-grounded comparison pro-vides more reliable authenticity judgments than artifact-only detection. Compared with IDseq (Liu et al., 2025b), REVEAL achieves stronger over-all performance, and it substantially outperforms ASAP (Zhang et al., 2025b) on binary classification and image grounding, demonstrating the advantage of retrieval-augmented verification beyond cross-modal alignment. 
+
+(2) Robustness on SAMM (Tab. 2). To further evaluate robustness beyond DGM 4, we benchmark REVEAL on SAMM (Shen et al., 2025), which is constructed with different manipulation pipelines. REVEAL establishes a new state of the art across all metrics, achieving 99.83% AUC, 0.65% EER, and 97.04% ACC. Compared with the strongest baseline RamDG (Shen et al., 2025), REVEAL re-duces EER from 5.42% to 0.65% and improves IoU m by 1.79 points, indicating that authentic ref-erence anchors remain effective under different ma-nipulation distributions. 
+
+(3) Cross-Domain Generalization (Tab. 3). To evaluate domain robustness, we train models on a single news source and evaluate them across all four sources. To simulate a challenging, subopti-mal retrieval scenario, we introduce a variant (Our-Top2) that intentionally excludes the top-1 retrieved reference. Despite this restriction, it consistently outperforms HAMMER (Shao et al., 2023), HAM-MER++ (Shao et al., 2024), and ASAP (Zhang et al., 2025b), achieving average improvements of +10.2% in ACC and +15.8% in IoU m over ASAP. Furthermore, when the full gallery is accessible (Our-Top1), performance improves even further. Table 3: Cross-domain generalization performance (%) . By using our comprehensive reference library, models are trained on one news source (indicated by row blocks: BBC, Guardian, USA Today, or Washington Post) and evaluated on all four sources (columns). Gray cells denote in-domain evaluation where training and testing sources match; other cells represent cross-domain transfer scenarios. Best results per column are in bold .
+
+Methods Train Test BBC Guardian USA Today Wash. Post 
+
+ACC cls mAP IoU m ACC tok ACC cls mAP IoU m ACC tok ACC cls mAP IoU m ACC tok ACC cls mAP IoU m ACC tok 
+
+HAMMER (Shao et al., 2023) 
+
+> BBC
+
+81.75 79.73 63.73 91.47 75.76 66.13 59.69 77.44 68.11 50.84 43.94 64.91 68.21 52.69 45.60 68.48 HAMMER++ (Shao et al., 2024) 81.96 79.92 63.77 90.84 75.80 66.59 60.43 77.13 67.65 50.33 43.01 64.16 68.10 52.16 45.47 68.41 ASAP (Zhang et al., 2025b) 82.48 80.09 64.05 91.91 76.69 67.71 62.89 79.63 68.94 51.58 44.81 67.58 68.51 52.50 46.52 70.46 Our-Top2 85.28 80.72 70.30 92.27 83.26 70.69 69.83 84.90 79.53 59.65 63.10 80.72 81.45 59.67 65.15 82.61 Our-Top1 97.09 90.14 83.62 93.90 95.34 82.43 82.90 91.48 93.91 72.42 78.41 90.82 93.66 73.53 78.86 91.63 
+
+HAMMER (Shao et al., 2023) 
+
+> Guardian
+
+66.65 59.80 57.30 87.22 87.13 83.13 73.53 89.60 66.04 59.76 36.17 87.62 66.39 59.52 35.59 88.98 HAMMER++ (Shao et al., 2024) 65.34 59.68 56.19 87.53 86.82 83.29 73.33 89.74 65.99 62.23 36.42 87.16 66.54 61.49 35.40 88.85 ASAP (Zhang et al., 2025b) 68.65 66.23 59.22 88.84 88.36 86.23 77.86 91.06 69.45 65.17 40.82 87.73 69.06 65.47 41.01 89.66 Our-Top2 81.21 64.04 70.90 89.39 86.93 81.26 72.43 92.67 80.72 73.75 81.63 82.18 84.12 66.74 64.06 90.04 Our-Top1 95.07 77.78 79.69 91.76 97.70 90.38 83.15 93.41 95.92 85.58 80.72 91.79 95.18 74.4 81.27 91.75 
+
+HAMMER (Shao et al., 2023) 
+
+> USA Today
+
+70.17 52.64 45.54 82.69 74.39 59.63 50.94 83.02 76.66 70.32 49.73 90.9 75.77 65.33 48.38 89.95 HAMMER++ (Shao et al., 2024) 70.25 52.36 47.07 82.29 74.84 59.17 52.07 82.22 76.80 71.27 50.72 91.15 75.85 66.30 50.30 90.11 ASAP (Zhang et al., 2025b) 74.02 56.25 50.95 81.44 79.91 63.58 57.68 82.82 86.10 75.63 56.02 92.64 83.95 70.67 54.97 91.00 Our-Top2 80.96 63.24 65.15 87.30 82.22 66.55 69.20 86.80 84.42 79.14 68.14 92.16 85.32 75.10 67.43 92.13 Our-Top1 94.35 75.62 79.29 91.35 94.97 78.46 83.84 91.31 97.25 87.41 82.5 93.13 96.93 84.17 81.59 93.59 
+
+HAMMER (Shao et al., 2023) 
+
+> Wash. Post
+
+70.58 53.72 44.61 83.10 74.10 58.8 50.27 83.36 74.80 66.84 47.22 89.71 75.74 65.71 48.99 89.84 HAMMER++ (Shao et al., 2024) 70.93 53.02 44.66 82.23 75.03 59.82 50.52 83.50 75.49 68.08 47.45 89.01 75.85 67.50 48.52 89.89 ASAP (Zhang et al., 2025b) 71.86 57.28 49.75 82.77 80.71 63.60 56.29 84.04 77.58 71.59 53.00 89.25 78.57 73.10 54.10 91.91 Our-Top2 82.24 61.16 61.70 87.06 82.54 65.34 65.28 86.43 80.85 72.94 61.07 90.88 81.73 75.37 63.35 91.33 Our-Top1 95.89 76.46 78.60 91.55 95.63 79.05 81.70 90.73 96.98 84.16 80.68 91.38 97.53 86.37 79.58 92.88 
+
+Table 4: Cross-dataset generalization on MDSM (%) . Models are trained on the Guardian domain of DGM 4 and evaluated using our comprehensive reference library. Bold indicates best and underlined indicates second-best. 
+
+Methods Guardian BBC NYT USA Today Wash. Post AVG 
+
+ACC mAP mIoU ACC mAP mIoU ACC mAP mIoU ACC mAP mIoU ACC mAP mIoU ACC mAP mIoU HAMMER (Shao et al., 2023) 73.51 44.06 60.78 51.53 38.44 63.21 65.33 25.23 38.94 59.17 31.78 28.14 67.81 33.89 27.48 63.47 34.68 43.71 HAMMER++ (Shao et al., 2024) 73.57 45.86 60.74 50.72 39.12 63.97 65.21 25.09 38.22 59.84 33.73 28.71 67.62 35.30 28.40 63.39 35.82 44.01 FKA-Owl (Liu et al., 2024) 69.18 19.46 15.01 57.94 22.94 11.37 61.29 18.03 12.27 58.95 30.68 16.74 62.30 35.15 18.01 61.93 25.25 14.68 RamDG (Shen et al., 2025) 72.49 43.84 60.69 55.27 41.25 63.50 65.55 25.78 40.28 66.82 34.33 28.23 66.15 36.17 27.72 65.26 36.27 44.08 ASAP (Zhang et al., 2025b) 73.63 44.91 61.25 51.55 38.97 63.74 66.13 26.29 39.67 59.89 33.47 29.87 67.71 35.44 29.61 63.78 35.82 44.83 AMD (Zhang et al., 2025a) 69.89 33.67 73.17 52.68 18.39 62.11 64.62 29.89 41.57 73.28 37.04 50.89 73.24 39.61 50.94 66.74 31.72 55.74 
+
+REVEAL (Ours) 78.52 50.28 65.31 72.69 55.22 76.66 70.22 31.56 40.56 66.62 51.46 63.95 70.51 51.92 67.08 71.71 48.09 62.71 
+
+Crucially, this gain is achieved simply by updating the retrieval index without any parameter tuning, confirming that our plug-and-play memory effec-tively enables training-free domain adaptation. 
+
+(4) Zero-Shot Cross-Dataset Transfer (Tab. 4). 
+
+We further test generalization under a harder set-ting by training models only on the Guardian split of DGM 4 and evaluating them on MDSM with-out fine-tuning. REVEAL achieves the best aver-age results with 71.71% ACC, 48.09% mAP, and 62.71% mIoU, surpassing the next-best baseline by +4.97%, +11.82%, and +6.97%, respectively. This demonstrates that reference-grounded verifi-cation generalizes across different news sources, manipulation pipelines, and annotation protocols. 
+
+4.2 Ablation Study 
+
+We conduct comprehensive ablation experiments to dissect the contribution of each component in REVEAL. The baseline is a standard BEiT-3 model that relies solely on internal artifact memorization. To validate our reference-grounded paradigm, we systematically integrate the two parallel branches of our Authenticity Conditioned Cross Attention (ACCA) module. We first activate the Visual Refer-ence Stream, which processes retrieved Iref via the visual discrepancy modeling branch. Subsequently, we enable the Text Reference Stream, which lever-ages the textual consistency verification branch to align query texts with retrieved Tref . Finally, we orchestrate these reference-enhanced features via the Task-Aware MoE. Table 5 summarizes the pro-gressive improvements. 
+
+Visual Reference Stream ( Iref ). Activating the visual reference stream introduces authentic im-age anchors to the visual discrepancy modeling branch of ACCA. This integration yields substan-tial gains across all metrics, with AUC improv-ing from 90.07% to 95.78% (+5.71%) and Im-age Grounding (IoU m) increasing from 79.21% to 84.14% (+4.93%). These results validate that the Table 5: Ablation study of different components on the DGM 4 dataset using our comprehensive reference library. 
+
+Iref : Visual Reference Stream; Tref : Text Reference Stream; Tmoe : Reference-Distilled Task-Adaptive Experts. Baseline denotes the model without any retrieval augmentation.                                                                                        
+
+> Variants Binary Cls Multi-Label Cls Image Grounding Text Grounding
+> AUC ↑EER ↓ACC ↑mAP ↑CF1 ↑OF1 ↑IoU m↑IoU 50 ↑IoU 75 ↑Precision ↑Recall ↑F1 ↑
+> Baseline 90 .07 15 .84 84 .78 83 .23 78 .69 78 .84 79 .21 86 .93 74 .72 71 .70 66 .02 68 .74
+> w/ Iref 95 .78 5.15 91 .75 89 .59 82 .44 83 .22 84 .14 92 .30 80 .82 74 .96 64 .13 69 .12
+> w/ Iref +Tref 96 .66 4.31 92 .91 89 .95 83 .54 84 .14 84 .21 92 .39 81 .40 82.84 68 .83 75 .15
+> w/ Iref +Tref +Tmoe 97.82 3.75 93.18 91.37 85.13 86.68 85.51 93.53 86.52 79 .31 74.45 75.34 010k 20k 30k 40k 50k 60k
+> Step
+> 0
+> 0.5
+> 1
+> 1.5
+> 2
+> Training Loss
+> Task Loss (w/ MoE)
+> Task Loss (w/o MoE)
+
+(a) Task Loss 0 10k 20k 30k 40k 50k 60k  
+
+> Step
+> 0
+> 2
+> 4
+> 6
+> Training Loss
+> Total Loss (w/ MoE)
+> Total Loss (w/o MoE)
+
+(b) Total Loss 
+
+Figure 3: Training dynamics on the DGM 4 dataset. The curves (Task Loss and Total Loss) demonstrate that incorporating the proposed MoE detection head leads to faster convergence compared to the baseline. 
+
+ACCA module effectively transforms the detection paradigm. By computing feature-level residuals against the retrieved Iref , the model shifts from searching for absolute artifacts to measuring rela-tive inconsistencies, thereby significantly enhanc-ing localization precision. 
+
+Text Reference Stream ( Tref ). Complementing the visual pathway, the text reference stream inte-grates authentic captions through the textual con-sistency verification branch of ACCA. This trans-forms the model into a complete dual-stream frame-work, resulting in a pronounced improvement in text-related metrics (Text Grounding F1: +6.03%). The performance surge is attributed to the semantic anchoring mechanism within ACCA. By employ-ing cross-attention to contrast query texts against verified logic in Tref , the model becomes capable of exposing subtle semantic contradictions that purely statistical language models fail to detect. 
+
+Impact of Task-Aware MoE ( Tmoe ). The MoE architecture with teacher expert distillation pro-vides additional performance gains across all met-rics. As discussed in Section 3.4, global classifi-cation and local grounding tasks impose different optimization pressures on shared representations. The MoE design addresses this by routing features to specialized experts, allowing each task to lever-age tailored feature transformations while still ben-efiting from shared low-level representations. The consistent improvements across both classification and grounding metrics confirm that this architec-ture successfully mitigates task interference. Figure 3 compares the training dynamics of RE-VEAL with and without the task-decoupling MoE detection head. The MoE-equipped model shows faster optimization in the early training stage and consistently reaches a lower total loss throughout training. For the task loss, both variants eventu-ally converge to comparable values, while the MoE variant descends more rapidly and remains more stable after convergence. These trends suggest that task-adaptive expert routing facilitates optimization under heterogeneous objectives, allowing global classification and fine-grained grounding tasks to share representations more effectively while reduc-ing optimization interference. 
+
+5 Conclusion 
+
+We present REVEAL, a retrieval augmented frame-work that reformulates multimodal manipulation detection as reference-grounded verification. By retrieving authentic references and modeling query-reference discrepancies, REVEAL shifts from iso-lated artifact memorization to comparative reason-ing. Extensive experiments demonstrate state-of-the-art performance across detection and ground-ing tasks. Notably, our paradigm enables training-free domain adaptation by simply updating the reference library, achieving strong cross-domain transferability without parameter updates. The reference-grounded paradigm offers a complemen-tary perspective to artifact-based detection, more closely aligning with human fact-checking pro-cesses while providing interpretable evidence for detection decisions. Ethics Statement 
+
+All datasets utilized in this study are derived from publicly available sources and legitimate news me-dia. We strictly ensure that the collected data ex-clusively features public figures in public spheres, thereby avoiding any privacy infringement of pri-vate individuals. Furthermore, we explicitly de-clare that all data and the proposed models are restricted to non-commercial, scientific research purposes aimed at combating multimodal misinfor-mation. 
+
+Limitations 
+
+Like other retrieval-augmented methods, its perfor-mance hinges on the coverage and quality of the reference library. For rare or out-of-distribution entities, retrieved neighbors may be uninforma-tive, degrading the reference-grounded paradigm under retrieval failures. Although the reference gallery can be constructed offline, our implemen-tation builds the gallery at a speed of 697 images per second; when the gallery is large or needs to be frequently updated, this additional preprocessing step still introduces certain computational overhead. Moreover, due to space limitations in the main text, we moved several supplementary experiments and analyses to the appendix, which may slightly affect the overall reading experience. 
+
+References 
+
+Akari Asai, Zeqiu Wu, Yizhong Wang, Avirup Sil, and Hannaneh Hajishirzi. 2024. Self-rag: Learning to re-trieve, generate, and critique through self-reflection. In International Conference on Learning Representa-tions .Davide Caffagni, Federico Cocchi, Nicholas Moratelli, Sara Sarto, Marcella Cornia, Lorenzo Baraldi, and Rita Cucchiara. 2024. Wiki-llava: Hierarchical retrieval-augmented generation for multimodal llms. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 1818– 1826. Tianlong Chen, Xuxi Chen, Xianzhi Du, Abdullah Rash-wan, Fan Yang, Huizhong Chen, Zhangyang Wang, and Yeqing Li. 2023. Adamv-moe: Adaptive multi-task vision mixture-of-experts. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 17346–17357. Wenhu Chen, Hexiang Hu, Xi Chen, Pat Verga, and William Cohen. 2022. Murag: Multimodal retrieval-augmented generator for open question answering over images and text. In Proceedings of the 2022 Conference on Empirical Methods in Natural Lan-guage Processing , pages 5558–5570. Riccardo Corvi, Davide Cozzolino, Giada Zingarini, Giovanni Poggi, Koki Nagano, and Luisa Verdoliva. 2023. On the detection of synthetic images generated by diffusion models. In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE. Davide Cozzolino, Giovanni Poggi, Riccardo Corvi, Matthias Nießner, and Luisa Verdoliva. 2024a. Rais-ing the bar of ai-generated image detection with clip. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) Work-shops , pages 4356–4366. Davide Cozzolino, Giovanni Poggi, Riccardo Corvi, Matthias Nießner, and Luisa Verdoliva. 2024b. Rais-ing the bar of ai-generated image detection with clip. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 4356– 4366. Xinjie Cui, Yuezun Li, Ao Luo, Jiaran Zhou, and Junyu Dong. 2025. Forensics adapter: Adapting clip for generalizable face forgery detection. In Proceedings of the Computer Vision and Pattern Recognition Con-ference , pages 19207–19217. Alexander Diel, Tania Lalgi, Isabel Carolin Schröter, Karl F MacDorman, Martin Teufel, and Alexander Bäuerle. 2024. Human performance in detecting deepfakes: A systematic review and meta-analysis of 56 papers. Computers in Human Behavior Reports ,16:100538. Matthew Groh, Ziv Epstein, Chaz Firestone, and Ros-alind Picard. 2022. Deepfake detection by human crowds, machines, and machine-informed crowds. 
+
+Proceedings of the National Academy of Sciences ,119(1):e2110013119. Xuming Hu, Zhaochen Hong, Zhijiang Guo, Lijie Wen, and Philip Yu. 2023. Read it twice: Towards faith-fully interpretable fact verification by revisiting evi-dence. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 2319–2323. Runsheng Huang, Liam Dugan, Yue Yang, and Chris Callison-Burch. 2024. MiRAGeNews: Multimodal realistic AI-generated news detection. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 16436–16448, Miami, Florida, USA. Association for Computational Linguistics. Zhengbao Jiang, Frank F Xu, Luyu Gao, Zhiqing Sun, Qian Liu, Jane Dwivedi-Yu, Yiming Yang, Jamie Callan, and Graham Neubig. 2023. Active retrieval augmented generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Lan-guage Processing , pages 7969–7992. Jeff Johnson, Matthijs Douze, and Hervé Jégou. 2019. Billion-scale similarity search with gpus. IEEE Transactions on Big Data , 7(3):535–547. Wonjae Kim, Bokyung Son, and Ildoo Kim. 2021. Vilt: Vision-and-language transformer without convolu-tion or region supervision. In International confer-ence on machine learning , pages 5583–5594. PMLR. Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. 2021. Gshard: Scaling giant models with conditional com-putation and automatic sharding. In International Conference on Learning Representations .Lingzhi Li, Jianmin Bao, Ting Zhang, Hao Yang, Dong Chen, Fang Wen, and Baining Guo. 2020. Face x-ray for more general face forgery detection. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5001–5010. Qilei Li, Mingliang Gao, Guisheng Zhang, Wenzhe Zhai, Jinyong Chen, and Gwanggil Jeon. 2024. To-wards multimodal disinformation detection by vision-language knowledge interaction. Information Fusion ,102:102037. Fuxiao Liu, Yinghan Wang, Tianlu Wang, and Vicente Ordonez. 2021. Visual news: Benchmark and chal-lenges in news image captioning. In Proceedings of the 2021 conference on empirical methods in natural language processing , pages 6761–6771. Huan Liu, Zichang Tan, Qiang Chen, Yunchao Wei, Yao Zhao, and Jingdong Wang. 2025a. Unified frequency-assisted transformer framework for detecting and grounding multi-modal manipulation. International Journal of Computer Vision , 133(3):1392–1409. Runxin Liu, Tian Xie, Jiaming Li, Lingyun Yu, and Hongtao Xie. 2025b. Idseq: Decoupled and sequen-tially detecting and grounding multi-modal media ma-nipulation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pages 496–504. Xuannan Liu, Peipei Li, Huaibo Huang, Zekun Li, Xing Cui, Jiahao Liang, Lixiong Qin, Weihong Deng, and Zhaofeng He. 2024. Fka-owl: Advancing mul-timodal fake news detection through knowledge-augmented lvlms. In Proceedings of the 32nd ACM International Conference on Multimedia , pages 10154–10163. Aaron van den Oord, Yazhe Li, and Oriol Vinyals. 2018. Representation learning with contrastive predictive coding. arXiv preprint arXiv:1807.03748 .Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sas-try, Amanda Askell, Pamela Mishkin, Jack Clark, and 1 others. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR. Md Mahbubur Rahman, Shufeng Hao, Chongyang Shi, An Lao, and Jinyan Liu. 2025. Exploring hyperbolic hierarchical structure for multimodal rumor detection. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 115–134, Suzhou, China. Association for Computational Linguistics. Hamid Rezatofighi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. 2019. Generalized intersection over union: A metric and a loss for bounding box regression. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 658–666. Jonas Ricker, Simon Damm, Thorsten Holz, and Asja Fischer. 2022. Towards the detection of diffusion model deepfakes. arXiv preprint arXiv:2210.14571 .Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. 2019. Faceforensics++: Learning to detect manipu-lated facial images. In Proceedings of the IEEE/CVF international conference on computer vision , pages 1–11. Rui Shao, Tianxing Wu, and Ziwei Liu. 2023. Detecting and grounding multi-modal media manipulation. In 
+
+Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 6904– 6913. Rui Shao, Tianxing Wu, Jianlong Wu, Liqiang Nie, and Ziwei Liu. 2024. Detecting and grounding multi-modal media manipulation and beyond. IEEE Trans-actions on Pattern Analysis and Machine Intelligence ,46(8):5556–5574. Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. 2017. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. In Inter-national Conference on Learning Representations .Jinjie Shen, Yaxiong Wang, Lechao Cheng, Nan Pu, and Zhun Zhong. 2025. Beyond artificial misalignment: Detecting and grounding semantic-coordinated mul-timodal manipulations. In Proceedings of the 33rd ACM International Conference on Multimedia , pages 11308–11317. Klaire Somoray, Dan J Miller, and Mary Holmes. 2025. Human performance in deepfake detection: a system-atic review. Human Behavior and Emerging Tech-nologies , 2025(1):1833228. Jonathan Tonglet, Marie-Francine Moens, and Iryna Gurevych. 2024. “image, tell me your story!” pre-dicting the original meta-context of visual misinfor-mation. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing ,pages 7845–7864, Miami, Florida, USA. Association for Computational Linguistics. Shi-Qi Yan, Jia-Chen Gu, Yun Zhu, and Zhen-Hua Ling. 2024a. Corrective retrieval augmented generation. 
+
+arXiv preprint arXiv:2401.15884 .Zehong Yan, Peng Qi, Wynne Hsu, and Mong-Li Lee. 2025. TRUST-VL: An explainable news assistant for general multimodal misinformation detection. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 5588–5604, Suzhou, China. Association for Com-putational Linguistics. Zhiyuan Yan, Yuhao Luo, Siwei Lyu, Qingshan Liu, and Baoyuan Wu. 2024b. Transcending forgery speci-ficity with latent space augmentation for general-izable deepfake detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 8984–8994. Diji Yang, Jinmeng Rao, Kezhen Chen, Xiaoyuan Guo, Yawen Zhang, Jie Yang, and Yi Zhang. 2024. Im-rag: Multi-round retrieval-augmented generation through learning inner monologues. In Proceedings of the 47th International ACM SIGIR Conference on Re-search and Development in Information Retrieval ,pages 730–740. Shi Yu, Chaoyue Tang, Bokai Xu, Junbo Cui, Jun-hao Ran, Yukun Yan, Zhenghao Liu, Shuo Wang, Xu Han, Zhiyuan Liu, and 1 others. 2024a. Vis-rag: Vision-based retrieval-augmented generation on multi-modality documents. arXiv preprint arXiv:2410.10594 .Yue Yu, Wei Ping, Zihan Liu, Boxin Wang, Jiaxuan You, Chao Zhang, Mohammad Shoeybi, and Bryan Catan-zaro. 2024b. Rankrag: Unifying context ranking with retrieval-augmented generation in llms. Advances in Neural Information Processing Systems , 37:121156– 121184. Fengzhu Zeng, Wenqian Li, Wei Gao, and Yan Pang. 2024. Multimodal misinformation detection by learn-ing from synthetic data with multimodal LLMs. In 
+
+Findings of the Association for Computational Lin-guistics: EMNLP 2024 , pages 10467–10484, Miami, Florida, USA. Association for Computational Lin-guistics. Yuchen Zhang, Yaxiong Wang, Yujiao Wu, Lianwei Wu, Li Zhu, and Zhedong Zheng. 2025a. The coherence trap: When mllm-crafted narratives ex-ploit manipulated visual contexts. arXiv preprint arXiv:2505.17476 .Zhenxing Zhang, Yaxiong Wang, Lechao Cheng, Zhun Zhong, Dan Guo, and Meng Wang. 2025b. Asap: Ad-vancing semantic alignment promotes multi-modal manipulation detecting and grounding. In Proceed-ings of the Computer Vision and Pattern Recognition Conference , pages 4005–4014. Zhihao Zhang, Yiran Zhang, Xiyue Zhou, Liting Huang, Imran Razzak, Preslav Nakov, and Usman Naseem. 2025c. From generation to detection: A multimodal multi-task dataset for benchmarking health misinfor-mation. In Findings of the Association for Compu-tational Linguistics: EMNLP 2025 , pages 24245– 24260, Suzhou, China. Association for Computa-tional Linguistics.

@@ -1,0 +1,292 @@
+Title: CLEAR-NeRF: Collinearity and Local-region Enhanced Accurate 3D Reconstruction in Unbounded Scenes
+
+URL Source: https://arxiv.org/pdf/2605.28125v1
+
+Published Time: Thu, 28 May 2026 01:02:42 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# CLEAR-NeRF: Collinearity and Local-region Enhanced Accurate 3D Reconstruction in Unbounded Scenes 
+
+Vladislav Polianskii , Elijs Dima , Isabel Salmerón Marazuela, Gergő László Nagy , Sigurdur Sverrisson, and Volodya Grancharov 
+
+Ericsson Research, Stockholm, Sweden 
+
+Abstract. Many real-world 3D reconstruction applications demand pho-torealism and metric accuracy across unbounded, complex scenes with challenging lighting and imperfect captures that current Neural Radiance Field (NeRF) pipelines only partly satisfy. This study adapts NeRF-based 3D reconstruction to multi-region of interest unbounded scenes to improve robustness to lighting and pose variation while enforcing metric accuracy suitable for digital-twin applications. Our approach introduces (i) automated local region localization/detection and reconstruction to seamlessly prioritize areas of interest without proliferating submodules, (ii) collinearity-enforcing ray sampling to learn smooth planar and curved surfaces, (iii) depth-localized neighborhood point extraction to suppress surface artifacts, and (iv) geometry-relevant color aggregation to miti-gate lighting- and pose-caused variations. Results indicate superior per-formance of the proposed pipeline over the baseline NeRF models and established Structure from Motion (SfM) - Multi-View Stereo (MVS) solutions. 
+
+Keywords: Neural Radiance Fields · Multi-resolution training · Surface reconstruction · UAV photogrammetry 
+
+## 1 Introduction 
+
+3D reconstruction is a crucial technology in the realm of computer vision and graphics, enabling both the transformation of real-world objects into digital scene models, and the generation of novel representations and views of the digitized scenes. Recently, Neural Radiance Fields (NeRF) [22] and 3D Gaussian Splatting (3DGS) [11] have emerged as dominant methods for scene modelling. The intro-duction of NeRF revolutionized photorealistic novel-view synthesis by learning a differentially renderable continuous scene representation from multi-view images. Follow-up work has improved efficiency and robustness, e.g . Instant-NGP [24], mip-NeRF [1], and extended NeRFs to unbounded scenes, e.g . mip-NeRF 360 [2] and NeRF++ [46]. Frameworks such as Nerfstudio and its Nerfacto model [33] consolidate these advances in baselines that can be deployed for applications spanning autonomous driving, robotics, medical imaging, etc. [23, 38, 41] Real-world scenes have complex lighting and it is seldom possible to capture perfect 2D images in ideal positions. Most real-world scenes contain multiples of relevant objects which need to be reconstructed to a high degree of accuracy,  
+
+> arXiv:2605.28125v1 [cs.CV] 27 May 2026 2V. Polianskii et al.
+
+often within an unbounded large-scale environment. Conversely, not every object within an unbounded scene is of equal relevance to a particular application; most real-world scenes are a combination of relevant sections and background, with varying requirements on reconstruction accuracy. For applications involving dig-ital twinning and real-world decision-making, both fidelity and metric accuracy of the 3D reconstruction is of import. Therefore, NeRF-based solutions intended for such applications have to address these issues in order to be practically viable. As NeRF was introduced in [22] in the context of view synthesis, NeRF-based method surveys have predominantly focused on the visual quality of the 2D images rendered from NeRF, e.g. as seen in [9, 16, 18]. As Giaquinto et al .[10] point out, NeRF was not initially designed for metric 3D reconstruction and Unmanned Aerial Vehicle (UAV)-based photogrammetry. For such use-case, combining Structure-from-Motion (SfM) with bundle adjustment [29] and Multi-View Stereo (MVS) [31] has been the go-to approach [3, 27]. In this paper we address the specific challenges of using NeRF for precise 3D point cloud reconstruction with UAV image sets as the reconstruction input. We focus on handling unbounded scenes with multiple degrees of object relevance while reducing the impact of complex lighting. We also ensure that 3D recon-structions are metrically accurate. We propose the following extensions to NeRF 3D reconstruction and geometry extraction: 
+
+– a local-region-focused multi-part scene reconstruction approach to account for multiple areas of interest to allow high-fidelity reconstruction without excessive allocation of NeRF submodules across the scene, 
+
+– a change in ray sampling during training to enforce collinearity and thus improve learning of smooth surfaces, both planar and non-planar, 
+
+– a change in sampling during 3D geometry extraction to form the 3D point from a depth-localized neighbourhood of pixels and thus reduce artifacts on the reconstructed surfaces, 
+
+– a change to aggregate ray colours from the geometry-relevant sections of the ray, to reduce the impact of lighting condition variance and deviations in camera poses on reconstructed object colorization. We demonstrate the effect of these alterations on a selection of real-world scenes of complex environments scanned with UAVs and ground LiDARs. This ad-dresses the use-case of 3D reconstruction for applications where metric accuracy of objects is necessary. 
+
+## 2 Related Work 
+
+NeRF-based methods have been compared against SfM-MVS-based methods in the context of 3D reconstruction accuracy [13, 20, 25, 34]. Maté-González et al .[20], Nex et al . [25] and Tsukamoto et al . [34] conclude that the legacy SfM-MVS methods generate higher, more detailed surface models, while acknowledging the potential in NeRF-based approaches. Within specific type of scenes - telecom towers recorded by UAVs - Lewandowski et al . [13] show potential for parity between reference data and NeRF reconstructions created from Mega-NeRF [35] and Nerfacto [33], given optimal conditions, UAV flight distances, and a tightly bounded scene scale. CLEAR-NeRF 3
+
+NeRF-Based 3D Reconstruction of Large-Scale Scenes. Handling large-scale and unbounded scenes is a core challenge for NeRFs in UAV-based photogrammetry. Most solutions either manipulate scene space [2,36,37] or parti-tion scenes into multiple NeRFs [5,17,32,40,42,43]. Mip-NeRF 360 [2] introduced scene contraction that maps points outside a unit volume into a bounded shell en-closing the unit volume; this is adopted by Nerfacto [33] and a similar scene com-pression appears in Nerf++ [46]. Wan et al . [37] constrain elevation and rescale the vertical axis to boost height fidelity. Turki et al . [36] compartmentalize scene into static, dynamic and far-field radiance fields and, like Mega-NeRF [35], first tile large scenes into cells with per-cell models. Similar multi-part scene tiling appears in [17, 32, 43, 48], where scene resolution demands dominate over scene scale. To address linear scaling of sampling and training costs, Xu et al . [42] use multi-resolution feature grids to steer sampling and augment NeRF positional encodings, along with vertical compaction akin to [37]. BungeeNeRF [40] instead adopts a multi-level coarse-to-fine approach, with a multi-stage training process and layered radiance field block structure where fine-level Multilayer Perceptron (MLP) blocks refine the higher-level coarse blocks. 
+
+Geometric Accuracy of NeRF-Based 3D Reconstruction. Llull et al . [19] and Tsukamoto et al . [34] highlight the common issue of spatial noise and flat surface deformations in NeRF reconstructions. Numerous NeRF vari-ants aim to improve quality beyond scaling or scene compartmentalization by focusing on depth [8, 15, 39, 44], geometric regularization [6, 14, 28], and pho-tometric improvements [17, 47, 49]. Wang et al . [39] use a Gaussian depth loss from sparse SfM points and replace positional encoding with Gaussian encod-ing for high-frequency details. Yang et al . [44] encourage ray termination at pseudo-depth from depth priors, and regularize depth/color distributions. Liao 
+
+et al . [15] adopt depth-centered Gaussian color sampling and image embeddings for robustness to diverse scene lighting. Fang et al . [8] proposes a modified NeRF ray sampling based on depth confidence, to concentrate samples in geometri-cally complex regions. Cui et al . [6] impose plane-fitting and Manhattan-world constraints for urban/building-rich scenes. Li et al . [14] improve ray density es-timation by adjacent-ray correlation and local geometric consistency to reduce surface roughness. Petrovska and Jutzi [28] voxellize the density field and ap-ply a 3D density-gradient Canny filter to improve geometry extraction. Zhang 
+
+et al . [47] employ adaptive random Fourier features and photometric loss from adjacent views to enhance multi-view consistency. Zhuang et al . [49] decouple color and density MLPs, and separately refine the color MLP to reduce texture-loss. Liu et al . [17] add a texture refinement stage via a dense residual network tailored to scene characteristics. 
+
+## 3 Method 
+
+Our contribution to precise NeRF-based point cloud reconstruction augments and enhances major parts of the traditional pipeline. An overview of the method is depicted in Figure 1. Key parts are as follows: 
+
+– an automated focus area localization module that detects parts of the scene which require high fidelity reconstruction, as well as a modification to the 4 V. Polianskii et al.    
+
+> Point Cloud Export NeRF Training
+> UAV Images Camera Poses
+> Collinear Pixel Sampler 3.2
+> Point Sampler
+> Rendering
+> Target Function (+ Lcol 3.2)
+> Denoising Pixel Sampler 3.3
+> Rendering (+Color 3.4)
+> Point Cloud Update
+> Focus Area Localization 3.1
+> Multi -region Proposal Networks 3.1 Point Cloud
+> Edge M asks
+> Focus Areas
+> Radiance Field
+> Multi -region Contractions and Hash Encodings 3.1
+> Edge Detector
+
+Fig. 1: CLEAR-NeRF overview showing NeRF training and point cloud export stages. 
+
+NeRF field. This includes the main field and proposal samplers, allowing for the optimal use of the focus areas (Section 3.1); 
+
+– a pixel sampler for the training process together with image preprocessing using edge detector that imposes additional regularization on surface flatness via collinear constraints (Section 3.2); 
+
+– an optimized pixel sampler during point cloud extraction. The sampler in-troduces depth-congruent filtering of incorrectly-sampled points which occur near depth discontinuities (Section 3.3); 
+
+– an alternative color rendering procedure specific for point cloud extraction. The procedure introduces a novel type of integration over a sampled ray to prevent color smearing (Section 3.4). 
+
+3.1 Local Region Focused (LRF) Scene Reconstruction 
+
+To address 3D reconstruction of large-scale scenes with sufficient fidelity, solution like [17, 32, 35, 36, 43, 48] split the scene into multiple cells as a way to distribute the computational cost and NeRF size. However, that does not effectively allo-cate NeRF resources to the relevant areas of the scene, where higher fidelity is required. We propose a local region focused scene reconstruction, LRF, consist-ing of two parts: focus-area localization and multi-resolution NeRF training. 
+
+Focus-area Localization. Our way of detecting and localizing focus areas in a large unbounded scene takes inspiration from light caustics, where rays emanate from cameras’ optical centers in corresponding directions and we find concentration points along ray bundles, see Figure 2. To enable LRF, we first obtain cameras’ extrinsic and intrinsic matrices from camera alignment process. Let K denote the set of all cameras. For each camera 
+
+κ ∈ K , we have its origin oκ ∈ R3 and viewing direction uκ ∈ S2, illustrated in Figure 2a. For a given distance t ∈ R+ from camera origin, we define points along the ray from camera κ as xκ(t) = oκ +uκt, and the set of all camera origins moving through space along their respective rays as P(t) = {xκ(t) | κ ∈ K} .CLEAR-NeRF 5      
+
+> (a) Cameras with directions (b) Clustering of P(c) Identified focus areas
+
+Fig. 2: An example of automatic focus-area detection for a UAV flight with multiple overlapping and concentric orbits over the scene and objects of interest. 
+
+As the first step, for each camera κ, we find a distance tκ at which the concentration/density for that camera’s ray is the highest: 
+
+tκ = argmin 
+
+> t≥0
+
+X  
+
+> xκ′(t)∈NN n(xκ(t)| P (t))
+
+∥xκ(t) − xκ′ (t)∥2, (1) where NN n(xκ(t) | P (t)) are n nearest neighbors of xκ(t) in set P(t).Given the distance tκ, for every ray we define the 3D point ˆxκ indicating where the highest concentration of the other rays occurs as: ˆxκ = xκ(tκ) = 
+
+oκ + tκuκ. We also define a 4D set of points P of all such points, to capture how far the cameras are from their respective ˆxκ, by: P = {¯xκ = (ˆ xκ; tκ) | κ ∈ K} .The next step is to cluster P points to get the focus areas. We cluster them using HDBSCAN [21] and the following distance measure between 4D points: 
+
+δ(¯ xκ, ¯xκ′ ) = max {∥ ¯xκ − ¯xκ′ ∥2 − (tκ + tκ′ ) sin α, 0} . (2) The (tκ + tκ′ ) sin α term decreases the distances between points with large offset from the camera; the given semimetric simulates the distance between growing frustums with angular size α. A representation of a 3D projection of P is provided in Figure 2b, where the resulting clusters are visualized by different colors; the black box outlines the global scene box. Finally, for each detected cluster of cameras C, the focus area center is iden-tified as f = Eκ∈C ˆxκ and the focus area radius as r = Eκ∈C ∥f − oκ∥∞. A corresponding cube can be defined as Q3
+
+> i=1
+
+[fi − r, f i + r]; this is used as the boundary for local scene contraction. An example of the resulting focus areas is indicated in Figure 2c. The proposed process is fully automated and does not require any specific structure of the input image set. The different UAV flight paths do not have to be separate from each other temporally or spatially, instead, the focus areas for LRF 3D reconstruction are inferred from implicit interactions between the estimated camera poses. 
+
+Multi-resolution Training Procedure for global and local scene con-tractions. We denote a 3D query position by p and ray direction it is sampled along by u∗, and we use M to denote the maximum count of the identified fo-cus areas. We parameterize the radiance field with a global branch ( i = 0 ) and 6 V. Polianskii et al. Query Position 𝑝    
+
+> Ray Direction ݑ∗
+> Density ߪ
+> Color ܿ
+> Density Encoding
+> Hash Encoding #2 Local #2 Scene Contraction
+> Density
+> MLP
+> SH Encoding
+> RGB
+> MLP
+> Hash Encoding #1 Local #1 Scene Contraction
+> Hash Encoding #0 Global Scene Contraction
+> +
+> Multi -region
+> Density Field
+> ……
+
+Fig. 3: Multi-resolution training procedure overview. 
+
+0 ≤ M0 ≤ M cluster-specific local branches ( i = 1 , . . . , M 0). Each branch ap-plies its own scene contraction ˜p = contract( p) defined in [2] and an independent learnable hash encoding introduced in [24] to produce a feature vector hi(˜ p). We then fuse all inputs by concatenation, h(˜ p) = concat( h0(˜ p), . . . , hM0 (˜ p)) , which is fed to the density network to predict σ along with an intermediate feature embedding. The direction u∗ is encoded separately with Spherical Harmonics 
+
+SH( u∗) and combined with the density feature in the color network to produce 
+
+c, while keeping the encoding parameters of each orbit separate so the model can leverage multiple local views without changing the overall NeRF training procedure. By retaining all encodings ( i.e . global and local) within the concatenated vector h, we ensure that the model learns smooth transitions between the sub-scenes, as the transition p 7 → h(˜ p) is entirely continuous. An overview of the separation of focus areas during training is shown in Figure 3. 
+
+3.2 Improved Surface Modeling (ISM) in NeRF-based 3D Scene Digitization 
+
+Objects captured from only a few angles, or those with monochromatic textures, can produce deformed surfaces during NeRF reconstruction that visually match the reference photos but fail to represent the correct geometry [19, 34]. Inspired by [6,14], we propose an improved surface modeling solution, ISM. It is based on an optimization technique by means of an additional loss factor that induces a geometric prior onto scene surfaces. This loss penalizes large variations in depth values using a collinearity constraint, and as a result mitigates surface deformations and improves metric accuracy of the 3D scene. Before the training starts, we use a preprocessing block that computes edges on the input images, such as Canny edge detector [4]. Then during training, our sampling technique performs random sampling of batches of image pixels in groups of three, like depicted in Figure 4. Each triplet ( q0, q 1, q 2) of pixels denotes a single segment on one image, with q1 being located between q0 and q2.The q1 pixel is sampled uniformly first; if it does not land on an edge, the other two pixels q0 and q2 are sampled in such way that q1 is the midpoint between them, the segment [q0; q2] does not cross any edges and ∥q0 − q2∥ is a large as possible (below a threshold of 40 pixels). If q1 lands on an edge, q0 and q2 are sampled uniformly as well, and the triplet is not considered for the rest of this section. By such sampling, we ensure that at least one third of the pixels are sampled uniformly in the image. CLEAR-NeRF 7𝑞 0
+
+> 𝑞 1
+> 𝑞 2
+
+Fig. 4: Ray sampling through three selected points on the image plane. Right side shape represents a currently reconstructed 3D scene. 
+
+Given the triplet of pixels, we propose a collinearity loss Lcol to mitigate the reconstruction of deformed surfaces. A general formula for the value of the loss 
+
+Lcol for a triplet of points is the following: 
+
+Lcol = χdε2 (d0, d 1, d 2) · ωcγ (c0, c 1, c 2) · ρdτ (d0, d 1, d 2), (3) where χdε2 is a depth threshold indicator function with parameter ε2, ωcγ is a color similarity weight with parameter γ, and ρdτ is a penalty function that evaluates discrepancy for the depth values of collinear 3D points and is the key part of the loss. Here, ck are the ground truth color vectors and dk are the rendered depth values of pixels qk for k ∈ { 0, 1, 2}.We denote u0, u 1, u 2 as the unit vectors that correspond to directions of rays for segment pixels in 3D space. If the three 3D points d0u0, d1u1 and d2u2 are expected to lie on single line, assuming d1 as an unknown, one can express the expected value for d1 as: 
+
+ˆd1 = d0d2|u0 × u2|
+
+d0|u0 × u1| + d2|u1 × u2| . (4) We denote ∆d = d1 − ˆd1 as the difference between the rendered depth d1
+
+for the midpoint q1 and the expected depth ˆd1 based on collinearity of q0, q 1, q 2.Difference ∆d is transformed via a hyperbolic tangent to obtain the depth dis-crepancy loss component: ρdτ = tanh τ |∆d | with τ controlling the function slope. The other components improve the quality of the optimization. The indicator 
+
+χdε2 is an indicator which verifies that ∆d is not too large relative to the rendered depth values using a hard threshold ε. Particularly, 
+
+χdε2 (d0, d 1, d 2) = 1 [|∆d | ≤ ε2 · min {d0, d 1, d 2}] . (5) Lastly, ωcγ reduces the influence of the loss on less monochromatic regions that were not captured by the edge detector, which we define as: 
+
+ωcγ (c0, c 1, c 2) = e− ∥c1−c0∥2+∥c2−c1∥22γ2 . (6) Sampling triplets of pixels is the minimal possible amount of pixels necessary to introduce a notion of local flatness (or any second-order approximation for surfaces). Thus our sampling strategy introduces a minimal possible number of co-dependent samples while applying the flattening regularization for ISM. 8 V. Polianskii et al. A              
+
+> B
+> (a) Two key depth values in the image patch are compared against one another. The sample is discarded if the tail (dx0,y 0−dmin )exceeds
+> dx0,y 0. The 3x3 grid represents the patch of pix-els Πof the image. A
+> B
+> (b) Large circle denotes where the depth dwas sampled. Smaller filled circles denote the other points with indices in I. Hollow circles denote points with indices outside Iwhich do not affect the final color computation.
+
+Fig. 5: Example of a single ray passing through objects A and B. Single-view depth denoising is illustrated in (a), color sharpening and denoising is illustrated in (b). 
+
+3.3 Single-view Depth Denoising (SDD) in NeRF Point Cloud Extraction 
+
+Even with a well-trained NeRF model that would produce realistic renders of the scene, the geometry of point clouds obtained by the current techniques is often noisy: sometimes, 3D points that should be part of an object are displaced in an empty volume or on the surface of another object. This noise frequently appears where a depth discontinuity would appear in an RGB-D image; for example, near the borders of an object that is close to the camera. When a ray is cast in a way that passes close to the border of object A, the resulting depth may be estimated to any location in-between the object A and an object B that is located behind, as shown in Figure 5a (central ray). We propose a single-view depth denoising technique, SDD, that helps to sig-nificantly reduce the amount of sampled geometric noise. Following the standard approach as in [33], we construct a point cloud P iteratively by sampling 3D points from a set of images J with known camera poses. Starting from P ← ∅,we repeatedly select a random image from J and uniformly sample pixel coor-dinates (x0, y 0) such that a w × h patch Π centered at (x0, y 0) lies fully inside the image. This choice determines the ray direction ux0,y 0 from the camera cen-ter o through the pixel. For all (x, y ) ∈ Π, we query the NeRF model to obtain rendered color vectors cx,y and depths dx,y , and we keep only the central color 
+
+cx0,y 0 . To denoise the estimates, the central depth dx0,y 0 is compared to the patch minimum depth dmin = min (x,y )∈Π dx,y , as shown in Figure 5a. We accept the sample if 
+
+(1 − ε3) dx0,y 0 ≤ dmin  (7) given a small constant ε3, ensuring the central ray does not report a depth significantly larger than any of the nearby rays. If accepted, we add the cor-responding 3D point o + ux0,y 0 · dx0,y 0 with color cx0,y 0 to P . We repeat the sampling procedure until size of the point cloud P reaches a pre-determined value, at which point the final point cloud is created. CLEAR-NeRF 9
+
+We perform patch sampling in SDD as a two-step process, to decrease the computational overhead. In the first step we sample and render a batch of rays corresponding to patch centers (x0, y 0). As there are many ways to reject a single sample (such as the final 3D point falling outside a define bounding box), some points get naturally discarded. Only those rays that would otherwise be picked for a point cloud proceed to the second step, where the rest of the rays from the patches are sampled. 
+
+3.4 Color Sharpening and Denoising (CSD) in NeRF Point Cloud Extraction 
+
+NeRF standard volume rendering aggregates radiance along the entire ray. That is appropriate for image synthesis, but becomes problematic for point cloud extraction, where a color of a point should be view-independent. View-dependent effects such as color “bleeding” ( e.g ., a white surface observed through blue glass) can bias sampled point colors away from their true surface appearance. This section covers the color sharpening and denoising modification for point cloud extraction, CSD, that we perform to obtain the cx0,y 0 color vector which appeared in Section 3.3. The ray passing through the pixel (x0, y 0) is discretized into points {pi}ni=1 .The NeRF model is queried at those points to obtain colors {ci}ni=1 and densities 
+
+{σi}ni=1 . Using the volume-rendering procedure, the densities are converted to non-negative weights {wi}ni=1 with wi ∈ [0 , 1] and P 
+
+> i
+
+wi ≤ 1. Depth is rendered as d = ∥o − pi0 ∥, where i0 is the first index where the cumulative weight sum exceeds 0.5; if no such i0 exists, we set d = ∞ and reject the sample. In most NeRF methods, the standard volume rendering approach to render color is: c = Pni=1 wi ci. For rendering with CSD, we set di = ∥o − pi∥ and select indices of points whose depths lie near the rendered depth: I = {i | d(1 − ε4) ≤
+
+di ≤ d(1 + ε4)} for a threshold constant ε4. If I = ∅, we reject the sample. We renormalize weights within this segment as 
+
+˜wi =
+
+Pnj=1 wj
+
+P 
+
+> j∈I
+
+wj
+
+wi, ∀i ∈ I  (8) and compute the color of the point as c = P 
+
+> i∈I
+
+˜wi ci. Figure 5b illustrates the sample contributions to the color computation. 
+
+## 4 Experiments 
+
+To evaluate the metric accuracy of NeRF-sampled 3D point clouds, we per-formed experiments in real-world environments. We generate reference data for our evaluation by performing scans with a BLK360 LiDAR scanner [12]. Point clouds produced by BLK360 are metrically scaled. All other generated point clouds obtain their metric scale from geo-registration, wherein the image poses estimated in SfM are registered to the corresponding UAV [7] images’ positions from RTK-GPS metadata, using COLMAP’s model aligner [29]. We compare our proposed CLEAR-NeRF against Nerfacto [33] ( v1.1.5 ), a state-of-the-art neural radiance field method that serves as our first baseline. 10 V. Polianskii et al.        
+
+> (a) Flight path with 3 focus areas (b) CLEAR-NeRF (all modules)
+> (c) CLEAR-NeRF w/o LRF (3.1) (d) Baseline Nerfacto
+> Fig. 6: Visual comparison of sampled 3D point cloud quality for LRF.
+
+CLEAR-NeRF extends Nerfacto with the techniques described in Section 3. Both NeRF-based methods incorporate monocular depth priors estimated using Depth Anything v2 [45] for additional depth supervision, following the depth-supervised NeRF training strategy with ranking loss. Both methods share com-mon hyperparameters, such as a batch size of 8064 rays and 60000 training iterations. All methods utilize GLOMAP ( v1.0.0 ) [26] for camera alignment, which are reoptimized during NeRF training. We also compare against classical MVS implemented in COLMAP [30] in the quantitative evaluation as the second baseline. Throughout our experiments, we use the following hyperparameters: the max-imum number of focus areas is set to M = 5 , with n = 20 neighbors used to com-pute distance to camera with the highest concentraction of rays tκ. For frustum-based distance computation, we use an angular size of α = 10 ◦. The HDBSCAN clustering algorithm is configured with min_cluster_size set to 20 and single cluster selection enabled. For collinearity loss, we set the slope parameter τ = 4 
+
+and the color sharpening scale parameter γ = 0 .1 for color values normalized to 
+
+[0 , 1] . For SDD point cloud extraction, we use 3 × 3 patches ( w = h = 3 ). The various depth thresholds are uniformly set to ε2 = ε3 = ε4 = 0 .0025 .
+
+4.1 Ablation Studies 
+
+In this section we evaluate contribution of the individual components of the proposed CLEAR-NeRF scheme. Results from the baseline Nerfacto are also provided for reference. 
+
+LRF Scene Reconstruction. Here we present an outdoor capture per-formed with a UAV on different levels: one orbit 60-67 meters above the building and several small orbits 6-8 meters above the roof. The flight pattern is depicted in Figure 6a, with M0 = 3 relevant high-fidelity areas determined by LRF. Fig-ure 6b shows the reconstruction obtained using the four modules presented in CLEAR-NeRF 11        
+
+> (a) All modules (b) w/o ISM (3.2)
+> (c) w/o CSD (3.4) (d) Baseline Nerfacto
+> Fig. 7: Visual comparison of sampled 3D point cloud quality for ISM and CSD.
+
+CLEAR-NeRF, while Figure 6c shows the result of disabling LRF module. Clear visual differences can be observed, particularly in the railing and floor bars, which exhibit noticeably higher fidelity when applying LRF. 
+
+Geometric Accuracy of 3D Reconstruction. The drone capture of an urban area presented in Figures 7 has been performed at various altitudes 35 and 75 meters above the ground level. The figure shows a visual comparison of the reconstruction performance under different configurations. In Figure 7a, the four techniques proposed in CLEAR-NeRF are jointly applied. Figure 7b shows the same scene without ISM, where the ground exhibits noticeable deformation. Figure 7c illustrates the result of disabling CSD, which leads to visible noise, particularly green noise projected from the tree onto the ground. This noise is effectively suppressed when CSD is employed. Figure 8 displays a close-up (captured at 5 meters proximity with a UAV) of an object with multiple overlapping surfaces to highlight how noise impacts such scenes. Figure 8a presents the result using CLEAR-NeRF, which demonstrates a significant reduction in noise compared to the case without SDD, shown in Figure 8b. Finally, Figure 8c represents the result of the reconstruction with our baseline model Nerfacto. 
+
+4.2 Comparison to LiDAR Point Clouds 
+
+To quantitatively evaluate the 3D point cloud reconstruction quality, we compare the generated point clouds against high-precision LiDAR scans in real-world scenarios. Objects of interest, as illustrated in Figure 9, are extracted from the scene, and closeness of LiDAR and UAV image-based point clouds is evaluated. Table 1 reports quantitative metrics including Chamfer distance, Hausdorff distance, and F-Score, between the LiDAR point clouds and the tested methods. CLEAR-NeRF achieves the best F-Score in 6 out of 7 cases, demonstrating 12 V. Polianskii et al.      
+
+> (a) All modules (b) w/o SDD (3.3) (c) Baseline Nerfacto
+
+Fig. 8: Visual comparison of sampled 3D point cloud quality for SDD. 
+
+superior overall geometric accuracy compared to both classical MVS and the baseline Nerfacto method.        
+
+> (a) LiDAR reference (b) MVS (c) Baseline Nerfacto (d) CLEAR-NeRF
+
+Fig. 9: Comparison of point cloud reconstruction methods against LiDAR reference on two selected objects. 
+
+4.3 Runtime Analysis 
+
+We evaluate the computational overhead of CLEAR-NeRF compared to the baseline Nerfacto on an NVIDIA A100 GPU. LRF focus area detection introduces negligible computational cost, while each additional focus area adds approximately 30% to the base training and export time. ISM incurs minimal overhead, limited to the edge detection preprocessing step. CSD does not introduce any additional processing cost. CLEAR-NeRF 13                                                                                         
+
+> Table 1: Reconstructed 3D point cloud comparison to LiDAR reference. Metrics MVS Nerfacto CLEAR-NeRF #1 Chamfer ↘0.122 0.105 0.106 Hausdorff ↘0.577 0.407 0.619 F-Score ↗80.577 84.254 84.832
+> #2 Chamfer ↘0.061 0.078 0.067 Hausdorff ↘0.557 8.867 0.471
+> F-Score ↗94.818 93.282 95.365
+> #3 Chamfer ↘0.181 0.161 0.165 Hausdorff ↘0.947 0.960 0.962 F-Score ↗78.548 80.677 81.223
+> #4 Chamfer ↘0.071 0.082 0.074 Hausdorff ↘0.636 3.524 0.624
+> F-Score ↗91.870 91.790 92.617
+> #5 Chamfer ↘0.182 0.194 0.163
+> Hausdorff ↘1.250 1.252 1.148
+> F-Score ↗74.538 71.806 75.637
+> #6 Chamfer ↘0.025 0.020 0.020
+> Hausdorff ↘0.189 0.215 0.161
+> F-Score ↗99.972 99.823 99.938 #7 Chamfer ↘0.059 0.049 0.047
+> Hausdorff ↘0.311 0.307 0.304
+> F-Score ↗94.530 95.544 95.858
+
+The two-step sampling procedure for SDD (Section 3.3) ensures that compu-tational cost scales with the final point cloud size. This eliminates unnecessary computation on rejected samples ( e.g ., rays falling outside scene bounds or at infinity), with benefits particularly significant when many image pixels corre-spond to background regions. For the dataset in Figure 8, exporting 20 million points takes 300 seconds without SDD and 780 seconds with SDD using 3 × 3
+
+patches (a 480 second overhead fixed to the point cloud size). In contrast, a naive implementation of SDD requires approximately 2700 seconds for the same export. 
+
+## 5 Conclusion 
+
+In this paper, we introduce CLEAR-NeRF, a novel method allowing for accu-rate 3D reconstruction in unbounded, complex scenes with imperfect lighting conditions. The core components of the proposed architecture are a) automated selection and training of multi-regions of interest, b) novel collinearity constraints for surface smoothness, c) improved 3D point cloud sampling with depth and color denoising. We conduct experiments to investigate accuracy of the proposed method in real-world environment by performing 3D reconstruction on UAV image sets 14 V. Polianskii et al. 
+
+from urban scenes. We use LiDAR scans to establish ground truth for bench-marking the proposed improvements in the baseline NeRF architecture. Initial experiments indicate superior performance of CLEAR-NeRF over legacy SfM-MVS and baseline NeRF. 
+
+## References 
+
+1. Barron, J.T., Mildenhall, B., Tancik, M., Hedman, P., Martin-Brualla, R., Srini-vasan, P.P.: Mip-nerf: A multiscale representation for anti-aliasing neural radiance fields. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 5855–5864 (2021) 2. Barron, J.T., Mildenhall, B., Verbin, D., Srinivasan, P.P., Hedman, P.: Mip-nerf 360: Unbounded anti-aliased neural radiance fields. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 5470– 5479 (2022) 3. Berra, E., Peppa, M.: Advances and challenges of uav sfm mvs photogrammetry and remote sensing: Short review. In: IEEE Latin American GRSS & ISPRS Remote Sensing Conference. pp. 533–538. IEEE (2020) 4. Canny, J.: A computational approach to edge detection. IEEE Transactions on Pattern Analysis and Machine Intelligence 8(6), 679–698 (1986) 5. Chen, Y., Chen, J.: Block-pspgof: High-quality mesh reconstruction of large scenes based on progressive self-planarized gaussian opacity fields. International Journal of Digital Earth 18 (1), 2542916 (2025) 6. Cui, D., Wang, W., Hu, W., Peng, J., Zhao, Y., Zhang, Y., Wang, J.: 3d recon-struction of building structures incorporating neural radiation fields and geometric constraints. Automation in Construction 165 , 105517 (2024) 7. DJI: Dji mavic 3 pro (2026), https://www.dji.com/mavic-3-pro , [Accessed: 03-03-2026] 8. Fang, L., Zhu, H., Chen, L., Hu, F., Ye, L., Ma, Z.: Depth-guided bundle sam-pling for efficient generalizable neural radiance field reconstruction. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 11217–11226 (2025) 9. Gao, K., Gao, Y., He, H., Lu, D., Xu, L., Li, J.: Nerf: Neural radiance field in 3d vision: A comprehensive review. arXiv preprint arXiv:2210.00379 (2022) 10. Giaquinto, A., Ferraioli, G., Pizzo, S.D.: Evaluating neural radiance fields for image-based 3d reconstruction: A comparative study with sfm-mvs. Geomatics 
+
+6(1), 4 (2026) 11. Kerbl, B., Kopanas, G., Leimkühler, T., Drettakis, G., et al.: 3d gaussian splatting for real-time radiance field rendering. ACM Transactions on Graphics 42 (4), 139–1 (2023) 12. Leica Geosystems AG: Leica blk360 imaging laser scanner (2026), 
+
+https://leica-geosystems.com/en-us/products/laser-scanners/scanners/ leica-blk360 , [Accessed: 03-03-2026] 13. Lewandowski, B., Wilk, Ł., Zachar, P.: Application of neural network models in the mapping of telecommunications infrastructure objects. Archiwum Fotogrametrii, Kartografii i Teledetekcji 35 (2023) 14. Li, F., Zhang, G., Zhang, R., Zhou, G.: Pgc-nerf: Probabilistic and geometric constraint-driven neural radiance fields for enhanced 3d reconstruction. Interna-tional Journal of Remote Sensing pp. 1–25 (2025) 15. Liao, L., Chen, J., Zhang, Z., Huai, X., Zhang, C., Ren, X., Zhang, B.: Improving 3d reconstruction from limited samples: A depth-guided nerf approach. In: 7th Infor-mation Technology, Networking, Electronic and Automation Control Conference. vol. 7, pp. 879–883. IEEE (2024) CLEAR-NeRF 15 16. Liao, Y., Di, Y., Zhou, H., Zhu, K., Lu, M., Duan, Q., Liu, J.: A survey on neural radiance fields. ACM Computing Surveys 58 (2), 1–33 (2025) 17. Liu, J., Xue, F.: Research on high-precision 3d modeling technology for campus real-scenes based on nerf. In: 6th International Conference on Computer Vision, Image and Deep Learning. pp. 1127–1132. IEEE (2025) 18. Liu, S., Yang, M., Xing, T., Yang, R.: A survey of 3d reconstruction: The evolution from multi-view geometry to nerf and 3dgs. Sensors 25 (18), 5748 (2025) 19. Llull, C., Baloian, N., Bustos, B., Kupczik, K., Sipiran, I., Baloian, A.: Evalua-tion of 3d reconstruction for cultural heritage applications. In: Proceedings of the IEEE/CVF International Conference on Computer Vision Workshops. pp. 1642– 1651 (2023) 20. Maté-González, M.Á., Yali, R., Rodríguez-Hernández, J., González-González, E., Aguirre de Mata, J.: Comparison of nerf- and sfm-based methods for point cloud re-construction for small-sized archaeological artifacts. Remote Sensing 17 (14), 2535 (2025) 21. McInnes, L., Healy, J., Astels, S., et al.: hdbscan: Hierarchical density based clus-tering. Journal of Open Source Software 2(11), 205 (2017) 22. Mildenhall, B., Srinivasan, P.P., Tancik, M., Barron, J.T., Ramamoorthi, R., Ng, R.: Nerf: Representing scenes as neural radiance fields for view synthesis. Commu-nications of the ACM 65 (1), 99–106 (2021) 23. Molaei, A., Aminimehr, A., Tavakoli, A., Kazerouni, A., Azad, B., Azad, R., Mer-hof, D.: Implicit neural representation in medical imaging: A comparative survey. In: Proceedings of the IEEE/CVF International Conference on Computer Vision Workshops. pp. 2381–2391 (2023) 24. Müller, T., Evans, A., Schied, C., Keller, A.: Instant neural graphics primitives with a multiresolution hash encoding. ACM Transactions on Graphics 41 (4), 1–15 (2022) 25. Nex, F., Zhang, N., Remondino, F., Farella, E., Qin, R., Zhang, C.: Benchmarking the extraction of 3d geometry from uav images with deep learning methods. Inter-national Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences 48 (1/W3-2023), 123–130 (2023) 26. Pan, L., Barath, D., Pollefeys, M., Schönberger, J.L.: Global structure-from-motion revisited. In: European Conference on Computer Vision (2024) 27. Pepe, M., Alfio, V.S., Costantino, D.: Uav platforms and the sfm-mvs approach in the 3d surveys and modelling: A review in the cultural heritage field. Applied Sciences 12 (24), 12886 (2022) 28. Petrovska, I., Jutzi, B.: Vision through obstacles—3d geometric reconstruction and evaluation of neural radiance fields (nerfs). Remote Sensing 16 (7), 1188 (2024) 29. Schonberger, J.L., Frahm, J.M.: Structure-from-motion revisited. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2016) 30. Schönberger, J.L., Zheng, E., Frahm, J.M., Pollefeys, M.: Pixelwise view selection for unstructured multi-view stereo. In: Proceedings of the European Conference on Computer Vision. pp. 501–518 (2016) 31. Seitz, S.M., Curless, B., Diebel, J., Scharstein, D., Szeliski, R.: A comparison and evaluation of multi-view stereo reconstruction algorithms. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. vol. 1, pp. 519– 528. IEEE (2006) 32. Tancik, M., Casser, V., Yan, X., Pradhan, S., Mildenhall, B., Srinivasan, P.P., Bar-ron, J.T., Kretzschmar, H.: Block-nerf: Scalable large scene neural view synthesis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 8248–8258 (2022) 33. Tancik, M., Weber, E., Ng, E., Li, R., Yi, B., Wang, T., Kristoffersen, A., Austin, J., Salahi, K., Ahuja, A., et al.: Nerfstudio: A modular framework for neural radiance field development. In: ACM SIGGRAPH Conference Proceedings. pp. 1–12 (2023) 16 V. Polianskii et al. 34. Tsukamoto, Y., Hayashi, A., Tokuda, K., Kochi, N.: Comparative verification of 3d reconstructed point cloud data: Comparison of ai estimation and multi-view stereo methods using nerfstudio and metashape. SICE Journal of Control, Measurement, and System Integration 18 (1), 2497600 (2025) 35. Turki, H., Ramanan, D., Satyanarayanan, M.: Mega-nerf: Scalable construction of large-scale nerfs for virtual fly-throughs. In: Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition. pp. 12922–12931 (2022) 36. Turki, H., Zhang, J.Y., Ferroni, F., Ramanan, D.: Suds: Scalable urban dynamic scenes. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12375–12385 (2023) 37. Wan, Q., Guan, Y., Zhao, Q., Wen, X., She, J.: Constraining the geometry of nerfs for accurate dsm generation from multi-view satellite images. ISPRS International Journal of Geo-Information 13 (7), 243 (2024) 38. Wang, G., Pan, L., Peng, S., Liu, S., Xu, C., Miao, Y., Zhan, W., Tomizuka, M., Pollefeys, M., Wang, H.: Nerfs in robotics: A survey. The International Journal of Robotics Research p. 02783649251374246 (2024) 39. Wang, X., Hua, W., Liu, X., Li, P., Li, G.: Gpe-dnerf: Neural radiance field method for surface geological bodies reconstruction. Applied Computing and Geosciences 
+
+26 , 100239 (2025) 40. Xiangli, Y., Xu, L., Pan, X., Zhao, N., Rao, A., Theobalt, C., Dai, B., Lin, D.: Bungeenerf: Progressive neural radiance field for extreme multi-scale scene render-ing. In: European Conference on Computer Vision. pp. 106–122. Springer (2022) 41. Xiao, W., Chierchia, R., Cruz, R.S., Li, X., Ahmedt-Aristizabal, D., Salvado, O., Fookes, C., Lebrat, L.: Neural radiance fields for the real world: A survey. arXiv preprint arXiv:2501.13104 (2025) 42. Xu, L., Xiangli, Y., Peng, S., Pan, X., Zhao, N., Theobalt, C., Dai, B., Lin, D.: Grid-guided neural radiance fields for large urban scenes. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 8296– 8306 (2023) 43. Xu, N., Qin, R., Huang, D., Remondino, F.: Multi-tiling neural radiance field (nerf)—geometric assessment on large-scale aerial datasets. The Photogrammetric Record 39 (188), 718–740 (2024) 44. Yang, C., Li, P., Zhou, Z., Yuan, S., Liu, B., Yang, X., Qiu, W., Shen, W.: Nerfvs: Neural radiance fields for free view synthesis via geometry scaffolds. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 16549–16558 (2023) 45. Yang, L., Kang, B., Huang, Z., Zhao, Z., Xu, X., Feng, J., Zhao, H.: Depth anything v2. Advances in Neural Information Processing Systems 37 , 21875–21911 (2024) 46. Zhang, K., Riegler, G., Snavely, N., Koltun, V.: Nerf++: Analyzing and improving neural radiance fields. arXiv preprint arXiv:2010.07492 (2020) 47. Zhang, Q., Huang, C., Zhang, Q., Li, N., Feng, W.: Learning geometry consistent neural radiance fields from sparse and unposed views. In: Proceedings of the 32nd ACM International Conference on Multimedia. pp. 8508–8517 (2024) 48. Zhang, X., Qiu, Y., Sun, Z., Liu, Q.: Aerial-nerf: Adaptive spatial partitioning and sampling for large-scale aerial rendering. arXiv preprint arXiv:2405.06214 (2024) 49. Zhuang, P., Han, S., Wang, C., Siarohin, A., Zou, J., Vasilkovsky, M., Shakhrai, V., Korolev, S., Tulyakov, S., Lee, H.Y.: Gtr: Improving large 3d reconstruction models through geometry and texture refinement. arXiv preprint arXiv:2406.05649 (2024)

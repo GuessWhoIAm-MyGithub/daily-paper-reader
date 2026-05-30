@@ -1,0 +1,845 @@
+Title: JECA^2: Judgment-Explanation Consistent Adversarial Attack against Forensic Vision-Language Models
+
+URL Source: https://arxiv.org/pdf/2605.28609v1
+
+Published Time: Thu, 28 May 2026 01:44:36 GMT
+
+Number of Pages: 37
+
+Markdown Content:
+# JECA 2: Judgment–Explanation Consistent Adversarial Attack against Forensic Vision-Language Models 
+
+Jiachen Qian 
+
+City University of Hong Kong 72510756@cityu-dg.edu.cn 
+
+Abstract. Image forensics aims to determine the authenticity of visual content. Recent methods use vision–language models (VLMs) to conduct forensic analysis, achieving excellent detection accuracy and providing natural-language explanations for their judgments to support downstream human-assisted review. Despite these advantages, it remains unclear whether forensic VLMs can resist consistency-oriented adversarial stress tests, which is important for deployment auditing. To identify potential flaws, we propose a Judgment-Explanation Consistent Adversarial Attack (JECA 2) tailored for forensic VLMs. Unlike attacks that mainly aim to mislead a target model into making an incorrect prediction, JECA 2
+
+induces a forensic VLM to generate both an incorrect judgment and an explanation that supports its faulty judgment under an automated consistency metric, which may make downstream explanation-based triage more difficult. Experiments under controlled white-box red-team protocols show that JECA 2 achieves a high attack success rate and high automated judgment-explanation consistency in the primary diagnostic setting. We further evaluate image-only, predicted-mask, and transfer settings to characterize how the attack changes under weaker threat conditions. 
+
+Keywords: Image forensic, vision-language model, adversarial attack 
+
+# 1 Introduction 
+
+Riding the wave of rapid progress in generative models, image editing technologies such as image inpainting [38] and attribute editing [14], have flourished over the past years. They enable users to generate realistic, manipulated images, which boost industries such as artistic creation and product design, yet posing severe threats to digital trust. A countermeasure to mitigate the risk is image forensic, which typically train discriminative models to classify an image as real or fake [5, 32], or to localize manipulated regions via pixel-level supervision [4]. Like many fields in signal and image processing, image forensic is being reshaped by the development of large models. Cutting-edge methods [12,13,34,35] supervisedly fine-tune foundation vision-language models (VLMs) on massive collections of tampered/real images to construct forensic VLMs. Beyond image-wise or pixel-wise classification, forensic VLMs take a suspected image and an    
+
+> arXiv:2605.28609v1 [cs.CV] 27 May 2026 2Qian
+> Fig. 1: Schematic illustration of the proposed JECA 2against a forensic VLM. The example visualizes the intended false-consistency outcome: the attacked model predicts “Real” and produces an explanation that supports this flipped judgment under the automated consistency metric.
+
+instruction prompt as inputs, and output a probability of being fake, a natural-language justification, and a mask indicating the tampered region when the probability exceeds a threshold. These textual justifications provide auditable signals for downstream human-assisted review, even though their faithfulness can vary across models and deployment settings. Despite the advantage, it remains unclear whether forensic VLMs can effec-tively resist consistency-oriented adversarial stress tests. Recent studies [7, 19, 39] have shown that foundation VLMs are vulnerable to adversarial attacks. These attacks introduce crafted perturbations to the input image [2, 9, 20], the textual prompt [18, 39], or both [7, 19], thereby misleading the foundation VLMs into producing incorrect predictions. This raises a security-auditing concern that forensic VLMs fine-tuned from foundation models may also be susceptible to adversarial manipulation, especially when their outputs are used to triage cases for later human review. Unfortunately, many existing adversarial attacks designed for foundation VLMs may be insufficient to expose the vulnerabilities of forensic VLMs. To mislead the VLMs, they push the perturbed visual or textual embedding away from its clean counterpart, or increase the cross-modal mismatch between image and prompt representations. While effective for degrading VLM predictions, most of them do not explicitly evaluate the coherence between the final decision and its accompanying explanation. As a result, a forensic VLM may judge the adversarially tampered images real but generate an explanation that still hints at manipulation cues. In a triage workflow, such inconsistency can serve as an audit signal for deciding whether a case needs escalation, even when the human reviewer later inspects the image itself. A recent concurrent anti-forensics study, ForgeryEraser [16], is closely related in showing that explainable forensic models can be induced to produce authenticity-consistent explanations for forged images; our work focuses on a judgment-explanation consistency formulation for forensic VLMs, together with attention-diversion, prompt-embedding optimization, and threat-level evaluation. To address the above issue, we propose a Judgment-Explanation Consistent (JECA 2) adversarial attack against forensic VLMs. As shown in Fig. 1, on JECA 2: Judgment–Explanation Consistent Adversarial Attack 3
+
+the visual side, JECA 2 crafts adversarial perturbations that redirect a Grad-CAM attribution proxy from manipulated regions toward non-manipulated areas, inducing a forensic VLM to output an incorrect decision. On the textual side, it optimizes the prompt embedding toward the target “Real” judgment under a token-proximity constraint and explicitly evaluates whether the resulting outputs remain judgment–explanation consistent. In the primary SID-Set/SIDA protocol, JECA 2 achieves higher attack success rate and automated judgment-explanation consistency than the implemented baselines. To summarize, our contributions are threefold: 1) We provide a targeted study of adversarial vulnerability in image forensic VLMs, with particular focus on the consistency between judgment and explanation. 2) We develop a novel Judgment–Explanation Consistent (JECA 2) adversarial attack, designed to induce forensic VLMs to produce incorrect yet internally consistent outputs under our automated consistency metric. 3) Extensive experiments characterize the approach across datasets, threat conditions, predicted-mask variants, and transfer settings while explicitly separating the strongest diagnostic protocol from weaker deployment-like settings. 
+
+# 2 Related Work 
+
+2.1 Image Forensic 
+
+Image forensics aims to determine the authenticity and integrity of visual content. Early methods rely on frequency-domain analysis [6], residual-based descrip-tors [4], and physiological cues such as eye blinking [17]. With the advent of deep learning, convolutional neural networks have been widely adopted for bi-nary classification (real vs. fake) [32] and forgery localization [5]. Despite their effectiveness, these methods provide only classification scores or segmentation masks without explaining why an image is deemed manipulated. With the remarkable development of vision-language models (VLMs), recent works construct forensic VLMs that jointly perform detection, localization, and natural-language explanation. SIDA [13] fine-tunes a large multimodal model on a massive social-media-scale dataset to simultaneously output a forgery probability, a textual explanation, and a tampering mask. FakeShield [34] designs a multi-modal framework with a domain tag-guided detection module and a multi-modal forgery localization module for explainable image forgery detection and localization. ForgeryGPT [35] captures high-order forensic knowledge correlations across diverse linguistic feature spaces, enabling interactive dialogue for forensic analysis. FFAA [12] integrates a fine-tuned multimodal LLM with a multi-answer intelligent decision system for open-world face forgery analysis. DF-LLaVA [30] unlocks the intrinsic discrimination potential of MLLMs via knowledge injection and conflict-driven self-reflection, achieving both high accuracy and explainability. However, the adversarial robustness of these forensic VLMs remains largely unexplored, which motivates our work. 4 Qian 
+
+2.2 Adversarial Attack on VLMs 
+
+Based on the attack modality, existing adversarial attacks on VLMs can be categorized into unimodal and multimodal attacks. 
+
+Image-only attacks. Classical methods such as FGSM [9], PGD [20], and C&W [2] craft pixel perturbations to fool classifiers. AnyAttack [36] and PNA [33] improve transferability across vision transformers. In the forensic domain, anti-forensic perturbations [31, 38] suppress manipulation traces, and RLGC [21] uses rein-forcement learning for black-box attacks on CNN-based detectors. However, these methods cannot address the textual reasoning pathway of VLM-based detectors. 
+
+Text-only attacks. GCG [39] and AutoDAN [18] optimize adversarial prompts to jailbreak language models, but cannot alter the visual evidence that forensic systems attend to. 
+
+Cross-modal attacks. CroPA [19] demonstrates prompt-agnostic visual adversarial examples for VLMs. CMI [7] improves transferability through collaborative multimodal interaction. JMTFA [10] targets attention relevance scores, while MAA [8] explores adversarial robustness of VLM grounding capabilities. Recent studies also show that visual adversarial signals can bypass task constraints in multimodal agents [27] and poison multimodal memory for later planning [26], suggesting that VLM security risks extend beyond immediate label flipping. These methods optimize cross-modal feature alignment or downstream agent behavior but do not explicitly target the attention mechanism underpinning forensic reasoning. Crucially, most of the above attacks do not evaluate the coherence between the final judgment and its accompanying explanation. As a result, a forensic VLM may be misled into predicting “Real” but still generate an explanation hinting at manipulation cues—an inconsistency that may be flagged during downstream explanation-based review. A concurrent work [22] studies reasoning robustness of audio language models under adversarial attacks, but focuses on analysis rather than attack design and operates in the audio domain. ForgeryEraser [16] is closely related in that it studies anti-forensics for explainable image forgery detection; JECA 2 focuses on forensic VLMs and explicitly optimizes judgment-explanation consistency through visual attention diversion and prompt-embedding alignment. 
+
+# 3 The Proposed Method 
+
+Fig. 2 illustrates the framework of our Judgment–Explanation Consistent Adver-sarial Attack (JECA 2), which consists of three modules: 1) a visual attention diversion module that perturbs input images to redirect visual attention toward non-manipulated areas, inducing a forensic VLM to make an incorrect prediction; 2) a textual explanation alignment module that optimizes prompt embeddings under the stronger system-level threat model to encourage an explanation supporting the faulty judgment; and 3) a joint optimization module that alternately optimizes the two modalities for stable convergence in the controlled red-team protocol. JECA 2: Judgment–Explanation Consistent Adversarial Attack 5
+
+Fig. 2: Complete workflow of the JECA 2 framework. The visual attention diversion module uses Grad-CAM and bidirectional attention interference to redirect attention from tampered regions ( Rtamper ) to background decoys ( Rbg ). The textual explanation alignment module optimizes prompt embeddings toward the target “Real” judgment under a token-proximity constraint; the “Prompt Library” box schematically denotes the vocabulary-anchor set used to keep optimized embeddings close to valid token semantics, rather than an additional discrete search module. Joint optimization alternates between the two modules for T = 100 iterations, producing adversarial image Iadv and optimized embedding Eadv .
+
+3.1 Visual Attention Diversion 
+
+To achieve judgment–explanation consistency, the first step is to redirect the forensic VLM’s visual attribution proxy from manipulated regions toward non-manipulated areas. If the model relies more on benign regions, its flipped judgment and generated explanation are more likely to emphasize authentic-looking visual content, laying the foundation for false consistency. Given an input image I ∈ RH×W ×3, perturbation δ (∥δ∥∞ ≤ ϵ), and prompt embeddings E ∈ Rn×d, let F (I, E ) denote the VLM’s prediction and M (I; δ) ∈
+
+RH×W denote the Grad-CAM [29] attention map. We define Rtamper as the set of tampered pixel coordinates and Rbg as the background (non-tampered) region. 
+
+Detection Loss. The primary objective is to flip the model’s classification: 
+
+Ldet (δ) = CE (Fcls (I + δ, E fixed ), y real ) (1) 
+
+Bidirectional Attention Interference. We combine two complementary objectives: 
+
+Latt (I) = α · L mislead + (1 − α) · L hide  (2) where Lmislead amplifies attention on decoy regions while suppressing attention on tampered regions, and Lhide smooths tampering boundaries via total variation regularization. 6 Qian 
+
+Specifically, we inject Gaussian pseudo-hotspots in Rbg centered at a decoy location (x0, y 0) with spread σ (selection details in supplementary material): 
+
+Gi,j = exp 
+
+
+
+− (i−x0)2+( j−y0)2
+
+> 2σ2
+
+
+
+(3) The attention diversion loss combines decoy amplification with tampered-region suppression: 
+
+Lmislead = − 1
+
+|Rbg |
+
+X
+
+> (i,j )∈Rbg
+
+M (I)i,j · Gi,j 
+
++ λs · 1
+
+|Rtamper |
+
+X
+
+> (i,j )∈Rtamper
+
+M (I)i,j  (4) The concealment loss applies total variation on tampering boundaries: 
+
+Lhide = X
+
+> (i,j )∈Rtamper
+
+(|(I+δ)i+1 ,j − (I+δ)i,j | + |(I+δ)i,j +1 − (I+δ)i,j |) (5) This bidirectional strategy is motivated by the relative competition induced by normalized self-attention: empirically, increasing saliency on a decoy region tends to reduce the relative attribution assigned to tampered regions. We treat Grad-CAM as an optimization proxy for model focus rather than as a faithful measurement of internal attention. 
+
+3.2 Textual Explanation Alignment 
+
+While visual attention diversion redirects the model’s attribution proxy to benign regions, the LLM component of a forensic VLM may still generate explanations that hint at manipulation cues based on its prior knowledge. To reduce this gap, we optimize the prompt embeddings toward the “Real” decision while constraining them to remain close to valid token embeddings. We then assess authenticity-affirming explanations and spatial alignment empirically through the JEC and attribution analyses, matching the evaluation directly to the judgment– explanation consistency phenomenon studied in this work. Concretely, we optimize prompt embeddings E ∈ Rn×d to increase the model’s confidence in the target “Real” judgment after the visual attack has changed the model’s evidence distribution. The optimization objective is: 
+
+Lsemantic (E) = CE (F (I + δfixed , E ), y real ) + β · L coherence  (6) where the cross-entropy term encourages the model to predict “Real” with high confidence, and Lcoherence encourages the optimized embeddings to remain close to valid tokens: 
+
+Lcoherence =
+
+> n
+
+X
+
+> i=1
+
+min 
+
+> v∈V k
+
+∥ei − v∥22 (7) JECA 2: Judgment–Explanation Consistent Adversarial Attack 7
+
+Here Vk denotes the k-nearest vocabulary embeddings ( k= 100 , vocabulary size 
+
+|V|≈ 32 K), and β=0.1 balances classification and coherence objectives. The opti-mization trajectory is visualized in the supplementary material. 
+
+Synergy with Visual Attention Diversion. The two modules are com-plementary by design. The visual module encourages the model’s Grad-CAM attribution proxy to shift toward non-manipulated areas; the textual module biases the optimized prompt representation toward the target “Real” decision un-der a token-proximity constraint. In successful cases, we empirically observe false consistency: the explanation references visual features ( e.g ., “consistent lighting,” “natural skin texture”) while the attribution proxy emphasizes benign regions. This motivates our automated JEC evaluation and indicates a consistency failure mode that explanation-based triage systems should audit. 
+
+Semantic Plausibility. Nearest-token projections of the optimized embed-dings show 94.2% token validity and 89.1% forensic term retention, and GPT-4 proxy scoring suggests plausible generated explanations (detailed protocol in supplementary material). More importantly, we evaluate judgment–explanation consistency across all attack methods in Sect. 4.3, showing that JECA 2 achieves significantly higher consistency than baselines under the same automated proxy. This module requires embedding-level access (Threat Level II) and should be inter-preted as a stronger diagnostic setting; under the same white-box SID-Set/SIDA attack protocol but without embedding modification, the visual attention diver-sion module alone achieves 80.3% ASR. 
+
+3.3 Joint Optimization 
+
+Optimizing the visual perturbation δ and prompt embeddings E simultaneously can cause instability due to their mutual dependence. We therefore employ alternating optimization: each iteration first updates δ via PGD (freezing E), then updates E via gradient descent (freezing δ). The respective loss functions are: 
+
+Lvis = Ldet (δ) + λ1Latt + λ2 ∥δ∥22 (8) 
+
+Ltext = Lsemantic (E) (9) The complete procedure is summarized in Algorithm 1. ASR stabilizes after T ≈60 iterations with diminishing returns thereafter; we use T =100 to ensure convergence across diverse image types. 
+
+Hyperparameter Settings. We set perturbation bound ϵ = 8 /255 , attention balance α = 0 .7, coherence weight β = 0 .1, loss weights λ1 = 1 .0, λ2 = 0 .01 ,suppression weight λs = 1 .0, Gaussian spread σ = 15 pixels, learning rates 
+
+ηv = 1 /255 and ηe = 0 .01 , and T = 100 iterations. 
+
+Threat Model. We formalize the adversary’s capabilities under two threat levels to separate visual-side robustness from stronger system-level access. Level I (Image-Only Modification): The adversary modifies only the input image 8 Qian 
+
+Algorithm 1 JECA 2 Joint Optimization 
+
+Require: Forged image I, tampering mask Mmask (ground truth for oracle evaluation or estimated for the no-ground-truth-mask variant), initial prompt E0
+
+Ensure: Adversarial image Iadv , optimized embedding Eadv 
+
+1: Initialize δ ← 0, E ← E0
+
+2: for t = 1 to T do 
+
+3: Compute attention map M = GradCAM (Fvis (I + δ)) 
+
+4: // Visual Attention Diversion (freeze E, update δ)
+
+5: Lvis ← L det (δ) + λ1Latt + λ2∥δ∥22
+
+6: δ ← clip (δ − ηv · sign (∇δ Lvis ), −ϵ, ϵ )
+
+7: // Textual Explanation Alignment (freeze δ, update E)
+
+8: Ltext ← L semantic (E)
+
+9: E ← E − ηe · ∇ E Ltext 
+
+10: end for 
+
+11: return Iadv = I + δ, Eadv = E
+
+under the same white-box optimization protocol and mask-access setting specified below; only the visual attention diversion module is applicable, achieving 80.3% ASR on the SID-Set attack protocol described in Sect. 4. Level II (Image + Embedding Modification): The adversary modifies both the input image and the prompt embedding, modeling compromised preprocessing, malicious deployment, or insider access to prompt representations rather than ordinary API-only use; the full JECA 2 achieves 87.2% ASR under the same protocol. The 6.9% gap quantifies the additional risk observed when embedding-level manipulation is possible. Our primary evaluation uses oracle tampering masks to isolate the judgment–explanation consistency vulnerability, while a DINO-saliency predicted-mask variant reaches 78.6% ASR on the same 3,000-image test protocol without ground-truth masks. Thus, the oracle-mask setting is a diagnostic upper-bound protocol, and the predicted-mask variant characterizes a no-ground-truth-mask setting. Detailed Level II scenarios are provided in the supplementary material. 
+
+# 4 Experiments 
+
+4.1 Experimental Setup 
+
+We evaluate JECA 2 primarily on SID-Set [13] using SIDA [13] as the white-box target. We use OpenForensics [15] and FakeShield [34] for transfer-style evaluations; when both dataset and model change, we explicitly interpret the result as a combined dataset/model transfer setting. 
+
+Dataset Statistics. Following the official SID-Set benchmark [13], the full dataset contains 300K images comprising 100K real images (from OpenImages V7), 100K fully synthetic images (generated by FLUX), and 100K tampered images (object replacement and partial manipulation). For the main SID-Set attack evaluation, we sample 3,000 tampered images from the official test split JECA 2: Judgment–Explanation Consistent Adversarial Attack 9
+
+using the available manipulation metadata for stratification when provided. ASR is computed only on the subset initially classified as “Fake,” since otherwise baseline detector errors would be counted as attack success. OpenForensics [15] provides ∼115K images with pixel-level forgery masks; we sample 1,000 images per forgery type for the OpenForensics transfer-style evaluation. 
+
+Evaluation Metrics. We report Attack Success Rate (ASR), Joint ASR (J-ASR), localization IoU, and perceptual quality (PSNR, SSIM, LPIPS). ASR is computed as the fraction of forged images correctly detected in baseline that are misclassified as “Real” after attack: ASR = |{ x ∈ D det : F (xadv ) = Real }| /|D det |.This ensures ASR measures attack effectiveness rather than baseline model errors. J-ASR requires both classification flip and IoU < 0.2 (threshold justification in supplementary material). Aux. Acc is the auxiliary accuracy reported by the detector’s evaluation script on the constructed attacked batch; because it uses a different denominator from ASR and depends on batch composition, we use ASR/J-ASR/IoU as the primary attack evidence. We also report paired significance diagnostics over the shared detectable subset. 
+
+4.2 Comparison with Baseline Attacks 
+
+Tab. 1 compares JECA 2 against baselines on the SID-Set attack subset. For JECA 2, we report mean ±std over 5 random seeds; for re-implemented baselines, we report the deterministic run using the same sampled images and hyperparame-ter budget. All baselines are re-implemented under identical conditions ( ϵ=8/255 ,same target model and sampled images). Cross-modal methods (CroPA, CMI) are adapted from retrieval to detection objectives; these adapted baselines should be interpreted as fair in-protocol comparisons rather than exact reproductions of their original tasks. JECA 2 outperforms all implemented baselines in this protocol. The 7.7% improvement over the strongest baseline CMI (87.2% vs 79.5%) is consistent with the effect of directly manipulating the attribution proxy via Lmislead , rather than only optimizing cross-modal feature alignment. Perceptual quality remains rea-sonable (SSIM=0.941, LPIPS=0.042), while localization degrades from IoU=0.44 to IoU=0.13 (70% reduction). 
+
+Attention Diversion Score (ADS). We introduce ADS to quantify atten-tion shift: 
+
+ADS =
+
+P 
+
+> (i,j )∈Rbg
+
+M (Iadv )i,j 
+
+P 
+
+> (i,j )∈Rbg
+
+M (Iadv )i,j + P 
+
+> (i,j )∈Rtamper
+
+M (Iadv )i,j 
+
+(10) ADS measures the fraction of attribution-proxy mass allocated to background regions. Clean images yield ADS ≈0.12; JECA 2 amplifies this to ADS ≥0.7, shifting the proxy majority away from tampered regions. 
+
+4.3 Qualitative Results and Explanation Consistency Success cases (a–c) in Fig. 3. JECA 2 succeeds when sufficient non-manipulated background exists to serve as an attention decoy. In face-swap (a), inpainting (b), 10 Qian 
+
+Table 1: Attack performance of the proposed JECA 2 and the comparison methods on SID-Set. All baselines are re-implemented for fair comparison under identical conditions. J-ASR requires both classification flip and IoU <0.2. p-values are paired significance diagnostics vs. JECA 2 over per-image attack-success indicators on the shared detectable subset; we use them as supporting evidence rather than as the sole basis for the comparison.                                                                               
+
+> Method Aux. Acc ↓ASR ↑J-ASR ↑IoU ↓PSNR p-value
+> No Attack 93.5% ––0.44 ––FGSM [9] 59.3% 66.2% 54.1% 0.32 33.5 <0.001 PGD [20] 52.4% 72.8% 63.2% 0.27 36.2 <0.001 C&W [2] 51.1% 73.5% 61.8% 0.28 39.1 <0.001 AnyAttack [36] 48.7% 74.9% 61.2% 0.25 36.2 <0.001 MAA [8] 46.2% 78.3% 67.5% 0.21 35.5 <0.001 JMTFA [10] 47.8% 76.1% 65.8% 0.22 36.1 <0.001 PNA [33] 48.5% 75.4% 64.2% 0.23 35.2 <0.001
+> Cross-modal/prompt-based baselines
+> CroPA [19] 45.2% 78.6% 69.1% 0.21 37.2 <0.001 CMI [7] 44.1% 79.5% 70.2% 0.20 36.4 <0.01
+> Task-specific black-box
+> RLGC [21] 50.2% 74.3% 63.8% 0.24 35.8 <0.001
+> JECA 239.5 ±2.8% 87.2 ±2.4% 82.6 ±2.7% 0.13 ±0.04 35.1 –
+
+and hair/boundary manipulation (c), the background occupies a large portion of the frame, enabling the Gaussian pseudo-hotspot in Rbg to attract strong alternative attention and suppress forensic signals on Rtamper .
+
+Failure analysis. We observe degraded performance under three conditions. 
+
+(d) Full-face manipulation: When the manipulated region Rtamper covers nearly the entire face, Rbg is too sparse to host a meaningful Gaussian decoy, so Lmislead 
+
+has limited room to amplify alternative attribution and the visual attack often stalls. (e) High-frequency artifacts: GAN compression artifacts can activate spatially diffuse attribution hotspots across the entire image; the total-variation component Lhide targets only Rtamper boundaries and may not suppress these globally distributed signals, limiting ADS to 0.52 and leaving the model’s forensic priors partially intact. (f) Multi-region tampering: Multiple disjoint Rtamper 
+
+regions compete for the bounded perturbation budget ( ∥δ∥∞ ≤ ϵ), while the single Gaussian decoy can redirect attribution toward only one background cluster at a time; without per-region decoys, overall ADS often remains insufficient to flip the model’s judgment. 
+
+Judgment–Explanation Consistency (JEC). To quantify whether ex-planations support the flipped judgment, we use GPT-4 as an automated proxy evaluator to rate consistency (1–5) on up to 500 stratified samples and report scores only on successfully attacked cases, since consistency is meaningful after the judgment has flipped. As shown in Tab. 2, image-only attacks achieve low JEC (2.05–2.31) as explanations still reference manipulation cues; cross-modal attacks achieve moderate JEC (2.85–3.12); JECA 2 achieves 4.15 with 87.6% scoring ≥4. These results show that JECA 2 yields higher automated judgment-explanation consistency among successful attacks under a shared evaluator. JECA 2: Judgment–Explanation Consistent Adversarial Attack 11    
+
+> Fig. 3: Success and failure cases of JECA 2.Top (Success) : (a) Face-swap; (b) Inpaint-ing; (c) Hair/boundary manipulation. Bottom (Failure) : (d) Full-face manipulation; (e) High-frequency artifacts (ADS=0.52); (f) Multi-region tampering.
+
+Because Tab. 2 is conditional on each method’s successful attacks, Neval varies with ASR and the table should be read as an automated consistency proxy rather than a human-validated forensic judgment. To make this analysis auditable, the supplementary material specifies fixed-N and common-success subset protocols, together with a human-rating protocol for validating GPT-4 JEC scores when annotation resources are available. The large JEC gap—image-only attacks score only 2.05–2.31 while JECA 2
+
+achieves 4.15—suggests a limitation of visual-only adversarial strategies under our proxy evaluator: even when the classification is successfully flipped, the LLM component can retain forensic language priors that surface in the generated explanation ( e.g ., referencing “boundary artifacts” or “inconsistent textures”). Cross-modal baselines partially address this through feature-space alignment, achieving JEC up to 3.12, but without explicit target-judgment embedding optimization the LLM’s prior can still leak manipulation cues into the output. The textual explanation alignment module reduces this gap by steering the optimized embedding Eadv toward the target “Real” decision while preserving 12 Qian 
+
+Table 2: Judgment–Explanation Consistency (JEC) on SID-Set, conditional on success-ful attacks. JEC is rated 1–5 by GPT-4 as an automated proxy on successfully attacked samples; higher is more consistent. JECA 2 achieves JEC=4.15 with 87.6% of successful samples scoring ≥4, substantially outperforming image-only attacks (JEC ≤2.31) and cross-modal attacks (JEC ≤3.12) under this conditional proxy metric. Equalized-subset and human-validation protocols are provided in the supplementary material to avoid over-interpreting the varying Neval .
+
+Type Method Neval JEC ↑ JEC ≥4 (%) 
+
+Image-only FGSM 331 2.05 11.2% PGD 364 2.31 14.6% Cross-modal CroPA 393 2.85 28.5% CMI 398 3.12 35.2% Ours JECA 2 436 4.15 87.6% 
+
+> †
+
+Evaluated on successfully attacked samples only ( Neval varies by method’s ASR). 
+
+Table 3: OpenForensics transfer-style evaluation (full JECA 2 framework). JECA 2
+
+achieves average ASR=77.8% and J-ASR=71.2% across four forgery types, with lo-calization IoU dropping to 0.18 on average. This setting jointly reflects dataset and target-model transfer beyond the primary SID-Set/SIDA protocol. 
+
+Forgery Type ASR ↑ J-ASR ↑ IoU ↓ PSNR 
+
+Face-swap 80.2% 72.1% 0.17 35.8 Inpainting 76.2% 71.5% 0.18 36.1 Splicing 79.5% 73.1% 0.17 35.9 Copy-move 75.4% 67.9% 0.20 36.3 
+
+Average 77.8% 71.2% 0.18 36.0 
+
+token proximity, providing one explanation for the step-wise JEC improvement observed across method classes under the automated metric. 
+
+4.4 Cross-Dataset Evaluation 
+
+Tab. 3 presents cross-dataset evaluation on OpenForensics using the full JECA 2
+
+framework (Level II). Across forgery types, face-swap (ASR=80.2%) and splicing (79.5%) con-sistently outperform copy-move (75.4%) because their naturally larger non-manipulated background areas provide richer Rbg for Gaussian pseudo-hotspot in-jection. Copy-move exhibits the lowest J-ASR (67.9%) because copied regions are semantically similar to their source areas, causing the model to partially sustain forensic attention on multiple locations simultaneously. The 9.4% ASR drop from the primary SID-Set/SIDA protocol (87.2%) to the OpenForensics/FakeShield transfer-style protocol (77.8%) should be interpreted as a combined dataset/model shift rather than as a pure dataset-transfer measurement. JECA 2: Judgment–Explanation Consistent Adversarial Attack 13                                    
+
+> Table 4: Ablation Study on JECA 2Components (SID-Set). L-IoUR (Localization IoU Reduction) measures the relative reduction in IoU: 1−IoU adv /IoU clean .
+> Config. Vis. Text. Aux. Acc ↓ASR ↑L-IoUR ↑
+> Vis. only ✓×45.6% 80.3% 0.62 Text. only ×✓52.8% 73.5% 0.18 w/o Lmislead ✓✓44.2% 79.6% 0.48 w/o Lhide ✓✓40.8% 85.9% 0.68 Full JECA 2✓✓39.5% 87.2% 0.72
+
+4.5 Ablation Study Analysis. Under Level I (image-only modification within the same white-box SID-Set/SIDA protocol), the visual module alone achieves 80.3% ASR—competitive with the strongest cross-modal baseline CMI (79.5%). Adding the textual module (Level II) yields 87.2% ASR (+6.9%), quantifying the additional risk observed in our controlled protocol when embedding modification is allowed. The textual module alone achieves 73.5% ASR but poor localization disruption (L-IoUR=0.18), suggesting that visual attention diversion is the main driver of localization failure. L-IoUR improves from 0.62 (visual only) to 0.72 (full), a 16% gain from the complementary synergy. The predicted-mask/no-ground-truth variant reaches 78.6% ASR on the same 3,000-image protocol, indicating that the effect is not solely an artifact of oracle masks. JECA 2 is robust to the tested hyperparameter ranges (ASR varies <3% for α and σ) and requires 8.2s per image on RTX 4090 (detailed analysis in supplementary material). 
+
+4.6 Transferability Analysis 
+
+Transfer attacks from SIDA to FakeShield achieve 38.5% ASR (45.2% with ensem-ble surrogates), possibly benefiting from shared ViT-based visual encoders. Tab. 5 reports a snapshot evaluation on closed-source general-purpose VLMs, where transfer reaches 11.9–18.2% ASR on each model’s detectable subset (compared to 2.7% for random noise). These results complement the controlled forensic-VLM evaluation but also show that transfer to fully opaque services is limited; we therefore interpret the closed-source results as measurable attenuation rather than as evidence of a strong practical black-box attack. 
+
+Architecture-Dependent Transferability. The effectiveness of JECA 2’s visual attention diversion is closely tied to the target model’s attention mech-anism. Cross-architecture analysis (detailed in supplementary material) shows that ViT variants exhibit the highest white-box ASR ( >85%). One plausible explanation is that normalized self-attention creates stronger relative compe-tition between decoy and artifact regions, making the Grad-CAM proxy more responsive to decoy amplification. Swin Transformer achieves intermediate perfor-mance (ASR=84.7%) because its windowed attention localizes this competition within windows. ConvNeXt shows moderate degradation (ASR=83.4%) as it 14 Qian                  
+
+> Table 5: Black-Box Transfer to Closed-Source VLMs. Baseline Acc: accuracy on clean forged images (binary Real/Fake). ASR is computed on the detectable subset Ddet per our definition. Model names denote API families; the supplementary material provides the snapshot evaluation protocol.
+> Target Model Baseline Acc |D det |ASR ↑95% CI
+> GPT-4V 78.7% 2,361 14.6% [12.8, 16.4] Claude-3 Opus 81.3% 2,439 11.9% [10.2, 13.6] Gemini Pro 75.5% 2,265 18.2% [16.1, 20.3] Random noise †––2.7% [1.8, 3.6]
+> †Random noise ( ϵ= 8 /255 ): average ASR across all models.
+
+lacks explicit self-attention; Grad-CAM captures gradient-weighted feature im-portance rather than attention, making the diversion mechanism less precise. These architecture-specific observations partially explain the transfer gap to closed-source VLMs, whose visual backbones and preprocessing pipelines are not fully known. 
+
+Improving Transferability via Ensemble Surrogates. The 45.2% ASR achieved through ensemble surrogate training (vs. 38.5% single-source) shows that, in our protocol, optimizing across multiple surrogate architectures improves transferability within the evaluated forensic-model family. We construct the ensemble by jointly optimizing adversarial perturbations against SIDA (ViT-L/14) and FakeShield (ViT-B/16) with equal loss weighting, encouraging perturbations that exploit shared forensic representations rather than architecture-specific vulnerabilities. The 6.7% improvement is consistent with the presence of shared artifact-detection patterns across the evaluated forensic VLMs, but it does not close the gap to fully opaque black-box services. 
+
+4.7 Defense Evaluation 
+
+Tab. 6 summarizes defense effectiveness under white-box settings on SIDA. Unless otherwise stated, these are non-adaptive evaluations: the attack is generated without differentiating through the evaluated defense, and the defense is then applied at inference time. This protocol provides a controlled robustness diagnostic for common defense families. MMCoA [37] provides the best single-defense trade-off in our non-adaptive protocol (60.4% ASR at 1.2 × overhead) via cross-modal consistency verification. The combined defense (DiffPure [23] + MMCoA) achieves 47.8% ASR but at 16 ×
+
+overhead, illustrating a robustness-efficiency trade-off for the evaluated defenses. Notably, attention entropy regularization achieves only 73.5% ASR, suggesting that JECA 2’s pseudo-hotspot strategy is not fully captured by this entropy-based detector in the tested setting. JECA 2: Judgment–Explanation Consistent Adversarial Attack 15                       
+
+> Table 6: Defense Evaluation Under White-Box Settings on SIDA. Combined †applies DiffPure preprocessing followed by MMCoA-enhanced inference.
+> Defense ASR ↓IoU ↑Overhead
+> No Defense 87.2% 0.13 1×
+> Adversarial Training 66.8% 0.24 1.1 ×
+> Attention Entropy 73.5% 0.21 1.05 ×
+> DiffPure [23] 63.2% 0.28 15 ×
+> MMCoA [37] 60.4% 0.27 1.2 ×
+> Combined †47.8% 0.32 16 ×
+
+4.8 Discussion and Limitations 
+
+Our results suggest that VLM forensic systems’ semantic consistency mechanism can become an attack surface [1, 11, 25]. The strongest protocol reaches 87.2% ASR by isolating the vulnerability under controlled white-box access, while the image-only and predicted-mask variants still achieve 80.3% and 78.6% ASR, respectively. This pattern indicates that the diagnostic signal is not limited to embedding manipulation or ground-truth mask access, although these stronger assumptions should be read as upper-bound stress tests rather than ordinary deployment conditions. 
+
+Security Implications for Deployment. The high ASR achieved by JECA 2
+
+in the strongest setting raises concerns for forensic pipelines whose model weights, prompts, or preprocessing steps are accessible to attackers. In particular, forensic VLMs deployed with fixed and publicly documented architectures may expose more information than fully opaque services, but our closed-source snapshot shows only limited transfer. The 6.9% ASR gap between Level I (image-only mod-ification, 80.3%) and Level II (image + embedding modification, 87.2%) quantifies the marginal risk observed in our controlled protocol when embedding-level mod-ification is allowed. This suggests that system designers should consider prompt integrity verification— e.g ., cryptographic signing of prompt templates—as one low-cost countermeasure. Furthermore, the success of our attention diversion strategy without embedding modification (Level I) indicates that systems with protected prompt interfaces can still require visual-side robustness evaluation. 
+
+Failure Mode Analysis. The qualitative cases in Fig. 3 show that perfor-mance decreases when decoy placement is constrained, high-frequency artifacts are spatially diffuse, or multiple tampered regions compete for the single-decoy budget. These cases point to natural extensions such as multi-hotspot injection, adaptive decoy allocation, and frequency-aware perturbation design. 
+
+Future Defense Directions. Our non-adaptive defense evaluation (Tab. 6) shows that no single tested defense reduces ASR below 60% without substantial computational overhead. We identify three defense directions suggested by the failure modes: (1) attention consistency verification , which cross-checks attribution maps across multiple inference passes with stochastic input augmentations to detect artificially concentrated patterns; (2) explanation grounding , which verifies 16 Qian 
+
+that generated explanations reference spatial regions consistent with attribution or localization evidence, detecting the false consistency that JECA 2 exploits; and (3) prompt embedding anomaly detection , which monitors embedding-space trajectories for out-of-distribution patterns indicative of adversarial optimization. 
+
+Scope and Limitations. JECA 2 is evaluated most extensively under white-box access, with oracle masks used in the primary protocol to cleanly study judgment–explanation consistency. The predicted-mask, image-only, transfer, and defense studies broaden the evidence beyond this strongest setting, while fully opaque deployments, human-validated consistency ratings, and fully adaptive defense evaluations remain important follow-up settings. 
+
+# 5 Conclusion 
+
+We presented JECA 2, an adversarial framework for studying consistency between judgments and explanations in forensic VLMs under explicit threat models. By jointly attacking both the visual and textual pathways—redirecting an attribution proxy to benign regions while optimizing prompt embeddings toward the target judgment under a token-proximity constraint—JECA 2 induces forensic VLMs to produce incorrect yet internally consistent outputs under our automated consistency metric. The visual attention diversion module alone achieves 80.3% ASR under image-only modification; the full diagnostic framework reaches 87.2% ASR with joint optimization; and a predicted-mask variant reaches 78.6% ASR without ground-truth masks. Together with the limited closed-source transfer results, these findings highlight prompt embedding integrity and visual-side attribution robustness as important considerations for forensic VLM red-team evaluation. 
+
+Ethics Statement. We acknowledge the dual-use nature of this research and will follow responsible disclosure before public release. Attack code will only be shared with verified researchers. Full ethics discussion is provided in the supplementary material. JECA 2: Judgment–Explanation Consistent Adversarial Attack 17 
+
+Algorithm A1 JECA 2 Alternating Optimization 
+
+1: for t = 1 to T do 
+
+2: Compute Attention Map M = GradCAM (Fvis (I + δ)) 
+
+3: Compute Prediction ˆy = F (I + δ, E )
+
+4: Loss Calculation: 
+
+5: Lmislead ← − 1
+
+> |Rbg |
+
+P 
+
+> (i,j )∈Rbg
+
+M (I + δ)i,j · Gi,j + λs
+
+> |Rtamper |
+
+P 
+
+> (i,j )∈Rtamper
+
+M (I +
+
+δ)i,j 
+
+6: Lhide ← TV (I + δ, M tamper )
+
+7: Latt ← α · L mislead + (1 − α) · L hide (Eq. (2) in main paper) 8: Ldet (δ) = CE (ˆ y, y real ) with E frozen (Eq. (1) in main paper) 9: Lvis = Ldet (δ) + λ1Latt + λ2∥δ∥22 (Eq. (6) in main paper) 10: Visual Update: // Freeze E, update δ only 
+
+11: δ ← δ − ηv · sign (∇δ Lvis )
+
+12: δ ← clip (δ, −ϵ, ϵ ) // PGD projection 
+
+13: Text Update: // Freeze δ, update E only 
+
+14: Lsemantic (E) = CE (F (I + δ, E ), y real ) + β · L coherence (Eq. (5) in main paper) 15: E ← E − ηe · ∇ E Lsemantic 
+
+16: end for 
+
+17: Iadv ← I + δ, Eadv ← E
+
+18: return Iadv , Eadv 
+
+# Supplementary Material A1 Complete Algorithm Pseudocode A2 Attention Aggregation Details 
+
+This section provides additional technical details on the attention map aggregation procedure used by the visual attention diversion module (Sect. 3.1 of the main paper). For multi-head self-attention in ViT-L/14 (16 heads per layer), we aggregate attention maps via gradient-weighted averaging across heads within each layer, then uniform averaging across layers 18–23. This yields a single spatial attention map M ∈ RH×W representing the model’s focus distribution. 
+
+Layer Selection Rationale. We select layers 18–23 (out of 24 total layers) based on empirical correlation analysis with SIDA’s output segmentation masks. Earlier layers (0–12) capture low-level features with weak localization correlation (r < 0.5); middle layers (13–17) show moderate correlation ( r ∈ [0 .5, 0.65] ); later layers (18–23) achieve highest correlation ( r ∈ [0 .71 , 0.75] ) as they encode semantically meaningful patterns relevant to forgery detection. Specifically, for each layer l ∈ { 18 , 19 , . . . , 23 } and head h ∈ { 1, 2, . . . , 16 }, we compute the layer-wise aggregated attention: 
+
+Ml =
+
+> 16
+
+X
+
+> h=1
+
+wl,h · Al,h  (A1) 18 Qian               
+
+> Table A1: Impact of Stability Mitigations on Optimization.
+> Configuration Divergence Rate Final ASR Iterations
+> No mitigations 23.4% 71.2% 100 + Gradient clipping 8.5% 82.5% 100 + LR warmup 3.2% 86.8% 100 + EMA (full) 0.8% 87.2% 100
+
+where Al,h ∈ RH×W is the attention map from head h in layer l, and wl,h is the gradient weight computed as: 
+
+wl,h = ReLU 
+
+ 1
+
+HW 
+
+X
+
+> i,j
+
+∂Ldet 
+
+∂A i,j l,h 
+
+ (A2) The ReLU ensures only positive contributions are considered, following the standard Grad-CAM formulation [29]. The final aggregated attention map is obtained by uniform averaging across selected layers: 
+
+M = 16
+
+> 23
+
+X
+
+> l=18
+
+Ml (A3) This two-stage aggregation (gradient-weighted within layers, uniform across layers) balances task-relevance with robustness to layer-specific noise. 
+
+A2.1 Grad-CAM Differentiability and Optimization Stability 
+
+Optimizing through Grad-CAM introduces second-order dependencies that can cause gradient instability. Specifically, Grad-CAM computes: 
+
+M = ReLU X
+
+> k
+
+αkAk
+
+!
+
+, αk = 1
+
+Z
+
+X
+
+> i,j
+
+ReLU ∂y c
+
+∂A kij 
+
+!
+
+(A4) where Ak are feature maps, αk are gradient-weighted importance scores, and 
+
+Z = H × W is the spatial normalization factor. Differentiating through this expression yields second-order terms ∂2yc  
+
+> ∂A k∂δ
+
+that can exhibit high variance. 
+
+Mitigation Strategies: We employ three techniques to stabilize optimization: gradient clipping (max norm at 1.0) prevents gradient explosion from second-order terms; linear learning rate warmup over the first 10 iterations allows gradients to stabilize before aggressive updates; and exponential moving average of attention maps ( γ = 0 .9) smooths optimization targets via ¯Mt = γ ¯Mt−1 + (1 − γ)Mt.
+
+Empirical Analysis: Table A1 summarizes the impact of each mitigation strategy. Without these mitigations, optimization diverges in 23.4% of cases (loss >
+
+100 after 50 iterations). With all mitigations, divergence rate drops to <1%, with mean loss reduction of 85% over 100 iterations. The EMA smoothing is particularly important for preventing oscillation in attention map targets. JECA 2: Judgment–Explanation Consistent Adversarial Attack 19 
+
+# A3 Decoy Region Selection Strategy 
+
+This section details the decoy region selection procedure for the visual attention diversion module, corresponding to the Gaussian pseudo-hotspot mechanism in Sect. 3.1 of the main paper (Eq. (3)). We employ a three-stage selection process for the benign background region 
+
+Rbg :
+
+Stage 1: Semantic Filtering. We exclude regions containing faces, text, or salient objects using DINO [3] features. Specifically, we compute the self-attention maps from DINO-ViT and threshold at 0.5 to identify salient regions. 
+
+Stage 2: Texture Analysis. We prioritize regions with moderate texture complexity (entropy ∈ [4 .0, 6.0] bits) to ensure perturbations appear natural. Texture entropy is computed over 32 × 32 patches using: 
+
+H = − X
+
+> i
+
+pi log 2 pi (A5) where pi is the normalized histogram of gradient magnitudes. 
+
+Stage 3: Spatial Constraints. We select regions at least 50 pixels from image boundaries and >100 pixels from Rtamper to avoid overlap. For each image, we sample K = 3 candidate centers (x0, y 0) satisfying these criteria and select the one maximizing initial attention response P 
+
+> i∈Rbg
+
+M (I)i.
+
+A3.1 Impact of Decoy Selection on Attack Performance 
+
+Table A2 analyzes the sensitivity of JECA 2 to decoy region selection parameters. 
+
+Key Observations: σ = 15 provides optimal balance between attention concentration and spatial coverage. Moderate texture regions ( H ∈ [4 .0, 6.0] )enable natural-looking perturbations while maintaining sufficient gradient signal. Misspecified decoy selection (random, salient, or near-boundary) degrades per-formance substantially, with ASR dropping 11–17% compared to the principled selection strategy. 
+
+# A4 Mask Computation Without Ground Truth 
+
+This section details the predicted-mask/no-ground-truth-mask variant (JECA 2-Pred) referenced in Sect. 4.8 of the main paper. While the main 87.2% ASR result uses ground-truth masks in an oracle white-box setting to isolate the judgment–explanation consistency vulnerability, JECA 2-Pred replaces oracle masks with model-predicted masks and DINO saliency, achieving 78.6% ASR without ground-truth tampering masks on the main 3,000-image test protocol. Thus, JECA 2-Pred should be interpreted as an estimated-mask setting rather than a ground-truth-mask setting. For the predicted-mask variant, we compute Mmask through a two-step process: 
+
+Step 1: Initial Prediction. Run SIDA inference on the clean image to obtain predicted mask ˆM .20 Qian                                                                  
+
+> Table A2: Sensitivity Analysis of Decoy Selection Parameters on SID-Set.
+> Configuration ASR ↑ADS ↑PSNR
+> Gaussian spread σ(pixels)
+> σ= 5 82.0% 0.66 36.1
+> σ= 10 85.3% 0.72 35.6
+> σ= 15 (default) 87.2% 0.76 35.1
+> σ= 20 85.9% 0.74 34.5
+> σ= 30 83.1% 0.69 33.8
+> Texture entropy range (bits)
+> [2 .0,4.0] (low) 80.3% 0.63 35.8
+> [4 .0,6.0] (default) 87.2% 0.76 35.1
+> [6 .0,8.0] (high) 84.6% 0.70 34.2
+> Distance from Rtamper (pixels)
+> >50 82.9% 0.68 35.4
+> >100 (default) 87.2% 0.76 35.1
+> >150 86.0% 0.74 35.3
+> Misspecified decoy selection
+> Random selection 76.3% 0.56 35.2 Salient region (wrong) 70.1% 0.43 35.0 Near tamper boundary 73.6% 0.50 34.8
+
+Step 2: Boundary Dilation. Apply morphological dilation with a 5 × 5
+
+kernel to ˆM , creating a 10-pixel boundary region where edge smoothing is applied: 
+
+Mmask = dilate ( ˆM , K 5×5) − ˆM (A6) This ensures Lhide (Eq. (4) in the main paper) targets the predicted tampering boundaries even without oracle access. For oracle mode, Mmask is directly derived from ground-truth annotations with identical dilation. 
+
+A4.1 Mask Stability During Optimization 
+
+When using predicted masks, the mask ˆM evolves during optimization as per-turbations affect model predictions. This creates a feedback loop that can cause instability. We analyze this phenomenon and present our mitigation strategy. 
+
+Problem Analysis. Without stabilization, predicted masks exhibit high variance across iterations. We measured mask IoU between consecutive iterations on a 500-image validation subset used for component analysis: iterations 1–20 show mean IoU change of 0.08 ± 0.05 per iteration; iterations 20–50 show 0.12 ±
+
+0.07; and iterations 50–100 show 0.15 ± 0.09. This increasing instability degrades attack performance on this validation subset, with ASR dropping from 81.5% to 72.3% without stabilization. These validation-subset numbers are used to compare stabilization components and are not intended to replace the 78.6% main-test result reported in the paper. JECA 2: Judgment–Explanation Consistent Adversarial Attack 21               
+
+> Table A3: Impact of Mask Stabilization Components on the 500-image validation subset used for component analysis. These values are not directly comparable to the 3,000-image main-test JECA 2-Pred result.
+> Configuration ASR ↑Mask IoU Var. Convergence
+> No stabilization 72.3% 0.12 65% + Initial freezing 77.8% 0.08 82% + EMA updates 80.2% 0.05 91% + Morph. closing (full) 81.5% 0.04 95%
+
+Stabilization Strategy. We employ a three-component approach: 
+
+(1) Initial Mask Freezing (iterations 1–50): We fix ˆM0 computed from the clean image for the first 50 iterations. This allows perturbations to develop without feedback-induced oscillation. 
+
+(2) Exponential Moving Average (iterations 51–100): After the initial phase, we update masks every 10 iterations using EMA: 
+
+ˆMt = γ ˆMt−1 + (1 − γ)Fmask (I + δt), γ = 0 .8 (A7) This smooths mask evolution while allowing adaptation to perturbation effects. 
+
+(3) Morphological Closing: We apply closing with a 3 × 3 kernel to prevent mask fragmentation caused by localized perturbations. 
+
+Ablation Results. Table A3 shows the impact of each component. On this validation subset, the full stabilization strategy reduces mask IoU variance from 0.12 to 0.04 and improves convergence rate from 65% to 95% (defined as loss reduction >80% after 100 iterations). 
+
+# A5 Grad-CAM vs. Cross-Attention Analysis 
+
+This section elaborates on the choice of Grad-CAM as an attention proxy, as discussed in Sect. 3.1 of the main paper. SIDA’s architecture comprises two attention pathways: 
+
+Self-attention in ViT-L/14 (layers 0–23) processes visual features indepen-dently before multimodal fusion. 
+
+Cross-attention in the mask decoder bridges LLM hidden states with visual features via ⟨SEG ⟩ tokens. We apply Grad-CAM to self-attention layers 18–23 (not cross-attention) for two reasons. Self-attention captures low-level artifact patterns before multimodal fusion, making it more directly related to forgery detection. Cross-attention gradients are entangled with text conditioning, making optimization unstable due to the bidirectional information flow. 
+
+Empirical Validation. Self-attention Grad-CAM correlates with final mask predictions ( r = 0 .73 , p < 0.001 ), validating this proxy. We computed Pearson correlation between Grad-CAM attention maps and SIDA’s output segmentation masks across 1,000 test images. 22 Qian                         
+
+> Table A4: Grad-CAM Correlation with Decoder Cross-Attention Across Architectures.
+> Architecture Pearson rSpearman ρ p -value Layers Used
+> ViT-L/14 0.73 0.71 <0.001 18–23 ViT-B/16 0.71 0.69 <0.001 9–12 ViT-H/14 0.75 0.73 <0.001 28–32 ConvNeXt-L 0.68 0.65 <0.001 Stage 4 Swin-L 0.70 0.68 <0.001 Stage 4
+
+Why Grad-CAM for Forensic VLMs? Alternative attention visualization methods include Attention Rollout, which propagates attention through layers, and gradient-free methods like raw attention weights. We selected Grad-CAM because its gradient-weighted aggregation naturally aligns with our optimization objective—we can directly backpropagate through the same computation used for visualization. It captures task-relevant attention (weighted by classification gradients) rather than generic attention patterns. Empirical comparison shows Grad-CAM achieves higher correlation with localization outputs than Attention Rollout ( r = 0 .73 vs. r = 0 .61 ) on SIDA. 
+
+Architecture-Specific Considerations. Grad-CAM’s effectiveness varies across architectures. For ViT variants , self-attention maps are directly accessible and Grad-CAM aggregation is straightforward, yielding correlation r ∈ [0 .71 , 0.75] .
+
+ConvNeXt lacks explicit self-attention; we apply Grad-CAM to feature acti-vation maps from the final convolutional block, resulting in lower correlation (r = 0 .68 ) that suggests reduced effectiveness. For hybrid architectures com-bining CNN and transformer components, we apply Grad-CAM to transformer layers only, which may miss CNN-captured features. 
+
+# A6 Cross-Architecture Grad-CAM Correlation Analysis 
+
+We provide detailed correlation analysis between Grad-CAM attention maps and decoder cross-attention across different visual encoder architectures, supplement-ing the brief discussion in Sect. 4.8 of the main paper. Table A4 summarizes results on 500 test images per architecture. 
+
+Key Observations: ViT architectures show consistently higher correlation (r > 0.70 ) due to explicit self-attention mechanisms that align well with Grad-CAM’s gradient-weighted aggregation. ConvNeXt shows lower correlation ( r =0.68 ) because convolutional feature maps lack the spatial attention structure that Grad-CAM assumes. The correlation remains statistically significant across all architectures ( p < 0.001 ), validating Grad-CAM as a reasonable proxy despite architecture-dependent effectiveness. 
+
+Implications for Attack Transferability: The architecture-dependent Grad-CAM correlation suggests that perturbations optimized against one ar-chitecture may transfer less effectively to architecturally different models. This JECA 2: Judgment–Explanation Consistent Adversarial Attack 23                          
+
+> Table A5: JECA 2Performance Across Visual Encoder Architectures.
+> Visual Encoder ASR ↑J-ASR ↑IoU ↓ADS ↑
+> ViT-L/14 (default) 87.2% 82.6% 0.13 0.76 ViT-B/16 85.1% 80.2% 0.15 0.73 ViT-H/14 88.0% 84.1% 0.11 0.78 ConvNeXt-L 83.4% 77.8% 0.17 0.69 Swin-L 84.7% 79.2% 0.15 0.71
+
+partially explains the reduced transfer ASR to closed-source VLMs (Table 4 in the main paper), which likely use different visual encoders than SIDA’s ViT-L/14. 
+
+# A7 Cross-Architecture Robustness Analysis 
+
+This section provides detailed analysis of JECA 2’s robustness across different visual encoder architectures, as referenced in Sect. 4.8 of the main paper. 
+
+Experimental Setup. We evaluate JECA 2 on SIDA variants with different visual encoders while keeping the language model (Vicuna-7B) and decoder architecture fixed. All experiments use identical hyperparameters ( T = 100 ,
+
+ϵ = 8 /255 , α = 0 .7). 
+
+Key Observations: – ViT variants (ViT-B/16, ViT-L/14, ViT-H/14) show consistently high ASR (>85%), with larger models achieving slightly better results due to more expressive attention patterns. 
+
+– ConvNeXt-L shows moderate degradation (ASR=83.4%) because convo-lutional architectures lack explicit self-attention mechanisms, making Grad-CAM a less accurate proxy for model focus. 
+
+– Swin-L achieves intermediate performance (ASR=84.7%), benefiting from windowed self-attention while suffering from locality constraints. 
+
+Attention Mechanism Analysis. The effectiveness of JECA 2 correlates with the architecture’s attention mechanism: 
+
+– Global self-attention (ViT): Normalized self-attention encourages relative competition among regions; increasing decoy attribution can reduce the relative attribution assigned to artifact regions. 
+
+– Windowed attention (Swin): This relative competition is more local because it applies within windows; cross-window shifts require additional optimization. 
+
+– Implicit attention (ConvNeXt): No explicit attention mechanism; Grad-CAM captures gradient-weighted feature importance instead of attention, reducing attack effectiveness. 
+
+Layer Selection Adaptation. For non-ViT architectures, we adapt the layer selection strategy: 24 Qian 
+
+Table A6: Complete Hyperparameter Configuration. 
+
+Parameter Symbol Value 
+
+Optimization 
+
+Iterations T 100 Visual step size ηv 1/255 Text step size ηe 0.01 Perturbation budget ϵ 8/255 Visual optimizer – PGD (sign gradient) Text optimizer – SGD 
+
+Loss Weights 
+
+Attention loss weight λ1 1.0 
+
+L2 regularization λ2 0.01 Suppression weight λs 1.0 Misdirection ratio α 0.7 Coherence weight β 0.1 
+
+Gaussian Pseudo-Hotspot 
+
+Gaussian spread σ 15 pixels Decoy-tamper distance – >100 pixels Texture entropy range – [4.0, 6.0] bits 
+
+Mask Stabilization 
+
+Initial freeze iterations – 50 EMA coefficient γ 0.8 Update interval – 10 iterations 
+
+Computational 
+
+GPU – NVIDIA RTX 4090 Memory footprint – 14 GB Time per image – 8.2s 
+
+– Swin-L : Stages 3–4 (layers 18–24), corresponding to high-level semantic features. 
+
+– ConvNeXt-L : Stage 4 only, as earlier stages capture low-level features with weak localization correlation. 
+
+# A8 Complete Hyperparameter Configuration 
+
+Table A6 summarizes all hyperparameters used in JECA 2 experiments, corre-sponding to Sect. 3.3 of the main paper. 
+
+Hyperparameter Selection Rationale. Key hyperparameters were selected via grid search on a held-out validation set (500 images from SID-Set): 
+
+– α = 0 .7: Prioritizes misdirection over concealment based on ablation (Table 3 in the main paper). 
+
+– σ = 15 : Balances attention concentration with spatial coverage (Table A2). JECA 2: Judgment–Explanation Consistent Adversarial Attack 25                                               
+
+> Table A7: Hyperparameter Sensitivity Analysis on SID-Set. Default values are marked with †.
+> Parameter Value ASR ↑ADS ↑PSNR
+> α(attention balance) 0.5 85.4% 0.71 35.8 0.7 †87.2% 0.76 35.1 0.9 86.1% 0.74 34.2
+> σ(Gaussian spread) 10 84.8% 0.69 35.5 15 †87.2% 0.76 35.1 20 86.3% 0.73 34.8
+> ϵ(perturbation) 4/255 76.5% 0.61 38.5 8/255 †87.2% 0.76 35.1 16/255 90.8% 0.81 31.2
+> T(iterations) 50 82.4% 0.68 35.8 100 †87.2% 0.76 35.1 200 88.5% 0.78 34.8
+
+– λ1 = 1 .0, λ2 = 0 .01 : Balances attack effectiveness with perturbation smooth-ness. The L2 penalty ( λ2) encourages perturbation smoothness while PGD projection enforces the hard L∞ constraint, improving perceptual quality (PSNR variance reduced by 2.1dB compared to L∞ penalty alone). 
+
+– β = 0 .1: Ensures embedding validity without over-constraining optimization. 
+
+# A9 Hyperparameter Sensitivity Analysis 
+
+Table A7 presents the sensitivity analysis of key hyperparameters on SID-Set, as referenced in Sect. 3.3 of the main paper. The results demonstrate that JECA 2 is robust to hyperparameter choices ,with ASR varying by less than 3% for α and σ across tested ranges. The pertur-bation bound ϵ shows expected trade-off: larger ϵ improves ASR but degrades perceptual quality, with ϵ = 8 /255 providing a practical balance. Iteration count 
+
+T exhibits diminishing returns beyond 100, suggesting efficient convergence. 
+
+# A10 Computational Cost Analysis 
+
+Table A8 compares the computational overhead of different attack methods, as referenced in Sect. 4.5 of the main paper. The full JECA 2 requires 8.2s per image due to alternating optimization of visual and textual modalities. The 2.4s overhead from the textual module yields 6.9% ASR improvement (80.3% → 87.2%), representing a favorable efficiency-effectiveness trade-off. The primary computational bottleneck is Grad-CAM computation (3.5s) and textual explanation alignment optimization (2.4s). 26 Qian                              
+
+> Table A8: Computational Cost Comparison (NVIDIA RTX 4090, batch size 1).
+> Method Time/Img GPU Mem Iters ASR
+> FGSM [9] 0.1s 6GB 166.2% PGD [20] 2.1s 8GB 100 72.8% CroPA [19] 4.2s 10GB 100 78.6% CMI [7] 5.5s 11GB 100 79.5% JECA 2(Vis.) 5.8s 12GB 100 80.3% JECA 2(Full) 8.2s 14GB 100 87.2%
+
+# A11 Experimental Setup Details 
+
+This section provides additional experimental details supplementing Sect. 4.1 of the main paper. 
+
+Dataset Configuration: SID-Set [13] (primary evaluation): 300K images spanning AI-generated and tampered content. Unless otherwise specified, attack results use a 3,000-image tampered subset sampled from the official test split, with ASR computed on the detectable subset Ddet . The full official test split is used for clean-model sanity checks and baseline reproduction where applicable. Training data is used only for baseline reproduction. 
+
+OpenForensics [15] (cross-dataset evaluation): ∼115K images with pixel-level forgery masks across multiple manipulation types. We sample 1,000 images per forgery type for cross-dataset evaluation (Table 2 in the main paper). 
+
+Target Model Details: 
+
+We target SIDA (v1.0) [13] with ViT-L/14 visual backbone and Vicuna-7B language model as the primary white-box victim. For transferability evaluation, we also test FakeShield [34], which shares a broadly similar ViT/LLM-style design. Results that switch both dataset and target detector are reported as combined dataset/model transfer, not as isolated dataset-only transfer. 
+
+Metric Definitions: – ASR (Attack Success Rate) : Percentage of forged images in the detectable subset Ddet that are misclassified as “Real” after attack. 
+
+– J-ASR (Joint Attack Success Rate) : Percentage of images where both classification is flipped AND localization IoU drops below 0.2. 
+
+– IoU (Intersection over Union) : Overlap between predicted and ground-truth tampering masks. 
+
+– ADS (Attention Diversion Score) : Ratio of attention on decoy region to total attention (Eq. (8) in the main paper). 
+
+– L-IoUR (Localization IoU Reduction) : Relative reduction in IoU: 1 −
+
+IoU adv /IoU clean .
+
+Baseline Reproduction. Clean SIDA performance (Aux. Acc=93.5%, IoU=0.44) was reproduced using official code and checkpoints [13]. All base-lines were re-implemented under identical settings for in-protocol comparison. JECA 2: Judgment–Explanation Consistent Adversarial Attack 27             
+
+> Table A9: Sensitivity of J-ASR to IoU Threshold τon SID-Set.
+> Threshold τJ-ASR Interpretation
+> 0.5 86.8% Loose: Includes partial overlaps 0.3 84.5% Moderate: Significant mask degradation
+> 0.2 (Default) 82.6% Strict: Structural localization failure
+> 0.1 79.2% Very Strict: Near-total mismatch
+
+Aux. Acc is retained as a detector-script diagnostic, while ASR, J-ASR, and IoU are the primary metrics for attack claims. 
+
+Baseline Adaptation: General VLM attacks (AnyAttack [36], JMTFA [10], MAA [8]) were adapted by replacing target objectives with SIDA’s classification head and extending perturbation budgets to ϵ = 8 /255 .
+
+# A12 J-ASR Threshold Analysis 
+
+This section provides the justification for selecting IoU < 0.2 as the threshold for Joint Attack Success Rate (J-ASR), as referenced in Sect. 4.1 of the main paper. J-ASR quantifies the attack’s ability to simultaneously flip the classification label and disrupt the localization mask. It is defined as: 
+
+J-ASR = |{ x ∈ D det : Fcls (xadv ) = Real ∧ IoU (Fmask (xadv ), M gt ) < τ }| |D det | (A8) where τ is the IoU threshold indicating localization failure. We analyzed the sensitivity of J-ASR to different thresholds τ on the SID-Set. Table A9 presents the results. 
+
+Selection Rationale. We observe that J-ASR remains robust ( > 82% ) even at stringent thresholds. We selected τ = 0 .2 because empirically, when IoU drops below 0.2, the predicted mask typically highlights entirely disjoint regions (e.g., background decoys) rather than merely being a poorly segmented version of the ground truth. This threshold effectively captures the "attention misdirection" phenomenon where the model looks at completely wrong locations, rather than just imprecise localization. At τ = 0 .2, the 4.6% gap between ASR (87.2%) and J-ASR (82.6%) indicates that in a small fraction of cases, the model may predict "Real" while still retaining some residual attention on the artifact, but for the vast majority, the semantic flip is accompanied by a complete localization shift. 
+
+# A13 Detailed Comparison with RLGC 
+
+RLGC [21] represents a significant advancement in task-specific adversarial attacks against image forensics. Here we provide a detailed analysis supplementing the discussion in Sect. 2 of the main paper. 28 Qian 
+
+RLGC Methodology Overview. RLGC formulates the black-box attack as a Markov Decision Process (MDP) where the state comprises the current image and perturbation history, the action involves pixel selection and perturbation magnitude, the reward reflects decrease in detector confidence score, and the 
+
+policy is a neural network trained via Q-learning. The key insight is that forensic detectors exhibit spatially varying sensitivity—certain pixels near inpainting boundaries contribute disproportionately to detection confidence. RLGC’s RL agent learns to identify and perturb these “sensitive spots” efficiently. 
+
+Target Model Differences. RLGC was designed for CNN-based inpainting forensic detectors (HP-FCN, MVSS-Net) that rely on local convolutional feature extraction, pixel-level artifact detection (boundary inconsistencies, texture anoma-lies), and single-modality (visual-only) decision making. In contrast, VLM-based detectors like SIDA employ global self-attention mechanisms (ViT backbone), cross-modal reasoning (visual-textual alignment), and semantic consistency veri-fication. 
+
+Why RLGC’s Strategy is Less Effective for VLMs. When adapting RLGC to VLM settings, we observe a performance gap (74.3% vs. ∼75% on orig-inal CNN targets). ViT’s self-attention aggregates information globally, making local pixel perturbations less impactful than in CNNs with limited receptive fields. VLMs verify visual evidence against textual descriptions; pixel-level perturbations that fool visual features may still be detected through semantic inconsistency. Information is encoded in both visual and textual pathways; attacking only the visual modality leaves the textual reasoning intact. 
+
+Complementary Strengths. Despite lower ASR on VLMs, RLGC offers practical advantages: black-box access (no gradient or architecture knowledge required), query efficiency (500 queries is practical for many real-world scenarios), and transferability (learned policies may transfer across similar CNN architec-tures). JECA 2’s white-box approach provides higher ASR but requires model access that may not be available in practice. A promising future direction is combining RLGC’s query-efficient exploration with JECA 2’s attention diversion strategy for hybrid attacks. 
+
+# A14 Additional Scope and Evaluation Details 
+
+This section supplements the scope and evaluation details discussed in Sect. 4.8 of the main paper. 
+
+Embedding Access Requirements. The textual explanation alignment module requires embedding-level access to optimize prompt representations. For systems with fixed, nondifferentiable prompts, a discrete prompt variant achieves 68.3% ASR in our protocol—lower than full JECA 2. Under the same white-box SID-Set/SIDA protocol but without embedding modification, the visual attention diversion module alone achieves 80.3% ASR (Table 3 in main paper). 
+
+Defense-Oriented Architectures: Defense-oriented systems like Forensic-sSAM [24] achieve 22.5% transfer ASR in our transfer protocol, suggesting that JECA 2: Judgment–Explanation Consistent Adversarial Attack 29 
+
+adversary-aware design can provide substantial protection. White-box evaluation against such systems is a useful follow-up setting. 
+
+Reproducibility: All experiments used official model checkpoints and pub-licly available datasets. Minor variations from original papers may exist due to different evaluation protocols. Code and evaluation scripts will be released. 
+
+Semantic Plausibility Validation Details: To assess whether the opti-mized prompt embeddings are associated with coherent, plausible, and judgment-consistent generated text under automated metrics, we conducted a systematic evaluation on 500 randomly sampled adversarial examples from SID-Set (strat-ified across 4 manipulation types, 125 per type). We assess four aspects using automated metrics: 
+
+– Token validity —We project optimized embeddings to nearest vocabulary tokens and compute the percentage of valid English words: 94.2% of projected tokens are valid. 
+
+– Forensic term retention —We measure the percentage of projected tokens that retain forensic-relevant terminology (e.g., “lighting,” “boundary,” “texture”) from a curated vocabulary of 200 forensic terms: 89.1% retention rate. 
+
+– Semantic coherence —Following [13], we use GPT-4 as an automated coherence proxy, prompting: “ Rate the semantic plausibility of this explanation given the image content (1–5). ” On 500 samples, the average score is 3.92/5 (78.4% normalized), with 82.4% receiving scores ≥3 under this proxy. GPT-4 rates projected prompts as “coherent” in 78.5% of cases (vs. 95.2% for original prompts). 
+
+– Judgment–explanation consistency —We prompt GPT-4 with: “ The model predicted this image as ‘Real’. Does the following explanation logically and convincingly support this judgment? Rate 1–5, where 1=completely contra-dicts, 3=neutral, 5=strongly supports. ” Detailed comparison across all attack methods is provided in Sect. 4.3 of the main paper. LLM-based evaluation may exhibit scoring biases, so we use it as an automated consistency proxy rather than as a replacement for human forensic review. The equalized-subset and human-validation protocol below specifies how to audit this proxy when per-sample attack outputs and annotations are available. 30 Qian 
+
+Fig. A1: Illustrative mechanism diagram for the visual attention diversion module. 
+
+(A) Relative attribution shift induced by background–tamper competition. (B) Dual-objective gradient flow showing ∇L mislead and ∇L hide . (C) Gaussian pseudo-hotspot 
+
+G(x, y ) as an attribution sink in the Grad-CAM proxy. The plotted values are schematic and explain the loss design rather than report an additional experiment. JECA 2: Judgment–Explanation Consistent Adversarial Attack 31 
+
+Fig. A2: Schematic 2D visualization of the textual explanation alignment embedding optimization trajectory (t-SNE/PCA style). The optimization path starts from neutral prompt Estart and moves toward a region associated with the target “Real” decision under the token-proximity constraint. The coherence constraint Lcoherence encourages embeddings to remain close to valid tokens; the figure is illustrative rather than a quantitative embedding plot. 
+
+# A15 JEC Fairness and Human-Validation Protocol 
+
+This section makes the judgment–explanation consistency (JEC) evaluation auditable beyond the conditional automated scores in the main paper. The main table reports GPT-4 scores only on successfully attacked samples, because consistency is meaningful after a judgment flip. However, this also means Neval 
+
+varies with each method’s ASR. We therefore define two additional checks for any per-sample result file containing image id, attack method, clean prediction, attacked prediction, attack-success flag, explanation text, and GPT-4 JEC score. 
+
+Fixed-N successful subset. For each method, collect successfully attacked samples and sample the same number of examples using random seed 20260527. The default is N = 100 per method; if any method has fewer than 100 successful examples, use the largest common feasible N and report it explicitly. Compute mean JEC, the percentage of samples with JEC ≥ 4, and bootstrap 95% confidence intervals over 10,000 resamples. 32 Qian 
+
+Common-success subset. Intersect image ids that are successfully attacked by all compared methods. If Ncommon ≥ 50 , report JEC on this common set in a supplementary table; otherwise, report Ncommon and use the fixed-N analysis as the primary fairness check. This prevents conclusions from being driven by different success populations. 
+
+Human annotation protocol. To validate the GPT-4 proxy, sample 100 anonymized method-output pairs from successfully attacked examples, balanced across FGSM, PGD, CroPA, CMI, and JECA 2 (20 per method). Each item contains the image, the model judgment fixed to “Real,” and the generated expla-nation, but not the attack method. Three annotators independently answer: “Does the explanation logically support the judgment that the image is real/authentic?” 
+
+on a 1–5 Likert scale, where 1 means “strongly contradicts,” 3 means “neutral or insufficient,” and 5 means “strongly supports.” We report the mean human JEC, Fleiss’ κ over discretized 1–5 labels, and Spearman correlation between GPT-4 JEC and the average human score. If agreement is low, JEC results should be described as an automated proxy and not as human-calibrated evidence. 
+
+Reporting requirements. Each released JEC evaluation file should include image id, method, attack-success flag, explanation, GPT-4 prompt version, GPT-4 score, annotator scores when available, sampling seed, and whether the row belongs to the conditional, fixed-N , or common-success subset. These fields are sufficient to reproduce the fairness checks without exposing attack implementation details. 
+
+# A16 Threat Model Level II: Detailed Threat Scenarios 
+
+This section provides detailed descriptions of the system-level threat scenarios modeled by Level ii (Image + Embedding Modification), as referenced in Sect. 3 of the main paper. Level ii does not assume that end users manually edit prompts in a forensic interface. Instead, it models a stronger class of system-level threats: 
+
+(i) Compromised Preprocessing. Adversarial middleware intercepts and modifies embeddings before they reach the LLM decoder. This is analogous to supply-chain attacks on ML pipelines [28], where compromised dependencies inject malicious transformations into the inference pipeline. In forensic deploy-ments, preprocessing modules (e.g., image resizing, prompt templating) are often maintained by third-party vendors, creating opportunities for embedding-level manipulation. 
+
+(ii) Malicious Model Deployment. Trojanized forensic tools with modified prompt templates are distributed through open-source channels. An attacker could publish a seemingly legitimate forensic model with subtly altered default prompts that bias detection toward “Real” outputs for specific forgery types. This threat is particularly relevant as VLM-based forensic tools proliferate on platforms like Hugging Face and GitHub. 
+
+(iii) Insider Threats. Operators with backend access alter system config-urations, including prompt templates and embedding preprocessing steps. In JECA 2: Judgment–Explanation Consistent Adversarial Attack 33 
+
+institutional deployments (e.g., social media content moderation, judicial evidence screening), system administrators may have legitimate access to modify model configurations. 
+
+Design Rationale. The textual explanation alignment module’s primary contribution is diagnostic : it indicates, in our controlled protocol, that the semantic consistency mechanism is vulnerable not only to visual perturbations but also to textual-side manipulation, even when constrained to remain close to valid tokens ( Lcoherence ). The 6.9% ASR gap between Level i and Level ii 
+
+quantifies the additional security risk observed in this protocol when embedding modification is allowed, providing a concrete margin for system designers to evaluate prompt integrity as a security-critical component. 
+
+# A17 Convergence Analysis 
+
+This section provides detailed convergence analysis for the alternating optimiza-tion procedure described in Sect. 3.3 of the main paper. We observe that ASR stabilizes after T ≈60 iterations. On 500 validation images, ASR reaches 82.9% at T = 60 (95.1% of final 87.2%), with diminishing returns thereafter ( T = 80 : 85.8%, T = 100 : 87.2%). The loss Lvis decreases from 2.34 to 0.41 (82% reduction) within the first 60 iterations, then only marginally improves to 0.38 by T = 100 . We use T = 100 to ensure convergence across diverse image types, particularly for challenging cases with multiple tampering regions. The convergence behavior can be decomposed into three phases: 
+
+– Phase 1 (iterations 1–20): Rapid loss decrease driven primarily by Ldet .ASR increases from 0% to ∼55% as perturbations cross the decision boundary. 
+
+– Phase 2 (iterations 21–60): Attention redistribution dominates. ADS increases from 0.25 to 0.68 as Lmislead reshapes the attention landscape. 
+
+– Phase 3 (iterations 61–100): Fine-tuning phase with marginal improve-ments. Textual explanation alignment refinement contributes most of the remaining ASR gain. 
+
+# A18 Evaluation Protocol for Closed-Source VLMs 
+
+This section details the evaluation protocol for transfer attacks to closed-source VLMs (Table 4 in the main paper). For closed-source VLMs (GPT-4V, Claude-3 Opus, Gemini Pro), we simplify the three-class task (Real/Synthetic/Tampered) to binary classification (Real vs. Fake) using the prompt: “Analyze this image for signs of digital manipulation. Is this image real or fake? Provide your reasoning.” 
+
+Following our ASR definition, we first identify each model’s detectable subset 
+
+Ddet (images correctly classified as Fake without attack), then compute ASR on this subset. This ensures ASR measures attack effectiveness rather than baseline model errors. 34 Qian 
+
+Response Classification. A response is classified as attack success if the model explicitly concludes the image is “real”, “authentic”, or “unmanipulated” without identifying tampering evidence. Ambiguous responses (e.g., “I cannot determine with certainty”) are classified as attack failure (conservative estimate). 
+
+API Settings. All evaluations use temperature=0 for reproducibility. Because closed-source VLMs can change over time, the reported values should be read as snapshot results under the API versions available at evaluation time. For reproducibility, evaluation logs should include the exact model identifier, API date, prompt, response parser, and raw response for each query; for readability, the main paper reports the model families as GPT-4V, Claude-3 Opus, and Gemini Pro. 
+
+# A19 Ethics Statement 
+
+This research investigates adversarial vulnerabilities in multimodal deepfake detection systems to advance the development of more robust forensic tools. We acknowledge the dual-use nature of this work and have taken the following measures to mitigate potential misuse: 
+
+Responsible Disclosure. Before public release, we will notify the devel-opers of the evaluated forensic systems and provide technical details sufficient for mitigation, while withholding complete attack implementation details from unrestricted release. 
+
+Code Release Policy. We will release evaluation scripts and pre-trained defense models, but will not publicly release the complete attack implementation .Attack code will be shared only with verified researchers upon request, subject to a responsible use agreement. 
+
+Misuse Mitigation. The strongest attack setting requires white-box access (model gradients) and ground-truth tampering masks, which narrows its direct deployment assumptions. We also evaluate a predicted-mask/no-ground-truth-mask variant that reaches 78.6% ASR without ground-truth annotations, and our defense evaluation provides concrete guidance for hardening forensic systems. 
+
+Dataset Ethics. All experiments used publicly available benchmarks (SID-Set, OpenForensics) containing synthetic media for research. No real individuals were targeted. We believe that responsible disclosure of these vulnerabilities is essential for the security community to develop more robust forensic systems, ultimately benefiting society’s ability to combat misinformation. 
+
+# References    
+
+> 1. Baniecki, H., Biecek, P.: Adversarial attacks and defenses in explainable artificial intelligence: A survey. Information Fusion 107 , 102303 (2024) 2. Carlini, N., Wagner, D.: Towards evaluating the robustness of neural networks. In: Proceedings of the IEEE Symposium on Security and Privacy (S&P). pp. 39–57 (2017)
+
+JECA 2: Judgment–Explanation Consistent Adversarial Attack 35 3. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 9650–9660 (2021) 4. Cozzolino, D., Poggi, G., Verdoliva, L.: Recasting residual-based local descriptors as convolutional neural networks: An application to image forgery detection. In: Proceedings of the ACM Workshop on Information Hiding and Multimedia Security. pp. 159–164 (2017) 5. Dong, X., Bao, J., Chen, D., Zhang, T., Zhang, W., Yu, N., Chen, D., Wen, F., Guo, B.: Protecting celebrities from deepfake with identity consistency transformer. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 9468–9478 (2022) 6. Frank, J., Eisenhofer, T., Schönherr, L., Fischer, A., Kolossa, D., Holz, T.: Lever-aging frequency analysis for deep fake image recognition. In: Proceedings of the International Conference on Machine Learning (ICML). pp. 3247–3258 (2020) 7. Fu, J., Chen, Z., Jiang, K., Guo, H., Wang, J., Gao, S., Zhang, W.: Improving adver-sarial transferability of vision-language pre-training models through collaborative multimodal interaction. arXiv preprint arXiv:2403.10883 (2024) 8. Gao, K., Bai, Y., Bai, J., Yang, Y., Xia, S.T.: Adversarial robustness for visual grounding of multimodal large language models. In: ICLR 2024 Workshop on Reliable and Responsible Foundation Models (2024) 9. Goodfellow, I.J., Shlens, J., Szegedy, C.: Explaining and harnessing adversarial ex-amples. In: Proceedings of the International Conference on Learning Representations (ICLR) (2015) 10. Guan, J., Ding, T., Cao, L., Pan, L., Wang, C., Zheng, X.: Probing the robustness of vision-language pretrained models: A multimodal adversarial attack approach. arXiv preprint arXiv:2408.13461 (2024) 11. Hu, L., Liu, Y., Liu, N., Huai, M., Sun, L., Wang, D.: Improving interpretation faithfulness for vision transformers. In: Proceedings of the International Conference on Machine Learning (ICML). pp. 19344–19370 (2024) 12. Huang, Z., Xia, B., Lin, Z., Mou, Z., Yang, W., Jia, J.: FFAA: Multimodal large language model based explainable open-world face forgery analysis assistant. arXiv preprint arXiv:2408.10072 (2024) 13. Huang, Z., Hu, J., Li, X., He, Y., Zhao, X., Peng, B., Wu, B., Huang, X., Cheng, G.: SIDA: Social media image deepfake detection, localization and explanation with large multimodal model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 28831–28841 (2025) 14. Huang, Z., Li, T., Li, X., Wen, H., He, Y., Zhang, J., Fei, H., Yang, X., Huang, X., Peng, B., Cheng, G.: So-fake: Benchmarking and explaining social media image forgery detection. arXiv preprint arXiv:2505.18660 (2025) 15. Le, T.N., Nguyen, H.H., Yamagishi, J., Echizen, I.: OpenForensics: Large-scale challenging dataset for multi-face forgery detection and segmentation in-the-wild. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 10117–10127 (2021) 16. Li, H., Peng, R., Luo, A., Tan, S., Chen, C., Antsiferova, A.: Universal anti-forensics attack against image forgery detection via multi-modal guidance. arXiv preprint arXiv:2602.06530 (2026) 17. Li, Y., Chang, M.C., Lyu, S.: In ictu oculi: Exposing AI created fake videos by detecting eye blinking. In: IEEE International Workshop on Information Forensics and Security (WIFS). pp. 1–7 (2018). https://doi.org/10.1109/WIFS.2018. 8630787 36 Qian 18. Liu, X., Xu, N., Chen, M., Xiao, C.: AutoDAN: Generating stealthy jailbreak prompts on aligned large language models. In: Proceedings of the International Conference on Learning Representations (ICLR) (2024) 19. Luo, H., Gu, J., Liu, F., Torr, P.: An image is worth 1000 lies: Adversarial transfer-ability across prompts on vision-language models. In: Proceedings of the Interna-tional Conference on Learning Representations (ICLR) (2024), arXiv:2403.09766 20. Madry, A., Makelov, A., Schmidt, L., Tsipras, D., Vladu, A.: Towards deep learn-ing models resistant to adversarial attacks. In: Proceedings of the International Conference on Learning Representations (ICLR) (2018) 21. Mo, X., Tan, S., Li, B., Huang, J.: Query-efficient attack for black-box image inpainting forensics via reinforcement learning. In: Proceedings of the AAAI Conference on Artificial Intelligence (AAAI). vol. 39, pp. 19503–19511 (2025). 
+
+https://doi.org/10.1609/aaai.v39i18.34147 
+
+22. Nguyen, B., Le, T.: Analyzing reasoning shifts in audio deepfake detection under adversarial attacks: The reasoning tax versus shield bifurcation. arXiv preprint arXiv:2601.03615 (2026) 23. Nie, W., Guo, B., Huang, Y., Xiao, C., Vahdat, A., Anandkumar, A.: Diffusion models for adversarial purification. In: Proceedings of the International Conference on Machine Learning (ICML). pp. 16805–16827 (2022) 24. Peng, R., Tan, S., Kong, C., Luo, A., Kot, A.C., Huang, J.: ForensicsSAM: Toward robust and unified image forgery detection and localization resisting to adversarial attack. arXiv preprint arXiv:2508.07402 (2025) 25. Pinhasov, B., Lapid, R., Ohayon, R., Sipper, M., Aperstein, Y.: XAI-based detection of adversarial attacks on deepfake detectors. arXiv preprint arXiv:2403.02955 (2024), accepted at TMLR 2024 26. Qian, J.: Visual inception: Compromising long-term planning in agentic recom-menders via multimodal memory poisoning. arXiv preprint arXiv:2604.16966 (2026) 27. Qian, J., Kang, Z.: Penny wise, pixel foolish: Bypassing price constraints in multi-modal agents via visual adversarial perturbations. arXiv preprint arXiv:2604.16515 (2026) 28. Schlarmann, C., Hein, M.: On the adversarial robustness of multi-modal foundation models. In: Proceedings of the IEEE/CVF International Conference on Computer Vision Workshops (ICCVW) (2023), arXiv:2308.10741 29. Selvaraju, R.R., Cogswell, M., Das, A., Vedantam, R., Parikh, D., Batra, D.: Grad-CAM: Visual explanations from deep networks via gradient-based localization. In: Proceedings of the IEEE International Conference on Computer Vision (ICCV). pp. 618–626 (2017) 30. Shen, Z., Zhang, K., Jia, B., Jia, H., Fang, Y., Yu, Z., Lin, S.: DF-LLaVA: Unlocking MLLMs for synthetic image detection via knowledge injection and conflict-driven self-reflection. arXiv preprint arXiv:2509.14957 (2025) 31. Stamm, M.C., Zhao, X.: Anti-forensic attacks using generative adversarial networks. In: Multimedia Forensics, pp. 467–490. Advances in Computer Vision and Pattern Recognition, Springer Singapore (2022). https://doi.org/10.1007/978-981-16-7621-5_17 
+
+32. Wang, J., Wu, Z., Ouyang, W., Han, X., Chen, J., Jiang, Y.G., Lim, S.N.: M2TR: Multi-modal multi-scale transformers for deepfake detection. In: Proceedings of the ACM International Conference on Multimedia Retrieval (ICMR). pp. 615–623 (2022). https://doi.org/10.1145/3512527.3531415 
+
+33. Wei, Z., Chen, J., Goldblum, M., Wu, Z., Goldstein, T., Jiang, Y.G.: Towards transferable adversarial attacks on vision transformers. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 36, pp. 2668–2676 (2022) JECA 2: Judgment–Explanation Consistent Adversarial Attack 37 34. Xu, Z., Zhang, X., Li, R., Tang, Z., Huang, Q., Zhang, J.: FakeShield: Explainable image forgery detection and localization via multi-modal large language models. In: Proceedings of the International Conference on Learning Representations (ICLR) (2025) 35. Zhang, F., Liu, J., Zhu, J., Sun, E., Li, D., Zhang, Q., Zha, Z.J.: ForgeryGPT: A multimodal LLM for interpretable image forgery detection and localization. arXiv preprint arXiv:2410.10238 (2024) 36. Zhang, J., Ye, J., Ma, X., Li, Y., Yang, Y., Chen, Y., Sang, J., Yeung, D.Y.: Any-Attack: Towards large-scale self-supervised adversarial attacks on vision-language models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 19900–19909 (2025) 37. Zhou, W., Bai, S., Mandic, D.P., Zhao, Q., Chen, B.: Revisiting the adversarial robustness of vision language models: a multimodal perspective. arXiv preprint arXiv:2404.19287 (2024) 38. Zhuo, L., Luo, S., Tan, S., Chen, H., Li, B., Huang, J.: Evading detection actively: Toward anti-forensics against forgery localization. IEEE Transactions on Dependable and Secure Computing 22 (2), 852–869 (2025). https://doi.org/10.1109/TDSC. 2025.3528062 
+
+39. Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J.Z., Fredrikson, M.: Universal and transferable adversarial attacks on aligned language models. arXiv preprint arXiv:2307.15043 (2023)
