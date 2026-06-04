@@ -1,0 +1,429 @@
+Title: ReConFuse: Reconstruction-Error Guided Semantic Fusion for AI-Generated Video Detection
+
+URL Source: https://arxiv.org/pdf/2606.04706v1
+
+Published Time: Thu, 04 Jun 2026 01:28:52 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# ReConFuse: Reconstruction-Error Guided Semantic Fusion for AI-Generated Video Detection 
+
+Xiaojing Chen 1, Xinyu Lu 1, Changtao Miao 2, and Yunfeng Diao 3⋆ 
+
+> 1
+
+Anhui University chenxiaojing0909@ahu.edu.cn, 2510382668@qq.com  
+
+> 2
+
+Ant Group miaoct@mail.ustc.edu.cn  
+
+> 3
+
+Hefei University of Technology diaoyunfeng@hfut.edu.cn 
+
+Abstract. AI-generated videos are becoming increasingly realistic, rais-ing serious concerns about misinformation, content authenticity, and me-dia trust. Reliable AI-generated video detection is therefore essential for multimedia forensics, yet remains challenging due to the need to capture spatial artifacts, temporal dynamics, and generalize to evolving genera-tive models. In this paper, we explore reconstruction error as a discrim-inative forensic cue for AI-generated video detection. By reconstruct-ing input videos with a pretrained WF-VAE, we observe that real and generated videos exhibit distinguishable frame-wise reconstruction error patterns, suggesting that reconstruction errors can reveal their distri-butional discrepancies. However, extending reconstruction-based image detection to videos is non-trivial, since video reconstruction errors are temporally organized across frames and require semantic context for ef-fective interpretation. To address these challenges, we propose ReCon-Fuse , a reconstruction-guided semantic fusion framework for video-level AI-generated video detection. ReConFuse extracts reconstruction error cues from WF-VAE reconstructed videos, aligns them with multi-frame semantic features, and uses a Mamba-based module to model temporal evolution for video-level classification. Experiments across multiple gen-erators and evaluation settings demonstrate the effectiveness and strong generalization ability of ReConFuse. 
+
+Keywords: AI-generated video detection · WF-VAE reconstruction ·
+
+Reconstruction error · Semantic-error fusion · Mamba temporal modeling 
+
+## 1 Introduction 
+
+In recent years, advanced video generation models have substantially improved realism and accessibility of AI-generated video. Although these models offer broad potential for content creation, they have also raised persistent concerns regarding misinformation, content authenticity, and media trust [44]. Conse-quently, reliable AI-generated video detection has become an important problem in multimedia forensics [5, 6, 24, 39, 9]. At the same time, this task is challenging  
+
+> ⋆
+
+Corresponding author: diaoyunfeng@hfut.edu.cn  
+
+> arXiv:2606.04706v1 [cs.CV] 3 Jun 2026 2X. Chen et al.
+
+because it must capture spatial artifacts, model temporal dynamics, and remain robust to rapidly evolving generative models [11, 27]. Existing methods for AI-generated video detection primarily exploit visual artifacts, temporal inconsistencies, physical cues, or high-level semantic repre-sentations [25, 6, 35, 42, 41]. Different from these approaches, reconstruction-error based cues reveal distributional traces left by generative models from a recon-struction perspective. In contrast, reconstruction-error based cues remain less explored in AI-generated video detection, despite their demonstrated effective-ness in image-level generated content detection [38, 31, 22, 8]. This motivates us to investigate whether reconstruction-error cues can also provide useful forensic evidence for AI-generated video detection. As an initial investigation, we reconstruct input videos and compute frame-wise reconstruction errors. As shown in Fig. 1, real and AI-generated videos exhibit distinguishable error patterns under this pretrained reconstruction prior. However, directly extending image-level reconstruction error analysis to videos is nontrivial: First, unlike image-level reconstruction errors, video reconstruction errors are temporally organized across frames, making independent frame-level modeling insufficient [3, 21, 12]. Second, reconstruction errors evolve over time [3, 21, 12] and can be ambiguous without semantic context [30, 23]. To address these challenges, we propose ReConFuse , a framework that fuses reconstruction-guided error cues with semantic representations for AI-generated video detection. ReConFuse first reconstructs an input video using pretrained WF-VAE [20] and obtains frame-wise reconstruction error. It then spatially aligns error cues with multi-frame semantic features and uses a Mamba-based sequence module to model their temporal evolution for video-level classification. By integrating low-level reconstruction discrepancies with high-level semantic guidance, ReConFuse aims to improve the reliability and generalization of AI-generated video detection. The main contributions of this paper are summarized as follows. 
+
+– We investigate the effectiveness of reconstruction error as a discriminative forensic cue for AI-generated video detection and show that real and gener-ated videos exhibit different error patterns under a pretrained video recon-struction prior. 
+
+– We propose ReConFuse, a reconstruction-guided semantic fusion framework that aligns video reconstruction error with semantic features and models their temporal evolution for video-level detection. 
+
+– We conduct extensive experiments across multiple video generation mod-els and evaluation settings, validating the effectiveness and generalization capability of the proposed method. 
+
+## 2 Related Work 
+
+AI-Generated Video Detection . Early video forgery detectors mainly fo-cused on face-centric manipulations such as DeepFake, FaceSwap, and Face2Face, where facial priors and boundary inconsistencies provide strong cues [33, 19, 10, ReConFuse for AI-Generated Video Detection 3Real  
+
+> Fake
+> original
+> (4 frame strip)
+> reconstruction
+> (4 frame strip)
+> residual
+> (4 frame strip)
+> original
+> (4 frame strip)
+> reconstruction
+> (4 frame strip)
+> residual
+> (4frame strip)
+
+Fig. 1. Reconstruction behavior comparison between real and AI-generated videos (generated by Zhipu Qingyan [43]). The original frames, reconstructed frames (re-constructed by WF-VAE), and pseudo-color map (Purple denotes low reconstruction error, whereas yellow denotes high reconstruction error). of reconstruction errors illus-trate that reconstruction error can provide discriminative low-level forensic evidence for AI-generated video detection. 
+
+1, 18]. Recent text-to-video and image-to-video generators produce more diverse scenes, objects, and motions, shifting the problem toward general video authen-ticity analysis [26, 4, 34, 14, 37]. Existing detectors model this problem from com-plementary perspectives: DeMamba [6] models local spatial-temporal details, D3 [42] uses second-order temporal dynamics, MM-Det [35] combines multi-modal and reconstruction-related features, and NSG-VD [41] analyzes physical consistency. However, reconstruction errors produced by pretrained video gen-erative autoencoders remain underexplored as time-varying forensic cues for AI-generated video detection. 
+
+Reconstruction-Error Based Detection . Reconstruction-error based detec-tion methods use the difference between an input sample and its reconstructed counterpart as forensic evidence [38, 31, 22, 8]. Existing reconstruction-error based detection methods have been applied mainly to image forgery detection. DIRE [38] uses diffusion reconstruction error as a discriminative representation for diffusion-generated image detection, while AEROBLADE [31] shows that the autoencoder component of latent diffusion models can also reveal useful reconstruction dis-crepancies without running the full diffusion process. LaRE 2 [22] further exploits latent reconstruction error for diffusion-generated image detection, and FIRE [8] improves robustness by modeling frequency-guided reconstruction errors. These methods show that reconstruction errors can reveal low-level generation traces. However, applying image-level reconstruction-error analysis to videos in a frame-wise manner is insufficient for reliable video-level detection because it fails to model how reconstruction-error cues evolve across frames. Simple frame-4 X. Chen et al. 
+
+level aggregation may miss temporally consistent forensic cues across frames. Moreover, reconstruction error primarily reflects low-level visual differences and can be ambiguous in complex scenes without high-level visual representations. To address these limitations, we extend reconstruction-error-based detection to AI-generated video detection by jointly modeling dense frame-wise reconstruction errors, semantic context, and temporal dynamics. 
+
+## 3 Method 
+
+This section presents the proposed ReConFuse framework for AI-generated video detection. We first introduce the pretrained priors used in our framework, including WF-VAE for video reconstruction and XCLIP for semantic represen-tation. We then discuss the motivation behind reconstruction-guided semantic-error fusion, and finally describe the full pipeline, including reconstruction error extraction, semantic alignment, gated fusion, and temporal modeling. 
+
+3.1 Preliminaries Latent Diffusion Model and Wavelet-Driven Energy Flow VAE (WF-VAE). Latent diffusion models first map images or videos into a latent space through an autoencoder, and then learn the diffusion and reverse denoising processes in that latent space [32, 4]. Given a video clip V = {xt}Tt=1 , where 
+
+xt ∈ RH×W ×3 denotes the t-th frame, a video VAE first encodes it into a spatio-temporal latent representation: 
+
+z0 = Ev (V ), (1) where Ev denotes the video encoder and z0 is the clean latent variable encoded from the input video. To avoid confusion with the frame index t, we use k to denote the diffusion step. The forward diffusion process in the latent space can be formulated as: 
+
+q(zk|z0) = N (zk; √¯αkz0, (1 − ¯αk)I), (2) where zk denotes the noisy latent variable at diffusion step k, and ¯ αk is the pre-defined noise schedule. Through reverse diffusion sampling, a denoising network gradually recovers a generated latent variable ˜ z0, which is then mapped back to the pixel space by the video decoder: ˜V = Dv (˜ z0), (3) where Dv denotes the video decoder and ˜V is the generated video. Therefore, the video VAE serves as the key bridge between the pixel space and the latent space in video latent diffusion pipelines, and its encoder-decoder structure learns the compression and reconstruction regularities of video content. In this work, we do not perform latent diffusion sampling or diffusion inver-sion. Inspired by reconstruction-based forensic analysis such as DIRE, we only use the encoder-decoder reconstruction path of a pretrained WF-VAE: 
+
+z0 = Ev (V ), ˆV = Dv (z0). (4) ReConFuse for AI-Generated Video Detection 5𝐀𒀀𝐀𙰀𝐀 
+
+𝐀𕐀𝐀𘠀𝐀 𝐀𕐀𝐀𘠀𝐀 𝐀𕐀𝐀 𝐀𘠀𝐀𝐀𒀀𗀀𝐀𚀀𙰀𝐀𝐀𕐀𝐀𒀀 𝐀𘠀𗀀𕐀𝐀𙰀𝐀𘠀 
+
+𝐀𘠀𒀀𘠀𚀀𝐀𝐀𕐀𝐀𒀀 𝐀𘠀𝐀𝐀𙰀𚀀𘠀 𝐀𑀀𝐀𚀀𝐀𝐀𝐀𕐀𝐀𒀀 
+
+𕐀𘠀𕐀𙐀𒀀𘠀𘠀𒀀𝐀 &
+
+𝐀𙰀𗀀𕐀𝐀𒀀 
+
+𝐀𘠀𘠀𝐀𝐀𚀀𝐀𘠀 
+
+𝐀𝐀𝐀𘠀𘠀       
+
+> 𝐀 ×𝐀 ×𝐀 ×𝐀
+
+𝐀𝐀𝐀𘠀𒀀𝐀 
+
+𝐀𝐀𝐀𝐀𘠀                     
+
+> 𝐀 ×𝐀 ×𝐀 ×𝐀
+> 𝐀𘠀𗀀𕐀𝐀𙰀𝐀𘠀
+> 𝐀 ×𝐀 ×𝐀 ×𝐀
+> 𝐀𘠀𝐀𝐀𒀀𗀀𝐀𚀀𙰀𝐀𝐀𕐀𝐀𒀀
+> 𝐀𚀀𚀀𝐀𚀀
+> (𘠀𝐀𝐀 −𘠀𘠀𝐀𘠀𘠀 )
+> 𝐀𘠀𘠀𝐀𒀀𝐀𕐀𝐀 𝐀𙰀𝐀𙰀𚀀𘠀
+> (𝐀𕐀𙐀𝐀 −𘠀𘠀𝐀𘠀𘠀 )
+> Pretrained Visual Model
+> (e.g., CLIP ViT-L)
+> 𝐀 𝐀
+> (𝐀 )
+> 𝐀 𝐀
+> (𝐀 )
+> 𝐀𚀀𝐀𗀀𗀀 −𕐀𝐀𝐀𘠀𒀀𝐀𕐀𝐀𒀀
+> 𕐀𘠀𕐀𙐀𒀀𘠀𘠀𒀀𝐀
+
++      
+
+> 𝐀 𝐀𱰀𝐀𵠀
+> T×D×L
+> 𝐀𘠀𘠀𝐀𝐀𚀀𝐀𘠀
+> 𝐀𒀀𝐀𝐀𝐀𘠀𚀀
+> 𝐀 𝐀𵠀𝐀𱠀
+> T×Dt
+> 𝐀𝐀𝐀
+> 𝐀𘠀𝐀𝐀
+> 𝐀𘠀𝐀𘠀
+> 𝐀𕐀𝐀
+> 𝐀𒀀𝐀𝐀𝐀𘠀𚀀
+> 𝐀𕐀𝐀
+> 𝐀𘠀𝐀𝐀𝐀𘠀𚀀
+> 𝐀𘠀𝐀𝐀𒀀𗀀𝐀𚀀𙰀𝐀𝐀𘠀𝐀
+> 𝐀𕐀𝐀𘠀𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+
+𝐀𚀀𘠀𝐀𕐀𝐀𝐀𕐀𝐀𒀀 
+
+... 
+
+𕐀𘠀𕐀𙐀𒀀𘠀𘠀𒀀𝐀 & 𝐀𙰀𗀀𕐀𝐀𒀀 𝐀𘠀𝐀𝐀𕐀𘠀 𝐀𘠀𘠀𝐀𝐀𚀀𝐀𘠀 𝐀𝐀𝐀𘠀𘠀𕐀𒀀𙐀 𝐀𘠀𝐀𝐀𕐀𘠀 
+
+> 𝐀 𝐀
+> 𝐀𝐀𝐀𝐀𝐀
+> 𝐀𘠀𝐀𘠀𝐀𝐀𕐀𒀀𙐀
+> 𝐀𝐀𝐀𝐀𝐀
+> 𝐀𘠀𝐀𘠀𝐀𝐀𕐀𒀀𙐀
+> Concat
+
+𝐀 𝐀 
+
+> (𝐀 )
+
+𝐀 𝐀 
+
+> (𝐀 )𝐀 𝐀
+
+𝐀 𝐀 
+
+> (𝐀 )
+
+... 
+
+...       
+
+> 𝐀 𝐀 =𝐀 𝐀
+> (𝐀 )
+> 𝐀 =𝐀
+> 𝐀
+> ∈𝐀 𝐀 ×𝐀 𝐀
+> 𝐀 𝐀 =𝐀 𝐀
+> (𝐀 )
+> 𝐀 =𝐀
+> 𝐀
+> ∈𝐀 𝐀 ×𝐀􅐀𝐀
+> Residual Tokens
+> Semantic Tokens
+
+Fused Tokens         
+
+> t=1
+> t=2
+> t=T
+> Nspatial patches
+
+S6 
+
+Block 
+
+𝐀𝐀𘠀𝐀𝐀 
+
+𝐀𘠀𝐀𝐀𝐀 
+
+𝐀𝐀𝐀𝐀𕐀𝐀𘠀 𝐀𚀀𝐀𙰀𝐀𕐀𒀀𙐀 
+
+> patches − level
+> Fake
+
+Fig. 2. Overview of the proposed ReConFuse framework. The input video is recon-structed by a pretrained video VAE, reconstruction errors are extracted as low-level forensic evidence, reconstruction error tokens are aligned and fused with semantic to-kens, and Mamba is used for temporal modeling and video-level real/fake prediction. 
+
+This process can be viewed as projecting an input video into the learned video latent reconstruction space and reconstructing it back to the pixel space. We regard the pretrained WF-VAE as an external video reconstruction prior. Since real and AI-generated videos may differ in how well they fit this reconstruction prior, their reconstruction discrepancies can provide useful low-level forensic cues for AI-generated video detection. XCLIP Semantic Representation. XCLIP is a pretrained vision-language model that provides semantically rich video rep-resentations [29]. In this work, we use only its visual encoder to extract semantic features from input frames, rather than using its text retrieval branch or similar-ity aggregation module. For each frame xt, the XCLIP visual encoder produces patch-level semantic tokens: 
+
+St = XCLIP vis (xt), St = {s(i)
+
+t }Ni=1 , (5) where s(i)
+
+t denotes the semantic token of the i-th spatial patch and N is the number of patches. These tokens provide semantic context for the correspond-ing reconstruction-error tokens, helping the model distinguish normal content-dependent reconstruction difficulties from generation-related discrepancies. 
+
+3.2 Reconstruction-Guided Semantic-Error Fusion 
+
+As shown in Fig. 2, ReConFuse preserves dense frame-wise reconstruction error maps, aligns them with XCLIP semantic tokens at the patch level, and aggregates the fused representation for video-level real/fake prediction. 
+
+Reconstruction Error Representation. Given the reconstructed video ˆV =
+
+{ˆxt}Tt=1 produced by WF-VAE, we compute the signed reconstruction error for 6 X. Chen et al. 
+
+each frame: 
+
+et = xt − ˆxt, (6) where xt and ˆ xt denote the original and reconstructed frames at time t, respec-tively. We use signed reconstruction errors rather than magnitude-only errors, since the direction of reconstruction discrepancy may contain useful forensic information. The reconstruction error sequence is denoted as: 
+
+E = {et}Tt=1 . (7) To preserve local forensic cues, we convert each reconstruction error map into patch-level reconstruction error tokens. Specifically, each reconstruction error map is resized to the input resolution of the XCLIP visual encoder and embedded using a lightweight patch embedding layer: 
+
+Pt = ϕp (R(et)) , (8) where: 
+
+Pt = {p(i) 
+
+> t
+
+}Ni=1 , Pt ∈ RN ×Cp . (9) Here, R(·) denotes the resizing operation that matches the input resolution of the XCLIP visual encoder, ϕp(·) denotes a lightweight patch embedding layer, 
+
+p(i) 
+
+> t
+
+denotes the reconstruction error token of the i-th patch, N is the number of patches, and Cp is the reconstruction error token dimension. Compared with scalar reconstruction error, this dense reconstruction error representation pre-serves localized reconstruction anomalies such as texture distortions, boundary inconsistencies, and structural deviations. 
+
+Semantic-Error Fusion. Reconstruction errors alone can be ambiguous be-cause large errors may also arise from motion blur, compression artifacts, illu-mination changes, or complex textures. Therefore, we fuse reconstruction error tokens with XCLIP semantic tokens to interpret reconstruction discrepancies under semantic context. For each frame xt, the pretrained XCLIP visual encoder extracts patch-level semantic tokens: 
+
+St = {s(i) 
+
+> t
+
+}Ni=1 , St ∈ RN ×Cs . (10) Since reconstruction error and semantic tokens are generated on the same patch grid, p(i) 
+
+> t
+
+and s(i) 
+
+> t
+
+correspond to the same local region. We first project them into a shared feature dimension: ˜s(i) 
+
+> t
+
+= Wss(i) 
+
+> t
+
+, ˜p(i) 
+
+> t
+
+= Wpp(i) 
+
+> t
+
+. (11) Then, a reconstruction-error-guided gate is used to estimate how much recon-struction error evidence should be injected into the semantic representation: 
+
+a(i) 
+
+> t
+
+= σ
+
+
+
+Wa[˜ s(i) 
+
+> t
+
+; ˜ p(i) 
+
+> t
+
+]
+
+
+
+, (12) ReConFuse for AI-Generated Video Detection 7
+
+where [ ·; ·] denotes channel-wise concatenation and σ(·) is the sigmoid function. The fused semantic-error token is computed as: 
+
+f (i) 
+
+> t
+
+= ˜ s(i) 
+
+> t
+
++ a(i) 
+
+> t
+
+⊙ ˜p(i) 
+
+> t
+
+, (13) where ⊙ denotes element-wise multiplication. This gated fusion enables the model to emphasize reconstruction error cues that are informative under the corresponding semantic context, while suppressing reconstruction error varia-tions caused by normal video content. The fused semantic-error token sequence of frame t is: 
+
+Ft = {f (i) 
+
+> t
+
+}Ni=1 , Ft ∈ RN ×Cf . (14) By stacking all frames, we obtain: 
+
+F = {Ft}Tt=1 . (15) 
+
+Video-Level Prediction. The fused semantic-error representation F is fed into a Mamba-based temporal module to aggregate cross-frame forensic evidence. The temporal module captures how local reconstruction anomalies evolve across frames and outputs a video-level representation z. To preserve global semantic information, we concatenate z with the video-level semantic context g:
+
+h = [ z; g]. (16) Finally, the probability that the input video is AI-generated is predicted by: ˆy = σ(W h + b). (17) The model is trained with the binary cross-entropy loss: 
+
+L = − [y log(ˆ y) + (1 − y) log(1 − ˆy)] , (18) where y ∈ { 0, 1} is the ground-truth label. 
+
+## 4 Experiments 
+
+In this section, we evaluate the proposed ReConFuse framework on two AI-generated video detection benchmarks, GenVideo and GenBuster. The experi-ments are designed to assess detection performance under the one-to-many and many-to-many settings of GenVideo, as well as the benchmark protocol of Gen-Buster. We compare ReConFuse with representative video-level and image-level detectors, and further conduct ablation studies to analyze the contribution of reconstruction error cues, semantic alignment, and temporal modeling. 
+
+Datasets. We evaluate our method on two AI-generated video detection benchmarks: GenVideo [6] and GenBuster [39]. GenVideo is a large-scale bench-mark introduced by DeMamba, containing real-world videos and AI-generated videos from diverse generative models. Following the standard GenVideo proto-col, we evaluate on both one-to-many and many-to-many settings. In the one-to-many setting, models are trained with 10,000 real videos from Kinetics-400 [17] 8 X. Chen et al. 
+
+Table 1. GenVideo one-to-many results. Values are percentages. Best and second-best results are bolded and underlined.                                                                                                                                                                                                                       
+
+> Method Mod. Train Metric Scope Morph Moon Hot. Show1 Gen2 Craft. Lavie Sora Wild Avg.
+> DeMamba Video Yes Recall 74.20 81.40 94.96 28.00 30.60 81.20 72.80 39.60 42.86 50.55 59.62 Acc. 86.70 90.30 97.13 63.60 64.90 90.20 86.00 69.40 71.43 75.97 79.56 F1 84.80 89.35 97.00 43.48 46.58 89.23 83.87 56.41 60.00 66.76 71.75 AUROC 96.31 98.47 99.87 85.34 85.17 99.02 98.13 90.23 89.03 86.23 92.78 DIRE Image Yes Recall 61.20 80.00 98.00 16.00 33.00 91.20 80.60 34.60 35.71 43.20 57.35 Acc. 79.80 89.20 98.20 57.20 65.70 94.80 89.50 66.50 67.86 70.80 77.96 F1 75.18 88.11 98.20 27.21 49.03 94.61 88.47 50.81 52.63 59.67 68.39 AUROC 93.05 97.18 99.66 82.97 90.50 99.13 97.87 87.54 90.47 91.84 93.02
+> AEROBLADE Image No Recall 58.60 75.00 79.40 60.20 62.00 77.80 88.20 43.80 33.93 35.80 61.47 Acc. 78.80 87.00 89.20 79.60 80.50 88.40 93.60 71.40 66.07 67.40 80.20 F1 73.43 85.23 88.03 74.69 76.07 87.02 93.23 60.50 50.00 52.34 74.05 AUROC –––––––––––D3 Video No Recall 92.50 88.00 94.00 84.50 83.00 96.50 93.00 85.00 99.00 87.50 90.30
+> Acc. 64.50 69.00 66.00 61.50 60.00 56.50 63.50 68.50 51.25 59.50 62.03 F1 71.80 73.95 73.60 69.20 68.10 68.80 71.60 72.96 67.01 68.90 70.59 AUROC –––––––––––Ours Video Yes Recall 89.20 94.00 99.79 65.20 80.80 94.00 91.40 72.00 83.93 77.46 84.78 Acc. 87.70 90.10 92.83 75.70 83.50 90.10 88.80 79.10 85.71 82.03 85.56
+> F1 87.88 90.47 93.14 72.85 83.04 90.47 89.08 77.50 85.45 80.45 85.03
+> AUROC 95.80 97.37 99.54 83.73 91.11 95.46 95.21 88.11 92.70 88.19 92.72
+
+and 10,000 AI-generated videos from Pika [28]. In the many-to-many generaliza-tion task, models are trained on 10 baseline categories and evaluated the average detection performance on MSR-VTT [40] and 10 diverse AI-generated datasets from different generation paradigms. For GenBuster, we follow its benchmark protocol and evaluate on subsets generated by recent commercial 8 generators. 
+
+Evaluation Metrics. We evaluate performance using Recall, Accuracy, F1-score [7], and AUROC [16], treating AI-generated videos as the positive class. All results are percentages; bold and underlined values indicate the best and second-best results. 
+
+Baselines. We compare ReConFuse with representative baselines, includ-ing DeMamba [6], DIRE [38], AEROBLADE [31], and D3 [42]. DeMamba, D3, and ReConFuse are video-level detectors, while DIRE and AEROBLADE are image-level detectors evaluated by aggregating frame-level predictions. De-Mamba, DIRE, and ReConFuse require training, whereas D3 and AEROBLADE are training-free methods. For training-based methods, we follow the same train-ing split whenever applicable. Training-free methods are included as reference forensic detectors and are evaluated without benchmark-specific training. 
+
+4.1 Main Results on GenVideo One-to-Many Setting. Table 1 reports the results on GenVideo under the one-to-many setting. Our method achieves the best average Accuracy and F1-score, improving over DeMamba from 79.56% to 85.56% Accuracy and from 71.75% to 85.03% F1-score. D3 obtains the highest average Recall, and DIRE obtains the highest average AUROC, but our method provides stronger Accuracy and F1-score under the fixed decision threshold. ReConFuse for AI-Generated Video Detection 9
+
+Table 2. GenVideo many-to-many results. Values are percentages. Best and second-best results are bolded and underlined.                                                                                                                                                                                                                                
+
+> Method Mod. Train Metric Scope Morph Moon Hot. Show1 Gen2 Craft. Lavie Sora Wild Avg.
+> DeMamba Video Yes Recall 69.40 99.60 99.79 96.40 97.00 99.60 99.40 95.20 55.36 94.53 90.63 Acc. 79.70 94.80 94.77 93.20 93.50 94.80 94.70 92.60 71.43 92.16 90.17 F1 77.37 95.04 94.91 93.41 93.72 95.04 94.94 92.79 65.96 92.01 89.52 AUROC 89.72 99.55 99.44 97.81 98.36 99.48 99.31 96.91 76.40 96.45 95.40 DIRE Image Yes Recall 46.40 76.40 69.80 63.80 56.00 75.00 83.80 58.80 35.71 27.40 59.31 Acc. 71.40 86.40 83.10 80.10 76.20 85.70 90.10 77.60 66.96 61.90 77.95 F1 61.87 84.89 80.51 76.22 70.18 83.99 89.43 72.41 51.95 41.83 71.33 AUROC 85.73 96.01 93.79 91.44 89.96 95.13 96.87 89.46 84.15 76.66 89.92 AEROBLADE Image No Recall 51.20 65.20 93.40 32.00 61.60 94.80 81.80 49.20 25.00 53.60 60.78 Acc. 75.10 82.10 96.20 65.50 80.30 96.90 90.40 74.10 61.61 76.30 79.85 F1 67.28 78.46 96.09 48.12 75.77 96.83 89.50 65.51 39.44 69.34 72.63 AUROC –––––––––––D3 Video No Recall 92.50 88.00 94.00 84.50 83.00 96.50 93.00 85.00 99.00 87.50 90.30 Acc. 64.50 69.00 66.00 61.50 60.00 56.50 63.50 68.50 51.25 59.50 62.03 F1 71.80 73.95 73.60 69.20 68.10 68.80 71.60 72.96 67.01 68.90 70.59 AUROC –––––––––––Ours Video Yes Recall 97.40 100.00 100.00 95.60 99.60 99.80 100.00 93.80 55.36 92.78 93.44
+> Acc. 94.00 95.30 95.18 93.10 95.10 95.20 95.30 92.20 72.32 91.64 91.93
+> F1 94.20 95.51 95.30 93.27 95.31 95.41 95.51 92.32 66.67 91.38 91.49
+> AUROC 97.66 99.84 99.77 97.32 99.07 99.78 99.70 96.30 72.67 96.08 95.82
+
+Many-to-Many Setting. Table 2 shows the comparison results on GenVideo under the more diverse many-to-many setting. Our method achieves the best average Recall, Accuracy, F1-score, and AU-ROC, improving over DeMamba from 90.17% to 91.93% Accuracy and from 89.52% to 91.49% F1-score. D3 remains recall-oriented, whereas our method achieves more balanced video-level performance, especially in average F1-score. 
+
+4.2 Evaluation on GenBuster 
+
+We further evaluate different methods on GenBuster to verify the effectiveness of ReConFuse on an additional AI-generated video detection benchmark. Following the GenBuster benchmark protocol, we report results on subsets generated by re-cent commercial generators, which provide a complementary evaluation scenario beyond GenVideo. Table 3 reports the comparison results. On GenBuster, our method achieves the best average Accuracy, F1-score, and AUROC, improving DeMamba from 90.40% to 91.23% F1-score and from 99.25% to 99.37% AUROC. 
+
+4.3 Ablation Study 
+
+We conduct ablation studies to analyze the contribution of each major compo-nent in ReConFuse. Unless otherwise specified, all ablation results are reported in percentage form using Accuracy, F1-score, and AUROC. 
+
+Effect of Major Components. Table 4 reports the effect of removing or replacing the main components. The complete model improves the XCLIP-only baseline from 79.56% to 88.33% Accuracy and from 77.14% to 88.18% F1-score, showing the benefit of WF-VAE reconstruction cues. 10 X. Chen et al. 
+
+Table 3. Evaluation on GenBuster under its benchmark protocol. Values are percent-ages. Best and second-best results are bolded and underlined. 
+
+Method Mod. Train Metric Gen3 Jimeng Kling Luma Pika Sora Vidu Wanx Avg. 
+
+DeMamba Video Yes Recall 86.00 79.00 83.00 93.00 86.00 79.50 92.67 96.00 86.90 Acc. 96.67 95.50 96.17 97.83 96.67 93.29 97.38 98.15 96.46 F1 89.58 85.41 87.83 93.47 89.58 87.12 94.24 96.00 90.40 AUROC 99.38 98.62 98.79 99.50 99.18 99.12 99.65 99.79 99.25 DIRE Image Yes Recall 25.80 64.80 68.40 46.20 29.20 67.20 70.00 44.40 52.00 Acc. 62.70 82.20 84.00 72.90 64.40 83.40 84.80 72.00 75.80 F1 40.89 78.45 81.04 63.03 45.06 80.19 82.16 61.33 66.52 AUROC 85.14 95.74 96.87 89.46 83.22 96.09 96.23 90.36 91.64 AEROBLADE Image No Recall 26.79 25.00 66.40 69.00 26.79 73.80 70.80 43.40 50.25 Acc. 63.39 62.30 83.10 84.40 63.39 86.90 85.40 71.70 75.07 F1 42.25 39.87 79.71 81.56 42.25 84.93 82.90 60.53 64.25 AUROC – – – – – – – – –D3 Video No Recall 100.00 88.00 83.00 85.00 83.00 99.00 99.33 100.00 92.17 
+
+Acc. 50.00 69.00 72.50 68.50 67.50 51.25 50.67 62.50 61.49 F1 66.67 73.95 75.11 72.96 71.86 67.01 66.82 72.73 70.89 AUROC – – – – – – – – –Ours Video Yes Recall 88.00 82.00 89.00 97.00 90.00 82.00 94.00 96.00 89.75 Acc. 96.67 95.67 96.83 98.17 97.00 93.71 97.38 97.85 96.66 
+
+F1 89.80 86.32 90.36 94.63 90.91 88.17 94.31 95.36 91.23 
+
+AUROC 99.61 98.50 99.17 99.64 99.44 99.10 99.70 99.81 99.37 
+
+Error-only detection performs poorly, indicating that reconstruction discrep-ancies require semantic context. Removing patch-level alignment or replacing Mamba with mean pooling also degrades performance, confirming the impor-tance of local semantic correspondence and temporal modeling. 
+
+Table 4. Ablation study on major components. Values are percentages.                                           
+
+> Variant Error Sem. Patch Temp. Acc. F1 AUC
+> XCLIP only –✓–✓79.56 77.14 82.78 Error only ✓––✓43.65 68.05 80.40 w/o Semantic-Error Fusion ✓✓–✓60.11 67.79 84.28 w/o Mamba ✓✓✓–68.55 75.63 86.17 Ours ✓✓✓✓88.33 88.18 95.15
+
+Effect of Different VAE Reconstruction Priors. We further study the in-fluence of different VAE reconstruction priors for extracting reconstruction-error cues. Specifically, we compare reconstruction errors produced by Wan 2.2 VAE, CogVideoX VAE, and SD1.5 VAE under the same downstream detection frame-work. This experiment aims to determine whether the choice of reconstruction prior affects the quality of forensic evidence used by ReConFuse. As shown in Fig. 3, different VAEs produce noticeably different reconstruction-error patterns. The video VAEs generate temporally organized error responses across consecutive frames, while the image-level SD1.5 VAE tends to produce more frame-wise texture-dominated residuals.This indicates that, compared with these VAEs, WF-VAE produces smaller reconstruction errors and can better fit ReConFuse for AI-Generated Video Detection 11 (a) Reconstructed by Wan 2.2 VAE         
+
+> (b)Reconstructed by CogVideoX VAE
+> (c)Reconstructed by SD 1.5 VAE
+
+Fig. 3. Comparison of grayscale reconstruction-error maps produced by different VAE reconstruction priors. This comparison supports the use of a video reconstruction prior for AI-generated video detection. 
+
+the generation process. Based on this comparison, we adopt WF-VAE as the reconstruction prior in ReConFuse, since it provides dense frame-wise recon-struction discrepancies while maintaining temporal consistency across frames. 
+
+Effect of Reconstruction Error Formulation. We further compare different WF-VAE reconstruction error VAEs. As shown in Table 5, This suggests that the direction of reconstruction deviation provides useful information that magnitude-only formulations discard. 
+
+Table 5. Ablation study on reconstruction error formulation. Values are percentages.                           
+
+> Error Type Description Acc. F1 AUROC
+> XCLIP only Only semantic tokens 79.56 77.14 82.78 Signed error xt−ˆxt88.33 88.18 95.15
+> Absolute error |xt−ˆxt|62.33 69.34 90.04 Squared error (xt−ˆxt)281.11 86.49 94.73
+
+Effect of Temporal Modeling. Table 6 compares different temporal aggre-gation modules. Mamba achieves the best Accuracy and F1-score, while mean pooling and Transformer [36] perform worse despite higher AUROC or more parameters. ResNet50 [13], LSTM [15], and 1D CNN [2] also underperform Mamba, sup-porting the use of an efficient sequence module for local semantic-error trajec-tories. Overall, the ablation results validate the complementary roles of WF-VAE reconstruction errors, semantic alignment, patch-level correspondence, and Mamba temporal modeling. 12 X. Chen et al. 
+
+Table 6. Ablation study on temporal modeling modules. Values are percentages.                             
+
+> Temporal Module Acc. F1 AUROC Params
+> Mean pooling 68.55 75.63 96.17 122.055M Transformer [36] 68.11 75.25 91.23 147.313M ResNet50 [13] 61.22 70.16 92.76 147.653M LSTM [15] 64.22 70.36 90.99 128.354M 1D CNN [2] 67.22 74.18 91.63 128.350M Mamba, ours 88.33 88.18 95.15 129.097M
+
+## 5 Conclusion 
+
+In this paper, we proposed ReConFuse, a reconstruction-guided semantic-error fusion framework for AI-generated video detection. By aligning WF-VAE re-construction errors with XCLIP semantic tokens and modeling their temporal evolution, ReConFuse captures complementary spatial, semantic, and temporal evidence. Experiments on GenVideo and GenBuster demonstrate its effective-ness and generalization ability. 
+
+## References 
+
+1. Afchar, D., Nozick, V., Yamagishi, J., Echizen, I.: Mesonet: A compact facial video forgery detection network. In: IEEE International Workshop on Information Foren-sics and Security. pp. 1–7 (2018) 2. Bai, S., Kolter, J.Z., Koltun, V.: An empirical evaluation of generic convolutional and recurrent networks for sequence modeling. arXiv preprint arXiv:1803.01271 (2018) 3. Bertasius, G., Wang, H., Torresani, L.: Is space-time attention all you need for video understanding? In: International Conference on Machine Learning. pp. 813– 824 (2021) 4. Blattmann, A., Dockhorn, T., Kulal, S., Mendelevitch, D., Kilian, M., Lorenz, D., Levi, Y., English, Z., Voleti, V., Letts, A., Jampani, V., Rombach, R.: Stable video diffusion: Scaling latent video diffusion models to large datasets. In: arXiv preprint arXiv:2311.15127 (2023) 5. Chang, C., Liu, Z., Lyu, X., Qi, X.: What matters in detecting ai-generated videos like Sora? arXiv preprint arXiv:2406.19568 (2024) 6. Chen, Y., Li, J., Zhang, X., Liu, H., Wang, W., Li, W.: Demamba: Ai-generated video detection on million-scale genvideo benchmark. In: arXiv preprint arXiv:2405.19707 (2024) 7. Chinchor, N., Sundheim, B.M.: MUC-5 evaluation metrics. In: Fifth Message Un-derstanding Conference (1993) 8. Chu, B., Xu, X., Wang, X., Zhang, Y., You, W., Zhou, L.: FIRE: Robust de-tection of diffusion-generated images via frequency-guided reconstruction error. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12830–12839 (2025) 9. Dai, X., Yu, Z., Hiang, C., Gao, C., He, Q., Wu, D., Xu, Z.: Detecting novel malware classes with a foundational multi-modality data analysis model. Data Intelligence 
+
+6(4), 968–993 (2024). https://doi.org/10.3724/2096-7004.di.2024.0056 10. Dolhansky, B., Bitton, J., Pflaum, B., Lu, J., Howes, R., Wang, M., Ferrer, C.C.: The deepfake detection challenge dataset. In: arXiv preprint arXiv:2006.07397 (2020) ReConFuse for AI-Generated Video Detection 13 11. Gao, X., Chen, W., Cui, Y., Dai, X., Dai, L.: Progressive adversarial contrastive learning: Towards efficient data augmentation in adversarial defense. Data Intelli-gence 7(4), 1169–1191 (2025). https://doi.org/10.3724/2096-7004.di.2025.0190 12. Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state spaces. In: International Conference on Learning Representations (2024) 13. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. pp. 770–778 (2016) 14. Ho, J., Chan, W., Saharia, C., Whang, J., Gao, R., Gritsenko, A., Kingma, D.P., Poole, B., Norouzi, M., Fleet, D.J., Salimans, T.: Imagen video: High definition video generation with diffusion models. In: arXiv preprint arXiv:2210.02303 (2022) 15. Hochreiter, S., Schmidhuber, J.: Long short-term memory. Neural Computation 
+
+9(8), 1735–1780 (1997) 16. Huang, J., Ling, C.X.: Using AUC and accuracy in evaluating learning algorithms. IEEE Transactions on Knowledge and Data Engineering 17 (3), 299–310 (2005) 17. Kay, W., Carreira, J., Simonyan, K., Zhang, B., Hillier, C., Vijayanarasimhan, S., Viola, F., Green, T., Back, T., Natsev, P., et al.: The kinetics human action video dataset. arXiv preprint arXiv:1705.06950 (2017) 18. Li, L., Bao, J., Zhang, T., Yang, H., Chen, D., Wen, F., Guo, B.: Face x-ray for more general face forgery detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 5001–5010 (2020) 19. Li, Y., Yang, X., Sun, P., Qi, H., Lyu, S.: Celeb-df: A large-scale challenging dataset for deepfake forensics. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3207–3216 (2020) 20. Li, Z., Lin, B., Ye, Y., Chen, L., Cheng, X., Yuan, S., Yuan, L.: WF-VAE: Enhanc-ing video VAE by wavelet-driven energy flow for latent video diffusion model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition. pp. 17778–17788 (2025). https://doi.org/10.1109/CVPR52734.2025.01656 21. Liu, Z., Ning, J., Cao, Y., Wei, Y., Zhang, Z., Lin, S., Hu, H.: Video swin trans-former. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3202–3211 (2022) 22. Luo, Y., Du, J., Yan, K., Ding, S.: LaRE 2: Latent reconstruction error based method for diffusion-generated image detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 23. Ni, B., Peng, H., Chen, M., Zhang, S., Meng, G., Fu, J., Xiang, S., Ling, H.: Expanding language-image pretrained models for general video recognition. In: European Conference on Computer Vision. pp. 1–18 (2022) 24. Ni, Z., Yan, Q., Huang, M., Yuan, T., Tang, Y., Hu, H., Chen, X., Wang, Y.: GenVidBench: A challenging benchmark for detecting ai-generated video. In: Pro-ceedings of the AAAI Conference on Artificial Intelligence (2026) 25. Ojha, U., Li, Y., Lee, Y.J.: Towards universal fake image detectors that gener-alize across generative models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 24480–24489 (2023) 26. OpenAI: Video generation models as world simulators. OpenAI Technical Report (2024), https://openai.com/research/video-generation-models-as-world-simulators 27. Pang, J., Yang, X., Qiu, X., Wang, Z., Huang, T.: MMAF: Masked multi-modal attention fusion to reduce bias of visual features for named entity recog-nition. Data Intelligence 6(4), 1114–1133 (2024). https://doi.org/10.3724/2096-7004.di.2024.0049 28. Pang, Y., Zhang, Y., Wang, T.: VGMShield: Mitigating misuse of video generative models. arXiv preprint arXiv:2402.13126 (2024) 14 X. Chen et al. 29. Qin, Y., Xie, H., Li, Y., Tan, B., Ding, S.: Enhancing intermodal interaction for unified vision-language understanding and generation. Data Intelligence 7(2), 358– 380 (2025). https://doi.org/10.3724/2096-7004.di.2025.0034 30. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: International Conference on Machine Learning. pp. 8748–8763 (2021) 31. Ricker, J., Lukovnikov, D., Fischer, A.: Aeroblade: Training-free detection of latent diffusion images using autoencoder reconstruction error. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 9130– 9140 (2024) 32. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 10684–10695 (2022) 33. Rossler, A., Cozzolino, D., Verdoliva, L., Riess, C., Thies, J., Nießner, M.: Face-forensics++: Learning to detect manipulated facial images. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 1–11 (2019) 34. Singer, U., Polyak, A., Hayes, T., Yin, X., An, J., Zhang, S., Hu, Q., Yang, H., Ashual, O., Gafni, O., Parikh, D., Gupta, S., Taigman, Y.: Make-a-video: Text-to-video generation without text-video data. In: International Conference on Learning Representations (2023) 35. Song, X., Guo, X., Zhang, J., Li, Q., Bai, L., Liu, X., Zhai, G., Liu, X.: On learn-ing multi-modal forgery representation for diffusion generated video detection. In: Advances in Neural Information Processing Systems (2024) 36. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., Polosukhin, I.: Attention is all you need. In: Advances in Neural Information Processing Systems. pp. 5998–6008 (2017) 37. Villegas, R., Babaeizadeh, M., Kindermans, P.J., Moraldo, H., Zhang, H., Saffar, M., Castro, S., Kunze, J., Erhan, D.: Phenaki: Variable length video generation from open domain textual description. In: International Conference on Learning Representations (2023) 38. Wang, Z., Bao, J., Zhou, W., Wang, W., Hu, H., Chen, H., Li, H.: Dire for diffusion-generated image detection. In: Proceedings of the IEEE/CVF International Con-ference on Computer Vision. pp. 22445–22455 (2023) 39. Wen, H., He, Y., Huang, Z., Li, T., Yu, Z., Huang, X., Qi, L., Wu, B., Li, X., Cheng, G.: Busterx: Mllm-powered ai-generated video forgery detection and explanation. arXiv preprint arXiv:2505.12620 (2025) 40. Xu, J., Mei, T., Yao, T., Rui, Y.: MSR-VTT: A large video description dataset for bridging video and language. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. pp. 5288–5296 (2016) 41. Zhang, S., Lian, Z., Yang, J., Li, D., Pang, G., Liu, F., Han, B., Li, S., Tan, M.: Physics-driven spatiotemporal modeling for ai-generated video detection. In: Advances in Neural Information Processing Systems (2025) 42. Zheng, C., Suo, R., Lin, C., Zhao, Z., Yang, L., Liu, S., Yang, M., Wang, C., Shen, C.: D3: Training-free ai-generated video detection using second-order features. In: arXiv preprint arXiv:2508.00701 (2025) 43. Zhipu AI: Zhipu qingyan. https://chatglm.cn/ (2026), generative AI assistant. Ac-cessed: 2026-05-28 44. Zhu, Y., Li, Y., Wang, J., Gao, M., Wei, J.: FaKnow: A unified library for fake news detection. Data Intelligence 7(2), 461–484 (2025). https://doi.org/10.3724/2096-7004.di.2024.0026

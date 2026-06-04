@@ -1,0 +1,1438 @@
+Title: Mahalanobis PatchCore: Covariance-Aware and Streaming-Compatible Industrial Anomaly Detection
+
+URL Source: https://arxiv.org/pdf/2605.27748v1
+
+Published Time: Thu, 28 May 2026 00:22:34 GMT
+
+Number of Pages: 57
+
+Markdown Content:
+# Mahalanobis PatchCore: Covariance-Aware and Streaming-Compatible Industrial Anomaly Detection 
+
+Niccol` o Ferrari a,b , Oligert Osmani a,c , Evelina Lamma a
+
+> aDepartment of Engineering, University of Ferrara, Via Saragat 1, 44122, Ferrara, Italy
+> bNAIS s.r.l., Via Maria Callas 4, 40131, Bologna, Italy
+> cBonfiglioli Engineering S.r.l., Via Amerigo Vespucci 20, 44124, Ferrara, Italy
+
+Abstract 
+
+Industrial visual anomaly detection is usually one-class: normal images are abundant, while defects are rare, heterogeneous, and often unavailable during system design. PatchCore-style retrieval suits this setting because it scores test images from a memory bank of normal patch features, but the standard Euclidean geometry ignores feature correlations and its offline construction materialises the full patch pool before subsampling. We introduce Mahalanobis PatchCore , a covariance-aware, streaming-compatible extension of PatchCore. Its artificial intelligence contribution is a retrieval detector that estimates a regularised covariance model in reduced feature space and whitens embeddings, so Euclidean nearest-neighbour search after transformation implements Mahalanobis retrieval. A bounded-memory, re-iterable training pipeline builds the memory bank without storing all normal patches at once, using incremental dimensionality reduction, online covariance estimation, and streaming aggregation. The engineering application is automated industrial inspection, where vi-sual anomaly detection must remain accurate under practical memory limits. We evaluate the method on a public 15-category industrial anomaly-detection benchmark and three industrial datasets covering blow-fill-seal strip-ampoule meniscus inspection, amber-glass-ampoule bottom inspection, and lyophilised-cake vial inspection. Mahalanobis PatchCore preserves most offline Patch-   
+
+> Email addresses: niccolo.ferrari@unife.it (Niccol` o Ferrari),
+> oligert.osmani@edu.unife.it (Oligert Osmani)
+> Preprint submitted to Engineering Applications of Artificial Intelligence
+
+Core image-level performance on the public benchmark while reducing peak memory from 5 .41 to 2 .78 GB, and improves the selected industrial mean image area under the receiver operating characteristic curve from 0 .981 to 0.986. 
+
+Keywords: Mahalanobis Distance, Embedding Similarity, Bounded-Memory Training, Computer Vision, Industrial Automation, Out-of-Distribution Anomaly Detection 
+
+Code: https://github.com/NickF93/MH-PatchCore 
+
+Data Availability: MVTec Anomaly Detection ( MVTec AD ) is publicly available through its original release [ 1]. The industrial datasets used in this study cannot be publicly released because they are derived from commercial inspection data subject to non-disclosure restrictions. 
+
+1. Introduction 
+
+Industrial Anomaly Detection (AD) is often a normality-modelling prob-lem rather than a standard supervised classification problem. Large collec-tions of normal products can usually be acquired from production, whereas defective samples are scarce, visually heterogeneous, and sometimes not avail-able when an inspection system is designed. At the same time, industrial deployment imposes practical constraints that are not secondary to accuracy. The detector should be stable, sufficiently diagnostic for engineering use, and compatible with the memory footprint and runtime budgets of the target line. Recent real-time and low-latency industrial AD systems make this require-ment explicit: model complexity can limit real-time processing, while strict runtime limits are tied to production rate and economic viability [ 2, 3]. The central challenge is therefore to learn a reliable anomaly score from normal data alone while keeping the inference mechanism simple enough to remain operationally useful. Patch-based retrieval methods are a natural fit for this setting because they represent normality through local feature support rather than through an explicit defect model. Among them, PatchCore [4] has become a reference baseline: a frozen backbone extracts patch descriptors, a coreset compresses the normal memory bank, and test patches are scored by nearest-neighbour distance to that bank. This design is attractive because the learned model is essentially a geometry over patch embeddings plus a fixed support set. It 2is also precisely this simplicity that makes its limitations visible. First, the standard Euclidean retrieval geometry implicitly treats feature directions as equally scaled and uncorrelated, although deep patch embeddings are often anisotropic and correlated. Second, the usual offline construction materialises the complete normal patch pool before subsampling it, so peak training mem-ory follows the number and dimensionality of extracted patches rather than the size of the final support set. This may be acceptable for small bench-mark categories, but it is less satisfactory when image counts, resolutions, or industrial deployment constraints grow. This paper introduces Mahalanobis PatchCore ( MH-PatchCore ),a covariance-aware and streaming-compatible extension of PatchCore. The method keeps the retrieval-based inference paradigm intact, but changes the space in which retrieval is performed and the way the memory bank is built. Patch embeddings are reduced and whitened using a regularised covariance model, so Euclidean nearest-neighbour search in the transformed space implements Mahalanobis retrieval in the reduced coordinates. Training is organised as a bounded-memory, re-iterable pipeline: the method fits the reduction, estimates the covariance statistics, and constructs the memory bank without requiring the complete patch pool to reside in memory at once. Thus, the proposal is not evaluated here as an autonomous continual-learning system. Rather, MH-PatchCore is a PatchCore-style detector whose bounded-memory training procedure consumes normal data in mini-batches. Additional curated normal batches can be included while the detector is still being fitted, before the reduction, covariance transform, and memory bank are finalised for deployment. In the reported experiments, however, the reduction, covariance transform, and memory bank are finalised before inference. The paper makes three main contributions: 1. Covariance-aware Mahalanobis scoring in whitened space. We replace isotropic nearest-neighbour retrieval with an equivalent Eu-clidean search in a whitened reduced space, preserving PatchCore’s support-set inference while making distances sensitive to feature covar-iance. 2. Bounded-memory streaming-compatible training. We formulate training as a multi-pass but bounded-memory procedure that fits the reducer, estimates covariance statistics, and constructs the support set without materialising all normal patches simultaneously. 33. Empirical evaluation of detection quality and resource foot-print. We compare the proposed geometry and memory-bank con-struction against the original PatchCore baseline, Euclidean streaming controls, and selected budget/constructor ablations on MVTec Anomaly Detection ( MVTec AD ) and selected industrial inspection datasets, re-porting both detection quality and resource telemetry. We evaluate the method in two complementary settings. The public com-ponent is MVTec AD [1], considered through its 15 category-specific datasets; the industrial component consists of three image-level inspection datasets cov-ering meniscus, ampoule-bottom, and lyophilised-product inspection. This separation keeps the benchmark and deployment questions distinct. On MVTec AD , where pixel masks are available, pixel-wise metrics are reported for localisation completeness. On the industrial datasets, where masks are not available and the operational decision is image-level, the comparison focuses on image-level metrics and RAM telemetry, with a Meniscus subset ladder used to study RAM-constrained training budgets. The remainder of the paper is organised as follows. Section 2 reviews the main lines of related work. Section 3 formalises MH-PatchCore and its training/inference pipeline. Section 4 describes the experimental protocol and the evaluated configurations. Section 5 presents category-resolved MVTec AD results together with the industrial image-level comparison and the MVTec-only pixel-level completeness results. Sections 6 and 7 discuss the findings and conclude the paper. 
+
+2. Related Work 
+
+2.1. Embedding-Based and Memory-Bank Anomaly Detection 
+
+Embedding-based AD methods avoid learning an explicit image recon-struction model. Instead, they represent normality in a feature space and detect test samples whose local descriptors fall outside the nominal sup-port. This idea is particularly effective in industrial inspection, where strong pretrained features often provide useful local descriptors even when only defect-free training images are available. Semantic Pyramid Anomaly De-tection ( SPADE ) [ 5] showed that nearest-neighbour matching on pretrained feature pyramids can support sub-image anomaly localisation with minimal task-specific training. PANDA [6] further studied pretrained representations in one-class anomaly detection and segmentation, highlighting their strength 4as well as the risk of feature collapse when they are adapted to the normal class. Patch Distribution Modeling ( PaDiM ) [7] models each spatial location of the feature map with a multivariate Gaussian and scores devi-ations with a Mahalanobis distance. It therefore makes covariance struc-ture explicit, but ties the statistical model to aligned feature-map positions. 
+
+PatchCore [ 4] takes a different route: it stores nominal patch descriptors in a global memory bank, compresses that bank with greedy coreset selection, and performs nearest-neighbour retrieval in Euclidean space. This makes PatchCore a strong reference point for one-class industrial visual inspection, but its standard scoring geometry treats feature directions as isotropic after embedding extraction. MH-PatchCore is positioned at this interface. It keeps the PatchCore memory-bank view of normal support, while introducing a global covariance-aware whitening transform before retrieval. 
+
+2.2. Reconstruction, Distillation, and Synthesis 
+
+Reconstruction-based approaches learn to reproduce nominal images and interpret large reconstruction residuals as evidence of abnormality. Gen-erative Adversarial Network ( GAN )-based methods such as GANomaly [ 8]and Skip-GANomaly [ 9] use adversarial encoder–decoder objectives to model the normal image manifold. Feature-reconstruction methods move the re-construction target from pixels to pretrained representations; Reverse Dis-tillation [ 10 ], for example, trains a decoder to recover multi-scale teacher features from a compact one-class embedding. Discriminatively Trained Reconstruction Embedding ( DRAEM ) [ 11 ] shifts this family toward dis-criminative surface inspection by training with synthetic texture anoma-lies and learning a joint reconstructive-discriminative representation. Re-lated industrial methods, such as Generative-Reconstructive-Discriminative Network ( GRD-Net ) [ 12 , 13 ], combine generative, reconstructive, and dis-criminative modules with task-specific attention mechanisms, while recent anomaly-synthesis work such as Global and Local Anomaly co-Synthesis Strategy ( GLASS ) [ 14 ] studies how to generate broader and more control-lable synthetic defects. These methods are complementary to the present work: they modify the training objective or the anomaly-generation process, whereas MH-PatchCore keeps the frozen-feature retrieval paradigm and asks how its retrieval geometry and memory bank can be made covariance-aware and memory-bounded. 52.3. Mahalanobis Distance in Anomaly Detection 
+
+Mahalanobis distance was introduced as a generalised statistical distance by Mahalanobis [ 15 ]. Covariance-based distances have since become a classi-cal tool for multivariate outlier and leverage diagnostics [ 16 ], and their role as a general multivariate distance has been reviewed in chemometrics, pattern recognition, and process control [ 17 ]. In visual AD , Mahalanobis scoring has been reintroduced to account for feature correlations in high-dimensional embedding spaces. Rippel et al. [ 18 ] model normal images with a global mul-tivariate Gaussian in pretrained feature space, using Mahalanobis distance as the anomaly score. PaDiM [ 7] applies per-location Mahalanobis distance to model the normal distribution of patch embeddings, computing a separate covariance matrix per spatial position. Mahalanobis scoring has also been studied with hybrid transformer and convolutional patch representations, where multivariate Gaussian models are fit to normal embeddings and test patches are scored by their distance to those models [ 19 ]. Our use of Mahala-nobis geometry is deliberately different. Rather than replacing the memory bank with separate local Gaussian classifiers, MH-PatchCore estimates a single regularised covariance over the reduced global patch population and uses the resulting whitening map to change the metric of PatchCore-style nearest-neighbour retrieval. 
+
+2.4. Streaming-Compatible Training 
+
+Memory-bank methods inherit a scaling issue from their main strength: dense patch-level coverage of the nominal distribution can require storing a very large number of descriptors. PatchCore mitigates this pressure through greedy coreset subsampling [ 4], but the standard formulation still builds the candidate patch pool before selecting the representative subset. This dis-tinction matters when the training set is large or when memory telemetry is part of the evaluation itself. Resource-aware visual anomaly detection has also been studied from the inference side: EfficientAD [ 3] targets millisecond-level latencies by combining a lightweight feature extractor, student–teacher prediction, and a compact global-analysis branch. That line of work is comple-mentary to ours: it optimises inference architecture and throughput, whereas this paper studies the bounded-memory construction of a PatchCore-style support set. In this paper, “streaming” therefore refers to a bounded-memory, streaming-compatible training procedure over a re-iterable nominal dataset, not to continual one-pass adaptation. The contribution is the joint treatment of incremental dimensionality reduction, streaming covariance estimation, and 6bounded-memory support-set construction inside a PatchCore-style retrieval pipeline. 
+
+3. Method 
+
+MH-PatchCore learns four objects from normal data: ( R, ˆμ, L, M). The map R places patch descriptors in a reduced coordinate system, while ˆμ
+
+and L define the covariance-aware whitening transform used for retrieval. The bank M is the bounded support set queried at inference time. The following subsections first fix the PatchCore baseline notation, then formalise covariance-aware retrieval, bounded-memory bank construction, the two-pass Geometric Residual Selection ( GeoReS ) ablation, and image scoring. Ap-pendix Appendix A provides a compact notation reference for the symbols used throughout the method. Figure 1 gives a high-level view of the training and inference flow before the individual components are formalised. 
+
+3.1. Problem Setup and PatchCore Formulation 
+
+We use the following notation to describe the detector independently of whether the normal patch pool is materialised offline or consumed under a bounded-memory streaming regime. We consider the standard one-class anomaly-detection setting, where the training set 
+
+Dtrain = {xi}Ni=1 , xi ∼ pnormal , (1) contains only normal images sampled from the normal production distribution. At test time, the detector assigns each image a real-valued anomaly score 
+
+s : X → R, (2) with larger values of s(x) indicating stronger evidence of departure from the normal class. A frozen feature extractor together with a patch-construction operator maps each image x to a finite set of patch descriptors 
+
+P(x) = {u(j)}nx
+
+> j=1
+
+, u(j) ∈ Rd0 . (3) The full pool of normal training patches is therefore 
+
+U =⋃︂ 
+
+> x∈D train
+
+P(x). (4) 7Inference / Testing 
+
+Test sample Pretrained encoder (frozen) Locally aware patch descriptors …Image-level anomaly score Pixel-level anomaly map / predicted segmentation 
+
+High Low Feature extraction Reduction & statistics Memory / retrieval Inference & outputs 
+
+Support set constructed under bounded memory in transformed space. 
+
+Training (nominal data) Nominal training samples Single Channel Image or Three Channel Image 
+
+Frozen encoder (pretrained) Multiscale features from layer 2 & layer 3 Locally aware patch descriptors …Incremental reduction R(·) 
+
+ũ = R(u) 
+
+Streaming covariance model 
+
+μ̂, Σreg, L 
+
+Whitening (whitened descriptors) 
+
+z = L ⁻¹(R(u) − μ ̂)
+
+…Bounded-memory merge-reduce k-center bank 𝓜 
+
+Lyo Dataset 
+
+Meniscus Dataset 
+
+Bottom Dataset 
+
+Memory bank & retrieval 
+
+MH-PatchCore 
+
+Memory Bank 𝓜 
+
+Euclidean nearest-neighbour retrieval in whitened space Patch-to-image scoring 
+
+Whitening for inference 
+
+z = L ⁻¹(R(u) − μ̂ )Euclidean ≡ Mahalanobis 
+
+> in reduced space after whitening
+
+Figure 1. Overview of MH-PatchCore training and inference. Nominal single-channel or three-channel inspection images are mapped by a frozen encoder to locally aware patch descriptors, reduced incrementally, whitened by a regularised covariance model, and sum-marised into a bounded-memory k-center bank. At inference, the same encoder, reduction, and whitening transform are applied before Euclidean nearest-neighbour retrieval in the whitened space, which is equivalent to Mahalanobis retrieval in the reduced coordinates. The detector returns image-level anomaly scores and spatial anomaly maps with predicted segmentations. 
+
+8Here U is a notional pool of descriptors: the offline reference can materialise it, whereas the streaming variants below process its elements in mini-batches. PatchCore [ 4] represents normality by a memory bank M ⊆ U and per-forms anomaly detection by nearest-neighbour retrieval in patch space. In its classical form, this bank can be written as greedy coreset subsampling with retained fraction η,
+
+M = GreedyCoreset( U, η ), η ∈ (0 , 1] , (5) and, in the squared-distance convention used throughout this paper, each query patch is scored by Euclidean nearest-neighbour distance: 
+
+a(u) = min  
+
+> m∈M
+
+∥u − m∥22, u ∈ P (x). (6) This convention differs from the unsquared form only by a monotone trans-formation, so it preserves nearest-neighbour identities while fixing the score scale used by the downstream scoring rule. This formulation is attractive because inference depends only on a geometry over patch embeddings and a fixed support set. At the same time, it reveals the two limitations targeted in this paper. The first is geometric: Euclidean retrieval ignores covariance structure in deep patch representations. The second is computational: the classical pipeline builds M only after materialising the full patch pool U,so peak training-time memory scales with the number of extracted patches rather than with the final support-set size. Figure 2 summarises the conceptual difference between the offline Patch-Core pipeline and the streaming covariance-aware variant developed in this paper. The right-hand side introduces the notation formalised in the following subsections. 
+
+3.2. Covariance-Aware Retrieval in Reduced Space 
+
+MH-PatchCore modifies PatchCore along two coupled axes: the geometry used for retrieval and the procedure used to build the memory bank. We first map each patch descriptor to a reduced coordinate system, ˜u = R(u), R : Rd0 → Rk, (7) where R denotes the fitted dimensionality reducer learned from normal train-ing patches. In the Principal Component Analysis ( PCA )/Incremental Prin-cipal Component Analysis ( IPCA ) instantiation used in the reported experi-ments, this reducer is the centred projection 
+
+R(u) = W ⊤(u − ¯uR), (8) 9Original PatchCore Streaming MH-PatchCore 
+
+Normal training images 
+
+Frozen feature extractor and patch descriptors 
+
+Full patch pool 
+
+U = ⋃ 
+
+> x
+
+P(x)
+
+Greedy coreset 
+
+M ⊆ U
+
+Euclidean nearest-neighbour retrieval in feature space 
+
+Image and pixel anomaly scores 
+
+Normal training images 
+
+Frozen feature extractor and patch descriptors 
+
+Incremental reduction ˜u = R(u)
+
+Streaming co-variance model ˆμ, Σreg , L 
+
+Bounded-memory merge-reduce 
+
+k-center bank M
+
+Euclidean retrieval in whitened space 
+
+≡ Mahalanobis retrieval 
+
+Image and pixel anomaly scores 
+
+z = L−1(R(u) − ˆμ)
+
+Support set is selected after materialising the full normal patch pool. 
+
+Support set is constructed under bounded memory in transformed space. Figure 2. Conceptual comparison between the offline PatchCore baseline and the stream-ing covariance-aware variant studied in this paper. The diagram contrasts the point at which the support set is built and the geometry used for nearest-neighbour retrieval. 
+
+10 with W ∈ Rd0×k denoting the learned projection matrix and ¯uR the reducer mean. Working in reduced space serves two purposes. It suppresses redun-dancy before covariance estimation and makes global second-order modelling numerically tractable. Let ˆμ and ˆΣ denote the mean and empirical covariance of the reduced normal patches. In the streaming setting these statistics are accumulated from mini-batches via numerically stable moment updates. The full streaming covariance update is summarised in Appendix Appendix E. Given current state ( n, ˆμ, M 2) and batch summary ( nb, ˆμb, M 2,b ), we use 
+
+δ = ˆ μb − ˆμ, (9) ˆμ ← ˆμ + nb
+
+n + nb
+
+δ, (10) 
+
+M2 ← M2 + M2,b + n n b
+
+n + nb
+
+δδ ⊤, (11) 
+
+n ← n + nb, (12) followed by ˆΣ = M2
+
+n − 1. (13) The covariance is then regularised to a symmetric positive-definite matrix Σ reg .In the canonical baseline this regularisation is based on shrinkage toward the scaled identity, optional eigenvalue flooring, and stable Cholesky factorisation; the numerical details are given in Appendix Appendix C. Let δ be the adaptive Cholesky jitter from Appendix Appendix C, and define ΣL = Σ reg + δI = LL ⊤. (14) We define the whitened embedding 
+
+z(u) = L−1(︁ R(u) − ˆμ)︁ . (15) For any two reduced embeddings ˜ u and ˜ v,
+
+∥z(u) − z(v)∥22 = (˜ u − ˜v)⊤Σ−1 
+
+> L
+
+(˜ u − ˜v), (16) so Euclidean retrieval in whitened space is equivalent to Mahalanobis retrieval in the reduced coordinates under the effective covariance Σ L. A formal statement and proof of this equivalence are given in Lemma Appendix B.1 in Appendix Appendix B. This is the central geometric step of MH-PatchCore :the retrieval structure of PatchCore is preserved, but the isotropic Euclidean geometry is replaced by a covariance-aware one. 11 3.3. Streaming Memory-Bank Construction 
+
+The second contribution concerns how the memory bank is constructed. Instead of materialising the entire patch pool and compressing it afterwards, we seek a bounded support set directly in the transformed space. Let 
+
+Z = {zn}NZ
+
+> n=1
+
+, zn = z(un), (17) denote the whitened stream of normal patches. This notation refers to the sequence obtained by concatenating transformed mini-batches; the streaming constructors do not require the full set to be materialised. The target object is a bank M of size at most K that preserves coverage of this set. The merge-reduce constructor applies deterministic farthest-first coverage steps, 
+
+z⋆ ∈ arg max 
+
+> z∈Z
+
+min 
+
+> c∈Cℓ
+
+∥z − c∥2, Cℓ+1 = Cℓ ∪ { z⋆}, (18) as a greedy surrogate for the classical k-center objective. This coverage prin-ciple retains representative normal patches for nearest-neighbour retrieval. Training is therefore cast as the map 
+
+Dtrain ↦ → (R, ˆμ, L, M), (19) which records the mathematical detector state needed for scoring. The con-struction decomposes into three conceptual stages. First, the reducer R is fit on the stream of patch embeddings. Second, reduced patch statistics are accumulated to obtain ( ˆμ, Σreg ) and the whitening operator L−1. Third, the whitened patches are passed to a bounded-memory constructor 
+
+M = G(Z; K). (20) In the canonical baseline, G is instantiated by a merge-reduce k-center strat-egy: local chunks are summarised by farthest-first representatives, these summaries are recursively merged and reduced, and the final bank is ob-tained without ever storing the full set Z in memory. The resulting bank contains representatives rather than centroids, which is the appropriate object for retrieval-based inference. This streaming formulation should be understood as a bounded-memory training procedure, not as an online post-deployment adaptation rule. Its purpose is to make PatchCore-style bank construction feasible when the full normal patch set is too large to materialise comfortably in RAM. 12 Algorithm 1 summarises the canonical MH-PatchCore training and infer-ence procedure. 
+
+Algorithm 1 Canonical MH-PatchCore training and inference 
+
+Require: Normal training set Dtrain , query image x, patch map P(·)
+
+Require: Reducer policy R, covariance regularisation policy, bank budget K, bounded-memory constructor G
+
+Ensure: Detector state ( R, ˆμ, L, M) and image score s(x)
+
+Training 
+
+1: Initialise the reducer fit for R
+
+2: for all normal-image mini-batches B ⊂ D train do 
+
+3: Extract patch descriptors u ∈ P (xi) for all xi ∈ B
+
+4: Update the reducer fit with the current patch mini-batch 5: end for 
+
+6: Finalise the reducer R
+
+7: Initialise streaming moments ( n, ˆμ, M 2)8: for all normal-image mini-batches B ⊂ D train do 
+
+9: Compute reduced patches ˜ u = R(u) for all u ∈ P (xi), x i ∈ B
+
+10: Update ( n, ˆμ, M 2) with the reduced patch mini-batch 11: end for 
+
+12: Form ˆΣ = M2/(n − 1), regularise it, and factor Σ L = Σ reg + δI = LL ⊤
+
+13: Initialise the bounded-memory constructor G
+
+14: for all normal-image mini-batches B ⊂ D train do 
+
+15: Compute z(u) = L−1(R(u) − ˆμ) for all u ∈ P (xi), x i ∈ B
+
+16: Update G with the whitened patch mini-batch 17: end for 
+
+18: Finalise the memory bank M = G(Z; K)
+
+Inference 
+
+19: Compute z(u) = L−1(R(u) − ˆμ) for all u ∈ P (x)20: Compute a(u) = min m∈M ∥z(u) − m∥22 for all u ∈ P (x)21: Compute s(x) using Eqs. (35)–(36) 22: return (R, ˆμ, L, M), s (x)
+
+3.4. A Two-Pass Ablation: Geometric Residual Selection 
+
+The canonical constructor above uses a single traversal of the transformed patch stream at the memory-bank construction stage. We also evaluate GeoReS , a deliberately stronger but less strictly streaming ablation that gives the constructor one additional pass. The goal is not to change the scoring rule or the Mahalanobis geometry, but to ask whether a coverage coreset improves when it is first allowed to estimate where the provisional bank leaves geometric residuals. 13 Let GK denote the merge-reduce k-center constructor with final budget 
+
+K, and let Z again denote the whitened normal patch stream. The first pass builds a provisional coverage set 
+
+P = GK (Z). (21) For any normal patch z ∈ Z, its residual with respect to this provisional bank is 
+
+rP (z) = min  
+
+> p∈P
+
+∥z − p∥2. (22) Large values of rP (z) identify normal regions that are poorly covered by the provisional k-center solution. These regions are geometric tails in the sense used here: they are not labelled anomalies, and they are not selected from test data, but they occupy sparse or under-represented parts of the normal embedding support. In the second pass, the memory budget is split into a main coverage budget and a residual-tail budget, ˜K0 = round( αK ), K0 = min {K − 1, max {1, ˜K0}} , Kt = K − K0,
+
+(23) with 0 < α < 1, so both K0 and Kt remain positive. A main bank is built as 
+
+M0 = GK0 (Z), (24) while a bounded candidate set keeps the q normal patches with largest provi-sional residuals, 
+
+Tq = Top q{ z ∈ Z : rP (z) }. (25) The final Kt tail representatives are then chosen greedily from Tq, balancing large residuals with diversity relative to the main bank: 
+
+tj ∈ arg max  
+
+> z∈Tq\{ t1,...,t j−1}
+
+min  
+
+> m∈M0∪{ t1,...,t j−1}
+
+∥z − m∥2, j = 1 , . . . , K t. (26) The resulting bank is the budgeted, deduplicated completion 
+
+MGeoReS = Π K (M0 ∪ { t1, . . . , t Kt }; Z) . (27) Here Π K removes duplicate representatives, fills any remaining capacity from the coverage pool, and truncates the bank to the target budget. GeoReS is therefore an informed k-center variant. Its information remains purely unsupervised and normal-class: the first pass only exposes where the normal support is weakly represented by a provisional coverage set. Because this requires two memory-bank passes instead of one, we report it as an ablation rather than as the canonical MH-PatchCore configuration. 14 3.5. Inference and Image Scoring 
+
+At inference time, a test image x is mapped to its patch set P(x) and each patch is transformed through the learned reduction and whitening maps: 
+
+z(u) = L−1(︁ R(u) − ˆμ)︁ , u ∈ P (x). (28) We then define the squared retrieval distance 
+
+δ(u, m ) = ∥z(u) − m∥22, m ∈ M , (29) and the patch-level anomaly score 
+
+a(u) = min  
+
+> m∈M
+
+δ(u, m ). (30) We keep the squared-distance convention because exact Facebook Artificial Intelligence Similarity Search ( FAISS ) [ 20 ] ℓ2 search 1 returns squared Euclid-ean distances, and all subsequent scoring operations are defined on these squared distances. The unreweighted image-level control is simply 
+
+smax (x) = max  
+
+> u∈P (x)
+
+a(u). (31) The canonical MH-PatchCore baseline instead uses the PatchCore Eq. (7)-style reweighting applied to these squared distances. Let 
+
+u∗ = arg max  
+
+> u∈P (x)
+
+a(u), (32) 
+
+m∗ = arg min  
+
+> m∈M
+
+δ(u∗, m ), (33) and let Nb(m∗) denote the b nearest neighbours of m∗ inside M, including m∗
+
+itself. Equivalently, Nb(m∗) contains m∗ and its b − 1 nearest distinct neigh-bours in the bank, so the numerator below is the m∗ term in the denominator. 
+
+> 1This convention is retained from the original PatchCore implementation. Squaring is monotone for non-negative distances, so it does not change nearest-neighbour identities, but it fixes the scale used by the downstream scoring rule.
+
+15 Using the following numerically stabilised form, we write 
+
+τ (x) = max  
+
+> m∈N b(m∗)
+
+δ(u∗, m ), (34) 
+
+w(x) = 1 − ea(u∗)−τ (x)∑︂ 
+
+> m∈N b(m∗)
+
+eδ(u∗,m )−τ (x) , (35) 
+
+s(x) = w(x) a(u∗). (36) The role of the reweighting is to modulate the maximal patch anomaly by the local support structure around its nearest memory-bank element. Pixel-level anomaly maps are obtained by placing patch scores back on the spatial grid and upsampling the resulting score map to image resolution. 
+
+4. Experimental Setup 
+
+4.1. Datasets 
+
+MH-PatchCore is evaluated on one public benchmark family and three se-lected industrial inspection datasets. The public benchmark is MVTec AD [1]. We treat it not as a single pooled dataset but as the collection CMVTec of its 15 category-specific one-class datasets. The industrial component includes 
+
+Meniscus , Bottom , and Lyo 2. Meniscus covers Blow-Fill-Seal ( BFS ) strip-ampoule meniscus inspection, Bottom covers the bottom region of amber glass ampoules containing viscous liquid, and Lyo covers lyophilised-cake inspection in transparent glass vials. Meniscus and Bottom are evaluated on predefined Region of Interest ( ROI ) crops. This protocol reflects the intended use case of the method: evaluation should cover a public benchmark with localisation annotations and a realistic industrial setting with image-level labels. Table 1 summarises the evaluation sources, label availability, and split-level statistics used throughout the experiments. 
+
+4.1.1. MVTec AD 
+
+MVTec AD is the standard benchmark for unsupervised industrial AD .It comprises 15 categories: 10 object types (bottle, cable, capsule, hazelnut, 
+
+> 2Due to non-disclosure agreements, we cannot release the industrial datasets or identify the full commercial products from which they are derived. We therefore report aggregate dataset statistics and use short descriptive names.
+
+16 Dataset Type Labels Train normal Test Anom. eval MVTec AD Bottle Object Image + pixel 209 83 63 MVTec AD Cable Object Image + pixel 224 150 92 MVTec AD Capsule Object Image + pixel 219 132 109 MVTec AD Carpet Texture Image + pixel 280 117 89 MVTec AD Grid Texture Image + pixel 264 78 56 MVTec AD Hazelnut Object Image + pixel 391 110 70 MVTec AD Leather Texture Image + pixel 245 124 92 MVTec AD Metal nut Object Image + pixel 220 115 93 MVTec AD Pill Object Image + pixel 267 167 141 MVTec AD Screw Object Image + pixel 320 160 119 MVTec AD Tile Texture Image + pixel 230 117 84 MVTec AD Toothbrush Object Image + pixel 60 42 30 MVTec AD Transistor Object Image + pixel 213 100 40 MVTec AD Wood Texture Image + pixel 247 79 60 MVTec AD Zipper Object Image + pixel 240 151 119 Meniscus BFS strip-ampoule meniscus ROI Image only 3801 1297 346 Bottom Amber-glass-ampoule bottom ROI Image only 2623 1301 645 Lyo Lyophilised-cake vial Image only 3000 982 482 
+
+Table 1. Benchmark and industrial datasets used in the evaluation protocol. MVTec AD is expanded by category because each category defines a separate one-class anomaly-detection dataset. The “Anom. eval” column reports the anomalous labels entering metric computation; for MVTec AD this follows the fixed image–mask preprocessing used for pixel-aware evaluation, and for the industrial datasets it follows the image-level test labels. 
+
+17 metal nut, pill, screw, toothbrush, transistor, zipper) and 5 texture types (carpet, grid, leather, tile, wood). We denote the set of categories by CMVTec .Each category c ∈ C MVTec defines its own training split of only normal images and its own test split with both normal and anomalous images, together with pixel-level binary masks. Accordingly, all MVTec metrics are computed category-wise and reported with a macro-average across categories rather than by pooling all categories into a single dataset. 
+
+4.1.2. Industrial Datasets 
+
+Meniscus focuses on the meniscus region of liquid-filled BFS strip am-poules acquired from strip images. The dominant defects are floating particles in the meniscus area. This region is challenging because meniscus turbulence, reflections, and local appearance variability can obscure particles and reduce the reliability of standard blob-based or threshold-based inspection. Bottom covers the bottom region of amber glass ampoules containing viscous liquid. The target anomalies are particle defects, especially glass particles. This case is challenging because heavy glass particles can exhibit limited motion across the acquired frames, while normal bottom-region vari-ability makes them difficult to separate from nominal appearance. For disclo-sure reasons, the Bottom input is provided as a disclosure-safe three-channel representation derived from the three rank images rather than as the raw acquisition sequence. Lyo covers lyophilised-cake inspection in transparent glass vials. The eval-uated anomalies include visible foreign particles, missing cake, and incorrect cake volume. This case provides an industrial product-appearance inspection setting with difficulty comparable to the other selected industrial datasets, because the relevant defects may be small, localised, or expressed through product-level appearance changes. Annotations are available only at image level for all industrial datasets, so they are evaluated with image-level metrics only. 
+
+4.2. Experimental Settings 
+
+Feature maps are extracted from the second and third residual stages of a frozen WideResNet-50-2 backbone [ 21 ] pre-trained on ImageNet-1k [ 22 ]. Locally aware descriptors are built by patchifying the selected feature maps with patch size 3 and stride 1, aligning them to a common spatial grid, and aggregating them into d0 = 1024-dimensional patch embeddings. All images are resized to 256 pixels, centre-cropped to 224 ×224, and normalised with the 18 ImageNet statistics associated with the backbone. No training augmentation is applied for either the original batch PatchCore baseline or the canonical streaming baseline. The canonical MH-PatchCore configuration uses IPCA with retained vari-ance ρ = 0 .99, fixed covariance shrinkage with λ = 0 .07, eigenvalue floor ratio 10 −8, adaptive jittered Cholesky factorisation, and merge-reduce k-center aggregation with budget K = 1000 and local coreset size mc = 256. The retained dimension is selected as 
+
+k = min {︄ q :∑︁  
+
+> qi=1
+
+νi∑︁  
+
+> d0
+> i=1
+
+νi
+
+≥ ρ}︄ , (37) where {νi}d0 
+
+> i=1
+
+are the explained-variance components sorted in non-increasing order. See Appendix Appendix C for covariance regularisation details and Appendix Appendix D for the memory-bank aggregation operators used in this study. The FAISS [20 ] flat ℓ2 index is used for exact nearest-neighbour search; accordingly, the reported retrieval scores are squared Euclidean distances. For the original PatchCore baseline, image-level scoring uses max-reduction, 
+
+smax (x), to remain aligned with the original PatchCore scoring protocol [ 4]. For all MH-PatchCore variants, image-level scoring follows the reweighted form in Eqs. (35) – (36) with b = 9 neighbours. All runs use a fixed ran-dom seed. All reported experiments are executed on CPU only. The public MVTec AD experiments are run on a Linux workstation with an Intel Core i7-9750H processor, 12 CPU threads available to the run, 15 GiB of RAM ,2.0 GiB of swap, Python 3.11.11, and PyTorch 2.10.0. The industrial ex-periments are run on a separate Linux workstation with an AMD Ryzen 9 9950X3D processor, 16 CPU threads available to the run, 185 GiB of RAM ,63 GiB of swap, Python 3.13.9, and PyTorch 2.11.0. Both workstations include discrete NVIDIA GPUs, but GPU acceleration is not used in the reported runs. The industrial workstation is used because the full offline PatchCore baseline for the industrial data exceeds the memory available on the public-benchmark workstation. For this reason, resource telemetry is interpreted within each result family rather than as a cross-hardware speed comparison. 19 4.3. Evaluation Metrics and Telemetry 
+
+The primary protocol is image-level. It is applied to each evaluation unit 
+
+Dind = {Meniscus , Bottom , Lyo },d ∈ D eval = CMVTec ∪ D ind .
+
+Let s(x) ∈ R denote the image-level anomaly score produced by the detector and let y(x) ∈ { 0, 1} be the corresponding image-level label. We report Area Under the Receiver Operating Characteristic Curve ( AUROC ) from the ranked set {(s(x), y (x)) }. This keeps the detection comparison threshold-independent and leaves the main emphasis on the trade-off between ranking quality, memory footprint, and inference latency. For MVTec AD we report the category-wise values {mc}c∈C MVTec together with the macro-average ¯mMVTec = 1
+
+|C MVTec |∑︂ c∈C MVTec 
+
+mc, (38) where |C MVTec | = 15. For all evaluation units we also report resource telemetry: (︁ 
+
+RAM max , t fit , ℓ infer )︁ , (39) that is, peak RAM usage, training time, and per-image inference time. If 
+
+tinfer is the wall-clock inference duration for an evaluation unit with Ntest test images, then 
+
+ℓinfer = 1000 tinfer 
+
+Ntest 
+
+[ms /image] . (40) The main comparison tables combine these quantities with image-level quality because MH-PatchCore is motivated by resource cost as well as retrieval geometry. Pixel-level metrics are reported only for MVTec AD , where ground-truth masks are available. On MVTec AD we report pixel-level AUROC as a completeness metric. For the industrial datasets, the evaluation mode is intentionally image-only, because no spatial annotations are defined and the relevant operational question is image-level rejection rather than pixel-level localisation. 20 4.4. Industrial RAM-Matched Subset Control 
+
+For Meniscus we additionally study a RAM -matched vanilla PatchCore control. Let 
+
+Dladder = {Meniscus }
+
+denote the reduced-data control set. Let 
+
+N = {300 , 500 , 750 , 1000 , 1500 , 2000 } (41) be the subset-size grid. For each d ∈ D ladder and each n ∈ N , the control uses a fixed-seed training subset 
+
+Sd,n ⊂ D train  
+
+> d
+
+, |Sd,n | = n, (42) with the stated cardinality. The reported metrics and telemetry at size n
+
+therefore correspond to the same fixed subset ladder across all reduced-data runs. To compare vanilla PatchCore under a RAM budget similar to the streaming baseline, we define the closest-RAM operating point by 
+
+n⋆d = arg min 
+
+> n∈N
+
+⃓⃓ RAM d,n − RAM stream 
+
+> d
+
+⃓⃓ , (43) where RAM d,n is the observed peak RAM at subset size n and RAM stream 
+
+> d
+
+is the peak RAM of the streaming MH-PatchCore baseline on dataset d. In the results, n⋆d identifies the closest vanilla PatchCore point to the streaming memory budget, while the surrounding ladder is retained to show how quality changes as the retained normal set grows. This control is used only on Meniscus, where the central comparison concerns image-level performance under realistic memory constraints. 
+
+4.5. Compared Configurations 
+
+The experimental design is intentionally narrow. We compare the of-fline PatchCore reference with a Euclidean streaming control, the canonical Streaming MH-PatchCore configuration, and a mini-batch-k-means construc-tor control. Targeted studies then vary the k-center budget, evaluate the GeoReS variants from Section 3.4 including the high-budget GeoReS control, and apply the industrial RAM -matched subset control from Eq. (43) . The main evaluation is restricted to these contrasts so that each comparison has a clear resource or geometric role. Table 2 summarises the experimental contrasts. 21 Configuration Contrast in the experiment Evaluation role 
+
+Primary method comparisons 
+
+Original PatchCore Full-pool offline reference with greedy coreset selection and reference max scoring. Non-streaming accuracy and resource baseline. Streaming PatchCore (Euclidean) Same streaming reducer and merge-reduce bank as MH-PatchCore, but Euclidean retrieval. Isolates bounded-memory construction from covariance-aware retrieval. Streaming MH-PatchCore Streaming reduction, covariance whitening, merge-reduce k-center, and reweighted scoring. Main MH-PatchCore configuration. Streaming MH-PatchCore + mini-batch k-means Same whitening pipeline with centroid summaries instead of 
+
+k-center anchors. Tests whether centroid summaries can replace coverage-oriented anchors. 
+
+k-center budget controls 
+
+k-center large chunk (K, m c) = (1000 , 1024). Local coverage at fixed final bank size. 
+
+k-center large bank (K, m c) = (5000 , 256). Final support-set capacity at canonical local budget. 
+
+k-center high budget K = 5000 and mc ≥ 1024 where available. Combined local and final budget scaling. 
+
+Targeted constructor and RAM controls 
+
+Streaming MH-PatchCore + GeoReS Two-pass residual-informed 
+
+k-center, K = 1000 , α = 0 .95. Residual-tail selection at the canonical bank size. Streaming MH-PatchCore + GeoReS, larger bank Two-pass residual-informed 
+
+k-center, K = 2000 , α = 0 .90. Residual-tail selection with more bank capacity. Streaming MH-PatchCore + GeoReS, high budget Two-pass residual-informed 
+
+k-center, 
+
+K = 5000 , m c = 4096 , α = 0 .90. High-capacity residual coverage control. Vanilla subset sweep Original PatchCore on fixed-seed industrial subsets n ∈ N . RAM-matched offline control for industrial data. 
+
+Table 2. Configuration summary for the main method comparisons and targeted controls. The rows define the contrasts used in the reported accuracy–resource results. 
+
+The “Streaming MH-PatchCore ” row denotes the reference configuration used throughout the paper. 22 5. Results 
+
+5.1. MVTec AD Category-Level Benchmark Results 
+
+Table 3 reports the category-resolved benchmark on MVTec AD . We keep the benchmark category-wise: each row is a separate one-class problem, and the final row is the macro-average in Eq. (38) . Each cell reports the image-level value on the first line and, when available, the corresponding pixel-level value in parentheses on the second line. Bold values mark the best entry within each dataset row after rounding, computed separately for the image-level and pixel-level values; ties are bolded jointly. Higher is better. The offline PatchCore reference remains the strongest image-level detec-tor on the mean score, but the gap to Streaming MH-PatchCore is small: mean image AUROC changes from 0 .991 to 0 .989. The Euclidean streaming control is more clearly affected, especially on screw , where AUROC drops to 0 .836. Because the Euclidean and Mahalanobis streaming variants share the same bounded-memory pipeline, this gap isolates the effect of the metric geometry after dimensionality reduction. Replacing k-center with mini-batch 
+
+k-means also reduces the mean image-level AUROC , which suggests that preserving support-set coverage is more useful here than summarising the normal manifold by centroids. At category level, the covariance-aware streaming model is not uniformly below the offline reference: it matches or improves the rounded image-level AUROC on several categories, including capsule , carpet , grid , pill , wood , and 
+
+zipper , while also tying the near-perfect bottle , hazelnut , leather , metal nut ,and toothbrush rows after rounding. The remaining gap is concentrated in a smaller set of harder cases, most visibly screw , where whitening recovers much of the Euclidean streaming loss but does not reach the offline coreset. The pixel-level values should be read more cautiously. They show that the streaming geometry does not destroy localisation behaviour on MVTec AD :the mean pixel AUROC changes only from 0 .980 for the offline reference to 0.978 for Streaming MH-PatchCore . These pixel-level values serve as public MVTec completeness rather than as the central industrial contribution. 
+
+5.2. Industrial Image-Level Results 
+
+Table 4 mirrors the MVTec category-level table for the industrial protocol. Each row is one selected industrial inspection dataset. Unlike the MVTec table, this table reports image-level AUROC only, because the industrial data used here do not provide pixel-level masks. 23 Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Bottle 
+
+1.000 
+
+(0.986 )
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.985) Cable 
+
+0.985 
+
+(0.981 )0.971 (0.965) 0.969 (0.968) 0.926 (0.964) Capsule 0.990 (0.989 )0.988 (0.983) 
+
+0.994 
+
+(0.987) 0.971 (0.989 )Carpet 0.980 (0.988 )0.970 (0.986) 
+
+0.985 
+
+(0.987) 0.983 (0.988 )Grid 0.997 (0.984) 0.995 (0.976) 
+
+1.000 
+
+(0.985 )0.998 (0.984) Hazelnut 
+
+1.000 
+
+(0.986 )
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.985) Leather 
+
+1.000 
+
+(0.992) 
+
+1.000 
+
+(0.993 )
+
+1.000 
+
+(0.992) 
+
+1.000 
+
+(0.992) Metal nut 
+
+1.000 
+
+(0.985) 0.997 (0.970) 
+
+1.000 
+
+(0.988 )0.999 (0.988 )Pill 0.961 (0.976) 0.955 (0.954) 
+
+0.966 
+
+(0.982 )0.958 (0.980) Screw 
+
+0.984 
+
+(0.994 )0.836 (0.867) 0.937 (0.982) 0.907 (0.986) Tile 0.990 (0.960) 
+
+0.992 
+
+(0.962 )0.991 (0.957) 0.989 (0.956) Toothbrush 
+
+1.000 
+
+(0.987 )
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.987 )
+
+1.000 
+
+(0.987 )Transistor 
+
+1.000 
+
+(0.955 )0.999 (0.932) 0.999 (0.943) 0.985 (0.927) Wood 0.990 (0.950 )0.990 (0.945) 
+
+0.995 
+
+(0.950 )
+
+0.995 
+
+(0.948) Zipper 0.994 (0.988) 0.996 (0.986) 
+
+0.997 
+
+(0.989 )0.993 (0.989 )Mean 
+
+0.991 
+
+(0.980 )0.979 (0.965) 0.989 (0.978) 0.980 (0.977)     
+
+> Table 3. MVTec AD AUROC . Each cell reports image-level AUROC and, in parentheses, pixel-level AUROC.
+
+24 Across the selected industrial datasets, the offline PatchCore reference is still the strongest image-level detector among the four main configura-tions, with mean AUROC 0.996. Within the bounded-memory family, the Mahalanobis variant improves over the Euclidean streaming control in mean AUROC (0 .986 versus 0 .981), while the mini-batch k-means constructor is weaker on this selected industrial set. This supports the central comparison: the streaming-compatible construction is most useful when paired with a memory bank that preserves support-set coverage and a metric geometry that reflects the covariance of the normal features. 
+
+Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Meniscus 0.992 0.962 0.974 0.901 Bottom 0.998 0.995 0.995 0.989 Lyo 0.998 0.985 0.988 0.982 Mean 0.996 0.981 0.986 0.957    
+
+> Table 4. Industrial image-level AUROC on the selected industrial datasets. Pixel-level metrics are not reported for the industrial datasets because the protocol uses image-level labels only.
+
+Figures 3, 4, and 5 show qualitative examples from the canonical streaming MH-PatchCore baseline on the three selected industrial datasets. For each sample, the grids show the input ROI , the anomaly-score heatmap overlaid on the ROI , and the predicted segmentation overlay. These maps provide visual context for the selected industrial cases, while the quantitative protocol remains image-level. Table 5 gives the industrial-only reduced-data control from Eq. (43) .It compares original PatchCore, the canonical streaming baseline, and the GeoReS K = 2000 , α = 0 .90 trade-off on the same fixed-seed Meniscus subset ladder. Figure 6 visualises the corresponding RAM growth for original Patch-Core and the GeoReS trade-off. Original PatchCore improves as more normal images are retained, from AUROC 0.958 at n = 300 to 0 .988 at n = 2000, but its peak RAM grows from 8 .34 to 20 .46 GB. The GeoReS K = 2000 configuration remains in the 8 .24–9 .22 GB range across the same ladder and increases from AUROC 0 .952 to 0 .984. Thus, at a near-9 GB memory scale, 25 Original Heatmap Predicted segmentation Figure 3. Meniscus qualitative examples from the canonical streaming MH-PatchCore baseline. Each row shows one sample as the original image, anomaly-score heatmap overlay, and predicted segmentation overlay. 
+
+26 Original Heatmap Predicted segmentation Figure 4. Bottom qualitative examples from the canonical streaming MH-PatchCore baseline. Each row shows one sample as the original image, anomaly-score heatmap overlay, and predicted segmentation overlay. 
+
+27 Original Heatmap Predicted segmentation Figure 5. Lyo qualitative examples from the canonical streaming MH-PatchCore baseline. Each row shows one sample as the original image, anomaly-score heatmap overlay, and predicted segmentation overlay. 
+
+28 bounded-memory training can use the larger normal subset, whereas original PatchCore must stay near the smallest subset sizes. Using Eq. (43) , the closest vanilla PatchCore point to the canonical streaming MH-PatchCore memory budget is n = 300, with AUROC 0.958 at 8 .34 GB. Within the adjacent neighbourhood around 9 GB, original PatchCore reaches AUROC 0.979 at n = 750 and 9 .02 GB, while the GeoReS n = 2000 row reaches AUROC 0 .984 at 8 .24 GB. 
+
+Normal train images Configuration AUROC Max RAM (GB) Fit time (s) Inference latency (ms/image) 300 Original PatchCore 0.958 8.34 143.1 839.5 300 Streaming Mahalanobis 0.938 8.87 121.8 61.9 
+
+300 GeoReS K = 2000 , α = 0 .90 0.952 9.13 654.5 84.4 500 Original PatchCore 0.974 9.17 377.2 1389.4 500 Streaming Mahalanobis 0.945 8.00 202.4 55.8 
+
+500 GeoReS K = 2000 , α = 0 .90 0.967 8.49 1060.5 74.6 750 Original PatchCore 0.979 9.02 863.4 2087.2 750 Streaming Mahalanobis 0.951 8.99 304.1 65.2 
+
+750 GeoReS K = 2000 , α = 0 .90 0.973 9.05 1682.2 84.9 1000 Original PatchCore 0.982 11.13 1406.7 2861.9 1000 Streaming Mahalanobis 0.963 8.01 408.5 65.9 
+
+1000 GeoReS K = 2000 , α = 0 .90 0.977 9.22 2161.0 85.3 1500 Original PatchCore 0.985 15.82 3376.1 3961.4 1500 Streaming Mahalanobis 0.959 7.95 607.3 65.3 
+
+1500 GeoReS K = 2000 , α = 0 .90 0.981 8.59 3135.0 85.6 2000 Original PatchCore 0.988 20.46 6108.9 5505.9 2000 Streaming Mahalanobis 0.971 8.81 821.5 66.0 
+
+2000 GeoReS K = 2000 , α = 0 .90 0.984 8.24 4469.1 85.5 
+
+Table 5. Industrial Meniscus reduced-data comparison. Each block uses the same fixed-seed normal-training subset and compares original PatchCore with the canonical streaming baseline and the selected streaming memory–accuracy tradeoff used in the RAM -growth plot. Peak RAM is reported in GB, fit time in seconds, and inference latency in milliseconds per image; lower is better for telemetry. 
+
+29 250 500 750 1000 1250 1500 1750 2000 
+
+> Normal training images
+> 8
+> 10
+> 12
+> 14
+> 16
+> 18
+> 20
+> Peak RAM (GB)
+
+Meniscus RAM growth    
+
+> Original PatchCore
+> GeoReS K= 2000, = 0.90
+
+Figure 6. Meniscus RAM growth for original PatchCore and the selected GeoReS stream-ing trade-off. Original PatchCore improves by retaining more normal images, but its resident memory grows with the retained subset, whereas the bounded-memory construc-tion stays near a fixed RAM band. 
+
+30 5.3. Targeted Ablations and Budget Studies Budget controls. Table 6 isolates the two k-center budget parameters on MVTec AD : the final memory-bank size K and the local merge-reduce coreset size mc. Increasing the local chunk budget from mc = 256 to mc = 1024 gives a small improvement in mean image and pixel AUROC , but the gain is minor relative to the additional training time. Increasing the final bank from 
+
+K = 1000 to K = 5000 does not improve the MVTec image-level mean under the evaluated protocol, even though the joint high-budget setting improves the reported pixel summaries. The higher-budget configurations are still informative: (K, m c) = (1000 , 1024) reaches the offline PatchCore mean image AUROC after rounding while keeping peak RAM at 2 .56 GB rather than the offline reference’s 5 .41 GB. For the paper’s main baseline, however, the canonical ( K, m c) = (1000 , 256) setting remains the intended lightweight operating point, because it gives most of this quality with the lowest training cost and fastest inference among the covariance-aware k-center variants.                                               
+
+> Measure Streaming Mahalanobis
+> K= 1000 , m c= 256 Streaming Mahalanobis
+> K= 1000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 256 Streaming Mahalanobis
+> K= 5000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 4096 Original PatchCore Image AUROC 0.989 0.991 0.989 0.989 0.989 0.991 Pixel AUROC 0.978 0.979 0.978 0.978 0.979 0.980 Mean training time (s) 57.913 162.627 231.418 171.598 1330.624 12.444 Mean RAM (GB) 2.430 2.424 2.749 2.446 3.585 4.125 Max RAM (GB) 2.775 2.556 3.083 2.761 3.853 5.412 Per-image inference time (ms/image) 42.610 46.437 87.706 63.559 135.963 467.092
+
+Table 6. MVTec AD k-center budget study. AUROC is macro-averaged over the 15 category datasets. Mean training time is reported in seconds, RAM in GB, and per-image inference time as an image-weighted mean. The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+Table 7 reports the same k-center budget study for the industrial datasets. The table has the same role as Table 6, but it omits pixel-level columns because the industrial protocol is image-level only. On the selected indus-trial datasets, the joint high-budget setting ( K, m c) = (5000 , 4096) gives the strongest k-center configuration, raising mean image AUROC from 0 .986 to 0.993, while keeping peak RAM at 8 .55 GB rather than the offline PatchCore 37 .43 GB footprint. This reinforces the intended interpretation of the bud-get ladder: the canonical configuration is the lightweight default, whereas larger summaries expose the accuracy that can be recovered when additional training time is acceptable. 
+
+Residual-informed two-pass ablation. Table 8 reports the residual-informed two-pass variants defined in Section 3.4. The comparison is anchored by 31 Measure Streaming Mahalanobis                                         
+
+> K= 1000 , m c= 256 Streaming Mahalanobis
+> K= 1000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 256 Streaming Mahalanobis
+> K= 5000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 4096 Original PatchCore Image AUROC 0.986 0.987 0.985 0.990 0.993 0.996 Mean training time (s) 1078.977 2697.972 1382.193 2652.466 12650.231 14837.300 Mean RAM (GB) 8.001 8.283 8.595 8.395 8.064 31.462 Max RAM (GB) 8.227 8.826 9.612 9.309 8.553 37.430 Per-image inference time (ms/image) 60.702 68.484 71.170 102.706 108.006 8207.638
+
+Table 7. Industrial k-center budget study on the selected industrial datasets. AUROC is macro-averaged over the selected datasets. Mean training time is reported in seconds, RAM in GB, and per-image inference time as an image-weighted mean. The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+the canonical Streaming MH-PatchCore configuration, so the three GeoReS configurations should be read as targeted ablations of the paper’s baseline rather than as a separate offline comparison. At the same final bank size as the canonical baseline, GeoReS improves mean image AUROC from 0 .989 to 0 .992, exceeding the offline PatchCore reference after rounding while re-maining a two-pass ablation rather than the canonical operating point. The larger residual-informed variants mainly affect the MVTec-only pixel sum-maries; the K = 5000 , m c = 4096 setting gives the strongest reported pixel scores but not the strongest image-level macro result. This gain is modest and should be read together with the cost profile: because GeoReS must first estimate residual-heavy regions and then build the final bank, mean training time increases from roughly 58 s for the canonical streaming baseline to about 368–467 s for the lower-budget GeoReS variants and 3646 s for the high-budget variant. Image-weighted per-image inference time also increases, from about 42 .6 ms/image to 46 .4–55 .9 ms/image, and to 151 .7 ms/image for the high-budget variant, so the extra training and inference costs remain the main trade-offs. Table 9 gives the corresponding industrial GeoReS ablation. Across the selected industrial datasets, the K = 2000 , α = 0 .90 residual-informed vari-ant improves mean image AUROC from 0 .986 to 0 .991, while also increasing training and inference time. The high-budget K = 5000 , m c = 4096 con-figuration reaches the strongest mean AUROC , 0 .994, but increases mean training time to about 24945 s. Together with the MVTec AD result, where GeoReS changes the macro image AUROC only from 0 .989 to 0 .992, this suggests that residual-tail selection is most useful when the normal support contains variable modes or locally under-represented nominal appearance re-gions. In the current industrial evidence, this interpretation is consistent with the three selected datasets: Meniscus contains meniscus and fluid variability, 32 Measure Streaming Mahalanobis PatchCore Streaming Mahalanobis + GeoReS                                
+
+> K= 1000 , α = 0 .95 Streaming Mahalanobis + GeoReS
+> K= 2000 , α = 0 .90 Streaming Mahalanobis + GeoReS
+> K= 5000 , α = 0 .90 Original PatchCore Image AUROC 0.989 0.992 0.991 0.990 0.991 Pixel AUROC 0.978 0.978 0.978 0.980 0.980 Mean training time (s) 57.913 467.414 368.037 3646.298 12.444 Per-image inference time (ms/image) 42.610 46.367 55.881 151.738 467.092 Max RAM (GB) 2.775 2.712 2.622 4.087 5.412
+
+Table 8. MVTec AD ablation of two-pass geometric residual selection. AUROC is macro-averaged over the 15 category datasets. Pixel-level AUROC is included only for MVTec AD localisation completeness. RAM is reported as peak resident memory in GB, mean training time in seconds, and per-image inference time as an image-weighted mean. Lower is better for RAM and time. The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+Bottom contains bottom-region variability in viscous-liquid ampoules, and Lyo contains product-appearance anomalies such as visible foreign particles, missing cake, and incorrect cake volume. Across these cases, the relevant defect evidence can be small, localised, or subtle, while the corresponding nominal appearance modes may be sparsely sampled; this makes additional residual-guided coverage useful at image level.                           
+
+> Measure Streaming Mahalanobis PatchCore Streaming Mahalanobis + GeoReS
+> K= 1000 , α = 0 .95 Streaming Mahalanobis + GeoReS
+> K= 2000 , α = 0 .90 Streaming Mahalanobis + GeoReS
+> K= 5000 , α = 0 .90 Original PatchCore Image AUROC 0.986 0.988 0.991 0.994 0.996 Mean training time (s) 1078.977 7027.116 5332.320 24945.293 14837.300 Per-image inference time (ms/image) 60.702 68.344 78.489 106.992 8207.638 Max RAM (GB) 8.227 9.569 9.332 9.383 37.430
+
+Table 9. Industrial ablation of two-pass geometric residual selection on the selected industrial datasets. AUROC is macro-averaged over the selected datasets. RAM is reported as peak resident memory in GB, mean training time in seconds, and per-image inference time as an image-weighted mean. Lower is better for RAM and time. The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+33 Dataset-resolved ablation views. The category-resolved MVTec AD AUROC views are reported in Tables 10 and 11. The corresponding industrial dataset-resolved views are reported in Tables 12 and 13. The MVTec AD tables report image-level AUROC with pixel-level AUROC in parentheses, because pixel masks are available for that benchmark. The industrial tables remain image-level only and include Original PatchCore as a vertically separated offline reference; boldface still selects among the streaming variants, so the ablation comparison remains anchored by the canonical streaming baseline. These dataset-resolved views refine the macro story rather than changing it. For the k-center budget study, larger local summaries help some difficult categories, for example increasing image AUROC on screw from 0 .937 to 0.964 when mc rises from 256 to 1024 at K = 1000. The effect is not monotone across categories, because the high-budget setting also reduces some rows, such as pill . This is not a contradiction in the budget study: these settings are not nested models. Changing K and mc changes the streaming coreset construction itself, so a larger bank need not preserve the same image-level ranking, especially on near-ceiling MVTec categories where additional normal coverage can also reduce anomaly distances. GeoReS shows a similar pattern: the larger residual-informed variant improves screw from the canonical baseline 0 .937 to 0 .981, but the macro-average changes only from 0 .989 to 0 .992 at best. Thus the category tables support a conservative interpretation: extra coverage or residual-tail selection can improve particular categories, but the canonical streaming memory bank is already close to saturated on the aggregate MVTec benchmark. The industrial rows show a stronger budget and residual-tail signal. The k-center budget sweep raises mean image AUROC from 0 .986 for the canonical streaming baseline to 0 .993 at K = 5000 , m c = 4096, and the GeoReS sweep reaches 0 .994 at the largest evaluated setting. Most of that visible room comes from Meniscus and Lyo; Bottom is already near saturated for the canonical streaming baseline. 34 Dataset Streaming Mahalanobis PatchCore 
+
+K = 1000 , m c = 256 Streaming Mahalanobis 
+
+K = 1000 , m c = 1024 Streaming Mahalanobis 
+
+K = 5000 , m c = 256 Streaming Mahalanobis 
+
+K = 5000 , m c = 1024 Streaming Mahalanobis 
+
+K = 5000 , m c = 4096 Original PatchCore Bottle 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.984) 0.999 (0.985 )
+
+1.000 
+
+(0.985 )1.000 (0.986) Cable 0.969 (0.968) 
+
+0.970 
+
+(0.968) 0.967 (0.969) 0.969 (0.969) 0.961 (0.972 )0.985 (0.981) Capsule 
+
+0.994 
+
+(0.987) 
+
+0.994 
+
+(0.989 )
+
+0.994 
+
+(0.987) 0.992 (0.989 )0.990 (0.989 )0.990 (0.989) Carpet 
+
+0.985 
+
+(0.987) 0.983 (0.987) 0.984 (0.987) 0.984 (0.988 )0.983 (0.988 )0.980 (0.988) Grid 
+
+1.000 
+
+(0.985) 
+
+1.000 
+
+(0.986 )
+
+1.000 
+
+(0.984) 0.999 (0.984) 
+
+1.000 
+
+(0.986 )0.997 (0.984) Hazelnut 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.985) 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.986 )1.000 (0.986) Leather 
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )1.000 (0.992) Metal nut 
+
+1.000 
+
+(0.988 )
+
+1.000 
+
+(0.988 )
+
+1.000 
+
+(0.988 )
+
+1.000 
+
+(0.988 )
+
+1.000 
+
+(0.988 )1.000 (0.985) Pill 0.966 (0.982 )
+
+0.981 
+
+(0.982 )0.966 (0.982 )0.951 (0.976) 0.963 (0.977) 0.961 (0.976) Screw 0.937 (0.982) 0.964 (0.989) 0.937 (0.982) 0.966 (0.990) 
+
+0.974 
+
+(0.993 )0.984 (0.994) Tile 0.991 (0.957 )
+
+0.992 
+
+(0.956) 0.991 (0.957 )0.991 (0.957 )0.990 (0.956) 0.990 (0.960) Toothbrush 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.988 )1.000 (0.987) Transistor 
+
+0.999 
+
+(0.943) 0.998 (0.950 )
+
+0.999 
+
+(0.943) 0.996 (0.939) 0.994 (0.950 )1.000 (0.955) Wood 
+
+0.995 
+
+(0.950 )0.993 (0.950 )
+
+0.995 
+
+(0.950 )0.993 (0.950 )0.991 (0.949) 0.990 (0.950) Zipper 0.997 (0.989 )
+
+0.998 
+
+(0.989 )0.997 (0.989 )0.997 (0.989 )0.995 (0.989 )0.994 (0.988) Mean 0.989 (0.978) 
+
+0.991 
+
+(0.979 )0.989 (0.978) 0.989 (0.978) 0.989 (0.979 )0.991 (0.980) 
+
+Table 10. MVTec AD category-wise k-center budget ablation in AUROC . The compari-son is anchored by the canonical streaming baseline. Each cell reports image-level AUROC and, in parentheses, pixel-level AUROC . The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+35 Dataset Streaming Mahalanobis PatchCore Streaming Mahalanobis + GeoReS 
+
+K = 1000 , α = 0 .95 Streaming Mahalanobis + GeoReS 
+
+K = 2000 , α = 0 .90 Streaming Mahalanobis + GeoReS 
+
+K = 5000 , α = 0 .90 Original PatchCore Bottle 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.985 )0.999 (0.985 )
+
+1.000 
+
+(0.985 )1.000 (0.986) Cable 0.969 (0.968) 0.975 (0.969) 
+
+0.976 
+
+(0.968) 0.964 (0.972 )0.985 (0.981) Capsule 0.994 (0.987) 
+
+0.995 
+
+(0.989 )0.993 (0.989 )0.990 (0.989 )0.990 (0.989) Carpet 
+
+0.985 
+
+(0.987) 0.983 (0.987) 0.983 (0.988 )0.983 (0.988 )0.980 (0.988) Grid 
+
+1.000 
+
+(0.985) 
+
+1.000 
+
+(0.985) 0.999 (0.985) 
+
+1.000 
+
+(0.986 )0.997 (0.984) Hazelnut 
+
+1.000 
+
+(0.984) 
+
+1.000 
+
+(0.985) 
+
+1.000 
+
+(0.985) 
+
+1.000 
+
+(0.986 )1.000 (0.986) Leather 
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )
+
+1.000 
+
+(0.992 )1.000 (0.992) Metal nut 
+
+1.000 
+
+(0.988) 
+
+1.000 
+
+(0.988) 
+
+1.000 
+
+(0.989 )
+
+1.000 
+
+(0.988) 1.000 (0.985) Pill 0.966 (0.982 )
+
+0.978 
+
+(0.981) 0.959 (0.976) 0.968 (0.981) 0.961 (0.976) Screw 0.937 (0.982) 0.975 (0.987) 0.978 (0.991) 
+
+0.981 
+
+(0.993 )0.984 (0.994) Tile 
+
+0.991 
+
+(0.957 )
+
+0.991 
+
+(0.956) 
+
+0.991 
+
+(0.957 )
+
+0.991 
+
+(0.957 )0.990 (0.960) Toothbrush 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.987) 
+
+1.000 
+
+(0.988 )1.000 (0.987) Transistor 
+
+0.999 
+
+(0.943) 0.995 (0.943) 0.997 (0.945) 0.994 (0.949 )1.000 (0.955) Wood 
+
+0.995 
+
+(0.950) 0.993 (0.950) 0.992 (0.951 )0.991 (0.949) 0.990 (0.950) Zipper 0.997 (0.989 )0.997 (0.989 )
+
+0.998 
+
+(0.989 )0.995 (0.989 )0.994 (0.988) Mean 0.989 (0.978) 
+
+0.992 
+
+(0.978) 0.991 (0.978) 0.990 (0.980 )0.991 (0.980) 
+
+Table 11. MVTec AD category-wise GeoReS ablation in AUROC . Each cell reports image-level AUROC and, in parentheses, pixel-level AUROC . The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection.                                   
+
+> Dataset Streaming Mahalanobis PatchCore
+> K= 1000 , m c= 256 Streaming Mahalanobis
+> K= 1000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 256 Streaming Mahalanobis
+> K= 5000 , m c= 1024 Streaming Mahalanobis
+> K= 5000 , m c= 4096 Original PatchCore Meniscus 0.974 0.976 0.975 0.982 0.988 0.992 Bottom 0.995 0.997 0.995 0.997 0.998 0.998 Lyo 0.988 0.987 0.984 0.989 0.994 0.998 Mean 0.986 0.987 0.985 0.990 0.993 0.996
+
+Table 12. Industrial dataset-wise k-center budget ablation in AUROC. The comparison is anchored by the canonical streaming baseline. Values are image-level AUROC . The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+36 Dataset Streaming Mahalanobis PatchCore Streaming Mahalanobis + GeoReS 
+
+K = 1000 , α = 0 .95 Streaming Mahalanobis + GeoReS 
+
+K = 2000 , α = 0 .90 Streaming Mahalanobis + GeoReS 
+
+K = 5000 , α = 0 .90 Original PatchCore Meniscus 0.974 0.982 0.988 0.990 0.992 Bottom 0.995 0.996 0.997 0.998 0.998 Lyo 0.988 0.986 0.987 0.995 0.998 Mean 0.986 0.988 0.991 0.994 0.996 
+
+Table 13. Industrial dataset-wise GeoReS ablation in AUROC . Values are image-level AUROC . The vertically separated Original PatchCore column is an offline reference and is excluded from boldface selection. 
+
+37 5.4. Resource Footprint and Runtime 
+
+Table 14 isolates the efficiency profile of the same four configurations used in Table 3. The accuracy ranking is established in that earlier benchmark ta-ble; here the global summary is limited to mean training time, image-weighted per-image inference time, and resident memory. Because MVTec AD is a col-lection of separate category datasets, a single efficiency aggregate can still hide which categories drive the operational cost. Tables 15 and 16 therefore report the corresponding category-resolved peak resident memory and per-image inference time, with an image-weighted mean summary. On MVTec AD ,the bounded-memory variants pay additional fit-time overhead even as they reduce RAM , because the benchmark is still small enough that the offline reference remains the fastest configuration to build. The offline reference defines the highest-memory endpoint on this benchmark, with a 5 .41 GB peak. Streaming MH-PatchCore reduces that peak to 2 .78 GB while staying in the same operational regime as the other bounded-memory variants. The Euclidean streaming control remains the lightest at inference, whereas the covariance-aware baseline carries a moderate latency premium. The slower Original PatchCore inference is consistent with querying a larger retained patch support: the offline reference keeps the largest memory footprint in this table, whereas the streaming variants cap the candidate bank before nearest-neighbour lookup. This subsection therefore quantifies the runtime and memory cost of the preferred streaming configuration rather than restat-ing the quality ranking established above.                    
+
+> Measure Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch
+> k-means Mean training time (s) 12.444 54.822 57.913 24.358 Per-image inference time (ms/image) 467.092 39.592 42.610 46.623 Mean RAM (GB) 4.125 2.424 2.430 2.489 Max RAM (GB) 5.412 2.611 2.775 2.768
+> Table 14. MVTec AD efficiency summary for the four primary methods. Mean training time and mean resident memory are macro-averaged over the 15 category datasets, max RAM reports the largest category peak, and per-image inference time is reported as an image-weighted mean. Lower is better for all rows.
+
+Tables 17, 18, and 19 are the industrial counterparts of the same efficiency views. As in the earlier industrial image-level results, they should be read as 38 Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Bottle 3.520 2.164 2.019 2.060 Cable 3.741 2.289 2.517 2.372 Capsule 3.825 2.393 2.361 2.515 Carpet 4.428 2.425 2.536 2.448 Grid 4.304 2.381 2.376 2.448 Hazelnut 5.412 2.408 2.337 2.405 Leather 4.158 2.457 2.436 2.503 Metal nut 3.942 2.472 2.483 2.520 Pill 4.414 2.469 2.437 2.525 Screw 5.127 2.611 2.775 2.768 Tile 4.252 2.503 2.492 2.675 Toothbrush 2.557 2.459 2.405 2.531 Transistor 3.844 2.340 2.405 2.495 Wood 4.198 2.443 2.426 2.543 Zipper 4.149 2.541 2.446 2.531 Mean 4.125 2.424 2.430 2.489 Max 5.412 2.611 2.775 2.768    
+
+> Table 15. MVTec AD per-category peak resident memory. The final rows report the mean and maximum of the category-level peaks. Values are reported in GB; lower is better.
+
+39 Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Bottle 401.656 44.991 46.320 48.877 Cable 417.472 39.743 42.693 47.146 Capsule 408.882 36.563 39.329 41.677 Carpet 516.694 39.022 41.937 46.754 Grid 495.392 44.855 47.268 51.272 Hazelnut 711.642 44.129 48.588 51.903 Leather 451.504 34.042 36.994 45.095 Metal nut 408.750 39.849 43.035 45.787 Pill 485.295 30.986 34.048 39.871 Screw 578.678 31.495 35.025 40.908 Tile 428.423 44.118 47.742 47.159 Toothbrush 178.059 76.339 78.436 86.423 Transistor 406.183 46.204 49.858 53.245 Wood 471.315 48.865 52.062 60.711 Zipper 439.381 33.038 35.227 35.010 Image-weighted mean 467.092 39.592 42.610 46.623   
+
+> Table 16. MVTec AD per-category per-image inference time. The final row reports the image-weighted mean across all test images. Values are reported in ms/image; lower is better.
+
+40 telemetry summaries rather than as a second ranking of image metrics. The industrial comparison makes the memory contrast sharper: the offline refer-ence reaches 37 .43 GB peak RAM , whereas the canonical bounded-memory alternative remains at 8 .23 GB. In this larger setting, the same bounded-memory construction also reduces mean training time relative to the offline reference rather than increasing it (1079 s versus 14837 s). Within that bounded-memory regime, the covariance-aware streaming baseline and the Euclidean control stay close in memory while differing mainly in inference cost and the earlier benchmark quality ranking. Figure 7 summarises the same trade-off for the primary methods, k-center budget configurations, and GeoReS ablations.                 
+
+> Measure Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch
+> k-means Mean training time (s) 14837.300 939.029 1078.977 607.680
+> Per-image inference time (ms/image) 8207.638 64.501 60.702 68.824 Mean RAM (GB) 31.462 8.845 8.001 8.571 Max RAM (GB) 37.430 9.656 8.227 9.052
+
+Table 17. Industrial efficiency summary for the four primary methods on the selected industrial datasets. Mean training time and mean resident memory are macro-averaged over the industrial datasets, max RAM reports the largest dataset peak, and per-image inference time is reported as an image-weighted mean. Lower is better for all rows. 
+
+41 Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Meniscus 37.430 9.084 8.098 8.417 Bottom 26.666 9.656 8.227 9.052 Lyo 30.289 7.795 7.677 8.246 Mean 31.462 8.845 8.001 8.571 Max 37.430 9.656 8.227 9.052 
+
+Table 18. Industrial peak resident memory on the selected industrial datasets. The final rows report the mean and maximum of the dataset-level peaks. Values are reported in GB; lower is better. 
+
+Dataset Original PatchCore Streaming PatchCore (Euclidean) Streaming Mahalanobis PatchCore Streaming Mahalanobis + mini-batch 
+
+k-means Meniscus 9889.752 67.924 65.842 72.394 Bottom 6893.612 60.215 55.843 64.659 Lyo 7726.831 65.657 60.352 69.626 Image-weighted mean 8207.638 64.501 60.702 68.824 
+
+Table 19. Industrial per-dataset per-image inference time on the selected industrial datasets. The final row reports the image-weighted mean across all test images. Values are reported in ms/image; lower is better. 
+
+42 10 15 20 25 30 35 
+
+Max peak RAM across selected datasets (GB) 
+
+0.94 
+
+0.95 
+
+0.96 
+
+0.97 
+
+0.98 
+
+0.99 
+
+1.00                       
+
+> Macro image AUROC
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 1. Original PatchCore
+> 2. Euclidean
+> 3. Streaming Mahalanobis
+> 4. Mini-batch k-means
+> 5. GeoReS K= 1000
+> 6. GeoReS K= 2000
+> 7. GeoReS K= 5000
+> 8. K= 1000, mc= 1024
+> 9. K= 5000, mc= 256
+> 10. K= 5000, mc= 1024
+> 11. K= 5000, mc= 4096
+
+Industrial AUROC/RAM tradeoff Figure 7. Industrial image-AUROC /RAM trade-off across the selected industrial datasets. Each point reports macro image AUROC and the largest dataset-level peak RAM for one reported method or ablation. 
+
+43 6. Discussion 
+
+6.1. When Mahalanobis Distance Helps 
+
+The Mahalanobis whitening transform is most useful when Euclidean dis-tances in the reduced feature space over- or under-weight directions because normal patch embeddings are anisotropic and correlated. The results support this interpretation, but they also make its scope precise. On MVTec AD ,switching from the Euclidean streaming control to Streaming MH-PatchCore raises mean image AUROC from 0 .979 to 0 .989. This closes much of the image-level gap to offline PatchCore, whose corresponding mean AUROC is 0.991. At the same time, the MVTec pixel-level AUROC summary changes only from 0 .965 to 0 .978 relative to the Euclidean streaming control and remains slightly below the offline reference at 0 .980. Thus, on the public benchmark, covariance-aware retrieval primarily improves image-level dis-crimination, while localisation remains a completeness result rather than the central claim. The selected industrial results show a stronger version of the same ef-fect. There, Mahalanobis retrieval improves the Euclidean streaming control from mean AUROC 0.981 to 0 .986. The GeoReS K = 2000 ablation then raises mean AUROC to 0 .991, while the high-budget K = 5000 configura-tion reaches 0 .994. This is consistent with the qualitative structure of the selected industrial tasks, which cover distinct but comparably challenging inspection regimes. Meniscus contains variable meniscus and fluid patterns caused by turbulence, reflections, and local appearance changes. Bottom contains bottom-region variability in amber glass ampoules with viscous liq-uid, where heavy glass particles may be difficult to separate from nominal appearance. Lyo covers lyophilised-cake product inspection, where relevant anomalies include visible foreign particles, missing cake, and incorrect cake volume. In these settings, covariance-aware scaling and residual-tail coverage can make the normal support more useful for image-level retrieval, especially when the defect evidence is small, localised, or subtle, and the corresponding nominal appearance modes are sparsely sampled in the normal support. The evidence should still be read conservatively, because the industrial suite is small and image-level only. Even so, it indicates that the proposed geometry and coverage mechanisms are most useful when industrial defects are subtle or sparsely represented and when training-time memory is constrained. 44 6.2. Streaming-Compatible Training Trade-Offs 
+
+The word “streaming” is used here in a bounded-memory training sense. MH-PatchCore consumes descriptors through mini-batches and does not re-quire the full normal patch matrix to be materialised, but it is not a strict online one-pass learner. The reduction, covariance, and memory-bank stages are fitted over separate passes through a re-iterable training set; the GeoReS ablation adds an extra memory-bank pass because it first estimates residual coverage. This distinction matters for the interpretation of the resource results. The method trades additional sequential scans of the training set for a much smaller peak resident memory footprint. It is therefore most appropriate when the full feature pool is the operational bottleneck, or when normal data are already curated in a dataset that can be rescanned during model preparation. Additional curated normal batches can be incorporated by con-tinuing the same fitting pipeline, but if the reduction or covariance transform changes, the stored support set must remain consistent with the updated transformed space. Under this interpretation, the term streaming captures the intended engineering property: bounded-memory construction and exten-sion of a PatchCore-style support set, not autonomous online adaptation. 
+
+6.3. Support-Set Construction and Budget 
+
+The empirical comparison between k-center and mini-batch k-means is not only a hyperparameter study, but a contrast between two different sum-marisation principles. k-center preserves representative support points cho-sen for coverage, whereas mini-batch k-means replaces them with centroids. The pure-k-center budget study then separates two distinct levers: the local merge-reduce chunk size mc, which controls how much information is retained before each reduction step, and the final bank budget K, which controls how many representatives survive globally. On MVTec AD , increasing mc at fixed 
+
+K = 1000 gives the clearest small gain, matching the offline PatchCore mean AUROC after rounding, but it also raises mean training time substantially. Increasing the final bank to K = 5000 does not improve the macro result in the same way, which suggests that the final support set is not the dominant bottleneck for this benchmark. The industrial budget ladder shows the com-plementary side of the same trade-off: the high-budget K = 5000 , m c = 4096 configuration approaches the larger GeoReS result while retaining a much smaller RAM footprint than offline PatchCore, 8 .55 GB versus 37 .43 GB. GeoReS confirms the same picture from another angle: residual-tail selection 45 helps selected categories, especially screw , but its aggregate benefit is modest relative to the extra pass and higher inference cost. For the reported MVTec configuration, the merge-reduce k-center bank is therefore a pragmatic oper-ating point, not merely a low-budget approximation. 
+
+6.4. Limitations 
+
+A fully autonomous post-deployment continual-learning protocol remains outside the scope of this study. In particular, updating the reduction or Cholesky factor after deployment would require the memory bank to be re-built or consistently transformed so that all stored references remain in the same feature space. Furthermore, the streaming variant assumes that the training set can be iterated at least three times, which may not be feasible in strict single-pass scenarios. Only MVTec AD provides pixel-level masks, so localisation-oriented evaluation can be studied publicly only on that bench-mark; the selected industrial datasets are instead assessed through image-level discrimination and resource telemetry. The accuracy of the streaming variant may also lag behind the original batch PatchCore baseline on some categories because staged reduction and merge-reduce support-bank construction do not optimise over the full patch pool in one global batch. Section 5.4 characterises this trade-off empirically. 
+
+7. Conclusion 
+
+We have presented MH-PatchCore , a PatchCore extension that combines covariance-aware retrieval with bounded-memory bank construction. The method keeps the retrieval structure of PatchCore, but performs nearest neigh-bour search after reduction, regularised covariance estimation, and whitening; it also replaces full-pool bank construction with a merge-reduce k-center summary that makes training-time memory explicit. The empirical evidence is consistent with this design goal. On MVTec AD ,evaluated as 15 category-specific datasets, Streaming MH-PatchCore remains close to the offline PatchCore reference at image level, with mean AUROC 0.989 versus 0 .991, while reducing peak RAM from 5 .41 to 2 .78 GB. On the selected industrial datasets, the covariance-aware streaming variant improves the Euclidean streaming control from 0 .981 to 0 .986 mean image AUROC ,and the two-pass GeoReS ablation reaches 0 .991 at K = 2000 and 0 .994 at the higher-budget K = 5000 setting. The canonical streaming configuration also reduces the industrial peak RAM from the offline PatchCore 37 .43 GB 46 footprint to 8 .23 GB. These results support a deliberately narrow conclusion: MH-PatchCore is not a universal replacement for full-memory PatchCore in every metric, but it is a practical bounded-memory formulation that preserves most benchmark accuracy and becomes especially useful when industrial normal data contain locally under-represented nominal appearance modes. Future work should focus on extending the industrial evidence with addi-tional production datasets and on collecting localisation labels or deployment streams that allow calibration, localisation behaviour, and continual updates to be evaluated directly. 
+
+Acknowledgments 
+
+Part of this work was carried out during the first author’s industrial PhD at the University of Ferrara. The second author contributed while completing his master’s degree at the University of Ferrara. 
+
+References 
+
+[1] P. Bergmann, M. Fauser, D. Sattlegger, C. Steger, MVTec AD – A comprehensive real-world dataset for unsupervised anomaly detection, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2019, pp. 9592–9600. doi:10.1109/CVPR.2019. 00982 .URL https://openaccess.thecvf.com/content_CVPR_2019/html/B ergmann_MVTec_AD_--_A_Comprehensive_Real-World_Dataset_for _Unsupervised_Anomaly_CVPR_2019_paper.html 
+
+[2] D. Gudovskiy, S. Ishizaka, K. Kozuka, CFLOW-AD: Real-time unsuper-vised anomaly detection with localization via conditional normalizing flows, in: Proceedings of the IEEE/CVF Winter Conference on Applica-tions of Computer Vision, 2022, pp. 98–107. doi:10.1109/WACV51458. 2022.00188 .URL https://openaccess.thecvf.com/content/WACV2022/html/Gu dovskiy_CFLOW-AD_Real-Time_Unsupervised_Anomaly_Detection_W ith_Localization_via_Conditional_Normalizing_WACV_2022_pap er.html 
+
+[3] K. Batzner, L. Heckler, R. K¨ onig, EfficientAD: Accurate visual anomaly detection at millisecond-level latencies, in: Proceedings of the 47 IEEE/CVF Winter Conference on Applications of Computer Vision, 2024, pp. 128–138. doi:10.1109/WACV57701.2024.00020 .URL https://openaccess.thecvf.com/content/WACV2024/html/Ba tzner_EfficientAD_Accurate_Visual_Anomaly_Detection_at_Mil lisecond-Level_Latencies_WACV_2024_paper.html 
+
+[4] K. Roth, L. Pemula, J. Zepeda, B. Sch¨ olkopf, T. Brox, P. Gehler, To-wards total recall in industrial anomaly detection, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2022, pp. 14318–14328. doi:10.1109/CVPR52688.2022.01392 .URL https://openaccess.thecvf.com/content/CVPR2022/html/Ro th_Towards_Total_Recall_in_Industrial_Anomaly_Detection_CV PR_2022_paper.html 
+
+[5] N. Cohen, Y. Hoshen, Sub-image anomaly detection with deep pyramid correspondences (2020). arXiv:2005.02357 , doi:10.48550/arXiv.2 005.02357 .URL https://arxiv.org/abs/2005.02357 
+
+[6] T. Reiss, N. Cohen, L. Bergman, Y. Hoshen, PANDA: Adapting pre-trained features for anomaly detection and segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition, 2021, pp. 2806–2814. doi:10.1109/CVPR46437.2021.00283 .URL https://openaccess.thecvf.com/content/CVPR2021/html/Re iss_PANDA_Adapting_Pretrained_Features_for_Anomaly_Detecti on_and_Segmentation_CVPR_2021_paper.html 
+
+[7] T. Defard, A. Setkov, A. Loesch, R. Audigier, PaDiM: A patch distri-bution modeling framework for anomaly detection and localization, in: Pattern Recognition. ICPR International Workshops and Challenges, Vol. 12664 of Lecture Notes in Computer Science, Springer, 2021, pp. 475–489. doi:10.1007/978-3-030-68799-1_35 .URL https://doi.org/10.1007/978-3-030-68799-1_35 
+
+[8] S. Ak¸ cay, A. Atapour-Abarghouei, T. P. Breckon, GANomaly: Semi-supervised anomaly detection via adversarial training, in: Computer Vision – ACCV 2018, Lecture Notes in Computer Science, Springer, 2019, pp. 622–637. doi:10.1007/978-3-030-20893-6_39 .URL https://doi.org/10.1007/978-3-030-20893-6_39 
+
+48 [9] S. Ak¸ cay, A. Atapour-Abarghouei, T. P. Breckon, Skip-GANomaly: Skip connected and adversarially trained encoder-decoder anomaly detection, in: International Joint Conference on Neural Networks (IJCNN), 2019, pp. 1–8. doi:10.1109/IJCNN.2019.8851808 .URL https://ieeexplore.ieee.org/document/8851808 
+
+[10] H. Deng, X. Li, Anomaly detection via reverse distillation from one-class embedding, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2022, pp. 9737–9746. doi:10.1109/CV PR52688.2022.00951 .URL https://openaccess.thecvf.com/content/CVPR2022/html/De ng_Anomaly_Detection_via_Reverse_Distillation_From_One-Cla ss_Embedding_CVPR_2022_paper.html 
+
+[11] V. Zavrtanik, M. Kristan, D. Skoˇ caj, DRAEM – A discriminatively trained reconstruction embedding for surface anomaly detection, in: Pro-ceedings of the IEEE/CVF International Conference on Computer Vision, 2021, pp. 8330–8339. doi:10.1109/ICCV48922.2021.00822 .URL https://openaccess.thecvf.com/content/ICCV2021/html/Za vrtanik_DRAEM_-_A_Discriminatively_Trained_Reconstruction_ Embedding_for_Surface_Anomaly_ICCV_2021_paper.html 
+
+[12] N. Ferrari, M. Fraccaroli, E. Lamma, Grd-net: Generative-reconstructive-discriminative anomaly detection with region of interest attention mod-ule, International Journal of Intelligent Systems 2023 (1) (2023) 7773481. 
+
+doi:10.1155/2023/7773481 .URL https://onlinelibrary.wiley.com/doi/abs/10.1155/2023/7 773481 
+
+[13] N. Ferrari, N. Zanarini, M. Fraccaroli, A. Bizzarri, E. Lamma, Inte-gration of deep generative Anomaly Detection algorithm in high-speed industrial line, updated and expanded version of SSRN preprint 4858664 (2026). arXiv:2603.07577 , doi:10.48550/arXiv.2603.07577 .URL https://arxiv.org/abs/2603.07577 
+
+[14] Q. Chen, H. Luo, C. Lv, Z. Zhang, A unified anomaly synthesis strategy with gradient ascent for industrial anomaly detection and localization, in: Computer Vision – ECCV 2024, Springer, 2024, pp. 37–54. doi: 10.1007/978-3-031-72855-6_3 .49 URL https://www.ecva.net/papers/eccv_2024/papers_ECCV/html /8382_ECCV_2024_paper.php 
+
+[15] P. C. Mahalanobis, On the generalised distance in statistics, Proceedings of the National Institute of Sciences of India 2 (1) (1936) 49–55. [16] P. J. Rousseeuw, B. C. van Zomeren, Unmasking multivariate outliers and leverage points, Journal of the American Statistical Association 85 (411) (1990) 633–639. doi:10.1080/01621459.1990.10474920 .[17] R. De Maesschalck, D. Jouan-Rimbaud, D. L. Massart, The mahalanobis distance, Chemometrics and Intelligent Laboratory Systems 50 (1) (2000) 1–18. doi:10.1016/S0169-7439(99)00047-7 .[18] O. Rippel, P. Mertens, E. K¨ onig, D. Merhof, Gaussian anomaly detec-tion by modeling the distribution of normal data in pretrained deep features, IEEE Transactions on Instrumentation and Measurement 70 (2021) 5014213. doi:10.1109/TIM.2021.3098381 .URL https://publications.rwth-aachen.de/record/834048 
+
+[19] A. Dini, E. Rahtu, Visual anomaly detection and localization with a patch-wise transformer and convolutional model, in: Proceedings of the 18th International Joint Conference on Computer Vision, Imaging and Computer Graphics Theory and Applications (VISIGRAPP) – Volume 5: VISAPP, SciTePress, 2023, pp. 144–152. doi:10.5220/0011669400 003417 .URL https://www.scitepress.org/PublishedPapers/2023/116694 /
+
+[20] J. Johnson, M. Douze, H. J´ egou, Billion-scale similarity search with GPUs, IEEE Transactions on Big Data 7 (3) (2021) 535–547. [21] S. Zagoruyko, N. Komodakis, Wide residual networks, arXiv preprint arXiv:1605.07146 (2016). [22] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, L. Fei-Fei, ImageNet: A large-scale hierarchical image database, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2009, pp. 248– 255. 50 [23] Y. Chen, A. Wiesel, Y. C. Eldar, A. O. Hero, Shrinkage algorithms for MMSE covariance estimation, IEEE Transactions on Signal Processing 58 (10) (2010) 5016–5029. [24] O. Ledoit, M. Wolf, A well-conditioned estimator for large-dimensional covariance matrices, Journal of Multivariate Analysis 88 (2) (2004) 365– 411. [25] D. Sculley, Web-scale K-means clustering, in: Proceedings of the 19th International Conference on World Wide Web, ACM, 2010, pp. 1177– 1178. doi:10.1145/1772690.1772862 .[26] B. P. Welford, Note on a method for calculating corrected sums of squares and products, Technometrics 4 (3) (1962) 419–420. [27] T. F. Chan, G. H. Golub, R. J. LeVeque, Updating formulae and a pairwise algorithm for computing sample variances, Tech. Rep. STAN-CS-79-773, Stanford University (1979). 51 Appendix A. Notation Summary 
+
+Symbol Meaning 
+
+x Input image. 
+
+P(x) = 
+
+{u(j)}nx
+
+> j=1
+
+Patch set extracted from image x.
+
+u ∈ Rd0 Patch embedding before reduction. 
+
+R Fitted dimensionality reducer, instantiated by IPCA in the streaming baseline. 
+
+W ∈ Rd0×k Projection matrix in the centred PCA/IPCA reducer 
+
+R(u) = W ⊤(u − ¯uR). ¯uR Mean used by the fitted PCA/IPCA reducer. ˜u = R(u) ∈
+
+Rk
+
+Reduced patch embedding. ˆμ Mean of reduced embeddings estimated during streaming covariance fitting. Σreg Regularised covariance matrix in reduced space. 
+
+L Cholesky factor such that Σ L = Σ reg + δI = LL ⊤.
+
+z = L−1( ˜u− ˆμ) Whitened embedding used for retrieval. 
+
+M Final memory bank used at inference. 
+
+K Memory-bank budget. 
+
+mc Local coreset size in merge-reduce k-centre aggregation. 
+
+P Provisional GeoReS coverage set. 
+
+K0, K t Main and residual-tail budgets in GeoReS. 
+
+α GeoReS main-budget fraction used to set K0.
+
+q Number of high-residual candidates retained in GeoReS. 
+
+rP (z) Residual of z with respect to provisional bank P .
+
+Tq Candidate set containing the q largest-residual normal patches. 
+
+δ(u, m ) Squared retrieval distance between transformed query patch 
+
+z(u) and bank element m.
+
+τ (x) Stabilising offset used in the Eq. (36)-style reweighting. 
+
+w(x) Local-support reweighting factor applied to the maximal patch score. 
+
+Appendix B. Whitening and Mahalanobis Equivalence 
+
+This appendix states formally the equivalence used in Section 3.2. Here 
+
+dMH is used only as a compact mathematical symbol for Mahalanobis distance. 52 Lemma Appendix B.1 (Mahalanobis–Euclidean equivalence via white-ning) . Let Σ ∈ Rd×d with Σ ≻ 0, and let x, y ∈ Rd. Then there exists an invertible matrix B such that 
+
+dMH (x, y ) = ∥B(x − y)∥2. (B.1) 
+
+In particular, if Σ = CC ⊤ is the Cholesky factorisation of Σ (with C lower triangular and positive diagonal), then 
+
+dMH (x, y ) = ∥C−1(x − y)∥2. (B.2) 
+
+Proof. Since Σ ≻ 0, the Cholesky factorisation Σ = CC ⊤ exists and C is invertible. Hence Σ −1 = C−⊤ C−1, and therefore 
+
+d2MH (x, y ) = ( x − y)⊤Σ−1(x − y)= ( x − y)⊤C−⊤ C−1(x − y)= ∥C−1(x − y)∥22. (B.3) Taking square roots proves dMH (x, y ) = ∥C−1(x − y)∥2. Geometrically, Ma-halanobis distance is Euclidean distance in the whitened space z = C−1x
+
+(equivalently z = Σ −1/2x). 
+
+Appendix C. Covariance Regularisation for Numerical Stability 
+
+This appendix collects the covariance-regularisation details that support the whitening step in Section 3.2. Their purpose is to make the numerical assumptions explicit rather than to define an additional ablation family. All reported MH-PatchCore baselines use fixed shrinkage with numerical stabil-isation; the analytical shrinkage rules below are standard reference policies for covariance estimation and are not part of the experimental comparison in this paper. Given an empirical covariance matrix ˆΣ ∈ Rd×d, the common shrinkage form is Σshr = (1 − λ) ˆΣ + λ¯σI, ¯σ = tr( ˆΣ) 
+
+d , λ ∈ [0 , 1] . (C.1) 
+
+OAS. Oracle Approximating Shrinkage [23] selects λ analytically: 
+
+λOAS = clip [0 ,1] (︄ (1 − 2 
+
+> d
+
+) tr( ˆΣ2) + tr( ˆΣ) 2
+
+(N + 1 − 2 
+
+> d
+
+)(︁ tr( ˆΣ2) − tr( ˆΣ) 2
+
+> d
+
+)︁)︄ 
+
+. (C.2) It is designed to improve conditioning when the sample size is limited relative to the feature dimension. 53 Ledoit-Wolf / Rao-Blackwell Ledoit-Wolf ( RBLW ). Ledoit-Wolf [ 24 ] provides an analytical shrinkage rule that minimises expected Frobenius loss. In strict streaming settings, where the full feature matrix is not retained, the Rao-Blackwell Ledoit-Wolf approximation can be used: 
+
+λRBLW = clip [0 ,1] (︄ (N −2 
+
+> N
+
+) tr( ˆΣ2) + tr( ˆΣ) 2
+
+(N + 2) (︁ tr( ˆΣ2) − tr( ˆΣ) 2
+
+> d
+
+)︁)︄ 
+
+. (C.3) 
+
+Fixed Shrinkage. A user-specified constant λ ∈ [0 , 1] is used for all categories and runs, providing deterministic behaviour and direct control over regulari-sation strength. This is the policy adopted by the reported baseline in this paper ( λ = 0 .07). 
+
+Jitter-only. No shrinkage is applied ( λ = 0), and positive-definiteness is enforced only by adaptive diagonal jitter during Cholesky factorisation. This limiting case clarifies the role of shrinkage, but it is generally less robust when ˆΣ is poorly conditioned and lies outside the reported ablation set. 
+
+Eigenvalue Floor. Independently of the shrinkage policy, an optional eigen-value floor can be applied to Σ shr :
+
+γi ← max( γi, ϵ ), ϵ = ϵrel max {| ¯σ|, 10 −12 }, (C.4) where {γi} are the eigenvalues of Σ shr and ¯σ = d−1 tr (Σ shr ). This produces the final matrix Σ reg used in the whitening step. 
+
+Adaptive jittered Cholesky. Even after shrinkage and eigenvalue flooring, nu-merical issues may prevent a successful Cholesky factorisation. The baseline therefore computes 
+
+L = chol(Σ reg + δI ), (C.5) with diagonal jitter selected from the geometric sequence 
+
+δ ∈ { 0, δ min , δ min m, δ min m2, . . . }, (C.6) retrying until factorisation succeeds or until δ > δ max . In the canonical configuration we use 
+
+δmin = 10 −12 , m = 10 , δmax = 1 . (C.7) 54 Appendix D. Memory-Bank Constructors 
+
+This appendix defines the memory-bank constructors used in the experi-ments. Let 
+
+Z = {zn}Nn=1 , zn ∈ Rk, (D.1) and let K be the target memory-bank budget. For streaming constructors, Z
+
+is the conceptual concatenation of the transformed mini-batches seen during training; only the offline reference requires materialising the full set before compression. Each strategy defines 
+
+M = G(Z), |M| ≤ K. (D.2) 
+
+Offline greedy coreset. The original PatchCore reference materialises the full normal patch pool and then applies greedy farthest-first coreset selection [ 4]. Starting from an initial center set C1, each subsequent representative is chosen as 
+
+z⋆ ∈ arg max 
+
+> z∈Z
+
+min 
+
+> c∈Cℓ
+
+∥z − c∥2, Cℓ+1 = Cℓ ∪ { z⋆}. (D.3) After K selections, the memory bank is M = CK . This operator is the offline reference because it requires access to the full patch pool before compression. 
+
+Merge-reduce k-center. The canonical streaming constructor uses the same coverage principle under a bounded-memory merge-reduce scheme. For any candidate set C, define 
+
+dmin (z, C ) = min  
+
+> c∈C
+
+∥z − c∥2. (D.4) Each stream chunk Zt is reduced to a local farthest-first summary Ct of size at most mc. Pairs of summaries are then recursively merged and reduced, 
+
+Cℓ+1 = Reduce (︂ C(1)  
+
+> ℓ
+
+∪ C(2)  
+
+> ℓ
+
+, m c)︂ , (D.5) where Reduce denotes greedy farthest-first selection under the same distance. The final reduction produces |M| ≤ K representatives. Unlike centroid methods, this preserves observed normal patches as retrieval anchors. 55 Mini-batch k-means. 
+
+This ablation uses centroids rather than observed patches. The standard 
+
+k-means objective is min  
+
+> {cj}Kj=1
+> N
+
+∑︂ 
+
+> n=1
+
+⃦⃦ 
+
+zn − ca(zn)⃦⃦ 22 , a(zn) = arg min 
+
+> j
+
+∥zn − cj ∥22. (D.6) The reported streaming ablation approximates this objective by initialising a bounded set of centroids and applying Robbins–Monro updates as mini-batches are read [ 25 ]: each sample is assigned to its nearest centroid, the corresponding per-centroid count is updated, and the centroid is moved with the resulting count-based step size. The resulting bank contains centroids rather than observed patch descriptors, which is why this comparison isolates the effect of the constructor geometry. 
+
+GeoReS . Geometric Residual Selection is the targeted two-pass k-center vari-ant used in this ablation. It tests whether explicit residual-tail coverage improves the streaming bank. It first builds a provisional bank 
+
+P = GK (Z) (D.7) with the merge-reduce constructor, then scores normal patches by their resid-ual coverage error, 
+
+rP (z) = min  
+
+> p∈P
+
+∥z − p∥2. (D.8) The final budget is split into K0 main representatives and Kt = K − K0 tail representatives. The main bank is 
+
+M0 = GK0 (Z), (D.9) and the tail candidates are the q largest-residual normal patches, 
+
+Tq = Top q{ z ∈ Z : rP (z) }. (D.10) Tail representatives are selected greedily from Tq against the current main-plus-tail set: 
+
+tj ∈ arg max  
+
+> z∈Tq\{ t1,...,t j−1}
+
+min  
+
+> m∈M0∪{ t1,...,t j−1}
+
+∥z − m∥2. (D.11) 56 The final bank is the budgeted, deduplicated completion 
+
+MGeoReS = Π K (M0 ∪ { t1, . . . , t Kt }; Z) . (D.12) Here Π K removes duplicate representatives, fills any remaining capacity from the coverage pool, and truncates the bank to the target budget. Because GeoReS requires an additional pass to identify residual-heavy normal regions, it remains an ablation rather than the canonical streaming constructor. 
+
+Appendix E. Welford Algorithm for Streaming Covariance 
+
+The Welford algorithm [ 26 ] provides a numerically stable method for computing the mean and covariance of a data stream without storing the full sample matrix. For a sequence of batches {U ′ 
+
+> t
+
+}, let n denote the current sample count, ˆμ the running mean, and M2 the running unnormalised second central moment matrix. For each new batch U ′ 
+
+> t
+
+with nb samples, batch mean ˆμb, and batch second central moment M2,b , the update follows the standard parallel Welford combination rule discussed in Section 3.2. The unbiased covariance estimator is ˆΣ = M2/(n−1). This formulation avoids catastrophic cancellation and is equivalent to the parallel computation described in [27]. 57

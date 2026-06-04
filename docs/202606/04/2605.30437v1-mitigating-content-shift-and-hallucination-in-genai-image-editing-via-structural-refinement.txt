@@ -1,0 +1,638 @@
+Title: Mitigating Content Shift and Hallucination in GenAI Image Editing via Structural Refinement
+
+URL Source: https://arxiv.org/pdf/2605.30437v1
+
+Published Time: Mon, 01 Jun 2026 00:03:44 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+# Mitigating Content Shift and Hallucination in GenAI Image Editing via Structural Refinement 
+
+Luxi Zhao 
+
+Department of Electrical Engineering & Computer Science York University 
+
+luxizhao@yorku.ca 
+
+Michael S. Brown 
+
+AI Center-Toronto Samsung Electronics 
+
+michael.b1@samsung.com 
+
+## Abstract 
+
+Generative AI (GenAI) image editors, such as Nano Banana, produce visually compelling results for retouching tasks, enabling non-experts to edit images through text prompts alone. However, the generative nature of these models often introduces spatial misalignment, texture distortion, and content hallucination, all of which are detrimental to downstream workflows that require pixel-level fidelity. We identify a problem setting we call structure-preserving GenAI fusion for black-box GenAI image retouching: retain the perceptual enhancements of a GenAI output while enforcing structural faithfulness to the original input image. To address this problem, we propose a post-processing framework that fuses an input image with its GenAI-enhanced counterpart by first establishing coarse spatial and photometric correspondences, then performing a fusion stage that transfers desired enhancements while suppressing hallucinated content. In the absence of direct prior work in this setting, we evaluate our framework against representative methods from photorealistic style transfer and image fusion. Our experiments demonstrate that our method better preserves aesthetic quality while maintaining pixel-level structural consistency and the input resolution. 
+
+## 1 Introduction 
+
+In recent years, generative AI (GenAI) models have made significant progress in prompt-based image editing. Their capacity to learn powerful priors from large-scale data allows them to generalize across a wide range of editing tasks, including image retouching. By entering a text-based prompt, non-expert users can generate enhanced images without learning professional photo-editing tools such as Lightroom or Darktable. Recent work [ 1] evaluates the zero-shot performance of Nano Banana Pro (NB Pro) across various low-level vision tasks, including tone manipulation, low-light enhancement, denoising, and super-resolution. While NB Pro excels in perceptual quality, it sacrifices structural fidelity to the original image. This makes it unsuitable for downstream workflows that require pixel-level authenticity, such as integration into a professional image-editing pipeline. In general, we observe that black-box GenAI models exhibit four core failure modes in geometry and content preservation: (i) spatial misalignment , where the GenAI output exhibits unpredictable spatial shifts or warps; (ii) texture distortion , where the GenAI model distorts fine details, especially in perceptually critical regions such as faces and text; (iii) content hallucination , where the GenAI model introduces non-existing content, such as clouds in the sky or extra people in the background; (iv) resolution mismatch , where the GenAI output is lower in spatial resolution than the full-resolution camera input, leading to loss of high-frequency content. See Figure 1 for examples. While such failures are often perceptible to a human observer, quantifying them at scale remains difficult.                   
+
+> Preprint.
+> arXiv:2605.30437v1 [cs.CV] 28 May 2026 Black -box GenAI
+> Input image 𝐱 GenAI result 𝐲
+> Prompt 𝑝 1: tone manipulation; Prompt 𝑝 2: low -light image enhancement (upper -right half gamma -corrected for visibility)
+> 𝑝 1
+> Our result 𝐳
+> 𝑝 1
+> 𝑝 2
+> Our method preserves
+> •Input’s content structure
+> •GenAI’s enhancements
+> Text distortions
+> Face distortions
+> Spatial misalignments
+> Content hallucination
+> Input 𝐱 GenAI result 𝐲 Our result 𝐳
+> Zoomed regions
+> Our post -processing
+> module
+
+Figure 1: Black-box GenAI image enhancement produces visually compelling outputs y from input 
+
+x (here, via prompts p1 for tone manipulation and p2 for low-light enhancement), but introduces spatial misalignment, texture distortion (faces, text), content hallucination, and resolution mismatch with respect to x. We propose a post-processing method that fuses x and y into a result z that inherits the photometric enhancements of y while preserving the structure and resolution of x.No-reference metrics assess perceptual quality but do not capture faithfulness to the input, while reference-based metrics capture only selected aspects of output quality in this setting. As we observe in our experiments, different metrics can yield differing assessments of the same output, suggesting that no single metric, in isolation, fully captures this class of problems. We focus on enhancement-based tasks such as tone manipulation and low-light image enhancement, where the desired edits are primarily color and tonal adjustments, and the original camera image therefore serves as a natural reference for scene structure. This setting allows us to leverage the accessibility and powerful priors of frontier black-box GenAI models while enforcing structural fidelity to the input. We do not target tasks such as super-resolution or deblurring, where the notion of ground-truth scene structure is itself ill-posed. Although we adopt the camera image as our primary use case—reflecting the common scenario of a user capturing a photo on a phone and editing it with a GenAI tool—our framework applies in principle to any input image used as a structural reference. To our knowledge, no prior work systematically addresses the challenges of black-box GenAI image enhancement; the two most closely related bodies of work are photorealistic style transfer and multimodal image fusion. Photorealistic style transfer (PST) methods [ 2, 3 , 4] transfer the photofinishing style of a style image onto a content image while preserving the latter’s structure. They handle high-resolution images and tolerate spatial misalignment, but their stylization is often global and lacks strict semantic consistency, which can lead to incorrect stylization of local regions. In addition, PST methods often target clean, high-quality images [ 5, 6]; they cannot suppress noise in the input image or exploit the already-denoised GenAI output. Multimodal image fusion methods [ 7, 8, 9, 10 , 11 ] merge complementary information from two or more source images of different modalities into a single image with improved scene representation. Common applications include infrared–visible fusion and multi-exposure fusion. These methods typically employ self-supervised objectives that encourage the fused image to inherit structural characteristics from both sources. In our setting, however, the GenAI output contains hallucinations and cannot be treated as a reliable source of structural information. We address these challenges by proposing a generic camera–GenAI image fusion framework that preserves the desirable improvements of the GenAI output—such as photofinishing effects and detail enhancements—while enforcing geometric and spatial-resolution consistency with the camera image. The framework follows a three-stage pipeline of flow-based spatial alignment, global color and tone transfer, and an interpretable fusion module based on sparse coding. We demonstrate our method on 2tone manipulation and low-light enhancement, where it shows strong performance in both content preservation and style transfer compared to PST and image fusion baselines. In summary, our contributions are as follows: • We propose a post-processing framework that fuses a GenAI-enhanced image with the original camera image in three stages—spatial alignment, color and tonal alignment, and an interpretable fusion module based on sparse coding—to address spatial misalignment and content hallucination in black-box GenAI image enhancement. • We introduce a supervised training pipeline with synthetic data that is generic across enhancement-based settings, and evaluate the framework on tone manipulation and low-light enhancement. 
+
+## 2 Related Work 
+
+No prior work directly addresses hallucination correction and misalignment handling in black-box GenAI image enhancement. We identify two closely related task settings: photorealistic style transfer and image fusion. Photorealistic style transfer (Sec. 2.1) transfers color and tonal characteristics while preserving structure, and image fusion (Sec. 2.2) combines complementary information from multiple source images of the same scene. Since our method builds on convolutional sparse coding, a method commonly used for interpretable image fusion, we further review CSC-based fusion in Sec. 2.3. Together, these areas inform our framework, but none directly addresses our problem setting. 
+
+2.1 Photorealistic style transfer 
+
+Photorealistic style transfer (PST) aims to transfer a style image’s color and tonal characteristics to a content image while strictly preserving the content image’s spatial structure. This contrasts with artistic style transfer [12, 13], which allows significant texture and structural distortions. A foundational line of work [ 14 , 4 , 3 ] builds on the Whitening and Coloring Transform (WCT) [ 15 ], which aligns the correlation matrices of content feature maps—typically extracted using a pretrained VGG [ 16 ] network—with those of the style feature maps. The aligned features are decoded into the output image via a pretrained decoder, with skip connections from the encoder to preserve detail. Preset-based methods [ 17 , 18 ] predict global color styles from the style image and apply them to the content image in feature space. NeuralPreset [ 18 ], for example, learns a pair of normalizing and stylizing matrices that adjust each pixel’s color independently, irrespective of the pixel’s spatial location and neighboring pixels. This is effective at preserving the content image’s structure, but is limited in capturing local style variations. SA-LUT [ 2] learns a spatially adaptive 4D look-up table for photorealistic style transfer. Its 4th dimension consists of two context bins, indexed by a spatially-varying context map that identifies corresponding regions between the content and style images. Two structural assumptions of PST methods limit their applicability to our setting. First, PST is designed for loosely aligned or unrelated content–style pairs, so its underlying mechanisms—global feature-statistic matching in WCT-based methods, global color predictors in preset-based methods, and SA-LUT’s spatially adaptive but low-dimensional context modulation—do not fully exploit dense pixel-level correspondence. In our setting, the camera image and GenAI output are densely aligned (after our spatial alignment stage), and these mechanisms cannot fully exploit that correspondence. Second, PST assumes a clean reference image; the methods do not exploit detail enhancements in the reference, such as denoising, that are characteristic of GenAI outputs. 
+
+2.2 Multimodal image fusion 
+
+Multimodal image fusion combines multiple images from the same scene into a single image that contains complementary information from each. Existing approaches span GAN-based [ 19 , 20 , 21 ], transformer-based [ 11 , 10 ], autoencoder-based [ 22 , 23 ], convolutional sparse coding-based [ 7 , 24 ,25, 26], and diffusion-based methods [8, 27, 9]. A common objective in image fusion is to maximize the information the fused image inherits from each source [ 28 ], leading to self-supervised losses that encourage structural similarity to both inputs. For example, CDDFuse [ 10 ] and SwinFusion [ 11 ] use averaged reconstruction losses between the 3Warping,            
+
+> cut/paste
+> GenAI output 𝐲 Fused result 𝐳
+> Spatial
+> Alignment
+> Photometric
+> Alignment
+> Fusion
+> 𝐲 warp 𝐱 photo Input image 𝐱
+> 1
+> 2
+> 3
+> Sampled patch
+> Color/
+> brightness
+> shifts
+> Detail
+> shifts
+> Input patch 𝐱
+> Target patch 𝐱 hq
+> 123
+> Fused result 𝐳
+> L1 loss
+> Inference
+> Training Simulated
+> GenAI patch 𝐲
+
+Figure 2: Overview of our method. Top: during inference, 1) optical-flow alignment warps the GenAI output y to the camera input x; 2) a global photometric alignment module (PAM: S-curve, CbCr LUT, and gamma correction) maps x to ywarp while avoiding hallucination leakage; and 3) MSCU-Net with a lightweight NAFNet refiner fuses the aligned pair into the output z. Bottom: during training, triplets (xhq , x, y) are synthesized from clean patches using color/brightness shifts, detail shifts, and synthetic hallucination. fused image and each source. Diffusion-based fusion methods also rely on conventional fusion objectives: DDFM [ 8 ] derives a likelihood rectification step for DDPM sampling from a standard intensity-based fusion loss, while RFFusion [ 9 ] extends this with rectified flow and a fusion-specific VAE. Thus, although these methods use stronger generative priors, their fusion guidance remains tied to objectives that encourage retaining information from both sources. Image fusion objectives assume both source images are reliable structural references. The GenAI output, however, contains hallucinations and misalignments. Therefore, encouraging the fused image to inherit GenAI-side structure is counterproductive. Some image-fusion architectures may be reusable, but their training or sampling objectives are not directly applicable to our task. 
+
+2.3 Interpretable fusion via convolutional sparse coding 
+
+Most PST and image fusion methods [ 3, 18 , 10 , 11 ] produce outputs without an explicit account of how each output region relates to the inputs, limiting their interpretability. Convolutional sparse coding (CSC) methods [ 24 , 7] provide a more interpretable alternative by decomposing source images into shared (common) and modality-specific (unique) components. The unique components localize where the source images diverge, offering a natural representation for analyzing inconsistencies between two images of the same scene. We build on this property of CSC-based fusion in our framework, as detailed in Sec. 3. 
+
+## 3 Method 
+
+In this section, we introduce our post-processing framework for camera–GenAI fusion. Our fusion framework consists of the following main components: spatial and photometric alignment (Sec. 3.1), interpretable fusion model (Sec. 3.2), and a training pipeline based on synthetic data (Sec. 3.3). Figure 2 shows an overview of our method. 
+
+Framework overview. We adopt the following notation throughout the paper. Given an input image 
+
+x ∈ RH×W ×3 and its GenAI-enhanced version y ∈ Rh×w×3, we aim to obtain a fused image 
+
+z ∈ RH×W ×3 that combines the content structure of x with the aesthetic quality of y. Note that y
+
+may have lower spatial resolution than x due to GenAI model output constraints. Overall, our proposed framework can be summarized as follows: 
+
+ywarp = F (x, y), xphoto = P (x, ywarp ), z = R(xphoto , ywarp ) (1) 4where F , P , and R are the spatial alignment module, the photometric alignment module, and the fusion module, respectively. 
+
+3.1 Spatial and Photometric Alignment Spatial alignment. We use a pretrained optical flow model to perform spatial alignment: ywarp =
+
+F (x, y), where F is the flow model. While optical flow is effective at addressing geometric misalign-ment, it cannot address texture or content hallucination. In addition, since GenAI models can produce outputs with changes in field of view, leading to missing or hallucinated content at the image border, optical flow cannot recover content that is present in the input but missing in the GenAI output (for example, the bottom ground region in Figure 1 row 1). Sec. 3.2 addresses these issues. 
+
+Photometric alignment. The photometric alignment module (PAM) aims to match the overall color and contrast of the input x to those of the flow-corrected GenAI reference ywarp as closely as possible. Crucially, this stage uses global image processing operations only. This avoids the risk of local operations, such as local tone mapping, carrying over the color components of hallucinated content from the reference. Inspired by the global components of the modular ISP in [ 29 ], our pipeline consists of a generalized global S-curve for contrast adjustment, a CbCr 2D look-up table (LUT), and a gamma correction module. See Sec. A.1.3 for details. By applying spatial and photometric alignment, we substantially reduce pixel-level discrepancies between x and y. This allows the subsequent fusion model to more easily distinguish hallucinated regions in y from genuine color and tonal adjustments. 
+
+3.2 Interpretable Fusion Model 3.2.1 Convolutional sparse coding and common–unique decomposition 
+
+Convolutional sparse coding (CSC) [30, 31, 32] models a signal x ∈ RH×W ×K as 
+
+x = 
+
+> M−1
+
+X
+
+> m=0
+
+dm ∗ um = d ∗ u, (2) where ∗ is the convolution operator, d = {dm}M −1 
+
+> m=0
+
+∈ Rs×s×M ×K is a convolutional dictionary with M input channels and K output channels. u = {um}M −1 
+
+> m=0
+
+∈ RH×W ×M is a set of sparse feature maps. Each dictionary atom dm ∈ Rs×s×K produces a K-channel contribution from the sparse map um ∈ RH×W . Because u is enforced to be sparse, it typically captures the content structure of x, while the filters d capture texture characteristics. The CSC objective can be optimized via unrolling the Iterative Shrinkage and Thresholding Algorithm (ISTA) into a fixed-depth neural network (convolutional LISTA) [33], enabling end-to-end training. Works [ 7, 24 ] apply this model to multimodal image fusion by decomposing the two input images x
+
+and y into common and unique components: 
+
+x = dc ∗ c + du ∗ u, y = hc ∗ c + hv ∗ v, z = gc ∗ c + gu ∗ u. (3) Here, x is decomposed into a common sparse component c and a unique component u; y is decomposed into the same common component c and a unique component v; dc, hc, du, hv are learned filters/dictionaries corresponding to the common and unique components; gc and gu are dictionaries adapted to the characteristics of the fused output z. For our task, since the output should rely on the structure of x, we omit v, the unique component of y, during the reconstruction of z.In [7], the sparse codes are predicted by separate LISTA modules with update step (j):
+
+u(j+1) = Sθuj
+
+
+
+u(j) − due ∗ dud ∗ u(j) + due ∗ ˆx
+
+
+
+, ˆx = x − dc ∗ c (4) 
+
+c(j+1) = Sθcj
+
+
+
+c(j) − wce ∗ wcd ∗ c(j) + wce ∗ [˜x, ˜y]
+
+
+
+, ˜x = x − du ∗ u, ˜y = y − hv ∗ v (5) where Sθuj is a soft-thresholding operator with learned threshold θuj . For prediction of u, due and 
+
+dud are learnable convolutional filters trained to approximate dictionary du. Intuitively, dud decodes a sparse code into the image domain, while due encodes an image into a sparse code. The same 5structure applies to v. For prediction of c, wcd parameterizes [dc, hc], where [·] denotes channel-wise concatenation. ˆx and ˆy represent the image-space unique residuals of x and y, respectively. ˜x and ˜y
+
+represent their image-space common residuals. 
+
+3.2.2 Multiscale common–unique decomposition 
+
+While CU-Net [ 7] is effective for image fusion, we find that its single-scale formulation deviates from the original mathematical model in ways that hurt interpretability of hallucinated regions in the GenAI output. Specifically, ˆx and ˆy are unavailable to the feed-forward network, because they depend on the unknown code c (Eq. 4), which is predicted only after u and v have been computed (Eq. 5). As a result, x and y are used as inputs to the unique-code predictors instead of ˆx and ˆy. This deviation from the original formulation can lead to inaccuracies in the sparse code prediction of u
+
+and v, making the resulting decomposition less interpretable. A pyramidal architecture lets us initialize the coarsest scale with x and y (Eq. 6), and propagate the predicted common-component residual to form ˆx and ˆy at finer scales (Eq. 7). The multiscale architecture can also be viewed as iterative refinement of the unique components ˆx and ˆy, yielding a closer approximation of the underlying mathematical model. In addition, with a multiscale architecture, we can warm-start finer-scale LISTA iterations with upsampled sparse codes from coarser scales (Eq. 8): 
+
+ˆx(0) = x(0) , ˆy(0) = y(0) (6) 
+
+ˆx(s+1) = x(s+1) − ↑ (dc, (s) ∗ c(s)), ˆy(s+1) = y(s+1) − ↑ (hc, (s) ∗ c(s)) (7) 
+
+u(0) ,(s+1) =↑ u(J−1) ,(s), v(0) ,(s+1) =↑ v(J−1) ,(s), c(0) ,(s+1) =↑ c(J−1) ,(s) (8) where x ∈ RH×W ×C , y ∈ Rh×w×C , s is the scale index, ↑ denotes upsampling, and J is the number of LISTA iterations per scale. Figure 4 in the Appendix illustrates the model architecture. 
+
+Training loss. Since the multiscale network propagates residual inputs (e.g. ˆx and ˆy) and sparse codes across scales, supervising only the finest-scale output provides weak constraints on the coarser-scale decompositions. We therefore supervise the fused output z(s) at each scale, which encourages the intermediate decompositions to remain predictive of the target rather than serving only as latent features: 
+
+L = ∥z(2) − x(2)  
+
+> hq
+
+∥1 + α∥z(1) − x(1)  
+
+> hq
+
+∥1 + α∥z(0) − x(0)  
+
+> hq
+
+∥1. (9) where z(s) and x(s) 
+
+> hq
+
+are the output and ground truth at scale s, with (2) being the finest scale for a three-scale network. α < 1 down-weights coarser scales. 
+
+Residual refinement. While the sparse coding-based decomposition provides interpretability and explicit control over GenAI-unique content, we find that a lightweight restoration-style refiner improves perceptual quality. We therefore finetune the multiscale CU-Net with a small NAFNet [ 34 ]refinement module. Details are provided in Appendix A.1.5. 
+
+3.3 Data Synthesis Pipeline 
+
+Since there is no ground truth for the fused output z, we train our model with synthetic data. Figure 2 shows an overview of the data generation pipeline. We construct triplets (xhq , x, y), where xhq is a high-quality clean image, x is a degraded version of xhq , and y is the pseudo-GenAI output. We start from a source patch and apply two different settings of random color and contrast jittering to create two versions of the same scene with different photometric properties: one used as the input and the other as ground truth. We then apply random blur and noise to simulate the lower-quality input x,and USM sharpening with random strength to augment the ground truth xhq . The pseudo-GenAI output y is generated by applying a homography to xhq to simulate spatial shifts, and randomly cut-pasting patches to create spatially-misplaced content. This encourages the model to rely on x for structural guidance rather than directly copying from y.To help the model better recognize GenAI texture distortions, we apply the SDXL ControlNet image-to-image pipeline [ 35 ] to deliberately hallucinate texture in xhq . Two ControlNets—a tile ControlNet for low-frequency structure and a Canny ControlNet for edge preservation—guide the generation. The denoising strength is randomly sampled to vary the degree of hallucination. 6CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses)    
+
+> SwinFusion (our framework) SwinFusion (fusion losses)
+
+SA -LUT  Neural Preset  PhotoWCT2  
+
+> CDDFuse (our framework)
+
+GenAI output  Ours Input  CDDFuse (fusion losses)     
+
+> SwinFusion (our framework) SwinFusion (fusion losses)
+
+SA -LUT  Neural Preset  PhotoWCT2  
+
+> CDDFuse (our framework)
+
+GenAI output  Ours Input  CDDFuse (fusion losses)    
+
+> SwinFusion (our framework) SwinFusion (fusion losses)
+
+SA -LUT  Neural Preset  PhotoWCT2 Figure 3: Qualitative comparison on MIT-Adobe FiveK [ 36 ] (top rows, tone manipulation) and LOL v2 [ 37 ] (bottom rows, low-light enhancement). Image fusion baselines trained with their original objectives propagate hallucinated structures from y (e.g., distorted text and faces); photorealistic style transfer methods preserve structure but miss local stylistic effects under large brightness gaps. Our method preserves the structure of x while matching the tonal style of y.74 Experiments 
+
+Datasets. We evaluate on two tasks: tone manipulation and low-light enhancement. For training, we use the Expert C ground truth from MIT-Adobe FiveK (MA5K) [ 36 ], with 4000 scenes for training and 500 for validation. We train a single model across both tasks, demonstrating the framework’s generality. We test on MA5K for tone manipulation, and on an aggregate of LOL v1 [ 38 ], LOL v2-real [ 37 ], and SICE [ 39 ] for low-light enhancement, with equal weighting between LOL and SICE. Since our framework is most relevant when GenAI outputs exhibit visible misalignment or hallucination, we evaluate on a manually-selected MA5K subset of 285 such scenes. 
+
+Implementation details. We use SKFlow [ 40 ] for spatial alignment. The multiscale CU-Net (MSCU-Net) uses 3 scales with downsampling factor 2 per scale. We pre-train MSCU-Net with a prepended flow estimator for 400 epochs on MA5K [ 36 ] using Adam [ 41 ] with learning rate 10 −5, following [ 7]. This is to ensure that the model has the capacity to handle large photometric differences. In parallel, we train the photometric alignment module (PAM) for 500 epochs with learning rate 10 −3. We then finetune MSCU-Net jointly with PAM for 50 epochs, and finally train a small NAFNet refiner with frozen MSCU-Net for 200 epochs. 
+
+Baselines. We compare against (1) photorealistic style transfer (PST) methods, including SA-LUT [ 2], Neural Preset [18], and PhotoWCT2 [3]; and (2) multimodal image fusion methods, CDDFuse [10] and SwinFusion [ 11 ]. As PST methods are not dataset-specific, we directly use the pretrained models without re-training. For fusion methods, we evaluate two versions: (2.1) trained on our data pipeline with their original fusion losses, and (2.2) embedded in our framework with pre-appended flow and photometric alignment modules. For (2.2), we use the same training procedure, flow estimator, and PAM as our model for fair comparison. 
+
+Qualitative Results. As shown in Figure 3, our method preserves input structure while matching the GenAI output’s tonal style. Fusion methods trained with their original losses propagate texture distortions and hallucinations from y, since their objectives encourage inheriting edge information from both sources. When integrated into our framework, the same backbones are better able to reject hallucinations. PST methods preserve structure faithfully but often fail to match local stylistic effects, especially under large brightness gaps. 
+
+Metrics. We report three metric groups: content fidelity, style similarity, and no-reference IQA. For content fidelity , we use content similarity [ 18 ], which computes the SSIM between edge maps of 
+
+x and z, and Qaf , a component of the classical image fusion metric Qab/f . The latter is computed as 
+
+Qaf (i, j ) = Qaf g (i, j )Qaf α (i, j ), where Qaf measures the amount of edge information from source image a preserved in fused image f at location (i, j ). Qaf g and Qaf α are Sobel-based edge-strength and edge-orientation preservation terms. For style similarity , we follow [ 42 ] and use the W2 distance between the global color distributions of z and the GenAI reference, plus a local W2 averaged over a 6 × 6 grid to capture spatially varying style differences. For perceptual quality , we use the no-reference (NR-IQA) metrics MANIQA [43] and MUSIQ [44]. 
+
+Quantitative Results. As shown in Table 1 and Table 2, our method achieves a favorable balance across content fidelity, style similarity, and perceptual quality. Since no single metric captures the combined goal of structural preservation and photometric enhancement, the metrics must be interpreted jointly. PST methods achieve strong content fidelity but underperform on style and perceptual quality, especially on low-light data. Fusion baselines trained with their original losses score low on content fidelity, indicating that they inherit structure from the GenAI output y as well as the input x; their high NR-IQA scores on low-light datasets reflect this propagation of both the desirable perceptual qualities of the GenAI reference y and its hallucinations (Figure 3). When embedded in our framework, these backbones substantially improve on content fidelity and style similarity, confirming that our formulation is backbone-agnostic. For reference, we also report metrics between x and y (resized to input resolution for NR-IQA); the low MUSIQ on MA5K reflects y’s loss of fine detail at lower resolution. 
+
+Efficiency. Fusion baselines have high memory footprints despite modest parameter counts, since they generate full-resolution feature maps during inference; this often forces tiled inference, introducing visible seam artifacts (see Figure 3, row 3, column 4). Our method maintains a lower memory footprint with competitive runtime, making it more suitable for full-resolution inputs. See Appendix A.2.5 for details on inference cost. 8Framework Analysis. Ablations are provided in Appendix A.2.2. Although our framework is compatible with different fusion backbones, We default to the residual-refined MSCU-Net for its balance of fidelity, style transfer, and efficiency. Its built-in interpretability produces a hallucination map as a helpful byproduct, enabling analysis of hallucination rates across prompts (example shown in A.3), models, and inputs. See Appendix A.2.3 for analysis on interpretability. Table 1: Results on MIT-Adobe FiveK [ 36 ]. The best , second , and third results are highlighted per method group.                                                             
+
+> Experiment Content Sim. ↑Qaf ↑W2 Dist. ↓W2 Dist. (local) ↓MANIQA ↑MUSIQ ↑
+> Input/GenAI output 0.503 0.177 0.205 0.201 0.293 30.61 SA-LUT [2] 0.843 0.737 0.232 0.230 0.254 33.61 Neural Preset [18] 0.992 0.929 0.094 0.103 0.273 34.86 PhotoWCT2 [3] 0.787 0.632 0.065 0.096 0.289 34.99 CDDFuse [10] (w. fusion losses) 0.646 0.478 0.081 0.082 0.266 33.00 CDDFuse [10] (w. our framework) 0.789 0.582 0.071 0.072 0.257 35.85 SwinFusion [11] (w. fusion losses) 0.625 0.428 0.100 0.101 0.266 33.11 SwinFusion [11] (w. our framework) 0.813 0.639 0.037 0.040 0.269 35.77 Ours 0.902 0.800 0.058 0.062 0.257 36.31
+
+Table 2: Averaged results on lowlight datasets: LOL v1 [ 38 ], LOL v2 [ 37 ], and SICE [ 39 ], with equal weights between LOL datasets and SICE. †: high no-reference IQA scores coincide with outputs that closely follow the GenAI result, including its hallucinated structures.                                                               
+
+> Experiment Content Sim. ↑Qaf ↑W2 Dist. ↓W2 Dist. (local) ↓MANIQA ↑MUSIQ ↑
+> Input/GenAI output 0.593 0.313 0.336 0.311 0.418 66.64 SA-LUT 0.879 0.671 0.413 0.386 0.325 45.78 Neural Preset 0.988 0.942 0.179 0.176 0.410 55.61 PhotoWCT2 0.857 0.778 0.077 0.114 0.429 59.29 CDDFuse (w. fusion losses) 0.654 0.420 0.085 0.092 0.488 66.24 †
+> CDDFuse (w. our framework) 0.830 0.650 0.069 0.078 0.450 63.18 SwinFusion (w. fusion losses) 0.652 0.412 0.147 0.144 0.469 65.94 †
+> SwinFusion (w. our framework) 0.844 0.696 0.052 0.060 0.430 63.31 Ours 0.864 0.743 0.065 0.079 0.453 63.34
+
+## 5 Conclusion 
+
+We introduced structure-preserving GenAI fusion as a problem setting for black-box GenAI image retouching, and proposed a post-processing framework that addresses four core failure modes: spatial misalignment, texture distortion, content hallucination, and resolution mismatch. Our method combines flow-based spatial alignment, global photometric alignment, and an interpretable multiscale common–unique decomposition network to preserve the structure of the original camera image while inheriting the tonal and perceptual enhancements of the GenAI output. A key property of the framework is its built-in interpretability: the common–unique decomposition exposes a hallucination map as a natural byproduct, which we use to analyze how prompt phrasing affects hallucination rates. Experiments on tone manipulation and low-light enhancement show that our method achieves a favorable balance between content fidelity, style similarity, and perceptual quality compared to photorealistic style transfer and image fusion baselines. We further demonstrate that our framework is backbone-agnostic: when fusion models are embedded in our pipeline, their content fidelity improves substantially, validating the framework as a general recipe rather than a single-architecture method. Our framework targets enhancement-based tasks where the camera input is a reliable structural reference. Extending it to settings such as super-resolution or deblurring, where this assumption breaks, remains future work. 9References 
+
+[1] Jialong Zuo, Haoyou Deng, Hanyu Zhou, Jiaxin Zhu, Yicheng Zhang, Yiwei Zhang, Yongxin Yan, Kaixing Huang, Weisen Chen, Yongtai Deng, Rui Jin, Nong Sang, and Changxin Gao. Is Nano Banana Pro a low-level vision all-rounder? A comprehensive evaluation on 14 tasks and 40 datasets. arXiv preprint arXiv:2512.15110 , 2025. [2] Zerui Gong, Zhonghua Wu, Qingyi Tao, Qinyue Li, and Chen Change Loy. SA-LUT: Spatial adaptive 4D look-up table for photorealistic style transfer. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025. [3] Tai-Yin Chiu and Danna Gurari. PhotoWCT 2: Compact autoencoder for photorealistic style transfer resulting from blockwise training and skip connections of high-frequency residuals. In 
+
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) ,2022. [4] Jaejun Yoo, Youngjung Uh, Sanghyuk Chun, Byeongkyu Kang, and Jung-Woo Ha. Photore-alistic style transfer via wavelet transforms. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2019. [5] Fujun Luan, Sylvain Paris, Eli Shechtman, and Kavita Bala. Deep photo style transfer. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,2017. [6] Bee Lim, Sanghyun Son, Heewon Kim, Seungjun Nah, and Kyoung Mu Lee. Enhanced deep residual networks for single image super-resolution. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , 2017. [7] Xin Deng and Pier Luigi Dragotti. Deep convolutional neural network for multi-modal image restoration and fusion. IEEE Transactions on Pattern Analysis and Machine Intelligence ,43(10):3333–3348, 2021. [8] Zixiang Zhao, Haowen Bai, Yuanzhi Zhu, Jiangshe Zhang, Shuang Xu, Yulun Zhang, Kai Zhang, Deyu Meng, Radu Timofte, and Luc Van Gool. DDFM: Denoising diffusion model for multi-modality image fusion. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. [9] Zirui Wang, Jiayi Zhang, Tianwei Guan, Yuhan Zhou, Xingyuan Li, Minjing Dong, and Jinyuan Liu. Efficient rectified flow for image fusion. In Advances in Neural Information Processing Systems (NeurIPS) , 2025. [10] Zixiang Zhao, Haowen Bai, Jiangshe Zhang, Yulun Zhang, Shuang Xu, Zudi Lin, Radu Timofte, and Luc Van Gool. CDDFuse: Correlation-driven dual-branch feature decomposition for multi-modality image fusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. [11] Jiayi Ma, Linfeng Tang, Fan Fan, Jun Huang, Xiaoguang Mei, and Yong Ma. SwinFusion: Cross-domain long-range learning for general image fusion via Swin transformer. IEEE/CAA Journal of Automatica Sinica , 9(7):1200–1217, 2022. [12] Leon A. Gatys, Alexander S. Ecker, and Matthias Bethge. Image style transfer using convolu-tional neural networks. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016. [13] Xun Huang and Serge Belongie. Arbitrary style transfer in real-time with adaptive instance normalization. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , 2017. [14] Yijun Li, Ming-Yu Liu, Xueting Li, Ming-Hsuan Yang, and Jan Kautz. A closed-form solution to photorealistic image stylization. In Proceedings of the European Conference on Computer Vision (ECCV) , 2018. [15] Yijun Li, Chen Fang, Jimei Yang, Zhaowen Wang, Xin Lu, and Ming-Hsuan Yang. Universal style transfer via feature transforms. In Advances in Neural Information Processing Systems (NeurIPS) , 2017. [16] Karen Simonyan and Andrew Zisserman. Very deep convolutional networks for large-scale image recognition. In International Conference on Learning Representations (ICLR) , 2015. 10 [17] Man M. Ho and Jinjia Zhou. Deep preset: Blending and retouching photos with color style transfer. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2021. [18] Zhanghan Ke, Yuhao Liu, Lei Zhu, Nanxuan Zhao, and Rynson W. H. Lau. Neural preset for color style transfer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. [19] Jiayi Ma, Pengwei Liang, Wei Yu, Chen Chen, Xiaojie Guo, Jia Wu, and Junjun Jiang. Infrared and visible image fusion via detail preserving adversarial learning. Information Fusion , 54:85– 98, 2020. [20] Jiayi Ma, Wei Yu, Pengwei Liang, Chang Li, and Junjun Jiang. FusionGAN: A generative adversarial network for infrared and visible image fusion. Information Fusion , 48:11–26, 2019. [21] Jiayi Ma, Hao Zhang, Zhenfeng Shao, Pengwei Liang, and Han Xu. GANMcC: A generative adversarial network with multiclassification constraints for infrared and visible image fusion. 
+
+IEEE Transactions on Instrumentation and Measurement , 70:1–14, 2021. [22] Hui Li and Xiao-Jun Wu. DenseFuse: A fusion approach to infrared and visible images. IEEE Transactions on Image Processing , 28(5):2614–2623, 2018. [23] Hao Zhang and Jiayi Ma. SDNet: A versatile squeeze-and-decomposition network for real-time image fusion. International Journal of Computer Vision , 129(10):2761–2785, 2021. [24] Fangyuan Gao, Xin Deng, Mai Xu, Jingyi Xu, and Pier Luigi Dragotti. Multi-modal convolu-tional dictionary learning. IEEE Transactions on Image Processing , 31:1325–1339, 2022. [25] Shuang Xu, Zixiang Zhao, Yicheng Wang, Chunxia Zhang, Junmin Liu, and Jiangshe Zhang. Deep convolutional sparse coding networks for image fusion. arXiv preprint arXiv:2005.08448 ,2020. [26] Xin Deng, Jingyi Xu, Fangyuan Gao, Xiancheng Sun, and Mai Xu. DeepM 2CDL: Deep multi-scale multi-modal convolutional dictionary learning network. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(5):2770–2787, 2024. [27] Bing Cao, Xingxin Xu, Pengfei Zhu, Qilong Wang, and Qinghua Hu. Conditional controllable image fusion. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. [28] Veysel Aslantas and Emre Bendes. A new image quality metric for image fusion: The sum of the correlations of differences. AEU—International Journal of Electronics and Communications ,69(12):1890–1896, 2015. [29] Mahmoud Afifi, Zhongling Wang, Ran Zhang, and Michael S. Brown. Modular neural image signal processing. arXiv preprint arXiv:2512.08564 , 2025. [30] Hilton Bristow, Anders Eriksson, and Simon Lucey. Fast convolutional sparse coding. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,2013. [31] Felix Heide, Wolfgang Heidrich, and Gordon Wetzstein. Fast and flexible convolutional sparse coding. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2015. [32] Matthew D. Zeiler, Dilip Krishnan, Graham W. Taylor, and Rob Fergus. Deconvolutional networks. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2010. [33] Hillel Sreter and Raja Giryes. Learned convolutional sparse coding. In Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2018. [34] Xiaojie Chu, Liangyu Chen, and Wenqing Yu. NAFSSR: Stereo image super-resolution using NAFNet. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , pages 1239–1248, 2022. [35] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. SDXL: Improving latent diffusion models for high-resolution image synthesis. In International Conference on Learning Representations (ICLR) , 2024. [36] Vladimir Bychkovsky, Sylvain Paris, Eric Chan, and Frédo Durand. Learning photographic global tonal adjustment with a database of input/output image pairs. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2011. 11 [37] Wenhan Yang, Shiqi Wang, Yuming Fang, Yue Wang, and Jiaying Liu. Band representation-based semi-supervised low-light image enhancement: Bridging the gap between signal fidelity and perceptual quality. IEEE Transactions on Image Processing , 30:3461–3473, 2021. [38] Chen Wei, Wenjing Wang, Wenhan Yang, and Jiaying Liu. Deep Retinex decomposition for low-light enhancement. In British Machine Vision Conference (BMVC) , 2018. [39] Jianrui Cai, Shuhang Gu, and Lei Zhang. Learning a deep single image contrast enhancer from multi-exposure images. IEEE Transactions on Image Processing , 27(4):2049–2062, 2018. [40] Shangkun Sun, Yuanqi Chen, Yu Zhu, Guodong Guo, and Ge Li. SKFlow: Learning optical flow with super kernels. In Advances in Neural Information Processing Systems (NeurIPS) ,2022. [41] Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In Interna-tional Conference on Learning Representations (ICLR) , 2015. [42] Alexander Lobashev, Maria Larchenko, and Dmitry Guskov. Color conditional generation with sliced Wasserstein guidance. In Advances in Neural Information Processing Systems (NeurIPS) ,2025. [43] Sidi Yang, Tianhe Wu, Shuwei Shi, Shanshan Lao, Yuan Gong, Mingdeng Cao, Jiahao Wang, and Yujiu Yang. MANIQA: Multi-dimension attention network for no-reference image quality assessment. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , 2022. [44] Junjie Ke, Qifei Wang, Yilin Wang, Peyman Milanfar, and Feng Yang. MUSIQ: Multi-scale image quality transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2021. [45] Xintao Wang, Liangbin Xie, Chao Dong, and Ying Shan. Real-ESRGAN: Training real-world blind super-resolution with pure synthetic data. In Proceedings of the IEEE/CVF International Conference on Computer Vision Workshops (ICCVW) , 2021. [46] Alexey Dosovitskiy, Philipp Fischer, Eddy Ilg, Philip Häusser, Caner Hazirbas, Vladimir Golkov, Patrick van der Smagt, Daniel Cremers, and Thomas Brox. FlowNet: Learning optical flow with convolutional networks. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , pages 2758–2766, 2015. [47] Dmitry Ulyanov, Andrea Vedaldi, and Victor Lempitsky. Instance normalization: The missing ingredient for fast stylization. arXiv preprint arXiv:1607.08022 , 2016. [48] Karol Gregor and Yann LeCun. Learning fast approximations of sparse coding. In Proceedings of the International Conference on Machine Learning (ICML) , pages 399–406, 2010. 12 A Technical appendices and supplementary material 
+
+A.1 Method Details 
+
+This section provides additional details on the method described in Sec. 3. 
+
+A.1.1 Data synthesis pipeline 
+
+We provide additional details of the data synthesis pipeline used for backbone training. As described in the main paper, we start from a sampled image patch and apply random color and contrast jittering twice independently to obtain two photometrically different versions of the same scene. These are used as the input x and the high-quality target xhq . Color augmentations include hue and saturation shifts, while brightness and contrast changes are implemented using randomly sampled monotonic 1D tone curves. The input is then degraded by sequentially applying Gaussian blur, Gaussian noise, and unsharp masking (USM). To mimic the increased perceptual sharpness often introduced by GenAI retouching, we also apply randomized USM to the target image, with randomly sampled Gaussian blur scale, sharpening strength, and threshold. We synthesize the GenAI reference y by applying geometric transformations to the target, including translation, rotation, and shear. We further simulate content hallucination by copying rectangular regions from the target and pasting them at different loca-tions. More sophisticated degradation models, such as those used in RealESRGAN [ 45 ], could be incorporated in future work for more accurate simulation of real-world camera degradations. We also apply random rotations, flips, and resizing, where resizing simulates images with different resolutions and fields of view. 
+
+A.1.2 Spatial alignment module 
+
+We use SKFlow [ 40 ] as the pretrained optical flow model to spatially align the GenAI output y with the camera input x. To reduce computational complexity on full-resolution images, we downsample 
+
+x and y to 512 × 512 before performing optical flow. We perform spatial alignment prior to photometric mapping, as modern flow estimators are inherently robust to the domain gap between x and y. This robustness is largely attributed to aggressive photometric augmentation strategies during training, introducing variations in brightness, contrast, and hue [ 46 , 40 ], and the use of Instance Normalization [ 47 ], which removes global brightness biases and contrast variance from the feature space. Note that the specific choice of optical flow model is not central to our design. The spatial alignment module may be replaced with any state-of-the-art flow estimator without loss of generality. 
+
+A.1.3 Photometric alignment module 
+
+The photometric alignment module consists of three global operations: tone mapping, a 2D LUT color transform, and gamma correction. First, global tone mapping is carried out by the following generalized S-curve: 
+
+xTM = gTM (x; a, b, c ) = xa
+
+xa + ( c(1 − x)) b , a, b, c = DGT M ([ x, ywarp ]) (10) where a, b , and c are parameters controlling the shape of the tone curve, predicted by a CNN-based predictor head DGT M . [·, ·] is channel-wise concatenation of the camera image x with the flow-warped GenAI output ywarp .The 2D LUT carries out global color transform by mapping the CbCr channels of YCbCr-transformed 
+
+xTM to those of ywarp . We first separately extract feature maps of the 2D histograms of the CbCr channels of xTM and ywarp : hxTM = Dhist (xTM ), hywarp = Dhist (ywarp ), where Dhist is a shallow convolution-based encoder. The feature maps are then passed through an encoder-decoder network 
+
+Dchroma to predict the 2D LUT, as in Eq. 11. The LUT-mapped CbCr values are finally combined with the original Y channel of xTM to obtain the color-aligned image xLUT .
+
+xLUT = Interp (xTM ,CbCr , LUT CbCr ), LUT CbCr = Dchroma ([ hxTM , hywarp ]) (11) 13 𝐝 𝑐 ∗ 𝐜  
+
+> Sparse code
+> prediction
+> Sparse code
+> prediction
+
+𝐯 
+
+> Sparse code
+> prediction
+> Conv
+> 𝐠 𝑢
+
+𝐡 𝑐 ∗ 𝐜 
+
+𝐳 
+
+𝐮   
+
+> 𝒖 0𝒖 1𝒖 J−1
+
+… … 
+
+> Sparse code
+> prediction
+> Sparse code
+> prediction
+
+𝐯 
+
+> Sparse code
+> prediction
+> Conv
+> 𝐠 𝑢
+
+𝐡 𝑐 ∗ 𝐜 
+
+𝐳 
+
+𝐮   
+
+> 𝒖 0𝒖 1𝒖 J−1
+
+… … upsample 
+
+ො𝐱 
+
+ො𝐲 𝐲 
+
+𝐱 Figure 4: Model architecture. We show only two scales for simplicity. The coarsest scale takes in the original input x and the GenAI reference y, and predicts the common and unique codes c, u, v. The output is reconstructed from the image-space common component of y and the unique code u of the input x. The finer scale takes the upsampled sparse codes from the coarser scale as warm-start, and also takes the unique-component residuals ˆx, ˆy as inputs to predict finer-scale sparse codes. Table 3: Notation summary for the common-unique decomposition framework. 
+
+Symbol Description 
+
+u(j) Unique sparse code for x at LISTA [33, 48] iteration j
+
+v(j) Unique sparse code for y at LISTA iteration j
+
+c(j) Common sparse code at LISTA iteration j
+
+dc Dictionary associated with common sparse code 
+
+due , dud (≡ du) Encoding and decoding dictionaries for unique sparse code of xhve , hvd (≡ hv ) Encoding and decoding dictionaries for unique sparse code of ywcd ≡ [dc, hc] Concatenated decoding dictionaries for common sparse code cdc ∗ c, hc ∗ c Image-space common components of x and y, respectively 
+
+du ∗ u, hv ∗ v Image-space unique components of x and y, respectively 
+
+ˆx = x − dc ∗ c Image-space unique residual for xˆy = y − hc ∗ c Image-space unique residual for y˜x = x − du ∗ u Image-space common residual associated with x˜y = y − hv ∗ v Image-space common residual associated with yz Fused output 
+
+gu Dictionary for z associated with unique sparse code of x
+
+Finally, we gamma-correct xLUT with a gamma factor γ predicted from Dgamma to further align the brightness level of xLUT with ywarp :
+
+xgamma = ggamma (xLUT ; γ) = xγ
+
+> LUT
+
+, γ = Dgamma ([ xLUT , ywarp ]) (12) For more details on each sub-network, please refer to [29]. 
+
+Data. Our backbone data synthesis pipeline encourages robustness to fine-grained textural distortions, but does not explicitly cover larger hallucinated content, such as hallucinated clouds in the sky. To train the photometric alignment module, we therefore augment the main dataset with 50 Nano Banana Pro-generated examples containing such hallucinations. This helps the module learn color and brightness matching while disregarding large hallucinated regions in the GenAI output. 
+
+Training. We train the photometric alignment module with a frozen flow estimator applied beforehand, so that the module takes the warped GenAI output ywarp as input. This prevents spatial misalignment from confounding the prediction of color and tone mappings. 
+
+A.1.4 Fusion module 
+
+We show a diagram of the proposed multiscale common-unique decomposition network (MSCU-Net) in Figure 4. For reference, we summarize the symbols used in the network and their corresponding interpretations in Table 3, and summarize the equations in Eq. 13. In this section, x and y denote two generic source images. Within our framework, they correspond to xphoto and ywarp , respectively. 14 For each scale s (omitted for readability) :
+
+u(j+1) = Sθuj
+
+
+
+u(j) − due ∗ dud ∗ u(j) + due ∗ ˆx
+
+
+
+v(j+1) = Sθvj
+
+
+
+v(j) − hve ∗ hvd ∗ v(j) + hve ∗ ˆy
+
+
+
+c(j+1) = Sθcj
+
+
+
+c(j) − wce ∗ wcd ∗ c(j) + wce ∗ [˜x, ˜y]
+
+
+
+u(0) ,(s+1) =↑ u(J−1) ,(s)
+
+v(0) ,(s+1) =↑ v(J−1) ,(s)
+
+c(0) ,(s+1) =↑ c(J−1) ,(s)
+
+z(s) = hc, (s) ∗ c(J−1) ,(s) + gu, (s) ∗ u(J−1) ,(s),
+
+ˆx(0) = x(0) 
+
+ˆy(0) = y(0) 
+
+ˆx(s+1) = x(s+1) − ↑ (dc, (s) ∗ c(s))
+
+ˆy(s+1) = y(s+1) − ↑ (hc, (s) ∗ c(s))
+
+˜x(s) = x(s) − du, (s) ∗ u(J−1) ,(s)
+
+˜y(s) = y(s) − hv, (s) ∗ v(J−1) ,(s)
+
+(13) Aside from the multiscale architecture, we also modify the output reconstruction to directly use the common reconstruction for y, hc ∗ c:
+
+z(s) = hc, (s) ∗ c(s) + gu, (s) ∗ u(s) (14) This design bases the reconstruction on the GenAI reference, allowing the output to directly inherit its colors and tones. Since hc, (s) ∗ c(s) is optimized to reconstruct the common content of y, it is expected to capture the desired photometric characteristics of the GenAI reference. Meanwhile, we exclude the GenAI-unique component v(s) during fusion to suppress hallucinated content. 
+
+Hallucination map. The explicit common-unique decomposition enables a simple hallucination map derived from the GenAI-unique component. We obtain this component in image space as 
+
+hm = hv, (s) ∗ v(s). Since hallucinated content in y is unsupported by the shared scene structure, it is expected to be weakly represented by the common code c and instead captured by the unique code 
+
+v. We thus use the activation magnitude of hm as a proxy for hallucinated content, computing the map as the per-pixel ℓ2 norm normalized to [0 , 1] :
+
+m = ∥hm∥2, ˆm = m/ max( m). (15) 
+
+A.1.5 Residual refinement 
+
+The multiscale CU-Net provides an interpretable common-unique decomposition that supports hallucination-aware fusion. However, the constraints imposed by this decomposition can limit fine-detail reconstruction compared with generic restoration architectures. To improve visual quality while preserving the decomposition-based prediction, we add a lightweight NAFNet [ 34 ] refinement module after the CU-Net output. The refiner is intended to improve residual low-level details rather than replace the interpretable fusion stage. The refiner takes the aligned input image xphoto , warped GenAI reference ywarp , preliminary fused output from MSCU-Net z(2) (output at the finest scale), and the hallucination map ˆm as input. The preliminary output and hallucination map are detached, so the refiner acts as a residual correction stage without altering the learned decomposition. Formally, the final output is 
+
+z = ywarp + Rθ
+
+
+
+[xphoto , ywarp , sg( z(2) ), sg( ˆ m)] 
+
+
+
+, (16) where sg( ·) denotes stop-gradient. 15 A.2 Experiments A.2.1 Implementation details 
+
+This section provides more details on hyperparameters. 
+
+Data synthesis pipeline hyperparameters. For input degradation, we apply Gaussian blur, Gaussian noise, and USM sharpening, each with probability 0.5. Gaussian blur uses σ ∈ [0 .5, 1.5] ; Gaussian noise uses σn ∈ [0 .002 , 0.05] ; and USM uses kernel sizes in [3 , 15] with strength in [1 , 3] . For detail augmentation for the target, USM is applied with probability 0.5 using kernel sizes in [3 , 15] and strength in [1 , 5] . Reference (simulated GenAI output) hallucinations are simulated with homography perturbations and cut-paste augmentation: translation is bounded by 5% of the image size, rotation by 
+
+5◦, shear by 0.05 , scale by [0 .95 , 1.05] , and copy-paste patches occupy 5% –40% of the image size. 
+
+Training hyperparameters. As described in the main paper, we first train MSCU-Net and the photometric alignment module (PAM) separately. MSCU-Net is trained using the data synthesis pipeline in Sec. A.1.1, with 256 × 256 patches and a batch size of 8. We set the weighting factor α
+
+to 0.5 for the loss at coarser scales. PAM is trained following Sec. A.1.3, using patches with sizes uniformly sampled from {256 , 512 }. The larger patch size is included because PAM predicts global photometric mappings, which require broader image context than local texture modeling. After pretraining, we finetune MSCU-Net together with PAM for 50 epochs using the Adam opti-mizer [ 41 ] with learning rate 1e-5. This stage uses only the 50-image large-hallucination dataset, allowing MSCU-Net to better distinguish large hallucinated regions from valid GenAI enhancements. With PAM integrated, this distinction becomes easier: after photometric alignment, unsupported hallucinated content often appears as localized color or brightness discrepancies between the mapped input and the GenAI reference. For residual refinement, we use a compact NAFNet with width 10, one middle block, and [1 , 1, 1, 1] 
+
+encoder and decoder blocks. We train the cascaded model for 200 epochs with learning rate 0.001 .
+
+Training and evaluation datasets. For testing on the MA5K dataset [ 36 ], we use 285 manually-selected test scenes from the 500-image test split provided by [ 1]. We randomly divide the remaining 4500 images into 4000 training and 500 validation images. For testing on the low-light datasets, we directly use the input–NB Pro pairs provided by [1]. 
+
+A.2.2 Framework ablations 
+
+Ablation results are shown in Table 4 and Figure 5. We evaluate the effect of our framework on three fusion backbones: CDDFuse [ 10 ], SwinFusion [ 11 ], and the multiscale common-unique decomposition network (MSCU-Net). Backbones trained with only a reconstruction loss often show low style similarity to the GenAI reference and low perceptual quality, likely due to artifacts caused by spatial misalignment (see Figure 5, row 5, column 3). Adding a frozen flow estimator reduces these artifacts, but the outputs may still fail to match the tonal characteristics of the GenAI reference (see rows 1 and 3, column 4). Moreover, flow alone does not fully address large-scale hallucinations (see rows 7 and 8, column 4). With both flow and the photometric alignment module, the models more faithfully match the GenAI reference in tone while better suppressing hallucinated content. 
+
+A.2.3 Fusion model interpretability 
+
+Figure 7 compares the intermediate decompositions produced by CU-Net [ 7] and our MSCU-Net. The middle columns visualize ˜x and ˜y, the image-space common residuals of the input and GenAI reference, respectively, which are used as inputs to the common-code predictor in Eq. 5. We visualize the normalized ℓ2 magnitude maps. For the CU-Net baseline, ˜x and ˜y tend to retain structures specific to their corresponding source images, rather than emphasizing a shared component. In contrast, our MSCU-Net produces more consistent common components across the two inputs, suggesting a cleaner common-unique decomposition and improved interpretability. The right columns visualize the GenAI-unique image-space component, hm = hv ∗ v. We show both the normalized magnitude map ˆm and a thresholded version. Compared with CU-Net, our 16 CDDFuse (w. flow) GenAI output Input  CDDFuse (w. flow + photo.) CDDFuse (w. L1 loss) 
+
+Ours  CU -Net (w. flow + photo.)  MSCU -Net (w. flow)  MSCU -Net (w. flow + photo.) MSCU -Net (w. L1 loss)  
+
+> CDDFuse (w. flow)
+
+GenAI output Input  CDDFuse (w. flow + photo.) CDDFuse (w. L1 loss) 
+
+Ours  CU -Net (w. flow + photo.)  MSCU -Net (w. flow)  MSCU -Net (w. flow + photo.) MSCU -Net (w. L1 loss)  
+
+> CDDFuse (w. flow)
+
+GenAI output Input  CDDFuse (w. flow + photo.) CDDFuse (w. L1 loss) 
+
+Ours  CU -Net (w. flow + photo.)  MSCU -Net (w. flow)  MSCU -Net (w. flow + photo.) MSCU -Net (w. L1 loss)  
+
+> CDDFuse (w. flow)
+
+GenAI output Input  CDDFuse (w. flow + photo.) CDDFuse (w. L1 loss) 
+
+Ours  CU -Net (w. flow + photo.)  MSCU -Net (w. flow)  MSCU -Net (w. flow + photo.) MSCU -Net (w. L1 loss) Figure 5: Qualitative results of ablations on MIT-Adobe FiveK [36] and LOL v2 [37]. MSCU-Net produces a more localized response on regions that are unsupported by the input, yielding a clearer hallucination map. 
+
+A.2.4 Additional results Additional qualitative results. We show additional qualitative results on the Nano Banana Pro evaluation datasets in Figures 10, 11, and 8. 
+
+Evaluation on ChatGPT-generated data. To test whether our method generalizes beyond the Nano Banana Pro data, we further evaluate it on outputs from another black-box GenAI model, “gpt-image-1.5”, without retraining. Specifically, we use “gpt-image-1.5” to enhance 493 scenes from the 500-image MIT-Adobe FiveK [ 36 ] test split used in [ 1 ] with the tone manipulation prompt, and 100 LOL v2 [37] scenes with the low-light enhancement prompt. Results are reported in Table 5. 17 Table 4: Ablation results on LOL v2 [ 37 ]. The best , second , and third results are highlighted. (w. L1 loss): backbone model trained with L1 loss only. (w. flow): backbone model cascaded with a pretrained flow estimator. (w. flow + photo.): backbone model cascaded with a pretrained flow estimator and the photometric alignment module.                                                                   
+
+> Experiment Content Sim. ↑Qaf ↑W2 Dist. ↓W2 Dist. (local) ↓MANIQA ↑MUSIQ ↑
+> CDDFuse [10] (w. L1 loss) 0.894 0.710 0.136 0.279 0.398 52.02 CDDFuse [10] (w. flow) 0.892 0.734 0.093 0.306 0.431 55.37 CDDFuse [10] (w. flow + photo.) 0.887 0.728 0.066 0.317 0.446 56.73 SwinFusion [11] (w. L1 loss) 0.797 0.605 0.114 0.272 0.366 53.36 SwinFusion [11] (w. flow) 0.813 0.596 0.136 0.320 0.421 56.02 SwinFusion [11] (w. flow + photo.) 0.844 0.651 0.051 0.312 0.446 58.22 MSCU-Net (w. L1 loss) 0.751 0.412 0.069 0.080 0.257 42.78 MSCU-Net (w. flow) 0.777 0.474 0.063 0.065 0.451 59.77 MSCU-Net (w. flow + photo.) 0.817 0.564 0.054 0.055 0.461 61.05 GenAI output Hallucination map Input GenAI output Hallucination map Input
+> Prompt 0 Prompt 1
+> Prompt 2 Prompt 2
+> Prompt 3 Prompt 4
+> 0
+> 1
+> 0
+> 1
+> 0
+> 1
+
+Figure 6: Representative examples from the 40-image dataset used for prompt sensitivity analysis. Activated regions in the hallucination map indicate content mismatches between the input and GenAI output. When the GenAI output remains structurally consistent with the input, the hallucination map shows few activations, as shown in row 3, last column. For content fidelity, we compare the GenAI output and our result against the input image. For style similarity, we compare the input and our result against the GenAI output. No-reference IQA metrics are reported for the input, GenAI output, and our result. Compared with the GenAI output, our method substantially improves content fidelity while retaining the desired enhancement effects. Qualitative examples are shown in Figure 9. 
+
+A.2.5 Model complexity and inference cost 
+
+Table 6 reports the model complexity and inference cost of the baselines and our method. All models are trained and evaluated using a single NVIDIA L40 GPU with 48 GB of memory. We observe that image fusion baselines can have a high memory footprint despite their modest parameter counts, as they generate multiple full-resolution feature maps during inference. This makes direct inference on large camera images difficult and may require tiled inference, which can introduce visible artifacts. Our method maintains a comparatively lower memory footprint while achieving competitive runtime, making it more suitable for full-resolution inputs. 
+
+A.3 Prompt Effects on Hallucination 
+
+We perform an experiment to demonstrate how the hallucination map can be used to analyze which prompts induce fewer hallucinations. We consider five representative prompts with varying degrees of constraints on structural changes. Using 20 scenes from the MIT-Adobe FiveK [ 36 ] dataset, we 18 Input                                     
+
+> 1
+> 0
+> MSCU -Net ෤𝐱 MSCU -Net ෤𝐲 Thresholded 𝐡 𝑣 ∗𝐯 𝐡 𝑣 ∗𝐯
+> 𝐡 𝑣 ∗𝐯 GenAI Output Thresholded 𝐡 𝑣 ∗𝐯 CU -Net ෤𝐱 CU -Net ෤𝐲
+> MSCU -Net
+> CU -Net
+> Input
+> 1
+> 0
+> MSCU -Net ෤𝐱 MSCU -Net ෤𝐲 Thresholded 𝐡 𝑣 ∗𝐯 𝐡 𝑣 ∗𝐯
+> 𝐡 𝑣 ∗𝐯 GenAI Output Thresholded 𝐡 𝑣 ∗𝐯 CU -Net ෤𝐱 CU -Net ෤𝐲
+> MSCU -Net
+> CU -Net
+> 1
+> 0
+> 1
+> 0
+
+Figure 7: Visualizations of CU-Net’s [ 7 ] and MSCU-Net’s intermediate feature maps and halluci-nation maps. From left to right, we show the input/GenAI image, fused result, common residuals, unique component of GenAI image as hallucination map, and thresholded unique component. Table 5: Results on MIT-Adobe FiveK [ 36 ] and LOL v2 [ 37 ] using ChatGPT “gpt-image-1.5” as the GenAI model. 
+
+Content Sim. ↑ Qaf ↑ W2 Dist. ↓ MANIQA ↑ MUSIQ ↑
+
+MIT-Adobe FiveK 
+
+Input – – 0.209 0.260 35.32 GenAI output 0.461 0.177 – 0.288 35.35 Ours 0.906 0.788 0.066 0.250 35.91 
+
+LOL v2 
+
+Input – – 0.737 0.321 39.14 GenAI output 0.525 0.277 – 0.498 71.33 Ours 0.790 0.681 0.062 0.461 60.59 
+
+generate two GenAI outputs per scene for each prompt, resulting in 40 input–GenAI pairs per prompt. For each pair, we obtain the hallucination map ˆm from MSCU-Net and compute a hallucination score as the spatial mean of ˆm, averaged over all 40 pairs. Table 7 reports the prompts and their average hallucination scores. Visual examples are shown in Figure 6. The results suggest that adding structural constraints to the prompt can reduce hallucinations in the generated images. However, hallucinations can still occur even with strong structural constraints, as shown in row 2 of Figure 6. Prompt specificity also appears to matter: Prompt 4, which focuses explicitly on color, contrast, and tonal balance, yields the lowest hallucination score. 19 GenAI output  Ours Input         
+
+> 20.67 0.0985 6.58 0.0496 20.82 0.0833
+> GenAI output Ours Input GenAI output Ours Input
+
+Figure 8: Optical-flow visualization relative to the input. The GenAI output shows noticeable spatial misalignment, whereas our post-processed result is nearly aligned with the input, producing near-zero flow magnitude. Table 6: Model complexity and inference cost. Inference time and MACs are measured at 1024 ×
+
+1024 . Memory is measured at 1024 × 1024 and full-resolution 3000 × 4000 inputs. “Failed” indicates that direct full-resolution inference did not complete, due to either out-of-memory or runtime errors. 
+
+Method # Params (M) MACs (G) Time (s) Mem. 
+
+1024 2 (GB) Mem. 
+
+3000 ×4000 (GB) SA-LUT [2] 16.68 268.16 † 0.230 36.76 37.00 Neural Preset [18] 4.66 1.13 0.016 0.35 3.69 PhotoWCT2 [3] 7.01 759.83 ‡ 0.215 9.41 43.61 CDDFuse [10] 1.19 1872.64 0.801 6.04 Failed CDDFuse + flow + photo. 7.55 2173.03 1.094 6.11 Failed SwinFusion [11] 0.98 1021.11 2.137 7.55 Failed SwinFusion + flow + photo. 7.33 1321.50 2.339 7.67 Failed Ours 7.43 812.58 0.323 2.04 22.20 ∗†SA-LUT MACs are reported at its 512 × 512 network input resolution. ‡PhotoWCT2 MACs do not include the ZCA/SVD stylization core. ∗Measured at 3008 × 4000 due to padding/alignment constraints. 
+
+A.4 Limitations 
+
+As discussed in Sec. 5, our framework targets enhancement-based tasks where the camera input serves as a reliable structural reference. It currently does not address settings where this assumption may not hold, such as super-resolution or deblurring; we leave these extensions to future work. GenAI output Input  Ours  GenAI output Input  Ours 
+
+Figure 9: Qualitative results on ChatGPT MIT-Adobe FiveK [36]. 20 Table 7: Prompt sensitivity analysis using hallucination maps. Lower hallucination scores indicate fewer input–GenAI content mismatches.              
+
+> ID Type Prompt Halluc. Score ↓
+> 0Generic, no constraint “Make the image more vivid and aesthetically pleas-ing.” 0.0828 1Generic, mild constraint “Make the image more vivid and aesthetically pleas-ing. Preserve the original scene content.” 0.0671 2Generic, strong constraint “Make the image more vivid and aesthetically pleas-ing. Strictly preserve scene structure and content. Do not introduce any new objects, textures, or de-tails. Do not modify geometry or spatial layout.” 0.0536 3Specific, mild constraint “Significantly enhance the image’s visual appeal to produce a detail-rich and natural-looking image that appears as if the same scene was captured with a high-end camera, professional lighting, and photofin-ishing. Preserve the original scene content.” 0.0580 4Specific wording “Improve color, contrast, and tonal balance to pro-duce a natural, aesthetically pleasing image.” 0.0453
+
+Additionally, our framework mitigates hallucinations, but does not inherently eliminate them. The central difficulty is distinguishing desired texture enhancement from undesired content changes, analogous to the ambiguity between noise and fine texture in image denoising. Models with sufficient capacity to modify local texture can reduce noise and sharpen edges, but may also inadvertently propagate hallucinated content; this applies to both our fusion backbone and typical image fusion methods. LUT-based methods such as SA-LUT [ 2], which avoid local neighborhood aggregation, better preserve input content but have limited ability to denoise or enhance fine texture. 
+
+A.5 Broader Impact 
+
+Our work proposes a post-processing framework that fuses a camera image with a GenAI-enhanced version to reduce spatial misalignment and content hallucination, targeting enhancement-based tasks such as tone manipulation and low-light enhancement. Our work can enable non-expert users to leverage industrial-grade GenAI tools for image retouching while maintaining pixel-level fidelity. At the same time, it provides an interpretable hallucination map that can help users and developers identify and compare the structural faithfulness of different GenAI models and prompts. 21 CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework) SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 
+
+CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework) SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 
+
+CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework) SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 
+
+CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework) SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 Figure 10: Qualitative results on NB Pro MIT-Adobe FiveK [36]. 22 CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework)  SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 
+
+CDDFuse (our framework) GenAI output  Ours Input  CDDFuse (fusion losses) 
+
+SwinFusion (our framework)  SwinFusion (fusion losses)  SA -LUT  Neural Preset  PhotoWCT2 Figure 11: Qualitative results on NB Pro LOL v2 [37]. 23 NeurIPS Paper Checklist 
+
+The checklist is designed to encourage best practices for responsible machine learning research, addressing issues of reproducibility, transparency, research ethics, and societal impact. Do not remove the checklist: The papers not including the checklist will be desk rejected. The checklist should follow the references and follow the (optional) supplemental material. The checklist does NOT count towards the page limit. Please read the checklist guidelines carefully for information on how to answer these questions. For each question in the checklist: • You should answer [Yes], [No], or [N/A]. • [N/A] means either that the question is Not Applicable for that particular paper or the relevant information is Not Available. • Please provide a short (1–2 sentence) justification right after your answer (even for [N/A]). 
+
+The checklist answers are an integral part of your paper submission. They are visible to the reviewers, area chairs, senior area chairs, and ethics reviewers. You will also be asked to include it (after eventual revisions) with the final version of your paper, and its final version will be published with the paper. The reviewers of your paper will be asked to use the checklist as one of the factors in their evaluation. While [Yes] is generally preferable to [No], it is perfectly acceptable to answer [No] provided a proper justification is given (e.g., error bars are not reported because it would be too computationally expensive” or “we were unable to find the license for the dataset we used”). In general, answering [No] or [N/A] is not grounds for rejection. While the questions are phrased in a binary way, we acknowledge that the true answer is often more nuanced, so please just use your best judgment and write a justification to elaborate. All supporting evidence can appear either in the main paper or the supplemental material, provided in appendix. If you answer [Yes] to a question, in the justification please point to the section(s) where related material for the question can be found. IMPORTANT, please: • Delete this instruction block, but keep the section heading “NeurIPS Paper Checklist" ,• Keep the checklist subsection headings, questions/answers and guidelines below. 
+
+• Do not modify the questions and only use the provided macros for your answers .1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: In the abstract and introduction, we describe the scope of the paper (limited to enhancement-based tasks), and contributions made within this scope. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] 24 Justification: We discuss the limitations in Section 5 and the Appendix A.4. Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an impor-tant role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 3. Theory assumptions and proofs 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [N/A] Justification: This paper does not include theoretical results. Equations are used to describe the proposed modules, not to state or prove novel theorems. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-perimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: We provide a comprehensive description of our experimental setup in Section 4, which covers datasets, baselines, evaluation metrics, and implementation details. More implementation details are provided in the Appendix. 25 Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submis-sions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instruc-tions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Justification: We currently do not provide code as part of the submission. However, we will release our code and evaluation dataset upon acceptance Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/ public/guides/CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https: //neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. 26 • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-rameters, how they were chosen, type of optimizer) necessary to understand the results? Answer: [Yes] Justification: We provide training and test details in Sec. 4 and Appendix A.2, including data splits, hyperparameters, and type of optimizer. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [No] Justification: Error bars are not reported as our evaluation follows standard practice in image restoration and enhancement, where results are reported as averages over a fixed test set. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the com-puter resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer: [Yes] Justification: We report the model complexities and inference cost in Appendix A.2.5. All models are trained and evaluated using a single NVIDIA L40 GPU with 48 GB of memory. Guidelines: 27 • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: The methods and datasets presented in this paper comply with the NeurIPS Code of Ethics. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consid-eration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? Answer: [Yes] Justification: We discuss the potential positive societal impacts in Appendix A.5. Our method is a post-processing framework for color and tonal alignment that preserves the structural content of the original image; we do not foresee significant negative societal impacts. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+28 Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: The paper does not pose such risks. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] Justification: All datasets and models used are properly cited. The MIT-Adobe FiveK dataset is released for academic research use; LOL v1, LOL v2, and SICE are publicly available for non-commercial research. Pretrained models (SKFlow, NAFNet) are used under their respective open-source licenses. We will provide full license details upon code release. Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets 
+
+has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [N/A] Justification: No new assets are released with this submission. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. 29 • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: This paper does not involve human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribu-tion of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? Answer: [N/A] Justification: This paper does not involve human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [N/A] Justification: The core method development in this research does not involve LLMs as any important, original, or non-standard components Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 30

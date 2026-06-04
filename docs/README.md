@@ -6,44 +6,77 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-31
-- 运行时间：2026-05-31 21:17:58 UTC
+- 最新运行日期：2026-06-04
+- 运行时间：2026-06-04 22:28:08 UTC
 - 运行状态：成功
-- 本次总论文数：7
-- 精读区：4
-- 速读区：3
+- 本次总论文数：19
+- 精读区：10
+- 速读区：9
 
 ### 今日简报（AI）
-- 今日共生成 7 篇推荐（精读 4 篇，速读 3 篇）
-- 精读：《CollectionLoRA: Collecting 50 Effects in 1 LoRA via Multi-Teacher On-Policy Distillation》（9.0/10）, 《CollectionLoRA: Collecting 50 Effects in 1 LoRA via Multi-Teacher On-Policy Distillation》（9.0/10）
-- 速读：《Joint 2D-3D Segmentation and Association in Street-level Imaging》（7.0/10）, 《GenEraser: Generalizable Video Object Removal via Balanced Text-Mask Guidance and Decoupled Locator-Preserver》（7.0/10）, 《LoRA-Key: User-Centric LoRA Watermarking for Text-to-Image Diffusion Models》（6.0/10）
-- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202605/31/README](/202605/31/README)
+今日聚焦AI生成内容检测与伪造定位的前沿技术；推荐精读结合语义差异与能量异常的高精度伪造检测方法；可关注深度伪造检测工具的实用化进展以保护数字内容真实性。
+- 详情：[/202606/04/README](/202606/04/README)
 
 ### 精读区论文标签
-1. [CollectionLoRA: Collecting 50 Effects in 1 LoRA via Multi-Teacher On-Policy Distillation](/202605/31/2605.25378v1-collectionlora-collecting-50-effects-in-1-lora-via-multi-teacher-on-policy-distillation)  
+1. [SIGMA: Semantic-Difference Instruction-Grounding Mask Annotator for Text-Driven Image Manipulation Localization](/202606/04/2605.27924v1-sigma-semantic-difference-instruction-grounding-mask-annotator-for-text-driven-image-manipulation-localization)  
+   标签：评分：10.0/10、query:img-f
+   evidence：文本驱动的掩码标注用于定位图像篡改
+2. [Order within Chaos: Capturing Intrinsic Energy Anomalies for AI-Manipulated Image Forgery Localization](/202606/04/2606.02178v1-order-within-chaos-capturing-intrinsic-energy-anomalies-for-ai-manipulated-image-forgery-localization)  
+   标签：评分：10.0/10、query:img-f
+   evidence：提出FLAME框架，用于AI篡改图像的像素级伪造区域定位。
+3. [BIAS-ID: A Framework for Analyzing Transformation Biases in AI-Generated Image Detectors](/202606/04/2605.31153v1-bias-id-a-framework-for-analyzing-transformation-biases-in-ai-generated-image-detectors)  
    标签：评分：9.0/10、query:imgfor
-   evidence：通过扩散模型和LoRA蒸馏提出最新图像编辑技术。
-2. [CollectionLoRA: Collecting 50 Effects in 1 LoRA via Multi-Teacher On-Policy Distillation](/202605/31/2605.25378v2-collectionlora-collecting-50-effects-in-1-lora-via-multi-teacher-on-policy-distillation)  
+   evidence：分析AI图像检测器偏差以提升伪造检测。
+4. [FiSeR: Fine-Grained Source Representations for Cross-Domain AI Image Detection](/202606/04/2606.00606v1-fiser-fine-grained-source-representations-for-cross-domain-ai-image-detection)  
    标签：评分：9.0/10、query:imgfor
-   evidence：提出扩散模型中多种图像编辑效果的蒸馏框架
-3. [SIGMA: Semantic-Difference Instruction-Grounding Mask Annotator for Text-Driven Image Manipulation Localization](/202605/31/2605.27924v1-sigma-semantic-difference-instruction-grounding-mask-annotator-for-text-driven-image-manipulation-localization)  
+   evidence：提出跨域AI图像检测以增强伪造检测鲁棒性。
+5. [Images as Tables: In-Context Learning with TabPFN for Low-Data Detection of AI-Generated Images](/202606/04/2606.00872v1-images-as-tables-in-context-learning-with-tabpfn-for-low-data-detection-of-ai-generated-images)  
    标签：评分：9.0/10、query:imgfor
-   evidence：利用语义差异进行文本驱动图像篡改定位
-4. [Guess the Unified Model: How Much Can We Recover from Generated Images?](/202605/31/2605.25254v1-guess-the-unified-model-how-much-can-we-recover-from-generated-images)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：检测并将合成图像归因于源模型。
+   evidence：利用上下文学习检测AI生成图像的方法
+6. [TextFake: Benchmarking AI-Generated Image Detection on Text-Rich Images](/202606/04/2606.01050v1-textfake-benchmarking-ai-generated-image-detection-on-text-rich-images)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：基准测试AI生成图像检测，与图像篡改检测相关
+7. [Hist2Style: Histogram-Guided Stylization with Bilateral Grids](/202606/04/2606.01819v1-hist2style-histogram-guided-stylization-with-bilateral-grids)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：提出快速真实感风格迁移用于图像编辑
+8. [Chroma Clues: Leveraging Color Statistics to Detect Synthetic Images](/202606/04/2606.02224v1-chroma-clues-leveraging-color-statistics-to-detect-synthetic-images)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：利用颜色统计检测AI合成图像
+9. [Impostor: An Agent-Curated Benchmark for Realistic AIGC Manipulation Localization](/202606/04/2606.04545v1-impostor-an-agent-curated-benchmark-for-realistic-aigc-manipulation-localization)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：AI生成图像篡改定位基准
+10. [IRIS-GAN: Staged Specialist Detection of Deepfake Faces](/202606/04/2606.04863v1-iris-gan-staged-specialist-detection-of-deepfake-faces)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：专门检测深度伪造人脸的检测器，准确率高。
 
 ### 速读区论文标签
-1. [Joint 2D-3D Segmentation and Association in Street-level Imaging](/202605/31/2605.26725v1-joint-2d-3d-segmentation-and-association-in-street-level-imaging)  
+1. [FOCUS: Forcing In-Context Object Localization through Visual Support Constraints and Policy Optimization](/202606/04/2605.31145v1-focus-forcing-in-context-object-localization-through-visual-support-constraints-and-policy-optimization)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：图像上下文物体定位技术
+2. [Explainable Forensics of Manipulated Segments in Untrimmed Long Videos](/202606/04/2606.02402v1-explainable-forensics-of-manipulated-segments-in-untrimmed-long-videos)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：视频取证中定位和解释被操纵片段的方法
+3. [ReConFuse: Reconstruction-Error Guided Semantic Fusion for AI-Generated Video Detection](/202606/04/2606.04706v1-reconfuse-reconstruction-error-guided-semantic-fusion-for-ai-generated-video-detection)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：利用重建误差检测AI生成视频
+4. [Mitigating Content Shift and Hallucination in GenAI Image Editing via Structural Refinement](/202606/04/2605.30437v1-mitigating-content-shift-and-hallucination-in-genai-image-editing-via-structural-refinement)  
    标签：评分：7.0/10、query:imgfor
-   evidence：用于图像区域定位的分割与关联方法。
-2. [GenEraser: Generalizable Video Object Removal via Balanced Text-Mask Guidance and Decoupled Locator-Preserver](/202605/31/2605.30045v1-generaser-generalizable-video-object-removal-via-balanced-text-mask-guidance-and-decoupled-locator-preserver)  
+   evidence：针对生成式AI图像编辑中的结构优化，与编辑过程逆向分析相关
+5. [Do Text Edits Generalize to Visual Generation? Benchmarking Cross-Modal Knowledge Editing in UMMs](/202606/04/2606.00477v1-do-text-edits-generalize-to-visual-generation-benchmarking-cross-modal-knowledge-editing-in-umms)  
    标签：评分：7.0/10、query:imgfor
-   evidence：开发视频对象移除方法，是关键图像编辑技术
-3. [LoRA-Key: User-Centric LoRA Watermarking for Text-to-Image Diffusion Models](/202605/31/2605.29569v1-lora-key-user-centric-lora-watermarking-for-text-to-image-diffusion-models)  
+   evidence：研究模型中的跨模态知识编辑，相关于图像编辑分析。
+6. [Training-free image inversion for one-step diffusion models](/202606/04/2606.01380v1-training-free-image-inversion-for-one-step-diffusion-models)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：扩散模型的无训练图像反演有助于逆向分析图像编辑
+7. [Mahalanobis PatchCore: Covariance-Aware and Streaming-Compatible Industrial Anomaly Detection](/202606/04/2605.27748v1-mahalanobis-patchcore-covariance-aware-and-streaming-compatible-industrial-anomaly-detection)  
    标签：评分：6.0/10、query:imgfor
-   evidence：水印技术用于扩散模型资产的取证分析
+   evidence：协方差感知的异常检测定位图像中的缺陷区域
+8. [GenED-SC: Generative Editing Semantic Communication with Integrated Multi-Modal LLMs](/202606/04/2606.04015v1-gened-sc-generative-editing-semantic-communication-with-integrated-multi-modal-llms)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：提出一种基于多模态大语言模型的生成式编辑语义图像传输框架。
+9. [ATI_Box: A Simple tool for convolutional neural network-based image semantic segmentation](/202606/04/biorxiv-10-64898-2026-05-29-728143-v1-atibox-a-simple-tool-for-convolutional-neural-network-based-image-semantic-segmentation)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：CNN图像分割工具用于区域定位
 
 
 <div class="dpr-home-promo-card">
