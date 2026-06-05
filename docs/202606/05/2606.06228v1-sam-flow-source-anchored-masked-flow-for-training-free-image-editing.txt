@@ -1,0 +1,1034 @@
+Title: SAM-Flow: Source-Anchored Masked Flow for Training-Free Image Editing
+
+URL Source: https://arxiv.org/pdf/2606.06228v1
+
+Published Time: Fri, 05 Jun 2026 01:16:19 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> 1
+
+# SAM-Flow: Source-Anchored Masked Flow for Training-Free Image Editing 
+
+Haowang Cui, Rui Chen †, Tao Luo, Tao Guo, Zheng Qin, Jiaze Wang Source Image  Edited Image 
+
+“…Bike…” 
+
+“…Luna…” 
+
+“…Bear…” “…Motorcycle…” 
+
+“…Sol…” 
+
+“…Panda Bear…”  “…Cat, Crown…”  “…Lioness, Hat…” 
+
+“…Coconut…”  “…Head…”  “…Dog…”  “…Sculpture…” 
+
+“…Mountain…”  “…Pyramid…”  “…Parrot…”  “…Origami…”  “…Dog, Cat…”  “…Husky, lion…” 
+
+Source Image  Edited Image  Source Image  Edited Image 
+
+Fig. 1. SAM-Flow achieves excellent semantic editing results while preserving the background of the source image. The red text indicates the source prompt, and the green text indicates the target prompt. 
+
+Abstract —Training-free image editing has recently attracted increasing attention due to its ability to modify real images using powerful pre-trained diffusion and flow-matching models without additional training. However, existing inversion-based and differential-flow-based methods usually perform global latent transport, which inevitably propagates editing effects to non-target regions and leads to background leakage. To address this problem, we propose SAM-Flow, a source-anchored masked flow framework for localized training-free image editing. Instead of updating the whole latent representation, SAM-Flow first uses a scout image and token-grounded attention maps to localize the editable semantic regions. It then applies differential velocity updates only within these regions, while anchoring the remaining 
+
+This work was supported by the National Natural Science Foundation of China under Grant 62272341. († Corresponding author. Corresponding author: Rui Chen.) 
+
+Haowang Cui, Rui Chen, Tao Guo, Jiaze Wang and Zheng Qin are with Tianjin Key Laboratory of Imaging and Sensing Microelectronic Technology, School of Microelectronics, Tianjin University, Tianjin 300072, China (e-mail: haowangcui@tju.edu.cn; ruichen@tju.edu.cn; guotao stu@tju.edu.cn; jiaze w@tju.edu.cn; zhengqin58@tju.edu.cn). Tao Luo is with School of Cyber Security, Tianjin University, Tianjin 300072, China (e-mail: luo tao@tju.edu.cn) 
+
+areas to the source-image latent trajectory. To further improve spatial stability and boundary naturalness, we introduce a time-varying source-anchored projection mechanism with dynamic soft masks, transition regions, and temporal mask accumulation. The proposed method is plug-and-play and can be integrated with mainstream flow-matching backbones such as Stable Diffusion 3 and FLUX without any fine-tuning. Extensive qualitative and quantitative experiments demonstrate that SAM-Flow achieves accurate semantic editing while significantly improving back-ground preservation, providing a simple and general localized editing paradigm for training-free image editing. Code is avail-able at: https://github.com/chwbob/Sam-Flow .
+
+Index Terms —Flow matching, training-free image editing, localized editing, background preservation 
+
+I. I NTRODUCTION 
+
+# DIFFUSION models [1], [2] and flow-matching meth-ods [3], [4] have significantly advanced text-to-image generation. Recent state-of-the-art generative models, such as Stable Diffusion 3 [5] and FLUX [6], formulate the genera-tion process as an ordinary differential equation (ODE) that 
+
+> arXiv:2606.06228v1 [cs.CV] 4 Jun 2026 2
+
+(A) ODE Inversion  (B) FlowEdit  (C) SAM -Flow 
+
+Source Image  Source Image  Source Image Target Image  Target Image  Target Image  
+
+> Mask
+> Fig. 2. Comparison between SAM-Flow and two mainstream paradigms of training-free image editing.
+
+transports a simple noise distribution to a complex natural image distribution, achieving strong visual fidelity and text-prompt alignment. Built upon such powerful generative priors, image editing has become an important downstream task with great practical value [7]–[11]. Training-free editing methods can perform complex semantic modifications on real images using only text prompts, while avoiding the expensive cost of additional training or fine-tuning [10]–[14]. Existing training-free image editing methods can be roughly divided into two paradigms. The first paradigm is based on ODE inversion [12], [15]–[17]. These methods invert a source image back to the latent noise distribution through an inversion velocity field vinv  
+
+> ti
+
+, and then perform forward sampling under the guidance of a target velocity field vtar  
+
+> ti
+
+to achieve editing, as illustrated in Fig. 2(A). The second paradigm is represented by differential-flow-based methods such as FlowEdit [18]. Instead of conducting costly inversion, FlowEdit directly computes the differential velocity between the target velocity field vtar  
+
+> ti
+
+and the source velocity field vsrc  
+
+> ti
+
+:
+
+∆vti = vtar  
+
+> ti
+
+− vsrc  
+
+> ti
+
+, (1) and uses it to drive the editing trajectory in the latent space, as shown in Fig. 2(B). Although these two paradigms have different advantages, they share a fundamental limitation: both rely on global distribution transport. Whether the editing trajectory is planned in the inverted noise space or driven by a differential velocity field over the entire latent space, the whole image is updated during the editing process. Such global transport inevitably forces background pixels in the non-edited regions to adapt to the target distribution, resulting in severe and often irreversible edit leakage. This greatly weakens the preservation of source-image characteristics in regions that are supposed to remain unchanged. To overcome the inherent limitation of global distribution transport, we propose SAM-Flow, a controllable content edit-ing method that shifts the training-free editing paradigm from global distribution mapping to precise localized flow editing, as shown in Fig. 2(C). Instead of blindly applying global velocity updates, SAM-Flow explicitly isolates the semantic target regions and applies differential-flow-based editing only within these localized regions. Meanwhile, the remaining background regions are strictly anchored to the latent features of the source image, aiming to satisfy the constraint: 
+
+xbg target = xbg source . (2) In this way, as shown in Fig. 1, SAM-Flow preserves the source image outside the edited region while allowing the target semantics to be effectively generated inside the desired area. A key challenge for precise localized flow editing lies in the spatial misalignment between the target object in the source image and that in the edited image. To address this prob-lem, we introduce a Token-Grounded Semantic Localization mechanism. Specifically, we first generate a preliminary edited image, termed the scout image, using an unconstrained image editing method. We then extract token-grounded attention maps corresponding to the target semantic tokens from both the source image and the scout image, following the observa-tion that cross-attention maps in text-to-image diffusion mod-els can provide word-level spatial localization cues [10], [19]– [21]. By taking the union of these attention maps, SAM-Flow constructs a spatial mask that covers the complete regions involved in the edit. This scout-and-union strategy effectively reduces artifacts caused by missing mask regions and enables diverse editing operations, including object addition, removal, replacement, and large structural deformation. Furthermore, to avoid hard blending boundaries and ensure smooth transitions across different ODE time steps, we design a time-varying source-anchored projection mechanism. Unlike simple static masking, SAM-Flow dynamically partitions the union attention map into three regions: the core region, the transition region, and the background region. The boundary 3
+
+threshold, mask softness, and transition radius are adaptively updated along the flow-matching trajectory. At each update step, the differential velocity field is applied only to the core and transition regions, while the latent features of the background region are projected back to the source-image latent trajectory. This mechanism effectively suppresses edit leakage while maintaining the natural coherence of the gener-ated image. The main contributions of our work are summarized as follows:  
+
+> •
+
+Localized flow editing framework: We identify global distribution transport as a fundamental limitation of both inversion-based and differential-flow-based training-free editing. We propose SAM-Flow, which shifts the editing process toward precise localized flow updates and effec-tively reduces background leakage.  
+
+> •
+
+Token-grounded semantic localization: We introduce a scout-and-union attention strategy that combines source-side and scout-side token-grounded responses. This de-sign provides sufficient spatial coverage for object re-placement, addition, removal, and large deformation.  
+
+> •
+
+Source-anchored dynamic projection: We design atime-varying tri-partite soft mask and integrate it into the ODE solving process. By combining core regions, transition regions, temporal accumulation, and source-latent anchoring, SAM-Flow smoothly blends localized edits while preserving non-edited regions.  
+
+> •
+
+Plug-and-play generality: SAM-Flow can be inte-grated with mainstream flow-matching backbones, such as FLUX [6] and Stable Diffusion 3 [5], without training or fine-tuning, providing a simple and general localized editing paradigm. II. R ELATED WORK AND PRELIMINARIES 
+
+A. Flow Matching Models 
+
+Diffusion models have achieved remarkable progress in text-to-image generation [1], [22]. Recently, flow matching and rectified flow have provided an alternative formulation by learning a continuous velocity field that transports samples from a simple prior distribution to the data distribution [3], [4]. In this formulation, the generation process can be described by an ordinary differential equation (ODE): 
+
+dx t
+
+dt = vθ (xt, t, p ), (3) where xt denotes the latent state at time step t, p denotes the text condition, and vθ (·) is the velocity field predicted by the pre-trained model. Recent large-scale text-to-image models, such as Stable Diffusion 3 and FLUX, adopt rectified-flow or flow-matching-style formulations and show strong generation quality and text alignment [5], [6]. Since the predicted velocity field varies with the text condition, it can also be used to estimate the semantic transport direction between a source prompt and a target prompt, which forms the foundation of flow-based training-free image editing. 
+
+B. Inversion-Based Image Editing 
+
+Training-free image editing aims to modify real images using pre-trained generative models without additional model training. A widely used paradigm is inversion-based editing. These methods first invert a source image into a noise code or an intermediate latent trajectory, and then perform forward sampling under the target prompt [10]–[12], [23], [24]. In an ODE-based formulation, given a source image latent xsrc  
+
+> t0
+
+,inversion estimates a trajectory from the source image state to a noisy latent state. This process can be written as: 
+
+xinv  
+
+> ti+1
+
+= xinv  
+
+> ti
+
++ ( ti+1 − ti)vinv  
+
+> ti
+
+, (4) where vinv  
+
+> ti
+
+denotes the inversion velocity field at time step ti.After obtaining the inverted latent state, editing is performed by solving the forward ODE with the target prompt: 
+
+xtar  
+
+> ti−1
+
+= xtar  
+
+> ti
+
++ ( ti−1 − ti)vtar  
+
+> ti
+
+, (5) where vtar  
+
+> ti
+
+= fθ (xtar  
+
+> ti
+
+, t i, p tar ) is the target velocity field. Inversion-based methods enable real-image editing and can be combined with attention control, feature injection, or prompt optimization [10]–[13]. However, their performance is sensi-tive to inversion accuracy. Reconstruction errors introduced during inversion may be amplified during editing. Moreover, since the forward editing trajectory is usually applied to the whole latent representation, non-target regions may also be affected by the target prompt. 
+
+C. Inversion-Free Image Editing via Differential Flow 
+
+To avoid explicit inversion, FlowEdit proposes an inversion-free and optimization-free editing framework for pre-trained text-to-image flow models [18]. Instead of first mapping the source image back to the noise space, FlowEdit directly constructs an editing ODE between the source and target distributions. At each time step ti, it computes the velocity field under the source prompt and the target prompt: 
+
+vsrc  
+
+> ti
+
+= fθ (xsrc  
+
+> ti
+
+, t i, p src ), (6) 
+
+vtar  
+
+> ti
+
+= fθ (xtar  
+
+> ti
+
+, t i, p tar ), (7) where psrc and ptar denote the source and target prompts, respectively. The semantic editing direction is then estimated by the differential velocity field: 
+
+∆vti = vtar  
+
+> ti
+
+− vsrc  
+
+> ti
+
+. (8) This differential velocity describes the instantaneous transport direction from the source semantics to the target semantics. The editing trajectory is updated as: 
+
+xedit  
+
+> ti−1
+
+= xedit  
+
+> ti
+
++ ( ti−1 − ti)∆ vti . (9) Compared with inversion-based methods, FlowEdit avoids explicit image inversion and latent optimization, thereby re-ducing inversion-induced reconstruction errors and improving compatibility with modern flow-matching backbones such as Stable Diffusion 3 and FLUX [5], [6], [18]. Several recent works have also explored inversion, feature sharing, or tra-jectory regularization for rectified-flow-based editing [25]– [28]. Among them, FlowEdit is particularly related to our 4
+
+method because it directly uses the velocity difference as the semantic editing force. SAM-Flow inherits this differential-flow formulation, but constrains the differential velocity within localized editable regions rather than applying it to the entire latent representation. 
+
+D. Masked Diffusion Editing 
+
+Another line of research introduces spatial constraints into diffusion-based image editing, inpainting, and controllable generation [29]–[38]. Masked diffusion editing methods usu-ally require a user-provided or automatically estimated mask to specify the editable region. Blended Diffusion performs local text-driven editing by combining a diffusion prior with CLIP guidance and an ROI mask [29]. GLIDE demonstrates text-guided image inpainting by regenerating masked regions under textual conditions [31]. RePaint uses a pre-trained uncondi-tional diffusion model for image inpainting and repeatedly resamples known regions from the source image during reverse diffusion [32]. DiffEdit further estimates an editing mask by contrasting diffusion predictions under different text prompts and then performs mask-guided semantic editing [33]. Other inpainting, exemplar-based, segmentation-assisted, or region-aware editing methods also rely on masks or spatial conditions to preserve known regions while synthesizing new content inside the target area [34]–[39]. These methods show that spatial masks are effective for localizing edits and preserving background regions. However, most of them still depend on external masks, automatically estimated static masks, or hard blending between edited and preserved regions. 
+
+E. Limitations of Global Transport and Static Masking 
+
+The above two paradigms reveal two complementary lim-itations. First, both inversion-based editing [12], [13], [15], [16], [23] and inversion-free differential-flow editing [14], [18], [26], [28] can be viewed as global or weakly localized distribution transport. Although FlowEdit removes the explicit inversion stage, its differential velocity field ∆vti is still applied to the whole latent representation. Therefore, the target prompt may influence not only the desired object but also unrelated background regions, leading to background drift, texture leakage, identity changes, and layout distortion. This problem is especially severe when the target prompt introduces a strong semantic change. Second, masked diffusion and inpainting methods provide spatial constraints [29], [31]–[35], but their masks are often manual, externally obtained, or static. Manual masks increase user burden and are difficult to obtain precisely. Static masks are also insufficient for complex semantic editing because the source and target editable regions may not be spatially aligned. In object replacement, the target object may have a different shape, scale, or position from the source object. In object addition, the target object does not exist in the source image. In object removal, the target prompt may no longer explicitly contain the removed object. Moreover, hard or fixed mask boundaries may produce unnatural transitions between edited and preserved regions. These observations motivate a localized flow-based editing framework that combines the advantages of inversion-free differential flow and masked editing. Such a framework should preserve the efficient semantic editing direction provided by FlowEdit, while replacing global latent transport with dy-namic, semantically localized, and source-anchored masked flow. This is the main motivation of the proposed SAM-Flow framework. III. M ETHODOLOGY 
+
+SAM-Flow reformulates training-free image editing from a global latent transport problem into a localized semantic flow editing problem. Given a source image Isrc , a source prompt 
+
+psrc , and a target prompt ptar , where the superscripts src 
+
+and tar denote the source and target domains, respectively, the goal is to synthesize an edited image that follows ptar 
+
+while preserving the non-edited content of Isrc . Instead of transporting the whole latent representation from the source distribution to the target distribution, SAM-Flow decomposes the problem into semantic localization, localized differential-flow editing, and source-anchored projection. As illustrated in Fig. 3, the whole pipeline consists of four stages. First, SAM-Flow generates a preliminary edited image, termed the scout image Iscout , using an unconstrained editing method. The scout image is not used as the final result, but acts as a semantic probe that reveals where the target concept may appear after editing. Second, token-grounded attention maps are extracted from both the source image and the scout image to construct an editable support region. Third, the semantic editing direction is estimated by the differential velocity between the target and source prompts, following the spirit of FlowEdit [18], but this velocity is applied only within the editable support. Finally, the remaining latent re-gions are repeatedly projected back to the source-image latent trajectory through a time-varying source-anchored projection mechanism. Complete backbone-specific extraction details, the full algorithm, and implementation settings are provided in Appendices A–E. For clarity, we introduce the notation used in this section. The superscript src denotes quantities associated with the source image, tar denotes quantities associated with the target editing branch, scout denotes quantities associated with the scout image, keep denotes quantities associated with the preserved region, base denotes the base attention map, hard 
+
+and sof t denote hard and soft support maps, model denotes the internal state of the ODE solver, vis denotes the visible state used for final decoding, core denotes the core editing region, and ring denotes the transition region. The subscript 
+
+ti denotes the i-th time step. If an additional subscript k
+
+appears, it denotes the k-th Monte Carlo sample. Variables with an overline, such as ¯W , denote temporally accumulated quantities. 
+
+A. Token-Grounded Semantic Localization 
+
+The key difficulty of localized training-free image editing is that the editable region is both unknown and dynamically dependent on the target semantics. A mask extracted only from 5Source editable   
+
+> semantic region
+> Source prompt: ‘A tiger lying on the grass’
+> Target prompt: ‘A cat lying on the grass’
+
+A) Input & Editing Goal 
+
+> Target editable
+> semantic region Any image editing model
+
+Source Image  Scout Image 
+
+‘cat’ 
+
+‘tiger’ 
+
+B) Token-Grounded Semantic Localization 
+
+Token-grounded 
+
+attention scouting 
+
+union 
+
+core 
+
+ring 
+
+outer  
+
+> Source editable region
+> Scout editable region
+> soft attention heatmap
+> soft mask editing support map
+
+D) Source-Anchored Projection & Final Output 
+
+> background
+> preserved
+> foreground
+> edited
+
+core 
+
+ring 
+
+outer 
+
+source branch ( )
+
+target branch ( )
+
+edit update on 
+
+masked region 
+
+update path 
+
+C) Differential Flow Editing  
+
+> differential velocity field
+> Source-anchored projection after each update
+> Fig. 3. The detailed pipeline of SAM-Flow.
+
+the source image is often incomplete. In object replacement, the new object may differ in shape, scale, and position from the original object. In object addition, the target object does not exist in the source image. In object removal, the target prompt may no longer explicitly contain the removed object. Therefore, SAM-Flow first uses a scout image to estimate the possible target-side semantic region, and then combines it with the source-side semantic region. Let E(·) denote the VAE encoder [40] of the backbone model. The source image and scout image are encoded as: 
+
+zsrc = E(Isrc ), (10) 
+
+zscout = E(Iscout ). (11) The scout branch is used only for spatial localization and does not directly participate in the numerical update of the final editing trajectory. In other words, the scout branch determines where editing may occur, while the subsequent flow editing branch determines how the latent trajectory evolves. For each editing case, SAM-Flow uses token-level semantic annotations, including a source mask token set, a target mask token set, and optionally an unchanged token set. At the i-th time step, we construct noisy latents for the source image and the scout image with the same reference noise: 
+
+˜zsrc ti = (1 − ti)zsrc + tiϵref , (12) 
+
+˜zscout ti = (1 − ti)zscout + tiϵref , (13) where ϵref ∼ N (0 , I ). Sharing the same noise instance makes the attention responses of the source and scout branches directly comparable at the same time step, which is important for constructing a stable union mask. SAM-Flow then extracts token-grounded spatial attention maps from the two branches. Let M src ti denote the normalized attention map obtained from editable source-side tokens in the source branch, and let M tar ti denote the normalized attention map obtained from editable target-side tokens in the scout branch. The base editing support map is defined as their pixel-wise union: 
+
+M base ti = max  M src ti , M tar ti
+
+ . (14) This union design covers both the original semantic location and the possible target semantic location. For replacement, 
+
+M src ti provides the region of the original object, while M tar ti
+
+provides the possible region of the new object. For addition, the source image may not contain the new object, so the scout branch provides the necessary target-region cue. For removal, the source branch still locates the object to be removed. Thus, replacement, addition, and removal can be handled by the same localization formulation. SAM-Flow also supports a complementary localization mode for cases where the main subject should remain un-changed while the surrounding environment is edited. Given a preservation map M keep ti extracted from the unchanged tokens, the editable region is defined as: 
+
+M base ti = 1 − M keep ti . (15) This mode is useful for editing weather, season, background style, or surrounding objects while preserving the main fore-ground subject. 6
+
+The localization principle is shared by all backbones, but the attention extraction implementation is model-specific. For FLUX, we intercept scaled dot-product attention in the mul-timodal DiT [41] and extract the image-to-text response by selecting image queries and text keys from the joint image–text sequence. The responses are averaged over heads and aggre-gated over middle-to-late layers. Token matching is performed by input-ID subsequence matching with the T5 tokenizer [42], which makes the method robust to words composed of multiple sub-tokens. For Stable Diffusion 3, we use both image-to-text and text-to-image joint attention. Since SD3 uses two CLIP encoders [43] and one T5 encoder [42], we build a unified text-weight vector over the concatenated text layout and combine the attention responses from different text encoders. The exact layer ranges, token weights, and aggregation strategy are summarized in Appendix A. 
+
+B. Localized Differential Flow Editing 
+
+After the editable support region is obtained, SAM-Flow performs semantic editing using a differential velocity field. Different from FlowEdit, which applies the differential veloc-ity globally, SAM-Flow treats it as a local editing force. The velocity difference determines what semantic change should happen, while the support map and source anchor determine where this change is allowed to propagate. Let zmodel ti denote the editable latent state internally used by the solver at the i-th time step, and let zsrc denote the fixed source-image latent. For the k-th Monte Carlo sample, SAM-Flow constructs a source branch and a target branch as: 
+
+zsrc ti,k = (1 − ti)zsrc + tiϵk, (16) 
+
+ztar ti,k = zmodel ti + zsrc ti,k − zsrc , (17) where ϵk ∼ N (0 , I ). The same noise realization is used to construct the two correlated branches. This correlated con-struction reduces the influence of random noise and makes the difference between model predictions focus more on the semantic displacement induced by the source and target prompts. The pre-trained flow model predicts the source and target velocity fields as: 
+
+vsrc ti,k = fθ (zsrc ti,k , t i, p src ), (18) 
+
+vtar ti,k = fθ (ztar ti,k , t i, p tar ). (19) The differential editing velocity is then estimated by averaging the velocity differences over navg samples: 
+
+∆vti = 1
+
+navg navg 
+
+X
+
+> k=1
+
+ vtar ti,k − vsrc ti,k 
+
+ . (20) This formulation inherits the inversion-free advantage of FlowEdit [18]. It does not require mapping the source image back to the Gaussian noise space and does not rely on optimization. However, in SAM-Flow, ∆vti is not regarded as a global transport direction. It is first used to obtain an unconstrained editing candidate: 
+
+zedit ti−1 = zedit ti + ( ti−1 − ti)∆ vti . (21) If this candidate were passed directly to the next step, the method would degenerate into global differential-flow editing and would inherit the background leakage problem. Therefore, SAM-Flow uses zedit ti−1 only as a candidate state and subse-quently projects it through the dynamic source-anchored mask. This separation is essential: the differential velocity field provides semantic editability, while the projection mechanism provides locality and preservation. In particular, source and target prompts are allowed to induce strong semantic changes inside the support region, but their influence is suppressed in non-edited regions by repeatedly anchoring these regions to the source latent. This design allows SAM-Flow to preserve the plug-and-play and inversion-free nature of FlowEdit while avoiding its global latent transport behavior. 
+
+C. Time-Varying Source-Anchored Projection 
+
+A static binary mask is insufficient for localized flow edit-ing. At early flow-matching steps, attention responses are usu-ally broad and uncertain, because the latent state still contains high-level structural ambiguity. At later steps, attention maps become sharper and more object-specific. A hard mask may therefore miss target regions at early stages or create unnatural boundaries at later stages. SAM-Flow addresses this issue with a time-varying source-anchored projection mechanism that combines dynamic soft masks, transition regions, and temporal accumulation. Starting from the base attention map M base ti , we first apply Gaussian smoothing and min-max normalization. We then define a dynamic quantile threshold: 
+
+qi = qstart + ( qend − qstart )ρi, (22) 
+
+βi = clip  Quantile( M base ti , q i), 0.1, 0.6 , (23) where ρi = i/T denotes the normalized time-step progress, 
+
+T is the number of time steps, and qstart and qend control the evolution of the threshold. The threshold is relatively permissive at early steps and becomes more selective later. We further introduce a time-varying sharpening coefficient: 
+
+αi = αmin + ( αmax − αmin )ρi, (24) and construct the soft semantic response: 
+
+Mti = σ αi(M base ti − βi) , (25) where σ(·) denotes the logistic sigmoid function. As αi
+
+increases, the mask boundary becomes progressively sharper, which matches the coarse-to-fine evolution of the flow trajec-tory. The core editing region is defined as: 
+
+Cti = 1[Mti > τ core ], (26) where τcore is the core threshold. To avoid abrupt boundary discontinuities, we dilate the core region using a time-varying radius ri. Let Dti denote the dilated result. The transition region is defined as: 
+
+Rti = clamp( Dti − Cti , 0, 1) . (27) The transition region provides a soft blending band between the strongly edited core and the preserved background. We 7
+
+then construct the hard support map and the final soft support map as: 
+
+W hard ti = clamp( Mti + wring Rti (1 − Mti ), 0, 1) , (28) 
+
+W sof t ti = s + (1 − s)W hard ti , (29) where wring controls the transition-region enhancement and s
+
+is a small relaxation factor. The relaxation term allows minimal flexibility in non-edited regions, which avoids excessively rigid projection artifacts while still preserving the source content. Attention maps may fluctuate across time steps, especially for thin structures or newly generated objects. To stabilize the editable support, SAM-Flow maintains accumulated support states: 
+
+¯W sof t ti = max 
+
+ ¯W sof t ti+1 , W sof t ti
+
+
+
+, (30) 
+
+¯W hard ti = max 
+
+ ¯W hard ti+1 , W hard ti
+
+
+
+, (31) 
+
+¯Cti = max   ¯Cti+1 , C ti
+
+ , (32) 
+
+¯Rti = max   ¯Rti+1 , R ti
+
+ . (33) Since the accumulation is implemented by element-wise max-imum, a region once identified as editable will not be suddenly removed in subsequent steps. This monotonic support memory is particularly important for object addition and large deforma-tion, where the target semantic region may emerge gradually along the trajectory. After the unconstrained candidate zedit ti−1 is obtained, SAM-Flow fuses it with a latent anchor to construct the new model state. Let amodel ti denote the anchor for the solver state. In the default setting, amodel ti is set to the source-image latent reference. The source-anchored model-state projection is: 
+
+zmodel ti−1 = amodel ti + ρ ¯W sof t ti ⊙
+
+
+
+zedit ti−1 − amodel ti
+
+
+
+, (34) where ρ controls the allowed deviation from the anchor and 
+
+⊙ denotes element-wise multiplication. Inside the support region, ¯W sof t ti is large and the latent state can move toward the edited candidate. Outside the support region, ¯W sof t ti is small and the state is pulled back toward the source anchor. Therefore, background preservation is not imposed only at the final output, but repeatedly enforced during the ODE solving process. In addition to the internal model state, SAM-Flow maintains a visible latent state zvis ti for final image decoding. We first define three spatial weights based on the accumulated core and transition regions: 
+
+core ti = ¯Cti , (35) 
+
+ring ti = clamp   ¯Rti (1 − ¯Cti ), 0, 1 , (36) 
+
+outer ti = clamp  1 − core ti − ring ti , 0, 1 . (37) The strong core state and the conservative transition state are constructed as: 
+
+zcore ti−1 = amodel ti + ρ ¯W sof t ti ⊙
+
+
+
+zedit ti−1 − amodel ti
+
+
+
+, (38) 
+
+zring ti−1 = avis ti + ρ (γ ¯W hard ti ) ⊙
+
+
+
+zedit ti−1 − avis ti
+
+
+
+, (39) where avis ti is the visible-state anchor and γ weakens the editing strength in the transition region. Finally, the visible latent state is obtained by: 
+
+zvis ti−1 = core ti ⊙ zcore ti−1 + ring ti ⊙ zring ti−1 + outer ti ⊙ avis ti . (40) The core region performs the main semantic editing, the tran-sition region alleviates boundary artifacts, and the outer region preserves the source anchor. After the full latent trajectory has evolved, the final image is decoded from zvis rather than from the unconstrained state zedit . This ensures that the final output reflects the complete source-anchored composition instead of a global differential-flow editing trajectory. The algorithmic summary is provided in Appendix D. IV. E XPERIMENTS 
+
+A. Experimental Setup 
+
+We evaluate SAM-Flow on the DIV2K-based [44] edit-ing benchmark used in the FlowEdit setup and extend its prompt annotations to support token-grounded localization. Each record contains a source image with a resolution of 
+
+1024 × 1024 , a source prompt, multiple target prompts, and token-level annotations, including source_mask_token ,
+
+target_mask_token , and unchanged_token . The benchmark covers object replacement, material/style transfer, text replacement, attribute modification, multi-object editing, object addition/removal, and background transformation. We conduct experiments using Stable Diffusion 3Medium [5] and FLUX.1-dev [6] as backbone models. For each test sample, we first generate a scout image using FlowEdit, then execute the SAM-Flow editing pipeline. We compare with SDEdit [7], iRFDS [45], ODE Inversion, FlowEdit [18], RF Inversion [46], RF Edit [25], and Sta-bleFlow [26]. We report CLIP-T [43] for instruction faith-fulness and DINO score [47] for overall visual consistency. To evaluate background preservation, we use the final SAM-Flow mask to segment foreground and background regions, and compute PSNR, SSIM [48], and LPIPS [49] only on the background region. Complete hyperparameters, baseline settings, and evaluation details are provided in Appendix E. 
+
+B. Main Results 
+
+Fig. 4 shows qualitative comparisons between SAM-Flow and baseline methods. SAM-Flow generates accurate target semantics while significantly reducing background drift. Com-pared with SDEdit and iRFDS, it produces clearer and more controllable edits. Compared with RF Edit, RF Inversion, and FlowEdit, it better preserves the source layout and non-edited regions. The quantitative results show that the advantage of SAM-Flow does not lie in maximizing a single metric alone. Instead, it achieves a better overall trade-off between instruction fol-lowing and background fidelity. Fig. 5 visualizes this trade-off using CLIP-T as the horizontal axis and background LPIPS as the vertical axis. Both SAM-Flow (SD3) and SAM-Flow (FLUX) are located in the lower-right region, corresponding to higher CLIP-T and lower background LPIPS. The full quantitative table, mask visualization, and user study results 8Source Image  SAM-Flow (FLUX) SAM-Flow (SD3) SDEdit  iRFDS  FlowEdit (SD3)  RF Inv. RF Edit  FlowEdit (FLUX) 
+
+Stable Diffusion 3  FLUX 
+
+A grocery list with BREAD, EGGS, and MILK  → A grocery list with CVPR, EGGS, and MILK 
+
+A STOP! sticker with a red and yellow color scheme  → A CVPR! sticker with a red and yellow color scheme 
+
+A slice of red velvet cake with white frosting, topped with blueberries  → A slice of chocolate cake with white frosting, topped with blueberries 
+
+A gas station with a CAFE sign  → A gas station with a CVPR sign 
+
+A steak accompanied by a side of leaf salad  → A bread roll accompanied by a side of leaf salad 
+
+ODE Inv.  Stable Flow 
+
+Fig. 4. Qualitative comparison between SAM-Flow and other methods. The red text indicates the source prompt, and the green text indicates the target prompt. 0.20 0.22 0.24 0.26 0.28 0.30 0.32 0.34 
+
+> CLIP-T
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> LPIPS (background)
+> SDEdit (SD3)
+> iRFDS (SD3)
+> ODE Inv. (SD3)
+> FlowEdit (SD3)
+> SAM-Flow (SD3)
+> RF Edit (FLUX)
+> RF Inv. (FLUX)
+> StableFlow (FLUX)
+> FlowEdit (FLUX)
+> SAM-Flow (FLUX)
+
+Fig. 5. Quantitative comparison between SAM-Flow and other methods. 
+
+are provided in Appendix F. The user study further confirms that SAM-Flow receives the highest overall preference among the compared methods. 
+
+C. Ablation Study 
+
+To analyze the contribution of each component, we design four ablation variants: hard mask , no transition region ,
+
+no temporal accumulation , and no source-anchored pro-jection . These variants respectively test the effects of soft support, boundary transition, cross-time-step mask memory, and true source-latent anchoring. Detailed settings, equations, qualitative examples, and complete quantitative tables are provided in Appendix G. As shown in Fig. 6, the full SAM-Flow obtains the most favorable trade-off on both SD3 and FLUX. Hard masks 0.525 0.550 0.575 0.600 0.625 0.650 0.675 0.700 0.725 
+
+> DINO
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> LPIPS (background)
+> SAM-Flow (SD3)
+> Hard mask (SD3)
+> No transition region (SD3)
+> No temporal accumulation (SD3)
+> No source-anchored projection (SD3)
+> SAM-Flow (FLUX)
+> Hard mask (FLUX)
+> No transition region (FLUX)
+> No temporal accumulation (FLUX)
+> No source-anchored projection (FLUX)
+
+Fig. 6. Ablation study visualized by the trade-off between DINO and background LPIPS. A better variant should move toward the lower-right region, indicating better global consistency and lower background perceptual error. 
+
+and removing transition regions weaken boundary naturalness and increase background perceptual error. Removing temporal accumulation causes the most significant degradation because the editable support becomes unstable across time steps. Re-moving source-anchored projection also increases background drift, confirming that true source-latent anchoring is essential for preserving non-edited regions. V. C ONCLUSION 
+
+In this paper, we proposed SAM-Flow, a training-free image editing method that reformulates image editing as localized semantic flow editing rather than global distribution transport. By using a scout image and token-grounded attention maps, SAM-Flow identifies editable semantic regions and applies differential flow updates only within these regions. A time-varying source-anchored projection mechanism with soft sup-9
+
+port, transition regions, and temporal accumulation further improves boundary smoothness and background preservation. Experiments on Stable Diffusion 3 and FLUX demonstrate that SAM-Flow achieves a favorable balance between se-mantic consistency, visual quality, and source-image fidelity, providing a simple and general localized editing paradigm for training-free image editing. REFERENCES [1] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” in Advances in Neural Information Processing Systems , vol. 33, 2020, pp. 6840–6851. [2] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole, “Score-based generative modeling through stochastic differ-ential equations,” in International Conference on Learning Representa-tions , 2021, pp. 1–36. [3] Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in The Eleventh International Conference on Learning Representations , 2023, pp. 1–28. [4] X. Liu, C. Gong, and Q. Liu, “Flow straight and fast: Learning to generate and transfer data with rectified flow,” in The Eleventh International Conference on Learning Representations , 2023, pp. 1–33. [5] P. Esser, S. Kulal, A. Blattmann, R. Entezari, J. M¨ uller, H. Saini, Y. Levi, D. Lorenz, A. Sauer, F. Boesel et al. , “Scaling rectified flow transformers for high-resolution image synthesis,” in Forty-First International Conference on Machine Learning , 2024, pp. 1–28. [6] Black Forest Labs. (2024) Flux.1. [Online]. Available: https:// blackforestlabs.ai/ [7] C. Meng, Y. He, Y. Song, J. Song, J. Wu, J.-Y. Zhu, and S. Ermon, “Sdedit: Guided image synthesis and editing with stochastic differential equations,” in International Conference on Learning Representations ,2022, pp. 1–33. [8] B. Kawar, S. Zada, O. Lang, O. Tov, H. Chang, T. Dekel, I. Mosseri, and M. Irani, “Imagic: Text-based real image editing with diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 6007–6017. [9] T. Brooks, A. Holynski, and A. A. Efros, “Instructpix2pix: Learning to follow image editing instructions,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 18 392–18 402. [10] A. Hertz, R. Mokady, J. Tenenbaum, K. Aberman, Y. Pritch, and D. Cohen-Or, “Prompt-to-prompt image editing with cross-attention control,” in The Eleventh International Conference on Learning Rep-resentations , 2023, pp. 1–36. [11] N. Tumanyan, M. Geyer, S. Bagon, and T. Dekel, “Plug-and-play diffusion features for text-driven image-to-image translation,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 1921–1930. [12] R. Mokady, A. Hertz, K. Aberman, Y. Pritch, and D. Cohen-Or, “Null-text inversion for editing real images using guided diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 6038–6047. [13] X. Ju, A. Zeng, Y. Bian, S. Liu, and Q. Xu, “Pnp inversion: Boosting diffusion-based editing with 3 lines of code,” in The Twelfth Interna-tional Conference on Learning Representations , 2024, pp. 1–28. [14] S. Xu, Y. Huang, J. Pan, Z. Ma, and J. Chai, “Inversion-free image editing with language-guided diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 9452–9461. [15] I. Huberman-Spiegelglas, V. Kulikov, and T. Michaeli, “An edit friendly ddpm noise space: Inversion and manipulations,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 12 469–12 478. [16] B. Wallace, A. Gokul, and N. Naik, “Edict: Exact diffusion inversion via coupled transformations,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2023, pp. 22 532–22 541. [17] A. Elarabawy, H. Kamath, and S. Denton, “Direct inversion: Optimization-free text-driven real image editing with diffusion models,” 
+
+arXiv preprint arXiv:2211.07825 , 2022. [18] V. Kulikov, M. Kleiner, I. Huberman-Spiegelglas, and T. Michaeli, “Flowedit: Inversion-free text-based editing using pre-trained flow mod-els,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 19 721–19 730. [19] R. Tang, L. Liu, A. Pandey, Z. Jiang, G. Yang, K. Kumar, P. Stenetorp, J. Lin, and F. T¨ ure, “What the daam: Interpreting stable diffusion using cross attention,” in Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,2023, pp. 5644–5659. [20] H. Chefer, Y. Alaluf, Y. Vinker, L. Wolf, and D. Cohen-Or, “Attend-and-excite: Attention-based semantic guidance for text-to-image diffusion models,” ACM transactions on Graphics (TOG) , vol. 42, no. 4, pp. 1– 10, 2023. [21] M. Cao, X. Wang, Z. Qi, Y. Shan, X. Qie, and Y. Zheng, “Masactrl: Tuning-free mutual self-attention control for consistent image synthesis and editing,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 22 560–22 570. [22] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion , 2022, pp. 10 684–10 695. [23] J. Song, C. Meng, and S. Ermon, “Denoising diffusion implicit models,” in International Conference on Learning Representations , 2021, pp. 1– 20. [24] D. Miyake, A. Iohara, Y. Saito, and T. Tanaka, “Negative-prompt inversion: Fast image inversion for editing with text-guided diffusion models,” in 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2025, pp. 2063–2072. [25] J. Wang, J. Pu, Z. Qi, J. Guo, Y. Ma, N. Huang, Y. Chen, X. Li, and Y. Shan, “Taming rectified flow for inversion and editing,” in 
+
+International Conference on Machine Learning . PMLR, 2025, pp. 64 044–64 058. [26] O. Avrahami, O. Patashnik, O. Fried, E. Nemchinov, K. Aberman, D. Lischinski, and D. Cohen-Or, “Stable flow: Vital layers for training-free image editing,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , June 2025, pp. 7877–7888. [27] J. Kim, J. Park, Y. Song, N. Kwak, and W. Rhee, “Reflex: Text-guided editing of real images in rectified flow via mid-step feature extraction and attention adaptation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , October 2025, pp. 15 939–15 948. [28] J. Kim, Y. Hong, J. Park, and J. C. Ye, “Flowalign: Trajectory-regularized, inversion-free flow-based image editing,” in The Fourteenth International Conference on Learning Representations , 2026. [29] O. Avrahami, D. Lischinski, and O. Fried, “Blended diffusion for text-driven editing of natural images,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , June 2022, pp. 18 208–18 218. [30] O. Avrahami, O. Fried, and D. Lischinski, “Blended latent diffusion,” 
+
+ACM Transactions on Graphics , vol. 42, no. 4, pp. 1–11, 2023. [31] A. Q. Nichol, P. Dhariwal, A. Ramesh, P. Shyam, P. Mishkin, B. Mcgrew, I. Sutskever, and M. Chen, “Glide: Towards photorealistic image gen-eration and editing with text-guided diffusion models,” in International Conference on Machine Learning . PMLR, 2022, pp. 16 784–16 804. [32] A. Lugmayr, M. Danelljan, A. Romero, F. Yu, R. Timofte, and L. Van Gool, “Repaint: Inpainting using denoising diffusion probabilistic models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , June 2022, pp. 11 461–11 471. [33] G. Couairon, J. Verbeek, H. Schwenk, and M. Cord, “Diffedit: Diffusion-based semantic image editing with mask guidance,” in The Eleventh International Conference on Learning Representations , 2023, pp. 1–22. [34] B. Yang, S. Gu, B. Zhang, T. Zhang, X. Chen, X. Sun, D. Chen, and F. Wen, “Paint by example: Exemplar-based image editing with diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , June 2023, pp. 18 381–18 391. [35] T. Yu, R. Feng, R. Feng, J. Liu, X. Jin, W. Zeng, and Z. Chen, “Inpaint anything: Segment anything meets image inpainting,” arXiv preprint arXiv:2304.06790 , 2023. [36] L. Zhang, A. Rao, and M. Agrawala, “Adding conditional control to text-to-image diffusion models,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 3836–3847. [37] C. Mou, X. Wang, L. Xie, Y. Wu, J. Zhang, Z. Qi, and Y. Shan, “T2i-adapter: Learning adapters to dig out more controllable ability for text-to-image diffusion models,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 5, 2024, pp. 4296–4304. [38] Y. Li, H. Liu, Q. Wu, F. Mu, J. Yang, J. Gao, C. Li, and Y. J. Lee, “Gligen: Open-set grounded text-to-image generation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023, pp. 22 511–22 521. [39] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Dollar, and R. Girshick, 10 
+
+“Segment anything,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , October 2023, pp. 4015–4026. [40] D. P. Kingma and M. Welling, “Auto-encoding variational bayes,” in 
+
+International Conference on Learning Representations , 2014, pp. 1–14. [41] W. Peebles and S. Xie, “Scalable diffusion models with transformers,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 4195–4205. [42] C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu, “Exploring the limits of transfer learning with a unified text-to-text transformer,” Journal of Machine Learning Research , vol. 21, no. 140, pp. 1–67, 2020. [43] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark et al. , “Learning transferable visual models from natural language supervision,” in International Conference on Machine Learning . PMLR, 2021, pp. 8748–8763. [44] E. Agustsson and R. Timofte, “Ntire 2017 challenge on single image super-resolution: Dataset and study,” in Proceedings of the IEEE Con-ference on Computer Vision and Pattern Recognition Workshops , 2017, pp. 126–135. [45] X. Yang, C. Cheng, X. Yang, F. Liu, and G. Lin, “Text-to-image rectified flow as plug-and-play priors,” in The Thirteenth International Conference on Learning Representations , 2025, pp. 1–25. [46] L. Rout, Y. Chen, N. Ruiz, C. Caramanis, S. Shakkottai, and W.-S. Chu, “Semantic image inversion and editing using rectified stochastic differential equations,” in The Thirteenth International Conference on Learning Representations , 2025, pp. 1–36. [47] M. Caron, H. Touvron, I. Misra, H. J´ egou, J. Mairal, P. Bojanowski, and A. Joulin, “Emerging properties in self-supervised vision transformers,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2021, pp. 9650–9660. [48] Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, “Image quality assessment: From error visibility to structural similarity,” IEEE Transactions on Image Processing , vol. 13, no. 4, pp. 600–612, 2004. [49] R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, “The unreasonable effectiveness of deep features as a perceptual metric,” in 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2018, pp. 586–595. A-1 
+
+APPENDIX ABACKBONE -S PECIFIC TOKEN -G ROUNDED ATTENTION EXTRACTION 
+
+The main paper describes the general scout-and-union localization principle. This appendix provides the implementation details for different backbone models. The scout image is only used for spatial localization and does not directly participate in the numerical update of the final editing trajectory. In other words, the scout branch is responsible for locating where editing may occur, while the subsequent flow editing process determines how the latent trajectory evolves. For each editing sample, SAM-Flow receives token-level semantic annotations, including a source mask token set and a target mask token set. At the i-th time step, noisy latents for the source image and the scout image are constructed using the same reference noise: 
+
+˜zsrc ti = (1 − ti)zsrc + tiϵref , (A1) 
+
+˜zscout ti = (1 − ti)zscout + tiϵref . (A2) Sharing the same noise instance ensures that the spatial responses of the source branch and the scout branch are directly comparable at the same time step. For FLUX, we intercept the scaled dot-product attention in the multimodal DiT [41] network and extract the image-to-text attention response. Specifically, after determining the joint image–text sequence, we select image queries and text keys to compute the corresponding attention matrix. The responses are averaged over different attention heads and further aggregated over several middle-to-late layers. Token matching is implemented by subsequence matching over the input IDs of the T5 tokenizer [42], which makes the method robust to words composed of multiple sub-tokens. For Stable Diffusion 3, we use both image-to-text and text-to-image joint attention. Let AIT denote the attention response from image tokens to text tokens, and let AT I denote the attention response from text tokens to image tokens. We construct token-weighted spatial responses from both directions and fuse them into a unified localization map. Since Stable Diffusion 3 uses two CLIP text encoders [43] and one T5 [42] text encoder, we first build a text-weight vector over the concatenated unified text layout, and then compute the final spatial response map by combining AIT and AT I . Together, these operations constitute the token-grounded semantic localization stage of SAM-Flow. The union-based localization mode is defined as: 
+
+M base ti = max  M src ti , M tar ti
+
+ , (A3) where M src ti denotes the normalized attention map obtained from editable source-side tokens, and M tar ti denotes the normalized attention map obtained from editable target-side tokens in the scout branch. In addition, SAM-Flow supports a complementary localization mode for cases where the main subject should remain unchanged while the surrounding environment is edited: 
+
+M base ti = 1 − M keep ti , (A4) where M keep ti denotes the attention map obtained from preservation tokens. APPENDIX BFULL DIFFERENTIAL -F LOW FORMULATION 
+
+This appendix provides the complete differential-flow formulation used by SAM-Flow. The main paper emphasizes the localized nature of SAM-Flow, while here we give the explicit latent construction used at each ODE step. Let zsrc be the VAE latent of the source image and let zmodel ti be the model state at time step ti. For the k-th averaging sample, we draw ϵk ∼ N (0 , I ) and construct: 
+
+zsrc ti,k = (1 − ti)zsrc + tiϵk, (A5) 
+
+ztar ti,k = zmodel ti + zsrc ti,k − zsrc . (A6) The source branch follows the noisy marginal of the source image. The target branch is constructed by translating the current editable state with the same noise offset used in the source branch. This correlated branch construction follows the intuition that subtracting two velocity predictions under matched noise perturbations suppresses random noise components and highlights the semantic direction induced by the prompt change. The source and target velocities are predicted by the frozen flow model: 
+
+vsrc ti,k = fθ (zsrc ti,k , t i, p src ), (A7) 
+
+vtar ti,k = fθ (ztar ti,k , t i, p tar ). (A8) The differential velocity is: 
+
+∆vti = 1
+
+navg navg 
+
+X
+
+> k=1
+
+ vtar ti,k − vsrc ti,k 
+
+ . (A9) A-2 
+
+The unconstrained candidate update is: 
+
+zedit ti−1 = zedit ti + ( ti−1 − ti)∆ vti . (A10) In FlowEdit, this candidate state is directly propagated to the next step. In SAM-Flow, it is treated only as a semantic candidate and is subsequently filtered through the dynamic source-anchored projection. This distinction is the main reason SAM-Flow can preserve background regions more reliably than global differential-flow editing. From an implementation perspective, navg controls the number of velocity evaluations averaged at each time step. A larger value may improve stability but increases inference cost. In our experiments, we follow the practical setting used by the FlowEdit-style backbone configurations and use the hyperparameters reported in Appendix E. The localized projection is independent of the specific value of navg and can therefore be plugged into different flow-matching backbones. APPENDIX CDYNAMIC MASK CONSTRUCTION AND SOURCE -A NCHORED PROJECTION 
+
+A fixed mask is insufficient for training-free image editing, because attention distributions are usually broad and uncertain at early time steps, while gradually becoming more concentrated at later time steps. SAM-Flow explicitly designs the projection mechanism as a time-dependent process. As generation proceeds, the blur strength is gradually reduced, the quantile threshold is gradually increased, the sigmoid sharpening strength is progressively enhanced, and the transition radius is gradually shrunk. Starting from the base attention map M base ti , SAM-Flow first applies Gaussian smoothing and min-max normalization. We then define a dynamic quantile threshold: 
+
+qi = qstart + ( qend − qstart )ρi, (A11) 
+
+βi = clip  Quantile( M base ti , q i), 0.1, 0.6 , (A12) where qi denotes the quantile ratio used at the i-th time step, qstart and qend denote the starting and ending values of the quantile schedule, respectively, ρi = i/T denotes the normalized time-step progress, and T is the total number of time steps. The final threshold at the i-th time step is denoted by βi.We further define a time-varying sharpening coefficient: 
+
+αi = αmin + ( αmax − αmin )ρi, (A13) and construct the soft mask: 
+
+Mti = σ αi
+
+ M base ti − βi
+
+ , (A14) where σ(·) denotes the logistic sigmoid function. As αi increases, the mask boundary becomes progressively sharper. The core region is defined as: 
+
+Cti = 1[Mti > τ core ], (A15) where τcore is the core threshold. To reduce discontinuities caused by abrupt boundary changes, we further dilate the core region with a time-varying radius ri. Let Dti denote the dilated result. The transition region is defined as: 
+
+Rti = clamp( Dti − Cti , 0, 1) . (A16) This transition region provides a smoother blending band between the strongly edited region and the preserved region. The raw support map is then obtained by: 
+
+W hard ti = clamp( Mti + wring Rti (1 − Mti ), 0, 1) , (A17) and the final soft support map is defined as: 
+
+W sof t ti = s + (1 − s)W hard ti , (A18) where wring denotes the transition-region enhancement weight, and s ∈ [0 , 1] is a global relaxation factor that leaves a small amount of flexibility for non-edited regions. In this way, SAM-Flow constructs a tri-partite support structure consisting of the core region, the transition region, and the outer preservation region. To improve temporal stability, SAM-Flow maintains accumulated support states over time: 
+
+¯W sof t ti = max 
+
+ ¯W sof t ti+1 , W sof t ti
+
+
+
+, (A19) 
+
+¯W hard ti = max 
+
+ ¯W hard ti+1 , W hard ti
+
+
+
+, (A20) 
+
+¯Cti = max   ¯Cti+1 , C ti
+
+ , (A21) 
+
+¯Rti = max   ¯Rti+1 , R ti
+
+ . (A22) A-3 
+
+Since the accumulation is implemented by element-wise maximum, once a region is identified as editable at a certain time step, it will not be suddenly removed in subsequent time steps. After the unconstrained editing state zedit ti−1 is updated, SAM-Flow fuses it with a latent anchor to construct the new solver state: 
+
+zmodel ti−1 = amodel ti + ρ ¯W sof t ti ⊙
+
+
+
+zedit ti−1 − amodel ti
+
+
+
+. (A23) In the default setting, amodel ti is set to the source-image latent reference. Inside the support region, the latent variable is allowed to move along zedit ti−1 . Outside the support region, the latent variable is pulled back toward the source-image anchor. For final decoding, SAM-Flow constructs a visible latent state. We first define three spatial weights: 
+
+core ti = ¯Cti , (A24) 
+
+ring ti = clamp   ¯Rti (1 − ¯Cti ), 0, 1 , (A25) 
+
+outer ti = clamp  1 − core ti − ring ti , 0, 1 . (A26) The strong editing state and conservative transition state are: 
+
+zcore ti−1 = amodel ti + ρ ¯W sof t ti ⊙
+
+
+
+zedit ti−1 − amodel ti
+
+
+
+, (A27) 
+
+zring ti−1 = avis ti + ρ (γ ¯W hard ti ) ⊙
+
+
+
+zedit ti−1 − avis ti
+
+
+
+, (A28) where γ denotes the transition-region blending coefficient. Finally, the visible latent state is obtained by: 
+
+zvis ti−1 = core ti ⊙ zcore ti−1 + ring ti ⊙ zring ti−1 + outer ti ⊙ avis ti . (A29) APPENDIX DFULL ALGORITHM 
+
+Algorithm A1 SAM-Flow for training-free image editing 
+
+Input: Source image Xsrc , source prompt psrc , target prompt ptar , source token set T src , target token set T tar , optional preservation token set T keep , time steps {ti}Ti=0 , number of averaging samples navg 
+
+Output: Edited image Xtar 
+
+Xscout ← ScoutEdit( Xsrc , p src , p tar )
+
+Zsrc ← E(Xsrc ), Zscout ← E(Xscout )
+
+Zedit tT , Z model tT , Z vis tT ← Zsrc 
+
+¯W sof t , ¯W hard , ¯C, ¯R ← 0
+
+for i = T, T − 1, . . . , 1 do 
+
+Sample ϵref ∼ N (0 , I )ˆZsrc ti ← (1 − ti)Zsrc + tiϵref 
+
+ˆZscout ti ← (1 − ti)Zscout + tiϵref 
+
+if T keep ̸ = ∅ then 
+
+M base ti ← 1 − TokenAttention( ˆZsrc ti , p src , T keep )
+
+else 
+
+M base ti ← max TokenAttention( ˆZsrc ti , p src , T src ),
+
+TokenAttention( ˆZscout ti , p tar , T tar )
+
+!
+
+end if 
+
+( ¯W sof t ti , ¯W hard ti , ¯Cti , ¯Rti ) ← DynamicPartition( M base ti , t i)∆Vti ← 1
+
+> navg
+
+Pnavg 
+
+> k=1
+
+ V tar ti,k − V src ti,k 
+
+
+
+where ϵk ∼ N (0 , I ), and 
+
+Zsrc ti,k = (1 − ti)Zsrc + tiϵk , Z tar ti,k = Zmodel ti + Zsrc ti,k − Zsrc 
+
+V {src,tar } 
+
+> ti,k
+
+= fθ (Z{src,tar } 
+
+> ti,k
+
+, p {src,tar })
+
+Zedit ti−1 ← Zedit ti + ( ti−1 − ti)∆ Vti
+
+Zmodel ti−1 ← SourceAnchor( Zedit ti−1 , Z src , ¯W sof t ti )
+
+Zvis ti−1 ← VisibleCompose( Zedit ti−1 , Z src , . . . )
+
+end for return D(Zvis t0 )
+
+Full algorithm is shown in Algorithm A1. Overall, the algorithm can be described as: localize first, edit second, and anchor throughout the process. The scout image addresses spatial misalignment, the differential flow provides the semantic editing direction, and the time-varying source-anchored projection keeps the edit localized and visually consistent. A-4 
+
+APPENDIX EIMPLEMENTATION DETAILS AND HYPERPARAMETERS 
+
+A. Benchmark 
+
+We evaluate SAM-Flow on the DIV2K-based [44] editing benchmark used in the FlowEdit setup, and further extend its prompt annotations to support token-grounded localization. Each record in our prompt file contains a source image with a resolution of 
+
+1024 × 1024 , a source prompt, multiple target prompts, and a target code for each editing case. On top of the original prompt annotations, we additionally label three token fields for every target case: source_mask_token , target_mask_token ,and unchanged_token . These annotations support source-target union localization for replacement/addition/removal edits, as well as complement localization for keep-subject/background-only edits. The data loader normalizes these per-target token lists and expands them to match all target prompts in each record. The benchmark covers object replacement, material/style transfer, text replacement, attribute modification, multi-object editing, and background transformation. 
+
+B. Hyperparameters                                                                                                                
+
+> TABLE A1 MAIN HYPERPARAMETER SETTINGS OF SAM-F LOW .Setting SAM-Flow (SD3) SAM-Flow (FLUX) Backbone Stable Diffusion 3 Medium FLUX.1-dev Steps T50 28
+> navg 88Source guidance 1.5 1.5 Target guidance 13.5 10.5
+> nmax 33 26 Reference noise seed 999 999 Blur σ2.0 →0.6 2.0 →0.6 Quantile q0.6 →0.8 0.6 →0.8 Sigmoid sharpening strength α5.0 →20.0 5.0 →20.0
+> τcore 0.5 0.85 Ring radius 6→36→3
+> wring 0.5 0.35 Slack 0.03 0.05 Anchor strength ρ1.0 1.0 Ring blend γ0.5 0.35 Attention reduction sym image-to-text Normalization full —Selected layers 8–17 4–18 Token match mode ids input-id subsequence Extra text weights wclip = 1 .0,wt5= 0 .3—TABLE A2 MAIN HYPERPARAMETER SETTINGS FOR BASELINE METHODS .Method Settings SDEdit steps = 50 ,nmax = 20 , strength = 0 .4, CFG = 13 .5
+> iRFDS official default settings ODE Inv. steps = 50 ,nmax = 33 , CFG tar = 13 .5, CFG src = 3 .5
+> FlowEdit (SD3) steps = 50 ,nmax = 33 , CFG tar = 13 .5, CFG src = 3 .5,navg = 8
+> RF Inversion steps = 28 , starting time = 0 , stopping time = 0 .28 ,η= 0 .9
+> RF Edit steps = 30 , guidance = 2 , injection = 2
+> StableFlow official default settings FlowEdit (FLUX) steps = 28 ,nmax = 24 , CFG tar = 5 .5, CFG src = 1 .5,navg = 8
+
+Detailed hyperparameters used for SAM-Flow and baseline methods in this paper are shown in Table A1 and Table A2. All experiments are conducted on a single NVIDIA RTX PRO 6000 GPU. For fair comparison, we evaluate against SDEdit [7], iRFDS [45], ODE Inversion, FlowEdit [18], RF Inversion [46], RF Edit [25], StableFlow [26], and FlowEdit (FLUX) [18]. We report CLIP-T [43], full-image DINO score [47], and background-region PSNR, SSIM [48], and LPIPS [49]. The final saved SAM-Flow mask at the last editing step is used to segment foreground and background regions. APPENDIX FADDITIONAL MAIN RESULTS AND USER STUDY 
+
+A. Mask Visualization 
+
+Fig. A1 shows the final masks used by SAM-Flow. The attention masks effectively cover the foreground regions that truly require editing, while leaving non-edited regions available for source anchoring. A-5 Source Image  Mask Edited Image  Source Image  Mask Edited Image 
+
+“…Purple Flower…”  → “…Red Flower…”  “…Bear…”  → “…Polar Bear…” 
+
+“…Gray Bird…”  → “…Origami Bird…”  “…Puppies…”  → “…Husky Puppies…” 
+
+“…FREE WIFI…”  → “…FREE HUGS…”  “…Young Boy…”  → “…Sculpture of Young Boy…” 
+
+Fig. A1. Attention mask results of SAM-Flow. The red text indicates the source prompt, and the green text indicates the target prompt. 
+
+B. Full Quantitative Results 
+
+TABLE A3 QUANTITATIVE COMPARISON BETWEEN SAM-F LOW AND OTHER METHODS .Method CLIP-T ↑ DINO ↑ PSNR ↑ SSIM ↑ LPIPS ↓
+
+SDEdit [7] 0.262 0.724 26.57 0.876 0.097 iRFDS [45] 0.196 0.494 12.09 0.433 0.335 ODE Inv. 0.309 0.541 13.89 0.505 0.212 FlowEdit (SD3) [18] 0.342 0.696 24.08 0.844 0.082 SAM-Flow (SD3) 0.344 0.706 29.31 0.925 0.031 RF Edit [25] 0.342 0.614 14.82 0.693 0.249 RF Inv. [46] 0.346 0.572 16.55 0.661 0.188 StableFlow [26] 0.291 0.520 18.67 0.676 0.193 FlowEdit (FLUX) [18] 0.337 0.686 23.94 0.863 0.076 SAM-Flow (FLUX) 0.340 0.689 28.02 0.902 0.028 
+
+Full quantitative results are shown in Table A3. Overall, SAM-Flow achieves a favorable trade-off by maintaining strong instruction-following ability and overall visual quality while significantly improving background fidelity. 
+
+C. User Study 
+
+TABLE A4 USER STUDY RESULTS OF SAM-F LOW ON A 10-POINT SCALE .Method Semantic faithfulness ↑ Background preservation ↑ Overall score ↑
+
+SDEdit 4.2 8.7 6.4 iRFDS 3.1 3.2 2.4 ODE Inv. 5.4 3.5 3.3 FlowEdit (SD3) 8.1 7.5 7.6 SAM-Flow (SD3) 8.4 9.0 9.1 RF Edit 7.6 5.2 5.4 RF Inv. 7.3 4.4 5.7 StableFlow 5.1 6.0 5.8 FlowEdit (FLUX) 8.2 7.9 8.3 SAM-Flow (FLUX) 8.2 8.8 9.2 A-6 
+
+We conduct a small-scale user study involving 20 participants, the results are shown in Table A4. The participants are asked to rate the editing results on a 10-point scale from three aspects: semantic faithfulness, background preservation, and overall quality. The results show that among methods based on Stable Diffusion 3, SAM-Flow (SD3) achieves the highest overall score. Across all methods, SAM-Flow (FLUX) obtains the best overall score. APPENDIX GABLATION STUDY DETAILS 
+
+To analyze the contribution of each component in SAM-Flow, we design four ablation variants: hard mask , no transition region , no temporal accumulation , and no source-anchored projection . These variants do not simply remove arbitrary parts of the framework. Instead, each variant modifies a specific key component in the mask-guided editing process while keeping the remaining pipeline unchanged. For clarity, let ti denote the i-th time step. Let Mti denote the step-wise soft semantic response map obtained after dynamic thresholding and sigmoid sharpening. Let Cti denote the core-region mask obtained by binarizing Mti with the core threshold, and let Rti denote the transition-region mask constructed around the core region. Furthermore, let W hard  
+
+> ti
+
+denote the hard support map, and let W soft  
+
+> ti
+
+denote the soft support map. In terms of latent representation, let zedit  
+
+> ti
+
+denote the editing latent that is not constrained by anchoring, let zmodel  
+
+> ti
+
+denote the model latent state passed to the next denoising step, let zvis  
+
+> ti
+
+denote the visible latent state used for final image decoding, and let zsrc denote the latent representation of the source image encoded by the VAE. The full SAM-Flow method adopts a time-varying soft partition strategy, together with temporal accumulation and source-latent anchoring. Its model-state update is formulated as: 
+
+zmodel  
+
+> ti−1
+
+= zsrc + ρ ¯W soft  
+
+> ti
+
+⊙
+
+
+
+zedit  
+
+> ti−1
+
+− zsrc 
+
+, (A30) where ⊙ denotes element-wise multiplication. Inside the support region, the latent variable is allowed to move toward the edited result. Outside the support region, the latent variable is pulled back toward the source-image latent. 
+
+a) Hard-mask variant.: The hard-mask variant disables the soft support map mechanism. It sets the transition region to zero: 
+
+Rti = 0 , (A31) and directly uses the core-region mask as both the hard and soft support maps: 
+
+W hard  
+
+> ti
+
+= Cti , (A32) 
+
+W soft  
+
+> ti
+
+= Cti . (A33) This ablation examines whether the performance gain comes merely from a roughly correct editable region, or from modeling this region as a continuous and smooth spatial support field. 
+
+b) No-transition-region variant.: The no-transition-region variant preserves the soft mask itself but removes the explicitly constructed transition ring. In the full method, the transition region is obtained as: 
+
+Rti = clamp( Dti − Cti , 0, 1) , (A34) and the hard support map is: 
+
+W hard  
+
+> ti
+
+= clamp( Mti + wring Rti (1 − Mti ), 0, 1) . (A35) In this ablation, the transition region is removed: 
+
+Rti = 0 , (A36) and the support maps are defined as: 
+
+W hard  
+
+> ti
+
+= Mti , (A37) 
+
+W soft  
+
+> ti
+
+= s + (1 − s)W hard  
+
+> ti
+
+. (A38) This variant isolates the contribution of the transition region as a boundary-smoothing mechanism. A-7 
+
+c) No-temporal-accumulation variant.: The no-temporal-accumulation variant disables the temporal accumulation mech-anism. In the full method, the accumulated states are: 
+
+¯W soft  
+
+> ti
+
+= max 
+
+ ¯W soft  
+
+> ti+1
+
+, W soft 
+
+> ti
+
+
+
+, (A39) 
+
+¯W hard  
+
+> ti
+
+= max 
+
+ ¯W hard  
+
+> ti+1
+
+, W hard 
+
+> ti
+
+
+
+, (A40) 
+
+¯Cti = max   ¯Cti+1 , C ti
+
+ , (A41) 
+
+¯Rti = max   ¯Rti+1 , R ti
+
+ . (A42) When temporal accumulation is removed, the model only uses the instantaneous support state at each time step: 
+
+¯W soft  
+
+> ti
+
+← W soft  
+
+> ti
+
+, (A43) 
+
+¯W hard  
+
+> ti
+
+← W hard  
+
+> ti
+
+, (A44) 
+
+¯Cti ← Cti , (A45) 
+
+¯Rti ← Rti . (A46) This experiment verifies whether SAM-Flow benefits from treating the editable region as a stable accumulated spatio-temporal support region. 
+
+d) No-source-anchored-projection variant.: The no-source-anchored-projection variant keeps the same mask projection formula but replaces the anchor from the source-image latent with the latent state from the previous time step. In the full method, both anchors are set to the source latent: 
+
+amodel  
+
+> ti
+
+= zsrc , (A47) 
+
+avis  
+
+> ti
+
+= zsrc . (A48) In this ablation variant, the anchor is replaced with the previous latent state: 
+
+amodel  
+
+> ti
+
+= zmodel  
+
+> ti
+
+, (A49) 
+
+avis  
+
+> ti
+
+= zvis  
+
+> ti
+
+. (A50) The model-state update formula is still preserved: 
+
+zmodel  
+
+> ti−1
+
+= amodel  
+
+> ti
+
++ ρ ¯W soft  
+
+> ti
+
+⊙
+
+
+
+zedit  
+
+> ti−1
+
+− amodel 
+
+> ti
+
+
+
+. (A51) For the visible state, the update is: 
+
+zvis  
+
+> ti−1
+
+= ¯Cti ⊙ zcore  
+
+> ti−1
+
++ ¯Rti (1 − ¯Cti ) ⊙ zring  
+
+> ti−1
+
++ outer ti ⊙ avis  
+
+> ti
+
+. (A52) Compared with the full method, the reference is no longer the fixed source image. The background region is therefore no longer explicitly pulled back to the source-image latent trajectory, but only constrained around a previous state that may already have been modified. 
+
+> TABLE A5 QUANTITATIVE RESULTS OF THE ABLATION STUDY .
+
+Backbone Variant CLIP-T ↑ DINO ↑ PSNR ↑ SSIM ↑ LPIPS ↓
+
+SD3 SAM-Flow 0.344 0.706 29.31 0.925 0.031 
+
+Hard mask 0.346 0.661 29.54 0.916 0.123 No transition region 0.343 0.681 30.22 0.924 0.087 No temporal accumulation 0.294 0.538 26.59 0.877 0.226 No source-anchored projection 0.341 0.702 28.77 0.904 0.036 FLUX SAM-Flow 0.340 0.689 28.02 0.902 0.028 
+
+Hard mask 0.344 0.669 28.00 0.894 0.121 No transition region 0.338 0.682 28.13 0.913 0.085 No temporal accumulation 0.296 0.545 25.06 0.861 0.227 No source-anchored projection 0.341 0.688 27.87 0.892 0.032 
+
+The qualitative comparison of the four ablation variants is shown in Fig. A2. The hard-mask variant and the no-transition-region variant weaken visual quality and boundary naturalness. The no-temporal-accumulation variant may lead to inaccurate masks and editing failure. The no-source-anchored-projection variant is more likely to produce background drift. The quantitative results in Table A5 further validate this trend: the full method achieves the best overall trade-off between semantic compliance and background preservation on both Stable Diffusion 3 and FLUX. A-8 SAM -Flow Source Image  Hard Mask  w/o Ring  w/o Time Accumulation  w/o Source Projection 
+
+“…LOVE… ” → “…CVPR… ”
+
+“…Iguana… ” → “…Crocodile… ”
+
+“…Lighthouse… ” → “…Big Ben… ”
+
+Fig. A2. Qualitative results of the ablation study. The red text indicates the source prompt, and the green text indicates the target prompt.

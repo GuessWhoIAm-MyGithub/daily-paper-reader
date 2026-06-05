@@ -1,0 +1,565 @@
+Title: COLLAR: Cascaded Object-Level Latent Refinement for High-Fidelity Conditional Generation
+
+URL Source: https://arxiv.org/pdf/2606.00954v1
+
+Published Time: Tue, 02 Jun 2026 01:08:25 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# COLLAR: Cascaded Object-Level Latent Refinement for High-Fidelity Conditional Generation 
+
+Xinlong Zhang 
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+xinlzhang@zju.edu.cn 
+
+Jia Wei 
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+weijia_77@zju.edu.cn 
+
+Xiaoyu Zhang 
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+xiaoyzhang@zju.edu.cn 
+
+Teng Zhou 
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+12421050@zju.edu.cn 
+
+Chengyu Lin 
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+linchengyu@zju.edu.cn 
+
+Yongchuan Tang ∗
+
+College of Computer Science Zhejiang University Hangzhou, Zhejiang, China 
+
+yctang@zju.edu.cn 
+
+## Abstract 
+
+Achieving high-fidelity object-level control in Diffusion Transformers remains a significant challenge despite the introduction of structural priors like depth and Canny maps. Current object-level conditional generation methods frequently suf-fer from visual artifacts and struggle to maintain precise control over objects within small localized regions. To address these limitations, we propose Cas-caded Object-Level Latent Refinement (COLLAR), a training-free framework that progressively optimizes object-level features via the Field-of-View (FoV) expan-sion. First, we propose the Cross-Scale Semantic Alignment (CSSA) module to address spatial-semantic gaps by injecting object-level features into extended-FoV branches via attention mechanisms. To further optimize these features, the Cyclic Feature Injection (CFI) module introduces a reciprocal background feed-back mechanism. It leverages a frequency-based adaptive strategy to selectively update the global backbone with context-aligned local information. Finally, the extended-FoV branch serves as a hub for feature optimization, ensuring that object-level features are integrated into the global generation process without com-promising final image quality. Extensive experiments on the COCO-MIG and COCO-POS benchmarks demonstrate that our approach consistently outperforms state-of-the-art methods across semantic alignment, image quality, and spatial fi-delity. 
+
+## 1 Introduction 
+
+In recent years, text-to-image diffusion models [33, 28, 11] have achieved remarkable success in image generation. Building upon their generative capability, the integration of spatial cues further 
+
+> ∗Corresponding author. Preprint.
+> arXiv:2606.00954v1 [cs.CV] 31 May 2026
+
+Figure 1: Our proposed framework, COLLAR, is a plug-and-play module specifically designed for object-level conditional generation. It facilitates precise, fine-grained semantic control across di-verse spatial modalities. Notably, our approach excels at mitigating attribute leakage and enhancing the generation of small-scale objects. empowers models to grasp underlying scene structures [43, 26, 45], thereby enabling precise pixel-level control. Such controllability is indispensable for a wide range of practical applications, includ-ing professional design[7, 40], advertising[8], and animation[36, 12]. However, as the demand for fine-grained control grows, relying solely on text prompts and a single conditional image often falls short in complex, multi-object scenarios. As illustrated in Figure 1, existing methods still struggle with unavoidable semantic leakage. Specifically, when the global structure contains similar objects, the model fails to accurately render specified attributes (e.g., color) onto the target regions. To alleviate the above problems, existing studies [48, 13, 42, 4] typically introduce layout informa-tion to achieve object-level control in complex scenarios. These methods are mainly divided into two categories: training-free [4, 9, 50] and training-based methods [13, 42, 38]. Training-free methods include pixel-level feature aggregation and attention-based feature modulation. Pixel-level feature aggregation [35, 18] offers strong control over object locations. Due to distribution discrepancies across features of distinct objects, the fusion process is prone to distribution bias, which inevitably introduces artifacts into the final images [4, 9]. Attention-based manipulation [48, 50, 5] enables control by reinforcing semantic activations in targeted regions, but it exhibits instability when han-dling small-scale objects. Tuning-based methods [4, 9] use bounding-box-guided adapters to control object position and appearance. However, they introduce additional parameters, increasing training complexity and resource overhead. Moreover, such adapters struggle to generalize to other models. The limitations of prior work, as discussed above, motivate the need for further research to address these challenges in object-level conditional generation. In this paper, we propose a novel framework named COLLAR ( Cascaded Object-Level LA tent 
+
+Refinement). It is a training-free method to achieve high-fidelity object-level conditional image generation. Inspired by [19], COLLAR introduces a paradigm of progressive feature refinement and adaptive fusion. Specifically, it consists of two core modules: (a) Cross-Scale Semantic Align-ment (CSSA) module and (b) Cyclic Feature Injection (CFI) module. The CSSA module uses attention-based manipulation to dynamically integrate bounding-box-restricted local features into corresponding extended Field-of-View (FoV) branches. This design strictly preserves local seman-tic alignment while significantly enhancing the spatial contextual awareness of features. The CFI module establishes a reciprocal background feedback mechanism. It extracts global background features to extended-FoV branches and feeds object-level features into the global branch. Concur-rently, we design a frequency-based adaptive injection strategy to selectively inject context-aligned object-level features into the global backbone. Serving as a central hub for feature optimization, extended-FoV branches allow object-level features to smoothly blend into the global generation pro-cess while strictly retaining core semantics. We extensively evaluate COLLAR on the COCO-POS and COCO-MIG benchmarks. Extensive quantitative and qualitative experiments demonstrate that 2COLLAR significantly outperforms existing baselines across multiple metrics. It effectively elimi-nates visual artifacts, ensuring superior generative quality without compromising spatial fidelity. Our contributions are summarized as follows: • We propose COLLAR, a training-free framework that achieves high-fidelity object-level conditional generation under global structural constraints. • We introduce the Cyclic Feature Injection technique that facilitates reciprocal feature feed-back, enabling local object semantics to seamlessly blend into the global generation pro-cess. • We design an object-level adaptive injection strategy. By dynamically terminating feature injection, it not only prevents structural artifacts but also improves inference speed. • Extensive quantitative and qualitative evaluations demonstrate that our approach signifi-cantly outperforms existing methods in object-level conditional generation. 
+
+## 2 Related Work 
+
+2.1 Text-to-Image Generation 
+
+Text-to-image generation aims to learn a visual-semantic mapping from semantic space to visual representations [31, 32]. Recently, the probabilistic diffusion paradigm [14] has made significant progress in both generation fidelity and text-image alignment [34]. Building on this paradigm, Sta-ble Diffusion [33] demonstrates significant improvements in generation efficiency and fidelity by denoising in a compressed latent space [33, 28]. SDXL [28] also follows this design philosophy. With the advent of the Diffusion Transformer (DiT) architecture [27], recent works [11, 6] adopt transformer-based backbones with joint attention mechanisms to implicitly model cross-modal se-mantic correspondences [28, 11]. This design facilitates bidirectional interaction across different modalities, alleviating the information bottleneck inherent [43]. To handle complex text prompts, these models commonly use larger text encoders, such as T5 [30, 1]. 
+
+2.2 Conditional Text-to-Image Generation 
+
+To enhance T2I models’ ability for spatial geometric structures, researchers have extended diffusion models to accommodate diverse spatial conditions [43, 26, 44]. Early studies were predominantly built upon the Stable Diffusion framework, with representative works including ControlNet [43] and T2I-Adapter [26]. These methods introduce trainable structural control modules that enable precise injection of geometric priors (e.g., depth maps [21], Canny edges [41], and segmentation maps [20]), while preserving the original generative capabilities of the pre-trained model. Subse-quently, Uni-ControlNet [46] and UniControl [29] proposed a novel unified control paradigm by constructing universal conditional encoders capable of hybrid representations for multimodal con-trol signals. To achieve multi-condition controllable generation, Cocktail [16] and Cross-ControlNet [24] have explored novel feature-aggregation strategies. As diffusion model architectures evolve to-ward DiT, approaches like FLUX-Depth [2] and EasyControl [45] leverage LoRA’s [15] parameter efficiency to guide large-scale DiT networks in effectively learning complex spatial-structure priors while maintaining high image fidelity. 
+
+2.3 Layout-to-Image Generation 
+
+Layout-to-image (L2I) generation aims to achieve object-level compositional image synthesis con-ditioned on instance information [47]. Existing methods can be broadly categorized into training-based [42, 38, 22, 37, 49, 10] and training-free approaches[4, 9, 5, 35, 18]. Training-based methods typically introduce novel adapters to model layout information for object-level controllable genera-tion, such as GLIGEN [22], InstanceDiffusion [37], and CreatiLayout [42]. Training-free methods often explicitly manipulate cross-attention or joint attention layers to associate object descriptions with local image features, thereby enabling multi-object control. For example, DreamRenderer intro-duced a Hard Text Attribute Binding mechanism to ensure that the text embedding of each instance correctly aligns with its visual information [36, 12]. Despite their effectiveness in controlling fine-grained attributes such as object position, color, and style, some of these methods remain prone to semantic leakage and edge artifacts when combined with global spatial conditioning. 3Figure 2: Overview of COLLAR. We freeze the FLUX-Depth and use COLLAR to achieve object-level conditional T2I generation. COLLAR contains two processing modules. By progressively optimizing object-level features, our method ensures they are integrated adaptively into the global generation process without compromising final image quality. 
+
+## 3 Methods 
+
+3.1 Preliminaries 
+
+FLUX is a state-of-the-art diffusion-based text-to-image generation model. Its core architecture leverages the T5 text encoder to map complex textual prompts into high-dimensional sequence embeddings. These embeddings are subsequently fused with image features via multimodal joint-attention layers, enabling bidirectional interaction across modalities. FLUX is built entirely upon the multimodal DiT, enabling the semantic alignment of image and text embeddings within a unified embedding space. During the generation process, image features are iteratively denoised via Flow Matching and then decoded into high-fidelity images by a pre-trained autoencoder. Furthermore, FLUX supports conditional image generation tasks—such as FLUX-Depth and FLUX-Canny—by concatenating control images (encoded by the VAE) with the latent features along the channel di-mension, thereby achieving precise spatial guidance. In each MM-DiT layer, image and text features are first normalized via AdaIN, where the normal-ization parameters are derived from fused timestep and CLIP text embeddings. The normalized features are then concatenated along the sequence dimension, and their corresponding queries, keys, and values are obtained through linear projections. Before being fed into the self-attention module, the query and key features are augmented with rotary position embeddings (RoPE). This process can be formalized as follows: 
+
+Q = RoPE ([QT , Q I ]), K = RoPE ([KT , K I ]), V = [V T , V I ] , (1) Attention (Q, K, V ) = Softmax ( QK T
+
+√d )V. (2) where QI , K I , V I denote the query, key, and value features for the image modality, and 
+
+QT , K T , V T for the text modality. d is the dimension of the key vectors. This mechanism fa-cilitates bidirectional interaction between modalities, enabling better alignment between text and image features. 
+
+3.2 Pipeline 
+
+As illustrated in Figure 2, we propose a progressive feature optimization and fusion strategy to im-prove local fidelity across different instances. Our pipeline consists of two core modules: (i) a Cross-4Scale Semantic Alignment (CSSA) module, and (ii) a Cyclic Feature Injection (CFI) module. In the CSSA module (Figure 2(a)), we use semantic features from local branches to guide the generation of extended-field-of-view branches, making it take into account both details and context. Specifi-cally, the conditional image crops within each bounding box serve as inputs for local branches to generate semantically aligned details. The extended-FoV branch leverages the fine-grained features from local branches as a semantic reference to dynamically reinforce its own object-level represen-tations during denoising. In the CFI module (Figure 2(b)), we explicitly align local features with the global background, enabling the seamless integration of instances without compromising fidelity. Specifically, we extract background features from the global branch that spatially align with the extended region of the extended-FoV branch. Subsequently, these extracted features are injected into the extended-FoV branch to smooth object semantics. Finally, we design an object-level early-stopping strategy, and the global branch adaptively integrates these object features to synthesize the final high-fidelity image. Serving as a central harmonization hub, the extended branch effectively bridges the spatial scales, and the resulting harmonized object representations are finally fed back into the global backbone. 
+
+3.3 Cross-Scale Semantic Alignment 
+
+Given the impressive performance of pretrained models, existing object-level generation methods typically extract instance-conditioned features and then fuse them into the global stream using bounding boxes. However, these methods exhibit inherent limitations when global spatial condi-tions are introduced to guide the generation process. For small-scale objects, the inherently limited resolution of local conditional inputs is further exacerbated by the VAE encoder’s downsampling, leading to a severe loss of fine-grained spatial details. As a result, generated instances often lack fine details and fail to achieve precise semantic alignment with their textual descriptions, thereby compromising subsequent multi-instance feature fusion. While expanding the field of view can partially alleviate this resolution bottleneck, it inevitably introduces interference from background information and potential adjacent objects, diluting text-image consistency when guided solely by instance prompts. Therefore, we propose the CSSA module, which explicitly injects object features from the local branch into the extended-FoV branch to enhance semantics. To achieve this, we employ an attention-based feature fusion mechanism, as illustrated in Figure 2(a). We extract the Qi,L , Ki,L , and Vi,L 
+
+from the local branch corresponding to the i-th instance, and feed them into the DiT layer of the cor-responding extended-FoV branch. Within this layer, these features are concatenated with extended-branch features Qi,E , Ki,E , and Vi,E along the sequence dimension as follows: 
+
+Qi,E = [ RoPE E (Qi,E ), RoPE L(Qi,L )] , (3) 
+
+Ki,E = [ RoPE E (Ki,E ), RoPE L(Ki,L )] , (4) 
+
+Vi,E = [ Vi,E , V i,L ] , (5) RoPE L = Crop (RoPE E , b i) (6) RoPE E and RoPE L respectively represent rotary position embeddings for the extended-FoV branch and the local branch, and bi represent the bounding box of the instance i. Then, these concatenated features are fed into Equation (2) to execute feature fusion. It is worth noting that in the DiT layer, text and image features interact densely, and text features also encode visual information. To fully preserve the semantic information from local branches, we feed both their text and image features into the extended-FoV branch. Crucially, we explicitly align the position embeddings by treating the extended-FoV branch as the reference coordinate space. Specifically, position embeddings for fea-tures from the local branch are directly assigned the exact spatial subset of indices corresponding to their shared overlapping region. This strict relative alignment empowers the extended branch to pre-cisely localize and attend to the local priors. We also support sampling multiple noises for the same local region and fusing the resulting multi-branch features into the expansion branch, thereby further enriching the semantic representation. Furthermore, we also support initializing local branches with distinct noise latents for object i. By aggregating features from multiple parallel local branches and injecting them into the extended-FoV branch, the semantic information is significantly enriched. 53.4 Cyclic Feature Injection 
+
+Considering that the extension-FoV branch is still guided by the instance’s prompt, forcefully inte-grating optimized local features (obtained by Section 3.3) directly into global features can easily lead to visual disharmony. Therefore, we propose the CFI module. To clarify this module, we formalize it step by step. 
+
+Background Feature Injection . First, we extract the background feature from the global branch that spatially aligns with the extended region of the extended-FoV branch (Figure 2(c)). Let bi
+
+denote the initial bounding box of the object i, and we can obtain the extended-FoV bounding box, 
+
+bi,E , by applying a spatial expansion operation with a scale factor γ:
+
+bi,E = Expand (bi, γ ) (7) Then, we crop the corresponding regional features from the global branch zG: extended 
+
+zglobal E = Crop (zG, b i,E ) (8) Finally, in the extended-FoV branch, we extract background features from the extended region and weighted with original latents zE :
+
+zE ← zglobal E ⊙ (1 − Mi,E ) + zE ⊙ Mi,E (9) where Mi,E represents the object region in the extended-FoV branch. 
+
+Object-level Feature Injection . Following refinement in the CSSA module and background-feature injection (Figure 2(c)), object-level features in the extended-FoV branch seamlessly fuse local se-mantics with spatial context. Consequently, we extract these features and precisely inject them into the corresponding regions of the global branch (Figure 2(d)). Specifically, at the output of each DiT layer, the global feature fG is updated via a weighted summation with the feature set {fi,E }N
+
+> 1
+
+extracted from extended-FoV branches: 
+
+fG ← λ ∗ fG + (1 − λ)
+
+∑Ni=1 Mi,E 
+
+∗
+
+> N
+
+∑
+
+> i=1
+
+(fi,E ∗ Mi,E ) (10) Note that, due to the spatial resolution mismatch between the extended-FoV branch and the global branch, we explicitly zero-pad the extracted features Fi,E along their spatial boundaries before per-forming weighted summation. 
+
+Object-level Early-Stopping Strategy . The guidance step of object-level feature injection signif-icantly impacts the final image quality. Insufficient steps lead to inadequate semantic activation, whereas excessive injection compromises global coherence. To achieve a trade-off, we propose an object-level early-stopping strategy. At each timestep t, we employ the masks Mi,G and Mi,E to extract the local latent features from the global and the extended-FoV branch i, respectively. These features are then processed by a high-pass filter H(·):
+
+H(t) 
+
+> i,G
+
+= H(z(t) 
+
+> G
+
+⊙ Mi,G ), H(t) 
+
+> i,E
+
+= H(z(t) 
+
+> i,E
+
+⊙ Mi,E ) (11) The cosine similarity between these high-frequency components is subsequently calculated to dy-namically determine the termination of the injection: 
+
+s(t) 
+
+> i
+
+= CosSim (H(t)
+
+> i,G
+
+, H (t) 
+
+> i,E
+
+) (12) where σ is a predefined threshold and is set to 0.85 by default. If s(t) 
+
+> i
+
+≥ σ, the feature injection for instance i, is terminated at the timestep t in the global branch (Figure 2). The intuition behind this design is straightforward: high-frequency signals accurately represent the emergence of local edges and contours. Once the object’s geometry is established, the diffusion process naturally shifts from layout construction to refinement of fine-grained details. Maintaining local feature injection after this timestep is highly likely to perturb the original generative manifold and introduce undesirable visual artifacts. Overall, this strategy significantly reduces inference costs while ensuring the final images remain natural and high-quality. In addition, we set the maximum guidance step S.64 Experiments 
+
+4.1 Implementation Details 
+
+To evaluate the effectiveness of COLLAR, we conduct experiments on FLUX.1-Depth and FLUX.1-Canny [2]. During inference, the FlowMatchEulerDiscreteScheduler is employed with 20 sampling steps for all benchmarks. For structural guidance, the Classifier-Free Guidance scale is set to 10.0 for depth-conditioned generation and 30.0 for Canny-conditioned generation. All experiments are conditioned on boxes, object-level descriptions, text prompts, and structural images. 
+
+4.2 BaseLines 
+
+We compare COLLAR with state-of-the-art (SOTA) training-free, object-level conditional gener-ation methods, including DreamRenderer [48], 3DIS [50], and Regional-FLUX [4]. Given that COLLAR employs a latent-level patch transplantation strategy, we also include several representa-tive methods, such as NoiseCollage [35] and GrounDit [18]. To ensure a fair comparison, we omit the plug-and-play strategy R&B [39] from GrounDit, as it is used for the cross-attention module and is incompatible with the DiT. Furthermore, we also integrate COLLAR into the latest conditional generation models, such as EasyControl [45] and SD3 [11], to demonstrate its compatibility and effectiveness. 
+
+4.3 Evaluation Benchmarks 
+
+We evaluate the effectiveness of COLLAR using the COCO-POS and COCO-MIG [48]. We ran-domly select 300 samples from the COCO-2014 dataset [23]. For each sample, 8 random seeds are used for generation, yielding a total of 2,400 images per method for evaluation. In COCO-MIG and COCO-POS, we assess local fidelity with respect to attribute binding, spatial accuracy, semantic consistency, and image quality under depth and Canny maps. In Section C and Section D, we exam-ine COLLAR’s integration versatility. Specifically, we conduct a comparative analysis between the original backbone models and their COLLAR-enhanced versions. 
+
+4.4 Evaluation Metrics 
+
+We use the following metrics for measuring the performance of different models: (1) Spatial Fi-delity : mean Intersection over Union (mIoU) and mean Average Precision (mAP) are employed to assess the grounding accuracy between synthesized objects and the prescribed layouts. To ex-tract object-level bounding boxes for evaluation, we utilize SAM3 [3] as an off-the-shelf detector. Furthermore, the Object Success Ratio (OSR) and the Image Success Ratio (ISR) are computed to quantitatively evaluate the multi-instance generation. OSR denotes the ratio of correctly rendered instances, while ISR indicates the percentage of images where all objects are correctly rendered; (2) 
+
+Semantic Consistency : Beyond spatial accuracy, we employ CLIP (CLIP), Local CLIP (L-CLIP), HPSv3 [25], and Pick score [17] to evaluate text-image alignment; (3) Image Quality : We utilize the Fréchet Inception Distance (FID) to evaluate the visual quality and photorealism of the synthe-sized images. 
+
+4.5 Quantitative Comparison 
+
+Table 1 and Table 2 collectively present a comprehensive evaluation of our proposed COLLAR, demonstrating its effectiveness in balancing precise spatial condition adherence with high genera-tive fidelity. As detailed in Table 1, under the Depth modality, our method achieves the best FID (16.34) and highly competitive aesthetic performance, ranking second in HPSv3 (6.145). While NoiseCollage yields slightly higher spatial alignment metrics (e.g., OSR and mIoU) in this setting, this is largely due to the dense background priors provided by depth maps. Such dense priors of-ten allow straightforward noise-blending methods to achieve strict layout alignment, but sometimes at the expense of overall image quality, as reflected in its higher FID of 20.42. The robustness of COLLAR is more evidently observed under the challenging Canny modality. Without dense spa-tial cues, several baseline models struggle to maintain structural integrity. Conversely, our method exhibits leading performance, yielding the highest spatial fidelity (e.g., an OSR of 50.93 and an 7Table 1: Quantitative comparisons on the COCO-POS benchmark. Bold and underline represent the best and second best methods, respectively.                                                                                                                                         
+
+> Input Method G-CLIP ↑L-CLIP ↑ISR ↑OSR ↑mIoU ↑mAP ↑FID ↓HPSv3 ↑Pick ↑
+> Depth  FLUX 27.24 25.26 22.91 45.47 43.50 47.71 /6.141 0.156
+> 3DIS 27.11 25.41 41.38 65.49 60.63 67.29 18.28 5.876 0.143 Regional-FLUX 26.86 25.42 36.43 63.29 58.78 65.54 19.76 6.001 0.135 NoiseCollage 27.18 25.54 45.86 71.12 65.48 74.11 20.42 5.827 0.140 GrounDit 26.85 25.38 41.63 69.02 62.99 70.26 19.56 5.643 0.126 DreamRenderer 27.34 25.70 40.52 67.36 62.43 68.90 17.62 6.184 0.151
+> Ours 27.19 25.57 44.01 70.38 64.53 72.73 16.34 6.145 0.146
+> Canny  FLUX 26.97 24.33 8.532 29.19 31.61 32.48 /6.038 0.149 3DIS 26.84 24.61 15.70 42.31 41.73 44.81 18.20 6.021 0.144 Regional-FLUX 26.49 24.62 15.27 42.73 41.64 45.40 19.29 5.907 0.132 NoiseCollage 26.72 24.36 15.91 43.81 42.30 46.56 20.72 5.679 0.139 GrounDit 26.67 24.58 18.68 46.88 44.78 49.22 19.21 5.855 0.131 DreamRenderer 27.18 25.05 16.80 45.07 43.96 47.77 17.33 6.245 0.151
+> Ours 27.10 25.11 21.37 50.93 47.81 54.62 18.19 6.235 0.153
+
+Figure 3: Qualitative comparison between our method and state-of-the-art baselines. Visualization results demonstrate that COLLAR effectively preserves local structural integrity while maintaining precise attribute alignment. ISR of 21.37), top-tier human-preference evaluation (a peak PickScore of 0.153), and the second-best FID (18.19). To further validate this capability, Table 2 provides a fine-grained evaluation on multi-instance generation. As the scene complexity increases from n2 to n6 objects, methods such as Regional-FLUX and GrounDit experience noticeable performance degradation. In contrast, COLLAR generally maintains the highest or second-highest success rates across both modalities. Particularly under the Canny constraint, our approach consistently outperforms the baselines across all instance tiers, culminating in the highest average OSR (48.9) and ISR (12.0). 
+
+4.6 Qualitative Comparison 
+
+Figure 3 illustrates the qualitative comparison between our COLLAR and several state-of-the-art baselines under various spatial conditions. While the vanilla FLUX model generates high-quality images, it often struggles to follow spatial layouts. Methods such as 3DIS and DreamRenderer oc-casionally lead to semantic leakage, especially in controlling small-scale instances. Furthermore, Regional-FLUX and NoiseCollage fails to adaptively adjust its guidance steps, leading to visual ar-tifacts in complex scenes. In contrast, our method demonstrates superior spatial fidelity and object-level precision. As shown in the results, generated instances are precisely aligned with the input 8Table 2: Quantitative comparisons on the COCO-MIG benchmark.                                                                                                                                                                                       
+
+> Image Success Ratio ↑Object Success Ratio ↑
+> Input Method n2n3n4n5n6avg n2n3n4n5n6avg
+> Depth  FLUX 43.6 16.7 6.10 1.04 2.78 9.21 61.3 49.1 42.3 39.5 30.1 44.5 3DIS 62.7 37.1 24.7 13.5 14.1 24.4 77.3 70.4 62.1 55.6 55.5 64.1 Regional-FLUX 58.9 33.4 18.6 8.33 9.37 19.4 74.1 66.9 61.6 57.1 51.9 59.6 NoiseCollage 65.2 42.8 34.8 21.3 17.9 30.6 78.9 73.7 70.8 67.9 60.5 68.2
+> GrounDit 60.7 38.6 27.9 15.6 19.8 27.3 75.8 70.3 67.8 64.5 63.4 66.8 DreamRenderer 64.2 36.1 23.8 9.37 13.5 22.9 77.8 70.0 63.7 62.1 58.8 66.5 Ours 65.3 39.1 29.1 19.8 19.1 28.9 79.3 72.1 68.3 68.1 63.1 68.3
+> Canny  FLUX 17.8 4.96 0.58 0.00 0.69 2.86 37.5 34.2 25.2 25.1 20.3 26.3 3DIS 25.8 13.8 6.78 1.04 6.94 8.34 48.4 48.1 37.8 35.8 36.7 39.5 Regional-FLUX 28.5 11.1 3.48 3.64 2.43 6.87 49.5 45.9 39.1 39.7 36.6 40.5 NoiseCollage 25.2 16.4 9.3 1.56 2.08 7.86 47.1 49.6 42.3 40.3 37.3 41.8 GrounDit 30.3 15.2 9.88 2.08 9.37 10.6 49.2 49.2 46.8 41.7 44.2 45.5
+> DreamRenderer 29.1 13.2 8.43 2.61 3.81 8.37 50.6 48.9 43.5 39.6 39.2 42.7 Ours 34.9 19.5 10.2 5.25 7.31 12.0 55.8 55.2 49.1 47.8 44.5 48.9
+
+Table 3: Ablation study on model designs.                                               
+
+> OSR ↑
+> Input Method L-CLIP ↑ISR ↑n3n4n5mIoU ↑mAP ↑FID ↓HPSv3 ↑
+> Depth  FLUX 25.2 22.9 49.1 42.3 39.5 43.5 47.7 /6.14 FLUX + CSSA + OFI 25.5 43.0 71.9 65.4 64.0 63.6 71.1 16.6 6.14 FLUX + CSSA + OFI + BFI 25.5 42.9 71.5 66.6 63.9 63.6 71.6 16.2 6.22
+> FLUX + CSSA + CFI (Ours) 25.6 44.0 72.1 68.3 68.1 64.5 72.7 16.3 6.15
+
+descriptions, maintaining clear boundaries even in overlapping scenarios. Notably, COLLAR ex-cels at preserving the semantic attributes of each instance without sacrificing overall image realism. The higher visual quality of small objects further validates our model’s robust control capability. In summary, these qualitative results confirm that our approach effectively balances high-fidelity im-age synthesis with rigorous object-level controllability, outperforming existing methods in complex multi-instance generation. 
+
+4.7 Ablation Study 
+
+We conduct a comprehensive ablation study to evaluate the individual contributions of our architec-tural components, summarized in Table 3. Compared to the vanilla FLUX baseline, integrating the Cross-Scale Semantic Alignment (CSSA) module with the object-level Feature Injection (OFI) mod-ule significantly enhances spatial controllability, successfully leveraging the extended-FoV branch to connect local instances to their global spatial context. However, simply adding a naive Back-ground Feature Injection (BFI) strategy yields suboptimal spatial alignment—slightly degrading the ISR and multi-instance OSR metrics—due to uncoordinated feature conflicts, despite a minor im-provement in image quality. In contrast, our full framework, which replaces the naive fusion with the Cyclic Feature Injection (CFI) module, successfully reconciles these conflicts. It achieves the highest performance across all primary spatial metrics while maintaining a highly competitive FID of 16.3. This confirms that the reciprocal feedback loop and dynamic regulation introduced by CFI are essential for precise, artifact-free generation. Detailed ablation studies are provided in Section B. 
+
+Inference Efficiency Analysis . We assess the computational efficiency on an NVIDIA A800 GPU using 35 depth-conditioned samples from COCO-MIG, each containing more than six instances. Table 4 summarizes the inference latency and peak VRAM. All methods yield comparable mem-ory footprints, so the comparison hinges on inference latency. FLUX and 3DIS achieve the fastest inference, as the former is a base model without additional control and the latter relies solely on attention-mask manipulation; both, however, are inferior in spatial fidelity and image quality (Ta-ble 1). By contrast, COLLAR achieves a latency on par with Regional-FLUX while consistently surpassing it across all remaining metrics. NoiseCollage incurs the highest overhead among the baselines. 9Table 4: Computational efficiency comparison (1024 ×1024). ES: early-stopping.                         
+
+> Methods FLUX 3DIS Regional-FLUX GrounDit NoiseCollage DreamRenderer Ours(w/o ES) Ours
+> Inference Time(s) 10.12 16.83 25.15 19.61 39.81 36.71 30.23 27.22
+> Peak VRAM(GB) 33.82 33.83 33.89 33.85 33.86 33.84 34.38 34.38
+
+## 5 Conclusion 
+
+We present COLLAR, a training-free, plug-and-play framework for precise instance-level control in spatially-conditioned image generation. It introduces two core modules: (1) Cross-Scale Semantic Alignment (CSSA), which leverages an extended Field-of-View branch to seamlessly bridge local semantics with global spatial contexts; and (2) Cyclic Feature Injection (CFI), which employs a frequency-based adaptive strategy for the seamless blending of local details into the global backbone. Extensive experiments validate that COLLAR achieves competitive performance while ensuring exceptional flexibility across foundation models. 
+
+Limitation. However, COLLAR has two main limitations. First, the extended-FoV branch incurs additional computational overhead compared to simple noise-blending methods. We will explore a lightweight, trainable latent fusion module as an efficient alternative in future work. Second, resolving local conflicts between textual semantics and spatial geometry remains challenging. We aim to address this through a semantic-structural-aware feature-scaling strategy for more robust synthesis. 
+
+## References 
+
+[1] Yogesh Balaji, Seungjun Nah, Xun Huang, Arash Vahdat, Jiaming Song, Qinsheng Zhang, Karsten Kreis, Miika Aittala, Timo Aila, Samuli Laine, and 1 others. 2022. ediff-i: Text-to-image diffusion models with an ensemble of expert denoisers. arXiv preprint arXiv:2211.01324 .[2] BlackForest. 2024. Black forest labs; frontier ai lab. [3] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, Jie Lei, Tengyu Ma, Baishan Guo, Arpit Kalla, Markus Marks, Joseph Greer, Meng Wang, Peize Sun, Roman Rädle, and 19 others. 2025. Sam 3: Segment anything with concepts. Preprint ,arXiv:2511.16719. [4] Anthony Chen, Jianjin Xu, Wenzhao Zheng, Gaole Dai, Yida Wang, Renrui Zhang, Haofan Wang, and Shanghang Zhang. 2024. Training-free regional prompting for diffusion transform-ers. arXiv preprint arXiv:2411.02395 .[5] Hongyu Chen, Yiqi Gao, Min Zhou, Peng Wang, Xubin Li, Tiezheng Ge, and Bo Zheng. 2024. Enhancing prompt following with visual control through training-free mask-guided diffusion. 
+
+Preprint , arXiv:2404.14768. [6] Junsong Chen, Jincheng Yu, Chongjian Ge, Lewei Yao, Enze Xie, Yue Wu, Zhongdao Wang, James Kwok, Ping Luo, Huchuan Lu, and Zhenguo Li. 2024. Pixart-α: Fast training of diffu-sion transformer for photorealistic text-to-image synthesis. In Proceedings of the International Conference on Learning Representations .[7] Xi Chen, Lianghua Huang, Yu Liu, Yujun Shen, Deli Zhao, and Hengshuang Zhao. 2024. Any-door: Zero-shot object-level image customization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 6593–6602. [8] Yiyun Chen and Weikai Yang. 2025. Refadgen: High-fidelity advertising image generation. 
+
+arXiv preprint arXiv:2508.11695 .[9] Zhennan Chen, Yajie Li, Haofan Wang, Zhibo Chen, Zhengkai Jiang, Jun Li, Qian Wang, Jian Yang, and Ying Tai. 2025. Ragd: Regional-aware diffusion model for text-to-image generation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 19331– 19341. 10 [10] Bo Cheng, Yuhang Ma, Liebucha Wu, Shanyuan Liu, Ao Ma, Xiaoyu Wu, Dawei Leng, and Yuhui Yin. 2025. Hico: Hierarchical controllable diffusion model for layout-to-image genera-tion. In Proceedings of the 38th International Conference on Neural Information Processing Systems , NIPS ’24, Red Hook, NY, USA. Curran Associates Inc. [11] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, and 1 others. 2024. Scaling rectified flow transformers for high-resolution image synthesis. In Proceedings of the 41st International Conference on Machine Learning .[12] Yuwei Guo, Ceyuan Yang, Anyi Rao, Zhengyang Liang, Yaohui Wang, Yu Qiao, Maneesh Agrawala, Dahua Lin, and Bo Dai. 2024. Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. International Conference on Learning Repre-sentations .[13] Runze He, Bo Cheng, Yuhang Ma, Qingxiang Jia, Shanyuan Liu, Ao Ma, Xiaoyu Wu, Liebucha Wu, Dawei Leng, and Yuhui Yin. 2025. Plangen: Towards unified layout plan-ning and image generation in auto-regressive vision language models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 18143–18154. [14] Jonathan Ho, Ajay Jain, and Pieter Abbeel. 2020. Denoising diffusion probabilistic models. 
+
+Advances in neural information processing systems , 33:6840–6851. [15] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Liang Wang, Weizhu Chen, and 1 others. 2022. Lora: Low-rank adaptation of large language models. 
+
+Iclr , 1(2):3. [16] Minghui Hu, Jianbin Zheng, Daqing Liu, Chuanxia Zheng, Chaoyue Wang, Dacheng Tao, and Tat-Jen Cham. 2023. Cocktail: Mixing multi-modality controls for text-conditional image gen-eration. In Proceedings of the 37th International Conference on Neural Information Processing Systems , NIPS ’23, Red Hook, NY, USA. Curran Associates Inc. [17] Yuval Kirstain, Adam Polyak, Uriel Singer, Shahbuland Matiana, Joe Penna, and Omer Levy. 2023. Pick-a-pic: an open dataset of user preferences for text-to-image generation. In Proceed-ings of the 37th International Conference on Neural Information Processing Systems , NIPS ’23, Red Hook, NY, USA. Curran Associates Inc. [18] Phillip Y. Lee, Taehoon Yoon, and Minhyuk Sung. 2024. Groundit: grounding diffusion trans-formers via noisy patch transplantation. In Proceedings of the 38th International Conference on Neural Information Processing Systems , NIPS ’24, Red Hook, NY, USA. Curran Associates Inc. [19] Seung Hyun Lee, Jijun Jiang, Yiran Xu, Zhuofang Li, Junjie Ke, Yinxiao Li, Junfeng He, Steven Hickson, Katie Datsenko, Sangpil Kim, Ming-Hsuan Yang, Irfan Essa, and Feng Yang. 2025. Cropper: Vision-language model for image cropping through in-context learning. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 30010–30019. [20] Danfeng Li, Hui Zhang, Sheng Wang, Jiacheng Li, and Zuxuan Wu. 2025. Seg2any: Open-set segmentation-mask-to-image generation with precise shape and semantic control. [21] Ming Li, Taojiannan Yang, Huafeng Kuang, Jie Wu, Zhaoning Wang, Xuefeng Xiao, and Chen Chen. 2024. Controlnet++: Improving conditional controls with efficient consistency feedback. In Proceedings of the European Conference on Computer Vision , pages 129–147. Springer. [22] Yuheng Li, Haotian Liu, Qingyang Wu, Fangzhou Mu, Jianwei Yang, Jianfeng Gao, Chun-yuan Li, and Yong Jae Lee. 2023. Gligen: Open-set grounded text-to-image generation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22511–22521. [23] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. 2014. Microsoft coco: Common objects in context. In 
+
+Proceedings of the European Conference on Computer Vision , pages 740–755. Springer. 11 [24] Xiang Liu, Junjun Jiang, Wei Han, Kui Jiang, and Xianming Liu. Cross-controlnet: Training-free fusion of multiple conditions for text-to-image generation. In The Fourteenth International Conference on Learning Representations .[25] Yuhang Ma, Xiaoshi Wu, Keqiang Sun, and Hongsheng Li. 2025. Hpsv3: Towards wide-spectrum human preference score. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15086–15095. [26] Chong Mou, Xintao Wang, Liangbin Xie, Yanze Wu, Jian Zhang, Zhongang Qi, and Ying Shan. 2024. T2i-adapter: Learning adapters to dig out more controllable ability for text-to-image diffusion models. In Proceedings of the AAAI conference on artificial intelligence , volume 38, pages 4296–4304. [27] William Peebles and Saining Xie. 2023. Scalable diffusion models with transformers. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 4195–4205. [28] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. 2024. Sdxl: Improving latent diffusion models for high-resolution image synthesis. In Proceedings of the International Conference on Learning Rep-resentations , pages 1862–1874. [29] Can Qin, Shu Zhang, Ning Yu, Yihao Feng, Xinyi Yang, Yingbo Zhou, Huan Wang, Juan Car-los Niebles, Caiming Xiong, Silvio Savarese, Stefano Ermon, Yun Fu, and Ran Xu. 2023. Uni-control: A unified diffusion model for controllable visual generation in the wild. In Proceed-ings of the 37th International Conference on Neural Information Processing Systems , NIPS ’23, Red Hook, NY, USA. Curran Associates Inc. [30] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. 2020. Exploring the limits of transfer learning with a unified text-to-text transformer. J. Mach. Learn. Res. , 21(1). [31] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec Radford, Mark Chen, and Ilya Sutskever. 2021. Zero-shot text-to-image generation. In International confer-ence on machine learning , pages 8821–8831. Pmlr. [32] Scott Reed, Zeynep Akata, Xinchen Yan, Lajanugen Logeswaran, Bernt Schiele, and Honglak Lee. 2016. Generative adversarial text to image synthesis. In International conference on machine learning , pages 1060–1069. Pmlr. [33] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10684–10695. [34] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kam-yar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, and 1 others. 2022. Photorealistic text-to-image diffusion models with deep language understanding. Ad-vances in neural information processing systems , 35:36479–36494. [35] Takahiro Shirakawa and Seiichi Uchida. 2024. Noisecollage: A layout-aware text-to-image diffusion model based on noise cropping and merging. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 8921–8930. [36] Shuyuan Tu, Qi Dai, Zhi-Qi Cheng, Han Hu, Xintong Han, Zuxuan Wu, and Yu-Gang Jiang. 2024. Motioneditor: Editing video motion via content-aware diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7882–7891. [37] Xudong Wang, Trevor Darrell, Sai Saketh Rambhatla, Rohit Girdhar, and Ishan Misra. 2024. Instancediffusion: Instance-level control for image generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6232–6242. [38] Qiang Xiang, Shuang Sun, Binglei Li, Dejia Song, Huaxia Li, Nemo Chen, Xu Tang, Yao Hu, and Junping Zhang. 2025. Instanceassemble: Layout-aware image generation via instance assembling attention. In Proceedings of the 39th Conference on Neural Information Processing Systems .12 [39] Jiayu Xiao, Henglei Lv, Liang Li, Shuhui Wang, and Qingming Huang. 2024. R&b: Region and boundary aware zero-shot grounded text-to-image generation. In The Twelfth International Conference on Learning Representations .[40] Shitao Xiao, Yueze Wang, Junjie Zhou, Huaying Yuan, Xingrun Xing, Ruiran Yan, Chaofan Li, Shuting Wang, Tiejun Huang, and Zheng Liu. 2025. Omnigen: Unified image generation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13294–13304. [41] Denis Zavadski, Johann-Friedrich Feiden, and Carsten Rother. 2024. Controlnet-xs: Rethinking the control of text-to-image diffusion models as feedback-control systems. In Proceedings of the European Conference on Computer Vision , page 343–362, Berlin, Hei-delberg. Springer-Verlag. [42] Hui Zhang, Dexiang Hong, Yitong Wang, Jie Shao, Xinglong Wu, Zuxuan Wu, and Yu-Gang Jiang. 2025. Creatilayout: Siamese multimodal diffusion transformer for creative layout-to-image generation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 18487–18497. [43] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2023. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 3836–3847. [44] Xinlong Zhang, Zejian Li, Wei Li, Xiaoyu Zhang, Jia Wei, Chengyu Lin, and Yongchuan Tang. 2025. Objctrl: Object-based control relaxation for conditional text-to-image generation. In Proceedings of the 33rd ACM International Conference on Multimedia , MM ’25, page 10064–10073, New York, NY, USA. Association for Computing Machinery. [45] Yuxuan Zhang, Yirui Yuan, Yiren Song, Haofan Wang, and Jiaming Liu. 2025. Easycontrol: Adding efficient and flexible control for diffusion transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 19513–19524. [46] Shihao Zhao, Dongdong Chen, Yen-Chun Chen, Jianmin Bao, Shaozhe Hao, Lu Yuan, and Kwan-Yee K. Wong. 2023. Uni-controlnet: All-in-one control to text-to-image diffusion mod-els. In Proceedings of the 37th International Conference on Neural Information Processing Systems , NIPS ’23. [47] Guangcong Zheng, Xianpan Zhou, Xuewei Li, Zhongang Qi, Ying Shan, and Xi Li. 2023. Lay-outdiffusion: Controllable diffusion model for layout-to-image generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22490–22499. [48] Dewei Zhou, Mingwei Li, Zongxin Yang, and Yi Yang. 2025. Dreamrenderer: Taming multi-instance attribute control in large-scale text-to-image models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 16712–16722. [49] Dewei Zhou, You Li, Fan Ma, Xiaoting Zhang, and Yi Yang. 2024. Migc: Multi-instance generation controller for text-to-image synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6818–6828. [50] Dewei Zhou, Ji Xie, Zongxin Yang, and Yi Yang. 2025. 3dis: Depth-driven decoupled instance synthesis for text-to-image generation. In Proceedings of the International Conference on Learning Representations .13 Appendix A User Study 
+
+Figure 4 (a) shows a user study with 20 participants with a background in computer science, com-prising 12 Master’s students (60%) and 8 Ph.D. candidates (40%). Four methods are selected for evaluation: COLLAR, Dreamrender, Regional-FLUX, and FLUX. We randomly selected 40 gen-erated images from the COCO-MIG benchmark for each participant and asked them to rate each image on text-image alignment, image quality, and spatial fidelity. The rating scale ranged from 1 to 5 (highest). Fig. 4(a) shows that users preferred our method for spatial fidelity and image quality. A screenshot of the evaluation interface and the instructions provided to participants are shown in Figure 5. 
+
+(a) Users were asked to rate: text-image alignment, spatial fidelity, and image quality. 
+
+(b) Ablation study of model designs. Our method can achieve spatial fidelity and image quality. 
+
+Figure 4: Visualization results of User Study and Ablation Study. 
+
+## B Ablation Study 
+
+Effect of FoV Expansion Factor γ. The parameter γ determines the proportion of the extended field-of-view in the CSSA module. In Table 5, as γ increases from 0.2 to 1.0, we observe a consis-tent reduction in FID ( 16 .2 → 15 .3). This improvement suggests that a larger FoV expansion allows the model to perceive more surrounding spatial context, leading to better global integration and en-hanced image realism. However, an excessively large FoV tends to relax the local spatial constraints, resulting in a slight decrease in ISR ( 42 .7 → 41 .0) and mIoU ( 63 .1 → 62 .6). These results indicate that γ = 0 .5 provides an optimal balance between global coherence and local semantic alignment. Table 5: Ablation study on model designs and hyperparameters (under the injecting layers K =50 ).                                                                                                              
+
+> OSR ↑
+> Input Method L-CLIP ↑ISR ↑n3n4n5mIoU ↑mAP ↑FID ↓HPSv3 ↑
+> Depth
+> FLUX 25.2 22.9 49.1 42.3 39.5 43.5 47.7 /6.14 FLUX + CSSA + OFI
+> •γ= 0 .5, S = 5 25.5 43.0 71.9 65.4 64.0 63.6 71.1 16.6 6.14 FLUX + CSSA + OFI + BFI
+> •γ= 0 .5, S = 5 25.5 42.9 71.5 66.6 63.9 63.6 71.6 16.2 6.22 FLUX + CSSA + CFI
+> •γ= 0 .2, S = 5 , σ = 0 .85 25.5 42.7 70.7 66.1 65.0 63.1 71.0 16.2 6 .20
+> •γ= 0 .5, S = 5 , σ = 0 .85 25.5 42.1 71.1 65.9 63.4 62.9 71.0 15.6 6.27
+> •γ= 1 .0, S = 5 , σ = 0 .85 25.5 41.0 70.7 64.8 62.3 62.6 70.5 15.3 6.31
+> •γ= 0 .5, S = 10 , σ = 0 .80 25.5 40.8 70.6 64.1 62.2 62.1 70.3 15.8 6.25
+> •γ= 0 .5, S = 10 , σ = 0 .85 (Best) 25.6 44.0 71.9 67.9 66.5 64.0 72.3 16.8 6.17
+
+Effect of Guidance Step Control ( σ and S). The parameters S and σ collaboratively dictate the guidance duration of our method. Specifically, S sets the upper bound for the guidance process, while σ functions as a threshold to adaptively terminate or regulate the injection. Comparing con-figurations with γ = 0 .5 and σ = 0 .85 , increasing the maximum guidance steps S from 5 to 10 
+
+14 Figure 5: Screenshot of the instruction page and evaluation interface provided to participants during the user study. significantly boosts the mAP ( 71 .0 → 72 .3) and ISR ( 42 .1 → 44 .1). This demonstrates that a longer guidance phase allows for more iterative refinement of object-level features. At S = 10 , rais-ing σ from 0.80 to 0.85 leads to a marked improvement in mIoU ( 62 .1 → 64 .1). This suggests that 
+
+σ effectively filters out low-confidence or noisy guidance signals, ensuring that the feature injection process remains focused on the most critical stages of generation. Ablation studies on λ and the number of feature injection layers are provided in the supplementary material. 
+
+Effect of the Number of Injecting Layers K and Weight λ. Table 6 provides a comprehensive quantitative analysis of the number of injecting layers K and the balance factor λ, revealing a clear performance scaling effect. Other hyperparameters follow the optimal configuration presented in table 5. As K increases from 20 to 57, spatial accuracy metrics such as mIoU and mAP exhibit a steady upward trend, indicating that deeper feature injection is pivotal for reinforcing geometric constraints within the DiT architecture. While more intensive injection initially leads to a slight increase in FID, the configuration at K = 57 achieves an optimal trade-off, recovering an FID of 16.31 while maintaining superior structural alignment. The most significant performance leap is observed upon introducing the normalized fusion weight λ = 0 .5, which elevates ISR to 45.61 and mAP to a peak of 73.93. This configuration also demonstrates enhanced robustness in complex multi-object scenarios, with the OSR for n5 rising from 68.12 to 70.05, thereby validating the efficacy of our proposed strategy in resolving semantic conflicts and preventing over-saturation in overlapping regions. Overall, the setting of K = 57 and λ = 0 .5 is identified as the optimal configuration for achieving high-fidelity generation alongside precise instance-level control. Table 6: Ablation study on the number of injecting layers K and weight λ.                                                                            
+
+> OSR ↑
+> Input Method L-CLIP ↑ISR ↑n3n4n5mIoU ↑mAP ↑FID ↓
+> Depth
+> FLUX + CSSA + CLI
+> •K= 20 , λ = 0 25.53 41.68 71.51 66.13 61.77 63.15 71.16 15.94
+> •K= 30 , λ = 0 25.54 42.44 71.18 65.84 63.43 63.36 71.71 16.61
+> •K= 40 , λ = 0 25.56 43.30 71.46 67.29 65.41 63.73 72.15 16.66
+> •K= 50 , λ = 0 25.58 43.98 71.91 67.87 66.52 63.95 72.38 16.84
+> •K= 57 , λ = 0 (Ours) 25.62 43.98 72.15 68.31 68.12 64.53 72.73 16.31
+> •K= 57 , λ = 0 .525.63 45.61 72.88 68.53 70.05 65.11 73.93 17.11
+
+15 C Integration with other FLUX-based Conditional Methods 
+
+Table 7 demonstrates the broad compatibility and effectiveness of our proposed method when inte-grated with the state-of-the-art conditional generation frameworks OminiControl and EasyControl. The quantitative results reveal that our cascaded refinement strategy significantly bolsters the struc-tural control capabilities of both baselines across all instance-level metrics. Notably, when applied to OminiControl, our method yields a substantial increase in ISR (from 18.13 to 26.02) and mAP (from 44.25 to 56.63). The performance gains are even more pronounced for EasyControl, where integrat-ing our strategy increases the OSR from 46.28 to 63.66 and nearly doubles the ISR to 34.77. These consistent improvements, achieved while maintaining stable G-CLIP and L-CLIP scores, under-score that our approach effectively resolves localized structural ambiguities and instance omissions inherent in current methods. Such quantitative leaps are further corroborated by the qualitative vi-sualizations (Figure 6), which clearly illustrate our method’s superior ability to harmonize complex multi-object layouts and preserve geometric fidelity compared to the original baselines. 
+
+## D Integration with SD3-based Conditional Methods 
+
+To demonstrate that our method can be generalized to other DiT-based models, Table 8 presents a quantitative comparison utilizing Stable Diffusion 3 (SD3) equipped with ControlNet as the backbone. The results clearly indicate that our method significantly outperforms both the vanilla SD3+ControlNet baseline and DreamRenderer in precise spatial control. Specifically, our approach achieves substantial improvements across all primary layout-alignment metrics, yielding the high-est ISR (27.30), OSR (57.01), and mIoU (52.54). Furthermore, our method secures the best local semantic alignment (L-CLIP of 25.02). While the vanilla SD3+ControlNet retains slightly higher global metrics (e.g., G-CLIP and PickScore)—which is typical for native models generating rela-tively unconstrained scenes—it catastrophically fails in multi-instance spatial adherence (yielding a mere ISR of 10.28). In contrast, our method successfully bridges this gap, establishing state-of-the-art object-level controllability on the SD3 architecture while maintaining highly competitive overall aesthetic quality (e.g., peak HPSv3 of 5.435). Table 7: Ablation study on other conditional generation methods.                                
+
+> Input Method G-CLIP ↑L-CLIP ↑ISR ↑OSR ↑mIoU ↑mAP ↑
+> Depth  OminiControl 26.99 25.30 18.13 43.41 41.61 44.25 OminiControl + Ours 26.99 25.43 26.02 55.25 52.37 56.63
+> EasyControl 26.89 24.48 23.37 46.28 43.8 46.75 EasyControl + Ours 26.72 24.83 34.77 63.66 58.44 64.78
+
+Table 8: Quantitative comparisons on the SD3 and ControlNet.                                      
+
+> Input Method G-CLIP ↑L-CLIP ↑ISR ↑OSR ↑mIoU ↑mAP ↑FID ↓HPSv3 ↑Pick ↑
+> Depth  SD3 + ControlNet 29.27 24.25 10.28 31.55 33.28 31.44 /5.502 40.33
+> DreamRenderer 28.82 24.63 17.44 45.72 43.78 46.34 21.53 3.849 24.29 Ours 29.11 25.02 27.30 57.01 52.54 57.95 18.66 5.435 35.37
+
+## E Pseudocode 
+
+Algorithm 1 illustrates the complete inference process of our method. 
+
+## F Societal Impacts 
+
+Our proposed framework enables precise, spatially-conditioned image generation with multi-instance control, benefiting applications like creative design and synthetic dataset construction. How-ever, such capabilities could be exploited to produce highly convincing, misleading content or so-phisticated deepfakes. Additionally, as our approach builds upon existing generative foundation 16 Figure 6: Qualitative results demonstrating the generalizability of our method as a plug-and-play module. 
+
+Algorithm 1 COLLAR: Cascaded Object-Level Latent Refinement 
+
+Input: Global prompt P , conditional image input S, bounding boxes {Bi}, object descriptions 
+
+{Oi}. 
+
+> 1:
+
+Parameters: Threshold σ, weight λ, high-pass filter H(·), number of layers K. 
+
+> 2:
+
+Initialize: z(T ) 
+
+> G
+
+, {z(T ) 
+
+> i,L
+
+, }, {z(T ) 
+
+> i,E
+
+, } ∼ N (0 , I) {Global, Local, and Ex-FoV latents}  
+
+> 3:
+
+A ← { 1, . . . , N } {Set of active instances for feature injection}  
+
+> 4:
+
+for t = T, T − 1, . . . , 1 do  
+
+> 5:
+
+for each instance i ∈ A do  
+
+> 6:
+
+// Step 1: Local Semantic Extraction  
+
+> 7:
+
+ǫ(t)
+
+> i,L
+
+, {(Q, K, V )(t,k ) 
+
+> i,L
+
+}k∈K ← DiT L(z(t)
+
+> i,L
+
+, O i) {Extract QKV from Local branch}  
+
+> 8:
+
+z(t−1)  
+
+> i,L
+
+← Scheduler (z(t)
+
+> i,L
+
+, ǫ (t)
+
+> i,L
+
+, t ) 
+
+> 9:
+
+// Step 2: Global Background Latent Injecting  
+
+> 10:
+
+z(t) 
+
+> i,E
+
+← Fuse (z(t) 
+
+> i,E
+
+, z (t) 
+
+> G
+
+, [Bi,E ]) {Inject global background into Ex-FoV latent}  
+
+> 11:
+
+// Step 3: Extended-FoV Feature Fusion  
+
+> 12:
+
+ǫ(t) 
+
+> i,E
+
+, {f (t,k ) 
+
+> i,E
+
+}k∈K ← DiT E (z(t) 
+
+> i,E
+
+, {(Q, K, V )(t,k ) 
+
+> i,L
+
+}k∈K , O i) 
+
+> 13:
+
+z(t−1)  
+
+> i,E
+
+← Scheduler (z(t) 
+
+> i,E
+
+, ǫ (t) 
+
+> i,E
+
+, t ) 
+
+> 14:
+
+// Step 4: Structural Monitoring & Early-Stopping  
+
+> 15:
+
+S(t) 
+
+> i
+
+← CosSim 
+
+(
+
+H(z(t)
+
+> i,G
+
+, B i), H(z(t) 
+
+> i,E
+
+, B i)
+
+) 
+
+> 16:
+
+if S(t) 
+
+> i
+
+≥ σ then  
+
+> 17:
+
+A ← A \ { i} {Halt injection for aligned instance i} 
+
+> 18:
+
+end if  
+
+> 19:
+
+end for  
+
+> 20:
+
+// Step 5: Local Feature Injecting  
+
+> 21:
+
+ǫ(t) 
+
+> G
+
+← DiT G(z(t) 
+
+> G
+
+, {f (t,k ) 
+
+> i,E
+
+}k∈K ,i ∈A , P ) 
+
+> 22:
+
+// Final Global Update  
+
+> 23:
+
+z(t−1)  
+
+> G
+
+← Scheduler (z(t) 
+
+> G
+
+, ǫ (t) 
+
+> G
+
+, T ) 
+
+> 24:
+
+end for  
+
+> 25:
+
+return Final image x = Decoder (z0
+
+> G
+
+)
+
+17 models, it inevitably inherits the societal biases and stereotypes embedded in their pre-training data. While we focus on addressing challenges in controllable generation, we emphasize that responsible deployment and the development of robust safeguards against privacy, bias, and fairness risks are essential future endeavors. 18

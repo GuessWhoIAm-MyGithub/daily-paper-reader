@@ -1,0 +1,450 @@
+Title: SAMatcher: Co-Visibility Modeling with Segment Anything for Robust Feature Matching
+
+URL Source: https://arxiv.org/pdf/2606.03406v1
+
+Published Time: Wed, 03 Jun 2026 01:26:12 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> 1
+
+# SAMatcher: Co-Visibility Modeling with Segment Anything for Robust Feature Matching 
+
+Xu Pan, Qiyuan Ma, Mingyue Dong, He Chen, Wei Ji, and Xianwei Zheng 
+
+Abstract —Reliable correspondence estimation is a fundamental problem in image processing, underpinning a wide range of applications such as Structure from Motion, visual localization, and image registration. While recent learning-based approaches have substantially improved the representation capability of local features, most methods still operate primarily at the pixel or patch level. As a result, they lack explicit mechanisms to model regions that are jointly visible across views, leading to brittle behavior when spatial support, semantic context, or visibility patterns vary between images. We propose SAMatcher , a novel feature matching framework that formulates correspondence estimation through explicit co-visibility modeling. Rather than directly establishing point-wise correspondences from local ap-pearance, SAMatcher first predicts consistent co-visible region masks and bounding boxes within a shared cross-view rep-resentation space, serving as structured priors to guide and regularize matching. The framework builds upon the Segment Anything Model (SAM) and introduces a symmetric cross-view interaction mechanism that treats paired images as interacting token sequences, enabling bidirectional semantic alignment and the discovery of jointly supported regions. To jointly optimize region segmentation and geometric localization, we introduce a unified supervision scheme that combines point-sampled mask learning with box regression and mask–box consistency con-straints, enforcing cross-view coherence during training. Exten-sive experiments on challenging benchmarks demonstrate that SAMatcher significantly improves robustness under large-scale geometric and viewpoint variations. These results suggest that monocular visual foundation models can be systematically ex-tended to multi-view correspondence estimation through explicit co-visibility modeling, providing a new perspective on structured representation learning for image matching. Code and project page are available at https://xupan.top/Projects/samatcher. 
+
+Index Terms —Feature Matching, Co-visibility Modeling, Cross-view Fusion, Vision Foundation Model, Multi-view Cor-respondence 
+
+I. I NTRODUCTION 
+
+Robust feature matching is a fundamental problem in image processing, underpinning a wide range of applications such as image registration, Structure-from-Motion (SfM) [1], si-multaneous localization and mapping (SLAM) [2], [3], and 3D reconstruction [4]. At its core, the task aims to establish geometrically consistent correspondences across images for reliable spatial reasoning and scene understanding. Despite decades of research, correspondence estimation remains chal-lenging under large viewpoint changes, occlusions, illumina-tion variations, and texture ambiguities, often leading to sparse  
+
+> Xu Pan, Qiyuan Ma, Mingyue Dong, He Chen, and Xianwei Zheng are with the State Key Laboratory of Information Engineering in Surveying, Mapping and Remote Sensing (LIESMARS), Wuhan University, Wuhan, P. R. China (e-mail: {panxurs, qiyuanma, dongmy, whu chenhe, zhengxw }@whu.edu.cn). Wei Ji is with the National Key Laboratory of Space Target Awareness, Space Engineering University, Beijing, P. R. China.
+
+Fig. 1: Motivation of SAMatcher. (a) An image pair with large scale variation in co-visible regions, where corresponding structures occupy significantly different spatial extents across views. (b) Co-visible region segmentation in SAMatcher, highlighting regions jointly visible across views while sup-pressing non-overlapping areas. (c) Pixel confusion caused by scale inconsistency in local matching and its mitigation by constraining correspondence estimation to co-visible regions. or unstable matches and error accumulation in downstream geometric pipelines [5], [6]. Conventional correspondence pipelines typically rely on hand-crafted local feature extraction such as SIFT [7], SURF [8], and ORB [9]. Correspondences are then estab-lished via descriptor matching and subsequently verified us-ing geometric constraints [10]. While effective in controlled environments, these methods degrade significantly in tex-tureless regions, repetitive structures, and long-baseline sce-narios [11], [12]. Recent learning-based approaches improve robustness either by learning stronger feature representations or performing end-to-end correspondence estimation with deep networks [13]–[15]. However, as illustrated in Fig. 1 (a,c), most existing methods still rely primarily on local appearance similarity and implicitly assume cross-view comparability at the pixel or patch level. This assumption becomes fragile under large scale variations, where corresponding structures may occupy substantially different spatial extents across views. As a result, visually similar but geometrically inconsistent regions can yield spurious correspondences, causing pixel confusion and degraded geometric consistency. A key observation underlying this work is that many corre-spondence failures stem not from insufficient local descriptors, but from the lack of explicit co-visibility modeling. Local regions extracted from different views may correspond to 
+
+> arXiv:2606.03406v1 [cs.CV] 2 Jun 2026 2
+
+the same physical structure, yet appear at vastly different scales or resolutions due to viewpoint changes and partial occlusions. In the absence of explicit cues indicating which regions are jointly visible and spatially comparable, even strong descriptors struggle to distinguish correct matches from visually plausible but geometrically inconsistent alternatives. To address this limitation, we advocate a region-first per-spective that explicitly models co-visible regions prior to cor-respondence estimation. Rather than directly predicting point-wise matches, we estimate region-level masks that identify areas jointly visible across views and use them as structured priors to guide downstream matching. As illustrated in Fig. 1 (b), co-visible region segmentation suppresses irrelevant or non-overlapping content and localizes regions that are mean-ingfully comparable across views. By constraining correspon-dence estimation to these regions (Fig. 1 (c)), the formulation reduces ambiguous matches and improves robustness under large viewpoint and scale variations. Building upon this insight, we propose SAMatcher ,a framework that explicitly models co-visible regions to guide robust correspondence estimation. We leverage the re-gion modeling capability of the Segment Anything Model (SAM) [16], adapting it from object-centric segmentation to co-visible region reasoning for correspondence estimation. Given an image pair, SAMatcher first predicts co-visible region masks and their spatial extents prior to matching. High-level features from both views are processed by a symmetric cross-view interaction module, enabling bidirectional infor-mation exchange while preserving view-specific structures. Conditioned on the fused representations, a set of shared learnable prompts queries the decoder to localize regions that are jointly visible across views. A unified decoder then jointly predicts co-visible masks and corresponding bounding boxes for both images, producing structured semantic and geometric priors that constrain downstream correspondence estimation. To support reliable co-visible region learning under large viewpoint changes, we introduce a structured supervision scheme that jointly enforces pixel-level accuracy, region con-sistency, and geometric alignment between masks and bound-ing boxes. In summary, our main contributions are as follows:  
+
+> •
+
+We introduce a region-first perspective for feature match-ing by explicitly modeling co-visible regions, addressing pixel confusion and scale inconsistency under large view-point changes.  
+
+> •
+
+We propose SAMatcher, a unified model integrating symmetric cross-view interaction, prompt-based region querying, and joint mask-box prediction to align multi-view semantics and geometry.  
+
+> •
+
+We introduce a joint supervision combining point-sampled mask learning, box regression, and mask–box consistency, improving reliability of co-visible region prediction under large viewpoint and scale variations.  
+
+> •
+
+Extensive experiments on challenging benchmarks demonstrate that SAMatcher achieves state-of-the-art cor-respondence performance. II. R ELATED WORKS 
+
+A. Feature Matching and Correspondence Learning 
+
+Feature correspondence estimation is a fundamental prob-lem in photogrammetry and underpins many applications, including SfM [1], SLAM [2], [3], 3D reconstruction [4], and Robot Perception [17]. Classical pipelines rely on hand-crafted local descriptors such as SIFT [7], SURF [8], and ORB [9], combined with geometric verification [10]. While effective in controlled, well-textured environments, these methods degrade significantly under large viewpoint changes, repetitive struc-tures, or low-texture regions [5], [11]. The rise of deep learning has shifted focus toward learned feature representations and end-to-end correspondence pipelines. Early works such as LIFT [18] and SuperPoint [13] jointly learn keypoint detection and description, while Su-perGlue [14] further enhances robustness by aggregating contextual information through graph neural networks. More recent detector-free approaches, notably LoFTR [15], estab-lish semi-dense correspondences using dense features and transformer-based correlation. Subsequent methods, including MatchFormer [19], LightGlue [20], and local feature refine-ment strategies [21], improve both accuracy and efficiency via hierarchical attention and correlation-based designs. Despite these advances, most existing approaches remain predominantly pixel- or patch-level, relying on local similar-ity metrics or global attention mechanisms. They typically assume co-visibility implicitly and lack explicit mechanisms to identify jointly visible regions across views. As a result, correspondence estimation remains vulnerable to occlusions, drastic viewpoint or scale changes, and background clutter. These limitations motivate region-level priors that explicitly model co-visible areas to guide robust correspondence esti-mation, which lies at the core of our proposed framework. 
+
+B. Region-Level Representations for Cross-View Perception 
+
+Region-level representations provide structured semantic and spatial context that complements point-wise features. Early semantic and instance segmentation networks, such as FCN [22] and Mask R-CNN [23], demonstrated the feasibility of dense mask prediction and inspired works that leverage mask-based features for recognition and reconstruction [24], [25]. Transformer-based segmentation frameworks, including SegFormer [25] and Mask2Former [26], further unify global context modeling with fine-grained mask prediction, enabling scalable and generalizable region-level representations. The emergence of large-scale vision foundation models, most notably the Segment Anything Model (SAM) [16], has significantly advanced open-world, prompt-driven segmenta-tion. By enabling class-agnostic and general-purpose mask generation, SAM facilitates semantic abstraction across diverse scenes and domains. Region-level representations derived from segmentation have also proven effective in multi-modal fusion and scene understanding [27], [28], acting as a bridge between semantic reasoning and geometric structure. However, existing segmentation methods predominantly op-erate in a single-view setting, predicting region masks inde-pendently without enforcing cross-view consistency or geo-3
+
+metric alignment. This limitation restricts their applicability to correspondence estimation, where identifying regions that are jointly visible across views is essential. These observations motivate extending region-level representations into a cross-view semantic space, where co-visible regions can be explicitly modeled and aligned. 
+
+C. Co-Visibility Modeling in Correspondence Establishment 
+
+Modeling cross-view relationships is central to 3D vision tasks such as SfM, visual localization, and reconstruction [1], [5]. A key challenge is identifying regions jointly visible across views while suppressing occlusions, background clut-ter, and viewpoint-dependent appearance changes [29], [30]. Recent transformer-based matching methods [15], [31] and learning-based pose pipelines [32] improve robustness via long-range context and implicit geometric constraints, yet still operate at the pixel or patch level without explicitly modeling co-visible regions. Some works introduce coarse region-level guidance. For example, OETR [33] constrains matching using object-level bounding boxes, reducing mismatches but capturing co-visibility only at a coarse spatial level, without precise region delineation or fine-grained cross-view consistency. In classical pipelines, co-visibility is implicitly handled through reprojection overlap and bundle adjustment [5], [6], which lack semantic interpretability and do not directly guide correspondence selection at inference. Methods in multi-view stereo and novel view synthesis [34], [35] incorporate visibility reasoning but are typically task-specific and not designed for general correspondence estimation. Explicitly modeling co-visible regions provides a region-level prior that constrains the search space and filters ir-relevant content. This motivates our approach to explicitly predict and align co-visible regions, enabling more robust and interpretable correspondence estimation. 
+
+D. Geometry-Aware Supervision in Vision Tasks 
+
+Geometry-aware supervision has emerged as an effec-tive strategy for integrating visual perception with three-dimensional reasoning by enforcing consistency across views, modalities, or reconstructed structures. In correspondence learning, techniques such as cycle consistency, depth-guided warping, and epipolar-aware attention have been shown to improve robustness under large viewpoint and scale varia-tions [15], [36]. These constraints encourage geometrically plausible matches and reduce ambiguities arising from local appearance similarity. Beyond feature matching, geometry-aware supervision is widely adopted in segmentation and detection tasks. Multi-view and multi-modal fusion frameworks combine geometric cues with semantic segmentation to enhance robustness under occlusions and viewpoint changes [37], [38]. These studies demonstrate that enforcing region-level geometric consistency through mask alignment, cross-view agreement, and box–mask coherence can substantially improve prediction reliability. Inspired by these findings, we design a mask-level geometry-aware supervision scheme that enforces cross-view consistency between predicted co-visible regions. By integrat-ing region consistency, point-sampled mask supervision, and box–mask regularization, our approach provides reliable guid-ance for correspondence estimation and further distinguishes our framework from existing pixel-level matching methods. III. M ETHODOLOGY 
+
+In this section, we present the proposed SAMatcher frame-work for robust feature matching through co-visible region prediction. We first formalize the problem, then describe the overall architecture, the cross-view fusion module, the shared prompt mechanism, the tokenized decoder with a high-quality (HQ) branch, and finally the training objectives. 
+
+A. Preliminary 1) Problem Definition: We study cross-view correspon-dence between two RGB images I0, I1 ∈ R3×H×W of the same scene from different viewpoints. Beyond point-wise matches, our goal is to identify co-visible regions, which are image areas simultaneously visible in both views and that support reliable correspondence under viewpoint, scale, or occlusion variations. For each view i ∈ { 0, 1}, SAMatcher predicts:  
+
+> •
+
+A mask ˆMi ∈ [0 , 1] H×W , indicating predicted co-visible pixels across the image.  
+
+> •
+
+A bounding box ˆBi ∈ R4, representing the minimum enclosing rectangle of the co-visible region and normal-ized to [0 , 1] , mapped to image coordinates via ˆBi =sigmoid( bi) ⊙ (W, H, W, H ).The set of truly co-visible pixels in view i is denoted Ωi, with the intersection Ω = Ω 0 ∩ Ω1 defining the joint co-visible region used for robust correspondence. Formally, the predictions are 
+
+( ˆM0, ˆM1, ˆB0, ˆB1) = F(I0, I1), (1) providing structured semantic and geometric priors. Accurate estimation of Ω is crucial, as matches outside it are inherently ambiguous. 
+
+2) Overview: SAMatcher adopts a region-first strategy: co-visible masks and boxes constrain matching to jointly visible, geometrically meaningful areas. Multi-scale features are extracted by a shared encoder Φ and fused by a cross-view module Ψ, producing embeddings (E0, E1) that encode joint semantic context. Task-specific decoders predict masks and boxes from the fused embeddings; although differing in query design, they are jointly optimized to enforce semantic-geometric consistency. The overall pipeline is summarized as 
+
+(I0, I1) Φ
+
+−→ Ψ
+
+−→ ( ˆM0, ˆM1, ˆB0, ˆB1), (2) producing co-visible-aware predictions that form the founda-tion for robust cross-view correspondence. Subsequent sec-tions detail each component and training objective. 4
+
+Fig. 2: Overview of the proposed SAMatcher framework. Given an image pair, SAMatcher extracts high-level visual representations using a shared encoder. A cross-view symmetric fusion module aligns semantic information across views and highlights potentially co-visible content. Based on the fused features, a prompt-driven mask decoder predicts co-visible region masks, while a dedicated box decoder estimates corresponding bounding boxes. These region-level predictions provide semantic and geometric priors that guide correspondence estimation, improving robustness under occlusion, background clutter, and large viewpoint or scale variations. 
+
+B. Proposed SAMatcher 
+
+SAMatcher is a joint segmentation–matching framework designed to establish robust correspondences across wide-baseline image pairs by explicitly modeling co-visible regions. Instead of directly inferring point-wise matches from local appearance alone, the framework introduces region-level co-visibility as an intermediate representation bridging high-level semantic alignment and low-level correspondence estimation. Given a source–target image pair (I0, I1), SAMatcher infers co-visible region masks and their spatial extents in both views, 
+
+( ˆM0, ˆM1, ˆB0, ˆB1) = Fθ (I0, I1), (3) which serve as structured semantic and geometric constraints for downstream correspondence estimation. As illustrated in Fig. 2, both images are first processed by a shared visual encoder Φ. The architecture builds upon the high-quality variant of the Segment Anything Model (SAM-HQ) [16], [39], [40], which provides strong mask decoding ca-pacity and precise boundary modeling. The encoder produces dense feature maps F0 = Φ( I0) and F1 = Φ( I1), capturing high-level semantic representations for each view. To explicitly capture inter-view dependencies, the encoded features are processed by a cross-view symmetric fusion mod-ule Ψ, yielding fused representations ( ˜F0, ˜F1) = Ψ( F0, F1).Through bidirectional information exchange, this fusion step aligns semantic representations across views while preserving view-specific structures, and emphasizes regions that are likely to be jointly visible. Unlike the original SAM formulation, which relies on explicit user-provided prompts, SAMatcher introduces a set of shared learnable prompts to implicitly condition region prediction. This design is motivated by the observation that, in an image-pair setting, explicit prompts are neither available nor consistent across views. Embedding prompting into learnable tokens enables image-pair-consistent self-prompting and cross-prompting behavior without external intervention. Conditioned on the fused features and shared learnable prompts P, co-visible region masks are predicted via the SAM mask decoder, ˆMi = Dmask ( ˜Fi, P), i ∈ { 0, 1}. These masks provide dense, pixel-level estimates of co-visible regions and constitute the primary semantic representation of co-visibility. In parallel, spatial extents of the same co-visible regions are estimated by a dedicated box decoder operating on object-centric tokens. Specifically, additional box tokens act as global queries and aggregate co-visible information via attention over the fused features. Let tbox denote the learnable box tokens associated with each co-visible region. Bounding boxes are decoded as ˆBi = Dbox (tbox ; ˜Fi), i ∈ { 0, 1}, providing a compact geometric abstraction of the co-visible regions. The parallel prediction of masks and boxes introduces complemen-tary learning signals during training, encouraging consistency between semantic extent and geometric localization. The predicted co-visible masks are subsequently used to guide correspondence estimation by restricting matches, 
+
+C = H  ˜F0 ⊙ ˆM0, ˜F1 ⊙ ˆM1
+
+, (4) where H(·) denotes a differentiable matching operator that produces correspondence hypotheses from masked feature pairs, and C denotes the resulting correspondence hypotheses. By explicitly conditioning correspondence estimation on co-visibility, the framework suppresses matches arising from oc-cluded, non-overlapping, or semantically ambiguous regions. Overall, SAMatcher forms a tightly coupled pipeline in which cross-view semantic fusion, implicit prompt-driven region prediction, and correspondence estimation mutually 5
+
+Fig. 3: Architecture of the proposed symmetric cross-view feature interaction module. Features from the source and target views are interleaved and processed by a stack of symmetric interaction blocks, enabling bidirectional token-level communication across views. Window-based attention with positional encoding facilitates efficient local interaction while preserving view identity. Subsequent single-view refinement further enhances view-specific structural details, producing cross-view aligned yet discriminative representations for downstream co-visible region prediction and correspondence estimation. reinforce each other. By elevating co-visibility to an explicit modeling objective and integrating both semantic and geomet-ric abstractions, the framework provides a principled approach to robust feature matching under challenging visual conditions. 
+
+C. Symmetric Cross-View Feature Interaction 
+
+Robust correspondence estimation under wide-baseline set-tings requires feature representations that simultaneously cap-ture shared cross-view semantics and preserve view-specific structural cues. Independent encoding of each view fails to model co-visibility, while overly aggressive fusion risks sup-pressing discriminative information critical under occlusion or partial overlap. To address this trade-off, we propose a sym-metric cross-view feature interaction module that explicitly models inter-view dependencies while maintaining represen-tation fidelity for each view. Recent advances in diffusion transformers and multimodal representation learning have shown that heterogeneous inputs can be effectively modeled as interacting token sequences within a unified attention framework [41]. Inspired by this paradigm, we treat the source and target images as two strongly correlated modalities rather than independent observa-tions. This formulation enables token-level interaction across views, allowing semantic and geometric cues to be jointly contextualized without relying on explicit geometric parame-terization. Similar to recent multimodal alignment frameworks that unify heterogeneous visual signals within a shared em-bedding space [42], our formulation leverages attention-based interaction to implicitly align co-visible content across views. Let X0, X 1 ∈ RB×L×C denote the flattened feature tokens extracted from the source and target images by a shared encoder, where B is the batch size, L the number of spatial tokens, and C the feature dimension. The goal of the inter-action module is to produce cross-view-aware representations 
+
+˜X0 and ˜X1 that emphasize co-visible content while retaining view-specific details: 
+
+( ˜X0, ˜X1) = Fint (X0, X 1). (5) As illustrated in Fig.3, we first interleave tokens from the two views along the spatial dimension, 
+
+Xint = Interleave( X0, X 1) ∈ RB×2L×C , (6) such that tokens from both views are jointly processed within the same attention windows. This interleaved sequence is processed by a stack of symmetric interaction blocks, orga-nized into two stages, referred to as DoubleBlocks. Each stage consists of Ld blocks. Critically, to capture features at different levels of granularity, we progressively increase the number of attention heads across stages while maintaining a constant feature dimension. The attention operator adopts windowed and shifted-window mechanisms from the Swin Transformer [43]. For the interaction stages, we employ cosine attention to stabilize the training of cross-view correlations. To preserve spatial coherence while enabling view discrim-ination, we incorporate view-aware rotary positional encoding into the attention computation. Queries Q and keys K in the attention computation are rotated according to both spatial position and view identity, 
+
+(Q′, K ′) = RoPE( Q, K | view id ), (7) allowing tokens from different views to remain distinguishable even when interleaved within the same attention window, where view id ∈ { 0, 1} indicates the source or target view. 6
+
+Through multiple stages of DoubleBlocks, semantic infor-mation is progressively exchanged across views... After the symmetric interaction stages, the interleaved sequence is split back into view-specific streams: 
+
+(X′
+
+> 0
+
+, X ′
+
+> 1
+
+) = Split( X′
+
+> int
+
+), (8) These streams are subsequently refined by two additional stages of single-view attention blocks, referred to as Single-Blocks, with depths Ls1 and Ls2. These blocks operate inde-pendently on each view using efficient Flash Attention [44], 
+
+˜X0 = R(X′
+
+> 0
+
+), ˜X1 = R(X′
+
+> 1
+
+), (9) where R(·) denotes the stack of single-view refinement stages. By combining deep symmetric interaction with view-specific refinement, the resulting representations encode both shared co-visible semantics and discriminative local details. These features serve as the input to downstream co-visible region prediction and correspondence estimation modules. Im-portantly, the proposed interaction mechanism is conceptually independent of the downstream tasks and can be instantiated with different attention operators, highlighting its generality as a cross-view fusion strategy. 
+
+View-Aware Rotary Positional Encoding. As illustrated in Fig. 3, positional encoding is an integral component of the proposed Symmetric Swin-based Cross-View Feature Fuser, as attention is performed over interleaved feature sequences originating from multiple camera views. In this setting, the po-sitional encoding must simultaneously preserve spatial struc-ture within each view and encode view identity to prevent ambiguity when features from different views are processed jointly. To satisfy these requirements, we adopt a view-aware Rotary Positional Encoding (RoPE) tailored for interleaved cross-view attention. Standard RoPE encodes relative positional information by applying position-dependent rotations to the query and key vectors. For an attention head with dimension dh, the inverse frequency spectrum is defined as inv freq k = 110000 2k/d h
+
+, k = 0 , . . . , dh
+
+2 − 1. (10) Given a token at sequence position p, the corresponding rotation angles are 
+
+θp = p · inv freq ∈ Rdh/2. (11) Applying these rotations to the query and key vectors enables attention scores to depend on relative offsets, a property that has proven effective in transformer-based architectures. However, in the proposed fuser, features from the source and target views are interleaved into a single sequence and processed within shared attention windows. In such a sce-nario, tokens from different views may occupy similar or even adjacent sequence positions, making standard RoPE insufficient to distinguish their origins. To address this issue, we introduce a small view-dependent offset into the rotation angles. Specifically, for a token at position p from view v, the view-aware rotation is defined as 
+
+θ(v) 
+
+> p
+
+= θp + v · δ, (12) where v ∈ { 0, 1} denotes the source or target view, and δ is a fixed or learnable offset vector with the same dimensionality as θp. This formulation preserves relative spatial encoding within each view while introducing a consistent phase shift that encodes view identity. Following the standard RoPE formulation, each query vector 
+
+q ∈ Rdh is split into even and odd components, q =[qeven , q odd ], and rotated as 
+
+q′
+
+> even
+
+q′
+
+> odd
+
+
+
+=
+
+"
+
+cos θ(v) 
+
+> p
+
+− sin θ(v)
+
+> p
+
+sin θ(v) 
+
+> p
+
+cos θ(v)
+
+> p
+
+# qeven 
+
+qodd 
+
+
+
+. (13) An analogous rotation is applied to the key vectors, while the value vectors remain unchanged. We denote this operation compactly as 
+
+Q′, K ′ = ApplyViewAwareRoPE (Q, K ; v), (14) which is used consistently in both the interleaved Double-Blocks and the subsequent single-view refinement blocks. By integrating view-aware RoPE into the attention com-putation, the SymSwin-Fuser can jointly model spatial re-lationships and view identity within a unified transformer framework. As visualized in Fig. 3, this design enables sta-ble and discriminative cross-view interactions, ensuring that interleaved attention captures co-visible regions across views while maintaining view-specific spatial coherence under large viewpoint changes and partial visibility. 
+
+D. Co-Visible Region Modeling and Decoding 
+
+Given the cross-view fused features produced by the SymSwin-Fuser, SAMatcher performs co-visible region de-coding through a heterogeneous yet tightly coupled decoding head. The key design principle is to represent co-visibility at complementary granularities, combining dense spatial masks with object-level bounding boxes. These two forms of region representation are decoded in parallel from a shared fused feature space, enabling consistent cross-view reasoning and mutual regularization during learning. Let ˜F0, ˜F1 ∈ RB×L×C denote the fused feature sequences for the source and target views, respectively, where L = H′W ′
+
+corresponds to flattened spatial locations. As illustrated in Fig. 2, SAMatcher adopts a prompt- and token-driven decod-ing strategy inspired by SAM-HQ, while extending it to the cross-view setting through explicit co-visibility modeling. 
+
+Spatial Queries for Dense Co-Visible Mask Decoding. To predict dense co-visible masks, the fused features are first projected into a shared query space: 
+
+Qi = ˜FiWq + bq , i ∈ { 0, 1}, (15) where bq ∈ Rdq is a learnable bias shared across spatial locations. Each query qpi ∈ Qi corresponds to a spatial location p and encodes local appearance enriched by cross-view contextual information introduced by the symmetric fusion module. Conditioned on shared learnable prompts P, the mask decoder Dmask (·) produces dense co-visible mask logits: 
+
+ˆMi = Dmask (Qi, P), ˆMi ∈ RB×L, (16) 7
+
+which are reshaped and activated to obtain pixel-wise co-visible mask probabilities. By operating on spatially grounded queries, the mask decoder preserves fine-grained boundary information while remaining explicitly conditioned on cross-view semantics. 
+
+Learnable Box Token for Object-Level Co-Visible Local-ization. While dense masks capture fine-grained co-visible re-gions, object-level localization requires a global representation not tied to specific spatial positions. To this end, SAMatcher introduces a learnable box token tbox ∈ Rdq , which is shared across views and concatenated with the prompt set: 
+
+P′ = {P, tbox }. (17) The box token serves as a global query that implicitly ag-gregates co-visible information through attention, rather than being directly derived from spatial features. Specifically, the box decoder Dbox (·) treats tbox as query, attending to the fused feature sequence as key and value: 
+
+ˆbi = Dbox (tbox ; ˜Fi), ˆbi ∈ RB×4, (18) where ˆbi denotes normalized box coordinates in the corre-sponding view. This formulation allows the box token to learn an object-centric representation by selectively attending to co-visible regions encoded in the fused features, without being constrained to any specific spatial location. 
+
+Parallel Decoding and Implicit Coupling. The dense mask decoder and the box token decoder operate in parallel on the same cross-view fused representations. Although the box token is decoded independently from spatial queries, both prediction heads are implicitly coupled through shared prompts and joint optimization. Dense masks provide fine-grained supervision over co-visible regions, while box predictions impose global spatial constraints on object extent. This parallel decoding strategy enables complementary learning signals, encouraging consistency between pixel-level visibility and object-level localization. As a result, SAMatcher produces multi-scale co-visible region representations: 
+
+( ˆM0, ˆM1, ˆB0, ˆB1) = Fdecode ( ˜F0, ˜F1), (19) which jointly serve as structured semantic and geometric priors for robust correspondence estimation and geometry-aware supervision. 
+
+E. Joint Mask–Box Optimization and Supervision 
+
+The SAMatcher head outputs co-visible masks and bound-ing boxes for each view, denoted as 
+
+ˆMi ∈ [0 , 1] B×Hp×Wp , i = s, t, (20) 
+
+ˆBi ∈ RB×4, i = s, t, (21) where B is the batch size, Hp × Wp is the predicted mask resolution, and bounding boxes are represented as 
+
+[xmin , y min , x max , y max ]. Ground-truth masks and boxes are denoted by Mi and Bi, respectively. To supervise mask prediction, we employ a point-sampled mask loss [45] emphasizing uncertain regions. For each view, let Pi ⊂ Hp × Wp denote the sampled points based on predicted logits’ uncertainty. The point-sampled mask loss combines binary cross-entropy and Dice loss: 
+
+Lpoint =
+
+P
+
+> i∈{ 0,1}
+
+P
+
+> p∈P i
+
+
+
+BCE + Dice 
+
+
+
+( ˆMpi , Mpi )
+
+|P 0| + |P 1| . (22) To further leverage object-level structure, a region-aware mask loss weights supervision by the predicted or ground-truth bounding boxes: 
+
+Wi = 1in box · win + (1 − 1in box ) · wout , (23) 
+
+Lregion =
+
+P
+
+> i∈{ 0,1}
+
+P 
+
+> p
+
+Wpi
+
+
+
+BCE + Dice 
+
+ σ( ˆMpi ), Mpi
+
+P
+
+> i∈{ 0,1}
+
+P 
+
+> p
+
+Wpi
+
+,
+
+(24) where σ denotes the sigmoid function, and win > wout 
+
+prioritizes in-box pixels. Bounding box supervision is provided by a dedicated box decoder, operating on learnable box tokens. The box loss includes center and size regression, IoU-based alignment, and a mask–box consistency term that encourages the spatial extent predicted from masks to align with box predictions: 
+
+Lloc = 12B
+
+X
+
+> i∈{ 0,1}
+
+L1(center( ˆBi), center( Bi)) , (25) 
+
+Lsize = 12B
+
+X
+
+> i∈{ 0,1}
+
+L1(size( ˆBi), size( Bi)) , (26) 
+
+LIoU = 12B
+
+X
+
+> i∈{ 0,1}
+
+ 1 − GIoU( ˆBi, Bi), (27) 
+
+Lconsistency = 12B
+
+X
+
+> i∈{ 0,1}
+
+L1 
+
+
+
+normalize( ˆBi),
+
+normalize(bbox from mask( ˆMi)) 
+
+
+
+. (28) The total box loss is a weighted sum of these components: 
+
+Lbox =λIoU LIoU + λloc Lloc + λsize Lsize +
+
+λconsistency Lconsistency . (29) The final mask loss combines point-sampled and region-aware components: 
+
+Lmask = αpoint Lpoint + αregion Lregion . (30) Finally, the total training loss is a weighted combination of mask and box supervision, reflecting their complementary roles in co-visible region learning: 
+
+Ltotal = ρ Lmask + (1 − ρ) Lbox . (31) Point sampling emphasizes uncertain boundary regions, region weighting focuses supervision on in-box pixels, and mask–box consistency enforces dual-direction constraints, al-lowing mask predictions to refine box regression while boxes provide geometric guidance to mask learning. 8
+
+IV. E XPERIMENTS 
+
+We evaluate the proposed SAMatcher through experiments to assess its effectiveness for robust correspondence estima-tion under wide-baseline conditions. The experiments include implementation details, quantitative comparisons with state-of-the-art methods, and ablation studies analyzing key com-ponents. All evaluations are conducted under a consistent backbone and evaluation protocols to ensure fair comparison. 
+
+A. Implementation Details 
+
+SAMatcher is implemented in PyTorch and trained end-to-end. Unless otherwise specified, all experiments share the same architectural configuration and training protocol. 
+
+Encoder and Feature Extraction. We adopt the image encoder from SAM-HQ [39] as backbone for both views. The encoder is based on a Vision Transformer and produces dense feature maps at a spatial resolution of H′ × W ′. Following common practice, the encoder weights are frozen during training. The output feature dimension is set to C = 256 .
+
+Symmetric Cross-View Interaction. The proposed cross-view feature interaction module follows a DiT-style token interaction paradigm. Features from the source and target images are flattened into token sequences and treated as two correlated modalities. The module is structured into 4 hierar-chical stages: the first 2 stages consist of DoubleBlocks for cross-view interaction, followed by 2 stages of SingleBlocks for view-specific refinement. The depths of the DoubleBlock stages are set to [4 , 4] , and the SingleBlock stages are set to 
+
+[4 , 2] , resulting in a total of 14 transformer blocks per view logic. Correspondingly, the number of attention heads is scaled progressively across the four stages as [8 , 16 , 32 , 64] , allowing the model to focus on fine-grained correlations in early layers and global semantic coherence in deeper layers. Each block adopts window-based multi-head self-attention with a window size of 8. To ensure training stability during cross-view in-teraction, we utilize cosine attention in DoubleBlocks, while SingleBlocks employ standard Flash Attention for efficiency. 
+
+View-Aware Positional Encoding. View-aware rotary po-sitional encoding is applied to the query and key projections in all attention layers within the interaction module. A small view-dependent offset δv is added to the rotation angles to distinguish tokens from different views while preserving relative spatial encoding. We set δv = 0 .1 and share the same offset across all layers. 
+
+Prompt and Decoder Design. Co-visible masks are pre-dicted using the original SAM mask decoder, conditioned on fused features and shared learnable sparse and dense prompts. To estimate spatial extents, we introduce a dedicated box decoder that operates exclusively on learnable box tokens. Specifically, 1 box tokens are initialized and updated through cross-attention, and their final embeddings are decoded into bounding boxes. This design decouples geometric localization from dense feature decoding while enabling joint optimization through shared supervision. 
+
+Training Setup. The model is trained using the joint loss described in Sec. III-E. We set the loss weights to αpoint =1.0, αregion = 1 .5, and the mask-box balance ratio ρ = 1 .0.Point-based mask supervision samples 12 , 544 points (112 ×
+
+112) per image based on prediction uncertainty. Training is performed using the AdamW optimizer with a learning rate of 3×10 −4 and a weight decay of 0.1. The batch size is set to 12 , and the model is trained for 50 epochs. 
+
+B. Datasets 
+
+MegaDepth [46]. We use MegaDepth for both training and quantitative evaluation, as it provides ground-truth correspon-dences along with sparse 3D reconstructions and depth maps from COLMAP [47], [48]. The dataset contains approximately 1M images across 196 outdoor scenes, covering diverse light-ing conditions, scales, and viewpoints. Following [49], we select 10 scenes for testing and ran-domly sample 500 image pairs with sufficient co-visible regions. All experiments are conducted at a resolution of 
+
+1024 × 1024 unless otherwise specified. Ground-truth co-visible regions are computed via ray-casting using camera parameters and depth maps, while negative pairs are sampled from unrelated scenes. 
+
+ScanNet [50]. We use ScanNet for qualitative evaluation of generalization to indoor environments. It contains 2.5M images from 1,513 RGB-D scans, featuring cluttered scenes and limited viewpoint overlap. 
+
+GL3D [51], [52]. GL3D is used for qualitative evaluation in large-scale outdoor settings. It consists of high-resolution aerial images with significant viewpoint and scale variations, representative of drone-based photogrammetry scenarios. Both ScanNet and GL3D lack ground-truth co-visible region annotations and are therefore used only for qualitative analysis. 
+
+C. Evaluation Metrics 
+
+We evaluate SAMatcher on co-visible region detection and correspondence estimation, with metrics reflecting both de-tection quality and geometric consistency. Intersection-over-Union (IoU) between predicted and ground-truth masks or bounding boxes is used primarily in ablation studies to as-sess region-level accuracy. For correspondence evaluation, we follow standard practice [14], [15] and recover camera poses to compute rotation and translation errors. From these, we report the Area Under the Curve (AUC), Accuracy (Acc), and mean Average Accuracy (mAA), which summarize the recall computed at pixel error thresholds of 5, 10, and 20, providing a quantitative assessment of matching robustness under increasingly strict error criteria. In addition, Match-ing Score (MS) denotes the mean confidence of all inlier correspondences, and Precision (P) measures the fraction of correspondences whose epipolar error falls below a threshold after pose recovery, quantifying the reliability and geometric consistency of predicted matches. Together, these metrics offer a comprehensive evaluation of SAMatcher’s ability to detect co-visible regions and establish robust, geometrically consistent correspondences. 
+
+D. Evaluation on Image Matching 
+
+We evaluate SAMatcher on the MegaDepth benchmark under large scale differences, a setting that closely reflects 9
+
+TABLE I: Evaluation on MegaDepth for larger scale differences. Each row corresponds to a complete matching pipeline. Specifically, we consider combinations of feature extractors and matchers, including SIFT [53], SuperPoint (SP) [13], DISK [54], D2-Net (D2) [55], ContextDesc (CON) [56], R2D2 [57], and LoFTR [15]. These are paired with either Nearest Neighbor (NN) [58] or SuperGlue (SG) [14] for matching, except LoFTR, which is an end-to-end dense matching framework.                                                                                                                                                                                                                                                                                                                                                   
+
+> Methods AUC Acc mAA PMS
+> @5 @10 @20 @5 @10 @15 @20 @5 @10 @20
+> CON+NN -28.07 43.91 58.91 49.80 66.60 74.80 77.80 49.80 58.20 67.25 70.76 9.77
+> +OETR 30.74 47.70 63.45 52.00 72.40 79.80 84.20 52.00 62.20 72.10 75.66 14.27
+> +SAMatcher 32.97 50.46 65.79 56.80 73.40 81.20 87.00 56.80 65.10 74.60 79.84 91.31 D2+NN -0.85 1.40 2.29 1.27 2.29 3.31 3.82 1.27 1.78 2.67 9.34 2.23
+> +OETR 7.33 12.04 18.11 13.32 20.34 23.97 27.85 13.32 16.83 21.37 34.18 3.07
+> +SAMatcher 11.16 19.02 28.37 20.93 31.40 37.91 42.56 20.93 26.16 33.20 49.82 89.99 DISK+NN -5.24 7.92 10.36 8.75 11.41 12.47 14.32 8.75 10.08 11.74 18.77 0.82
+> +OETR 20.63 30.06 38.10 34.58 43.03 45.52 47.76 34.58 38.81 42.72 56.70 4.88
+> +SAMatcher 27.78 40.71 53.36 45.52 59.34 66.75 69.57 45.52 52.43 60.29 75.09 89.65 DISK+SG -25.29 37.49 50.06 43.37 55.82 62.45 68.27 43.37 49.60 57.48 39.50 9.62
+> +OETR 29.66 44.45 58.74 50.80 66.40 73.00 78.20 50.80 58.60 67.10 69.48 15.81
+> +SAMatcher 32.27 48.14 62.79 54.60 70.80 77.20 82.80 54.60 62.70 71.35 78.39 62.82 SIFT+NN -5.85 11.13 19.79 11.20 20.60 28.80 35.00 11.20 15.90 23.90 17.06 85.93
+> +OETR 10.05 16.91 26.47 18.20 28.80 36.60 41.40 18.20 23.50 31.25 23.32 85.40
+> +SAMatcher 10.64 20.64 34.02 22.60 37.80 47.20 55.20 22.60 30.20 40.70 27.62 93.61 R2D2+NN -20.47 33.45 47.27 37.60 52.60 61.60 68.00 37.60 45.10 54.95 52.89 87.81
+> +OETR 30.34 46.03 62.22 51.40 70.00 79.20 83.60 51.40 60.70 71.05 73.59 91.95
+> +SAMatcher 34.12 52.54 69.07 59.80 78.60 86.00 90.00 59.80 69.20 78.60 82.59 97.23 SP+NN -3.74 5.81 9.64 5.60 10.40 13.40 17.00 5.60 8.00 11.60 17.31 3.94
+> +OETR 13.43 21.74 31.63 24.60 35.60 41.60 45.80 24.60 30.10 36.90 40.11 9.54
+> +SAMatcher 22.53 36.18 50.42 40.80 56.60 65.60 70.20 40.80 48.70 58.30 60.62 90.61 LoFTR -34.36 48.33 60.79 53.80 68.20 73.20 77.20 53.80 61.00 68.10 55.61 43.91
+> +OETR 36.64 53.04 67.30 61.00 75.40 81.60 85.80 61.00 68.20 75.95 74.12 50.06
+> +SAMatcher 42.34 58.93 73.74 66.20 83.40 89.00 92.60 66.20 74.80 82.80 93.34 55.11 SP+SG -33.46 49.64 64.75 55.20 71.60 80.80 85.20 55.20 63.40 73.20 85.19 13.54
+> +OETR 35.69 51.89 66.36 58.00 74.80 80.60 86.20 58.00 66.40 74.90 90.41 22.66
+> +SAMatcher 36.41 54.43 69.97 62.60 79.40 85.20 90.40 62.60 71.00 79.40 94.96 79.49
+
+the challenges of wide-baseline and cross-resolution matching commonly encountered in remote sensing and large-scale scene reconstruction. Following standard practice, we report AUC, accuracy (Acc), and mean Average Accuracy (mAA) at multiple thresholds. Table I compares SAMatcher with baseline pipelines and OETR-enhanced variants across a broad spectrum of feature extractors and matching strategies. Here, OETR [33] denotes a region-level matching prior that con-strains correspondences using predicted object-level bounding regions, serving as a coarse co-visibility baseline. For pipelines based on nearest neighbor matching, SAMatcher consistently yields substantial and stable improve-ments. Notably, descriptors that are particularly sensitive to scale variation and background clutter, such as D2-Net and SuperPoint, benefit the most. For D2-Net+NN, AUC@20 increases from 2.29 to 28.37 and mAA@20 from 2.67 to 33.20, indicating a qualitative shift from near-failure to reliable matching. Similar trends are observed for DISK+NN and SP+NN, where SAMatcher improves both low-threshold accu-racy and overall mAA by large margins. These results suggest that the dominant failure mode of NN-based matching under large scale differences arises from correspondences formed in non-overlapping or weakly related regions, which are effec-tively suppressed by explicit co-visible region modeling. When combined with learning-based matching frame-
+
+Fig. 4: Ridge-style visualization of relative performance gains on MegaDepth. The plot summarizes the improve-ments brought by OETR (dark shading) and SAMatcher (light shading) over their respective base pipelines across different matching configurations. 10 
+
+Fig. 5: Qualitative comparison of co-visible region detection. For each image pair, we show OETR [33] box-only predictions and SAMatcher mask predictions, with masks overlaid as semi-transparent purple regions. While OETR provides coarse bounding boxes, SAMatcher produces accurate and consistent co-visible regions across views, even under large viewpoint changes and partial overlap. works, SAMatcher continues to provide consistent gains, although the relative improvement is more moderate. For DISK+SuperGlue, SAMatcher improves AUC@20 from 50.06 to 62.79 and mAA@20 from 57.48 to 71.35, while for SuperPoint+SuperGlue, mAA@20 increases from 73.20 to 79.40. These improvements indicate that even when re-lational reasoning and contextual aggregation are already present in the matcher, explicitly enforcing cross-view co-visibility introduces complementary geometric and semantic constraints. Rather than replacing learned correspondence rea-soning, SAMatcher refines the candidate space by filtering out structurally inconsistent regions before matching, leading to more reliable pose estimation. The benefit of SAMatcher is further evident when applied to dense end-to-end matching. For LoFTR, which directly operates on dense feature correlations, SAMatcher improves AUC@20 from 60.79 to 73.74 and mAA@20 from 68.10 to 82.80. This demonstrates that dense attention-based matching alone does not fully resolve ambiguities caused by partial overlap and large scale variation. By explicitly elevating co-visible regions as an intermediate representation, SAMatcher provides a higher-level structural prior that guides dense cor-respondence estimation toward globally consistent solutions. To assess generality beyond learned representations, we also evaluate SAMatcher with classical SIFT features and nearest-neighbor matching. Despite SIFT being explicitly designed for scale invariance, SAMatcher still improves AUC@20 from 19.79 to 34.02 and mAA@20 from 23.90 to 40.70. Importantly, these gains are achieved without altering the detector or descriptor, confirming that improvements stem from constraining the matching process rather than enhanc-ing appearance. This result highlights that co-visible region estimation addresses a complementary aspect of the matching problem that is largely orthogonal to descriptor design. Beyond individual metrics, we further visualize performance distributions across different matching pipelines in Fig. 4. The ridgeline plot shows that the distribution obtained with SAMatcher consistently lies above that of the baseline across all matching pipelines, indicating systematic performance improvements. This distribution-level trend corroborates the quantitative results in Table I and highlights the robustness of explicit co-visibility modeling under large scale variations. 11 
+
+Fig. 6: Region-guided correspondence comparison. SP+SG, +OETR, and +SAMatcher. Green lines denote correct matches, red lines incorrect ones. Under large scale variation, OETR often predicts inaccurate or missing regions, while SAMatcher identifies valid co-visible regions and yields more reliable correspondences. Overall, the results in Table I demonstrate that SAMatcher consistently improves correspondence quality across diverse matching paradigms and features. The improvements are most pronounced under large scale differences and partial overlap, conditions that are characteristic of aerial and satellite imagery. These findings support explicit co-visibility modeling as a principled and broadly applicable strategy for robust image matching in large-scale and remote sensing scenarios. 
+
+E. Qualitative Analysis of Co-Visible Region Modeling 1) Co-Visible Region Detection: Fig. 5 presents qualita-tive results of co-visible region detection on representative MegaDepth image pairs. Across diverse scenes and large viewpoint changes, SAMatcher consistently highlights regions observable in both views while suppressing view-specific background and occlusions. The predicted masks do not sim-ply follow local saliency or semantic prominence; they exhibit strong cross-view consistency, activating regions only when mutual visual support exists. This behavior indicates that co-visibility is learned as a re-lational property between views rather than an intrinsic feature of individual images. Such relational modeling is critical under wide-baseline conditions, where appearance similarity alone cannot distinguish valid correspondences from coincidental matches. By explicitly identifying co-visible regions prior to correspondence estimation, SAMatcher establishes a struc-tured intermediate representation that reduces the ambiguity of subsequent matching. These observations provide direct evidence that the symmetric cross-view interaction success-fully embeds co-visibility cues into the feature representation, laying a reliable foundation for downstream correspondence estimation. 
+
+2) Region-Guided Correspondence Filtering: Fig. 6 visu-alizes correspondence results guided by predicted co-visible regions. Compared to unconstrained matching, valid corre-spondences are densely concentrated within the predicted co-visible areas, while erroneous matches are largely suppressed outside these regions. False correspondences mainly arise in areas lacking mutual visibility, such as background clutter, repeated textures, or view-specific structures. In contrast, OETR relies on coarse bounding boxes and often fails to capture valid regions under large scale variation, sometimes introducing incorrect spatial priors. SAMatcher instead provides accurate co-visible region estimates, enabling more effective filtering of invalid matches. Constraining correspondence search to jointly supported regions effectively reduces the combinatorial space of poten-tial matches. This region-guided filtering alleviates common failure modes under large viewpoint or scale changes, where local descriptors may appear similar despite lacking geometric consistency. The observed reduction in spurious matches cor-responds to consistent improvements in AUC, accuracy, and mAA reported in Table I, demonstrating that explicit co-visible region modeling directly enhances correspondence reliability rather than merely refining intermediate features. 
+
+3) Complementarity of Mask and Box Supervision: Fig. 6 visualizes correspondence results guided by predicted co-visible regions. Compared to unconstrained matching, valid correspondences are densely concentrated within the predicted co-visible areas, while erroneous matches are largely sup-pressed outside these regions. False correspondences predom-inantly arise in regions lacking mutual visibility, such as back-ground clutter, repeated textures, or view-specific structures. OETR relies on coarse bounding boxes and often fails to capture valid regions under large scale variation, sometimes producing inaccurate or missing predictions that introduce unreliable spatial priors. In contrast, SAMatcher provides more accurate and consistent co-visible region estimates, enabling more effective filtering of invalid matches. By constraining correspondence search to regions jointly supported across views, SAMatcher reduces the combinatorial 12 
+
+Fig. 7: Complementarity of mask and box predictions. Masks (magenta) provide high recall but coarse coverage, while boxes (red) offer precise localization. Constraining masks with boxes yields refined co-visible regions (green), improving correspondence reliability. 
+
+Fig. 8: Zero-shot generalization on unseen datasets. Top: GL3D (outdoor aerial scenes). Bottom: ScanNet (indoor environments). Predicted co-visible regions are overlaid as semi-transparent magenta masks. SAMatcher consistently captures mutually observable regions while suppressing non-overlapping content under domain shifts. space of potential matches and alleviates common failure modes under large viewpoint or scale changes. As a result, spurious correspondences are significantly reduced, leading to consistent improvements in AUC, accuracy, and mAA (Ta-ble I), and demonstrating enhanced correspondence reliability. 
+
+F. Generalization 
+
+We evaluate zero-shot generalization of SAMatcher on unseen datasets with distinct characteristics, including ScanNet [50] (indoor) and GL3D [51], [52] (outdoor aerial), without fine-tuning. Fig. 8 shows qualitative results. Despite domain shifts, SAMatcher consistently highlights mutually observable re-gions while suppressing non-overlapping content. On GL3D, the model remains stable under large viewpoint and scale variations. On ScanNet, it filters occlusions and background clutter, focusing on geometrically consistent regions. These results suggest that co-visibility is learned as atransferable cross-view relation rather than a prior, enabling robust correspondence reasoning across diverse domains. 
+
+G. Ablation Study 
+
+We perform a controlled ablation to quantify the contri-bution of each core component in SAMatcher. All variants share the same backbone, optimization, and loss weights. TABLE II: Ablation results on MegaDepth.           
+
+> Method Mask IoU (%) Box IoU (%) w/o Symmetric Interaction 75.06 71.90 w/o Joint Constraint Optimization 76.67 80.68 w/o View Offset 77.15 80.74 Full SAMatcher 78.86 82.38
+
+Performance is measured via mask IoU and box IoU, as shown in Table II. We evaluate three variants: (1) without symmetric cross-view interaction, (2) without joint mask–box consistency, and (3) without view offset modeling. In variant (2), mask and box branches are optimized independently. Removing symmetric interaction reduces mask and box IoU by 3.8% and 10.5%, respectively, highlighting the importance of cross-view feature coupling. Disabling joint constraint op-timization lowers mask IoU by 2.2% and box IoU by 1.7%, confirming that cross-branch consistency provides effective regularization. Excluding view offset modeling decreases mask IoU by 1.7% and box IoU by 1.6%, showing that relative viewpoint encoding improves localization of shared regions. The full SAMatcher reaches 78.86% mask IoU and 82.38% box IoU, validating that symmetric interaction, joint con-straints, and view offset modeling collectively enable precise co-visible region prediction. 13 
+
+V. C ONCLUSION 
+
+We present SAMatcher, a unified framework that explicitly models co-visible regions to improve wide-baseline feature matching. By combining symmetric cross-view feature interac-tion, prompt-driven mask decoding, and object-level bounding box prediction, it constructs structured semantic and geometric priors that guide correspondences. The learned co-visibility captures relational properties across views, enabling robust handling of occlusion, background clutter, and large viewpoint or scale variations. SAMatcher provides a principled approach to joint region- and point-level reasoning, highlighting the role of explicit co-visibility for accurate and geometrically consistent correspondences, with a modular design applicable to future cross-view vision pipelines. REFERENCES [1] J. L. Schonberger and J.-M. Frahm, “Structure-from-motion revisited,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2016, pp. 4104–4113. [2] R. Mur-Artal, J. M. M. Montiel, and J. D. Tardos, “Orb-slam: A versatile and accurate monocular slam system,” IEEE Transactions on Robotics ,vol. 31, no. 5, pp. 1147–1163, 2015. [3] J. Engel, V. Koltun, and D. Cremers, “Direct sparse odometry,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 40, no. 3, pp. 611–625, 2017. [4] S. M. Seitz, B. Curless, J. Diebel, D. Scharstein, and R. Szeliski, “A comparison and evaluation of multi-view stereo reconstruction al-gorithms,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , vol. 1. IEEE, 2006, pp. 519–528. [5] S. Agarwal, Y. Furukawa, N. Snavely, I. Simon, B. Curless, S. M. Seitz, and R. Szeliski, “Building rome in a day,” Communications of the ACM ,vol. 54, no. 10, pp. 105–112, 2011. [6] J. Heinly, J. L. Schonberger, E. Dunn, and J.-M. Frahm, “Reconstructing the world* in six days*(as captured by the yahoo 100 million image dataset),” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2015, pp. 3287–3295. [7] D. G. Lowe, “Distinctive image features from scale-invariant keypoints,” 
+
+International Journal of Computer Vision , vol. 60, pp. 91–110, 2004. [8] H. Bay, T. Tuytelaars, and L. Van Gool, “Surf: Speeded up robust features,” in Proceedings of the European Conference on Computer Vision . Springer, 2006, pp. 404–417. [9] E. Rublee, V. Rabaud, K. Konolige, and G. Bradski, “Orb: An efficient alternative to sift or surf,” in Proceedings of the IEEE/CVF International Conference on Computer Vision . Ieee, 2011, pp. 2564–2571. [10] R. Hartley and A. Zisserman, Multiple view geometry in computer vision .Cambridge university press, 2003. [11] J. Heinly, E. Dunn, and J.-M. Frahm, “Comparative evaluation of binary features,” in Proceedings of the European Conference on Computer Vision . Springer, 2012, pp. 759–773. [12] J. Zhang, Z. Xia, M. Dong, S. Shen, L. Yue, and X. Zheng, “Co-matcher: Multi-view collaborative feature matching,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2025, pp. 21 970–21 980. [13] D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superpoint: Self-supervised interest point detection and description,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2018, pp. 224–236. [14] P.-E. Sarlin, D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superglue: Learning feature matching with graph neural networks,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion , 2020, pp. 4938–4947. [15] J. Sun, Z. Shen, Y. Wang, H. Bao, and X. Zhou, “Loftr: Detector-free local feature matching with transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2021, pp. 8922–8931. [16] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al. , “Segment anything,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 4015–4026. [17] X. Pan, Z. Wan, X. Yu, X. Zheng, Y. Ke, M. Sun, R. Wang, Z. Wang, and I. Tsang, “Sa-vla: Spatially-aware flow-matching for vision-language-action reinforcement learning,” arXiv preprint arXiv:2602.00743 , 2026. [18] K. M. Yi, E. Trulls, V. Lepetit, and P. Fua, “Lift: Learned invariant feature transform,” in Proceedings of the European Conference on Computer Vision . Springer, 2016, pp. 467–483. [19] Q. Wang, J. Zhang, K. Yang, K. Peng, and R. Stiefelhagen, “Match-former: Interleaving attention in transformers for feature matching,” in 
+
+Proceedings of the Asian Conference on Computer Vision , 2022, pp. 2746–2762. [20] P. Lindenberger, P.-E. Sarlin, and M. Pollefeys, “Lightglue: Local feature matching at light speed,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 17 627–17 638. [21] S. Xu, S. Chen, R. Xu, C. Wang, P. Lu, and L. Guo, “Local feature matching using deep learning: A survey,” Information Fusion , vol. 107, p. 102344, 2024. [22] J. Long, E. Shelhamer, and T. Darrell, “Fully convolutional networks for semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2015, pp. 3431–3440. [23] K. He, G. Gkioxari, P. Doll´ ar, and R. Girshick, “Mask r-cnn,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2017, pp. 2961–2969. [24] B. Cheng, A. Schwing, and A. Kirillov, “Per-pixel classification is not all you need for semantic segmentation,” Advances in Neural Information Processing Systems , vol. 34, pp. 17 864–17 875, 2021. [25] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “Segformer: Simple and efficient design for semantic segmentation with transformers,” Advances in Neural Information Processing Systems ,vol. 34, pp. 12 077–12 090, 2021. [26] B. Cheng, I. Misra, A. G. Schwing, A. Kirillov, and R. Girdhar, “Masked-attention mask transformer for universal image segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 1290–1299. [27] Z. Li, W. Wang, E. Xie, Z. Yu, A. Anandkumar, J. M. Alvarez, P. Luo, and T. Lu, “Panoptic segformer: Delving deeper into panoptic segmen-tation with transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 1280–1289. [28] Z. Xia, D. Han, Y. Han, X. Pan, S. Song, and G. Huang, “Gsva: Generalized segmentation via multimodal large language models,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 3858–3869. [29] Y. Jin, D. Mishkin, A. Mishchuk, J. Matas, P. Fua, K. M. Yi, and E. Trulls, “Image matching across wide baselines: From paper to practice,” International Journal of Computer Vision , vol. 129, no. 2, pp. 517–547, 2021. [30] J. Ni, G. Zhang, G. Li, Y. Li, X. Liu, Z. Huang, and H. Bao, “Eto: Ef-ficient transformer-based local feature matching by organizing multiple homography hypotheses,” Advances in Neural Information Processing Systems , vol. 37, pp. 60 260–60 274, 2024. [31] W. Jiang, E. Trulls, J. Hosang, A. Tagliasacchi, and K. M. Yi, “Cotr: Correspondence transformer for matching across images,” in Proceed-ings of the IEEE/CVF International Conference on Computer Vision ,2021, pp. 6207–6217. [32] P.-E. Sarlin, A. Unagar, M. Larsson, H. Germain, C. Toft, V. Larsson, M. Pollefeys, V. Lepetit, L. Hammarstrand, F. Kahl et al. , “Back to the feature: Learning robust camera localization from pixels to pose,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 3247–3257. [33] Y. Chen, D. Huang, S. Xu, J. Liu, and Y. Liu, “Guide local feature matching by overlap estimation,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 36, no. 1, 2022, pp. 365–373. [34] L. Wang, Y. Gong, X. Ma, Q. Wang, K. Zhou, and L. Chen, “Is-mvsnet: Importance sampling-based mvsnet,” in Proceedings of the European Conference on Computer Vision . Springer, 2022, pp. 668–683. [35] R. Gong, W. Liu, Z. Gu, X. Yang, and J. Cheng, “Learning intra-view and cross-view geometric knowledge for stereo matching,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 20 752–20 762. [36] J. Zhang, C. Herrmann, J. Hur, E. Chen, V. Jampani, D. Sun, and M.-H. Yang, “Telling left from right: Identifying geometry-aware semantic correspondence,” in Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , 2024, pp. 3076–3085. [37] Y. Wu, J. Liu, M. Gong, Q. Miao, W. Ma, and C. Xu, “Joint semantic segmentation using representations of lidar point clouds and camera images,” Information Fusion , vol. 108, p. 102370, 2024. 14 
+
+[38] Y. Liu, Y. Liu, and Y. Duan, “Mvg-net: Lidar point cloud semantic segmentation network integrating multi-view images,” Remote Sensing ,vol. 16, no. 15, p. 2821, 2024. [39] L. Ke, M. Ye, M. Danelljan, Y.-W. Tai, C.-K. Tang, F. Yu et al. , “Segment anything in high quality,” Advances in Neural Information Processing Systems , vol. 36, pp. 29 914–29 934, 2023. [40] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. R¨ adle, C. Rolland, L. Gustafson et al. , “Sam 2: Segment anything in images and videos,” arXiv preprint arXiv:2408.00714 , 2024. [41] W. Peebles and S. Xie, “Scalable diffusion models with transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 4195–4205. [42] R. Girdhar, A. El-Nouby, Z. Liu, M. Singh, K. V. Alwala, A. Joulin, and I. Misra, “Imagebind: One embedding space to bind them all,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 15 180–15 190. [43] Z. Liu, H. Hu, Y. Lin, Z. Yao, Z. Xie, Y. Wei, J. Ning, Y. Cao, Z. Zhang, L. Dong et al. , “Swin transformer v2: Scaling up capacity and resolution,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 12 009–12 019. [44] T. Dao, D. Fu, S. Ermon, A. Rudra, and C. R´ e, “Flashattention: Fast and memory-efficient exact attention with io-awareness,” Advances in Neural Information Processing Systems , vol. 35, pp. 16 344–16 359, 2022. [45] A. Kirillov, Y. Wu, K. He, and R. Girshick, “Pointrend: Image segmen-tation as rendering,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2020, pp. 9799–9808. [46] Z. Li and N. Snavely, “Megadepth: Learning single-view depth predic-tion from internet photos,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2018. [47] J. L. Sch¨ onberger and J.-M. Frahm, “Structure-from-motion revisited,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2016. [48] J. L. Sch¨ onberger, E. Zheng, M. Pollefeys, and J.-M. Frahm, “Pixelwise view selection for unstructured multi-view stereo,” in Proceedings of the European Conference on Computer Vision , 2016. [49] X. Pan, Z. Xia, and X. Zheng, “Scale-aware co-visible region detection for image matching,” ISPRS Journal of Photogrammetry and Remote Sensing , vol. 229, pp. 122–137, 2025. [50] A. Dai, A. X. Chang, M. Savva, M. Halber, T. Funkhouser, and M. Nießner, “Scannet: Richly-annotated 3d reconstructions of indoor scenes,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2017. [51] T. Shen, Z. Luo, L. Zhou, R. Zhang, S. Zhu, T. Fang, and L. Quan, “Matchable image retrieval by learning from surface reconstruction,” in 
+
+Proceedings of the Asian Conference on Computer Vision , 2018. [52] Z. Luo, T. Shen, L. Zhou, S. Zhu, R. Zhang, Y. Yao, T. Fang, and L. Quan, “Geodesc: Learning local descriptors by integrating geometry constraints,” in Proceedings of the European Conference on Computer Vision , 2018. [53] D. G. Lowe, “Object recognition from local scale-invariant features,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , vol. 2. Ieee, 1999, pp. 1150–1157. [54] M. Tyszkiewicz, P. Fua, and E. Trulls, “Disk: Learning local features with policy gradient,” Advances in Neural Information Processing Sys-tems , vol. 33, pp. 14 254–14 265, 2020. [55] M. Dusmanu, I. Rocco, T. Pajdla, M. Pollefeys, J. Sivic, A. Torii, and T. Sattler, “D2-net: A trainable CNN for joint description and detection of local features,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2019, pp. 8092–8101. [56] Z. Luo, T. Shen, L. Zhou, J. Zhang, Y. Yao, S. Li, T. Fang, and L. Quan, “Contextdesc: Local descriptor augmentation with cross-modality con-text,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2019, pp. 2527–2536. [57] J. Revaud, C. De Souza, M. Humenberger, and P. Weinzaepfel, “R2d2: Reliable and repeatable detector and descriptor,” Advances in Neural Information Processing Systems , vol. 32, 2019. [58] G. Gutin, A. Yeo, and A. Zverovich, “Traveling salesman should not be greedy: domination analysis of greedy-type heuristics for the tsp,” 
+
+Discrete Applied Mathematics , vol. 117, no. 1-3, pp. 81–86, 2002.

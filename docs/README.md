@@ -6,77 +6,77 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-04
-- 运行时间：2026-06-04 22:28:08 UTC
+- 最新运行日期：2026-06-05
+- 运行时间：2026-06-05 22:17:02 UTC
 - 运行状态：成功
-- 本次总论文数：19
-- 精读区：10
-- 速读区：9
+- 本次总论文数：18
+- 精读区：6
+- 速读区：12
 
 ### 今日简报（AI）
-今日聚焦AI生成内容检测与伪造定位的前沿技术；推荐精读结合语义差异与能量异常的高精度伪造检测方法；可关注深度伪造检测工具的实用化进展以保护数字内容真实性。
-- 详情：[/202606/04/README](/202606/04/README)
+- 今日共生成 18 篇推荐（精读 6 篇，速读 12 篇）
+- 精读：《Order within Chaos: Capturing Intrinsic Energy Anomalies for AI-Manipulated Image Forgery Localization》（10.0/10）, 《Explainable Forensics of Manipulated Segments in Untrimmed Long Videos》（9.0/10）
+- 速读：《Guidance for Low-Level Perceptual Editing in Unconditional Diffusion Models》（7.0/10）, 《Detect in Any Scene: An Agentic Framework for Object Detection with Experience-Aware Reasoning》（7.0/10）, 《PaintBench: Deterministic Evaluation of Precise Visual Editing》（7.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202606/05/README](/202606/05/README)
 
 ### 精读区论文标签
-1. [SIGMA: Semantic-Difference Instruction-Grounding Mask Annotator for Text-Driven Image Manipulation Localization](/202606/04/2605.27924v1-sigma-semantic-difference-instruction-grounding-mask-annotator-for-text-driven-image-manipulation-localization)  
+1. [Order within Chaos: Capturing Intrinsic Energy Anomalies for AI-Manipulated Image Forgery Localization](/202606/05/2606.02178v1-order-within-chaos-capturing-intrinsic-energy-anomalies-for-ai-manipulated-image-forgery-localization)  
    标签：评分：10.0/10、query:img-f
-   evidence：文本驱动的掩码标注用于定位图像篡改
-2. [Order within Chaos: Capturing Intrinsic Energy Anomalies for AI-Manipulated Image Forgery Localization](/202606/04/2606.02178v1-order-within-chaos-capturing-intrinsic-energy-anomalies-for-ai-manipulated-image-forgery-localization)  
-   标签：评分：10.0/10、query:img-f
-   evidence：提出FLAME框架，用于AI篡改图像的像素级伪造区域定位。
-3. [BIAS-ID: A Framework for Analyzing Transformation Biases in AI-Generated Image Detectors](/202606/04/2605.31153v1-bias-id-a-framework-for-analyzing-transformation-biases-in-ai-generated-image-detectors)  
+   evidence：提出用于AI生成图像伪造像素级定位的框架。
+2. [Explainable Forensics of Manipulated Segments in Untrimmed Long Videos](/202606/05/2606.02402v1-explainable-forensics-of-manipulated-segments-in-untrimmed-long-videos)  
+   标签：评分：9.0/10、query:img-f
+   evidence：在视频中定位和解释篡改片段用于取证。
+3. [GeM-NR: Geometry-Aware Multi-View Editing for Nonrigid Scene Changes](/202606/05/2606.05142v1-gem-nr-geometry-aware-multi-view-editing-for-nonrigid-scene-changes)  
    标签：评分：9.0/10、query:imgfor
-   evidence：分析AI图像检测器偏差以提升伪造检测。
-4. [FiSeR: Fine-Grained Source Representations for Cross-Domain AI Image Detection](/202606/04/2606.00606v1-fiser-fine-grained-source-representations-for-cross-domain-ai-image-detection)  
+   evidence：引入针对非刚性变化的最新图像编辑技术。
+4. [RedEdit: Agentic Red-Teaming of Image Safety Classifiers via MCTS-Guided Photo-Editing](/202606/05/2606.06140v1-rededit-agentic-red-teaming-of-image-safety-classifiers-via-mcts-guided-photo-editing)  
    标签：评分：9.0/10、query:imgfor
-   evidence：提出跨域AI图像检测以增强伪造检测鲁棒性。
-5. [Images as Tables: In-Context Learning with TabPFN for Low-Data Detection of AI-Generated Images](/202606/04/2606.00872v1-images-as-tables-in-context-learning-with-tabpfn-for-low-data-detection-of-ai-generated-images)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：利用上下文学习检测AI生成图像的方法
-6. [TextFake: Benchmarking AI-Generated Image Detection on Text-Rich Images](/202606/04/2606.01050v1-textfake-benchmarking-ai-generated-image-detection-on-text-rich-images)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：基准测试AI生成图像检测，与图像篡改检测相关
-7. [Hist2Style: Histogram-Guided Stylization with Bilateral Grids](/202606/04/2606.01819v1-hist2style-histogram-guided-stylization-with-bilateral-grids)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：提出快速真实感风格迁移用于图像编辑
-8. [Chroma Clues: Leveraging Color Statistics to Detect Synthetic Images](/202606/04/2606.02224v1-chroma-clues-leveraging-color-statistics-to-detect-synthetic-images)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：利用颜色统计检测AI合成图像
-9. [Impostor: An Agent-Curated Benchmark for Realistic AIGC Manipulation Localization](/202606/04/2606.04545v1-impostor-an-agent-curated-benchmark-for-realistic-aigc-manipulation-localization)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：AI生成图像篡改定位基准
-10. [IRIS-GAN: Staged Specialist Detection of Deepfake Faces](/202606/04/2606.04863v1-iris-gan-staged-specialist-detection-of-deepfake-faces)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：专门检测深度伪造人脸的检测器，准确率高。
+   evidence：生成对抗性图像编辑以逃避篡改检测
+5. [TECCI: Tricky Edits of Collected and Curated Images](/202606/05/2606.01213v1-tecci-tricky-edits-of-collected-and-curated-images)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：提供评估文本引导图像编辑技术的基准。
+6. [Where, What, Why, and Importance: Structured Defect Grounding for Text-to-Image Feedback](/202606/05/2606.06113v1-where-what-why-and-importance-structured-defect-grounding-for-text-to-image-feedback)  
+   标签：评分：8.0/10、query:imgfor
+   evidence：定位生成图像中的缺陷，与区域定位技术相关。
 
 ### 速读区论文标签
-1. [FOCUS: Forcing In-Context Object Localization through Visual Support Constraints and Policy Optimization](/202606/04/2605.31145v1-focus-forcing-in-context-object-localization-through-visual-support-constraints-and-policy-optimization)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：图像上下文物体定位技术
-2. [Explainable Forensics of Manipulated Segments in Untrimmed Long Videos](/202606/04/2606.02402v1-explainable-forensics-of-manipulated-segments-in-untrimmed-long-videos)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：视频取证中定位和解释被操纵片段的方法
-3. [ReConFuse: Reconstruction-Error Guided Semantic Fusion for AI-Generated Video Detection](/202606/04/2606.04706v1-reconfuse-reconstruction-error-guided-semantic-fusion-for-ai-generated-video-detection)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：利用重建误差检测AI生成视频
-4. [Mitigating Content Shift and Hallucination in GenAI Image Editing via Structural Refinement](/202606/04/2605.30437v1-mitigating-content-shift-and-hallucination-in-genai-image-editing-via-structural-refinement)  
+1. [Guidance for Low-Level Perceptual Editing in Unconditional Diffusion Models](/202606/05/2605.31162v1-guidance-for-low-level-perceptual-editing-in-unconditional-diffusion-models)  
    标签：评分：7.0/10、query:imgfor
-   evidence：针对生成式AI图像编辑中的结构优化，与编辑过程逆向分析相关
-5. [Do Text Edits Generalize to Visual Generation? Benchmarking Cross-Modal Knowledge Editing in UMMs](/202606/04/2606.00477v1-do-text-edits-generalize-to-visual-generation-benchmarking-cross-modal-knowledge-editing-in-umms)  
+   evidence：扩散模型中的免训练图像编辑
+2. [Detect in Any Scene: An Agentic Framework for Object Detection with Experience-Aware Reasoning](/202606/05/2605.31174v1-detect-in-any-scene-an-agentic-framework-for-object-detection-with-experience-aware-reasoning)  
    标签：评分：7.0/10、query:imgfor
-   evidence：研究模型中的跨模态知识编辑，相关于图像编辑分析。
-6. [Training-free image inversion for one-step diffusion models](/202606/04/2606.01380v1-training-free-image-inversion-for-one-step-diffusion-models)  
+   evidence：用于图像中自适应区域定位的代理框架
+3. [PaintBench: Deterministic Evaluation of Precise Visual Editing](/202606/05/2606.00188v1-paintbench-deterministic-evaluation-of-precise-visual-editing)  
    标签：评分：7.0/10、query:imgfor
-   evidence：扩散模型的无训练图像反演有助于逆向分析图像编辑
-7. [Mahalanobis PatchCore: Covariance-Aware and Streaming-Compatible Industrial Anomaly Detection](/202606/04/2605.27748v1-mahalanobis-patchcore-covariance-aware-and-streaming-compatible-industrial-anomaly-detection)  
+   evidence：评估精确视觉编辑技术，与最新图像编辑方法相关。
+4. [UniVerse: A Unified Modulation Framework for Segmentation-Free,Disentangled Multi-Concept Personalization](/202606/05/2606.00351v1-universe-a-unified-modulation-framework-for-segmentation-freedisentangled-multi-concept-personalization)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：无需分割的图像概念定位
+5. [UniVerse: A Unified Modulation Framework for Segmentation-Free,Disentangled Multi-Concept Personalization](/202606/05/2606.00351v2-universe-a-unified-modulation-framework-for-segmentation-freedisentangled-multi-concept-personalization)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：无需分割的图像概念定位
+6. [InstantRetouch: Efficient and High-Fidelity Instruction-Guided Image Retouching with Bilateral Space](/202606/05/2606.05071v1-instantretouch-efficient-and-high-fidelity-instruction-guided-image-retouching-with-bilateral-space)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：指令引导的图像修饰技术
+7. [SAM-Flow: Source-Anchored Masked Flow for Training-Free Image Editing](/202606/05/2606.06228v1-sam-flow-source-anchored-masked-flow-for-training-free-image-editing)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：使用源锚定掩码流的局部图像编辑
+8. [Authentication of Copy Detection Patterns via Cross-Camera Dual-Synthetic Referencing](/202606/05/2605.31292v1-authentication-of-copy-detection-patterns-via-cross-camera-dual-synthetic-referencing)  
    标签：评分：6.0/10、query:imgfor
-   evidence：协方差感知的异常检测定位图像中的缺陷区域
-8. [GenED-SC: Generative Editing Semantic Communication with Integrated Multi-Modal LLMs](/202606/04/2606.04015v1-gened-sc-generative-editing-semantic-communication-with-integrated-multi-modal-llms)  
+   evidence：使用图像取证技术认证印刷图案。
+9. [Rate-optimal neural boundary detection from unlabeled noisy images](/202606/05/2606.00715v1-rate-optimal-neural-boundary-detection-from-unlabeled-noisy-images)  
    标签：评分：6.0/10、query:imgfor
-   evidence：提出一种基于多模态大语言模型的生成式编辑语义图像传输框架。
-9. [ATI_Box: A Simple tool for convolutional neural network-based image semantic segmentation](/202606/04/biorxiv-10-64898-2026-05-29-728143-v1-atibox-a-simple-tool-for-convolutional-neural-network-based-image-semantic-segmentation)  
+   evidence：用于物体区域定位的边界检测
+10. [COLLAR: Cascaded Object-Level Latent Refinement for High-Fidelity Conditional Generation](/202606/05/2606.00954v1-collar-cascaded-object-level-latent-refinement-for-high-fidelity-conditional-generation)  
    标签：评分：6.0/10、query:imgfor
-   evidence：CNN图像分割工具用于区域定位
+   evidence：开发图像生成中精确对象级控制方法，与编辑技术相关。
+11. [SAMatcher: Co-Visibility Modeling with Segment Anything for Robust Feature Matching](/202606/05/2606.03406v1-samatcher-co-visibility-modeling-with-segment-anything-for-robust-feature-matching)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：用于特征匹配的共可见区域定位
+12. [Bootstrap Your Generator: Unpaired Visual Editing with Flow Matching](/202606/05/2606.03911v1-bootstrap-your-generator-unpaired-visual-editing-with-flow-matching)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：使用流匹配的无配对视觉编辑
 
 
 <div class="dpr-home-promo-card">
