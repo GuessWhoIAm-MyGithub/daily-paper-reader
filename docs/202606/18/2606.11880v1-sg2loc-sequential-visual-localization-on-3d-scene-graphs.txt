@@ -1,0 +1,550 @@
+Title: SG2Loc: Sequential Visual Localization on 3D Scene Graphs
+
+URL Source: https://arxiv.org/pdf/2606.11880v1
+
+Published Time: Thu, 11 Jun 2026 01:00:02 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# SG2Loc: Sequential Visual Localization on 3D Scene Graphs 
+
+Nicole Damblon 1 Olga Vysotska 1 Federico Tombari 2 3 Marc Pollefeys 1 4 Daniel Barath 1 2 
+
+# Abstract 
+
+Visual localization in complex indoor environ-ments remains a critical challenge for robotics and AR applications. Sequential localization, where pose estimates are refined over time, is important for autonomous agents. However, tra-ditional methods often require storing extensive image databases or point clouds, leading to sig-nificant overhead. This paper introduces a novel, lightweight approach to sequential visual local-ization using 3D scene graphs. Our method rep-resents the environment with a compact scene graph, where nodes represent objects (with coarse meshes) and edges encode spatial relationships. For each image in the localization phase, we ex-tract per-patch semantic features, predicting ob-ject identities. Localization is performed within a particle filter framework. Each particle, rep-resenting a camera pose, projects the coarse ob-ject meshes from the scene graph into the image, assigning object identities to patches based on visibility. The similarity of the per-patch fea-tures, in the input image, and object features from the scene graph determines the weight of a particle. Subsequent images are incorporated sequentially, refining the pose estimate. By lever-aging a compact scene graph and efficient se-mantic matching, our method significantly re-duces storage while maintaining performance on real-world datasets. The code will be available at https://github.com/DmblnNicole/sg2loc. 
+
+# 1. Introduction 
+
+Visual localization is a fundamental capability in robotics and augmented reality. Accurate pose estimation (orienta-
+
+> 1
+
+ETH Zurich 2Google 3TU Munich 4Microsoft. Corre-spondence to: Nicole Damblon <ndamblon@ai.ethz.ch >,Olga Vysotska <ovysotska@ethz.ch >, Federico Tombari <federico.tombari@tum.de >, Marc Pollefeys 
+
+<marc.pollefeys@inf.ethz.ch >, Daniel Barath <daniel-bela.barath@inf.ethz.ch >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+Figure 1. Observation model for a particle s(n) 
+
+> t
+
+= ( x, y, z, ϕ ),matching object descriptors predicted by (Miao et al., 2024) from the query image It to projected object labels from the semantically segmented coarse mesh. The particle weight reflects how well the observed and projected objects agree. 
+
+tion and position of an agent) enables autonomous nav-igation, scene understanding, and user-interaction tasks. Over the years, single-image localization and Simultane-ous Localization and Mapping (SLAM)-based techniques have demonstrated remarkable progress (Arandjelovic et al., 2016; DeTone et al., 2018; Berton & Masone, 2025; Campos et al., 2021; Sattler et al., 2018; Murai et al., 2025), but they often demand large storage resources for image databases or 3D point clouds equipped with visual features. As en-vironments grow both in scale and complexity, this burden becomes impractical for memory-constrained devices or applications with low bandwidth requirements. Sequential localization strategies mitigate these challenges by incorporating temporal cues, refining pose estimates over multiple frames rather than treating each query image inde-pendently (Leutenegger et al., 2015; Campos et al., 2021; Maggio et al., 2022). Some works combine single-image pose estimation with SLAM to reduce drift and improve robustness (Lynen et al., 2020). Nonetheless, global pose alignment typically depends on retrieving a dense 3D model or querying large-scale maps. Such approaches can be pro-hibitive in extended deployments, especially during frequent map updates or transfers on resource-constrained platforms. 1
+
+> arXiv:2606.11880v1 [cs.CV] 10 Jun 2026 Sequential Visual Localization on 3D Scene Graphs
+
+Scene graphs present a promising alternative. Storing the environment as a graph of objects and their spatial relation-ships offers compactness and a semantically rich represen-tation. Early research on scene graphs primarily targeted scene understanding, reconstruction, and retrieval (Armeni et al., 2019; Johnson et al., 2015; Hudson & Manning, 2019). More recently, SceneGraphLoc (Miao et al., 2024) lever-aged a scene graph to achieve cross-modal place recognition, highlighting their potential to reduce memory footprints while facilitating efficient localization. Building on these insights, we introduce a novel method for sequential visual localization that combines a lightweight 3D scene graph with a particle filter. The proposed sys-tem relies on coarse object meshes, rather than dense point clouds, and semantic descriptors, significantly reducing stor-age overhead compared to the state of the art. We formulate sequential localization for indoor environments as a particle filtering problem, where each particle observes a portion of the scene and identifies object categories (e.g., table or 
+
+chair ). By recognizing objects, the system can evaluate whether the configuration of a particle (its pose) aligns with the input sequence by simply verifying whether the same objects appear in both the particle view and the query image (see Fig. 1). The main contributions of this paper are: • A new 3D scene-graph-based framework for sequential visual localization that jointly models semantic cues, geo-metric and photometric constraints. • A particle filter approach that leverages semantic object identities to refine camera poses iteratively, without re-quiring large image databases or point-cloud maps. • As a technical contribution, we adapt SceneGraphLoc to work with image sequences (Sec. 4). 
+
+# 2. Related Work 
+
+Visual localization is a long-standing problem in computer vision and robotics, with roots in early works on Structure-from-Motion (Kruppa, 1913; Moravec, 1980; Fischler & Bolles, 1981). Modern approaches can be categorized into single-image localization, SLAM-based methods, and se-quential localization methods. Our work falls into the last category, but leverages a novel scene graph representation, distinguishing it from prior art. 
+
+Single-image localization. Many recent methods rely on a two-stage approach: coarse localization (place recognition) followed by pose estimation. Coarse localization treats the problem as image retrieval, comparing a query image to a database of geo-tagged ones. Methods like NetVLAD (Arandjelovic et al., 2016), AP-GeM (Revaud et al., 2019a) and MegaLoc (Berton & Masone, 2025) provide global im-age descriptors for this purpose. Fine localization involves establishing 2D-3D matches between image features and a 3D model (often a point cloud) of the scene, followed by pose estimation using RANSAC. Feature detectors and descriptors like SuperPoint (DeTone et al., 2018), R2D2 (Revaud et al., 2019b), and D2-Net (Dusmanu et al., 2019) are commonly used. While effective, these methods require storing large image databases or 3D point clouds equipped with visual features, leading to substantial storage demands. Alternative approaches, such as scene coordinate (Brach-mann et al., 2017; Brachmann & Rother, 2018; Brachmann et al., 2023; Wang et al., 2024) and absolute pose regression (Walch et al., 2017; Kendall et al., 2015), directly predict 3D coordinates or camera poses from the image. However, these often struggle with complex, large-scale environments (Sat-tler et al., 2018; 2016b;a; Wang et al., 2024). Our work is fundamentally different, as it avoids storing image databases or point clouds by using a scene graph. 
+
+Simultaneous localization and mapping (SLAM) systems (Engel et al., 2014; Gao et al., 2018; Campos et al., 2021; Murai et al., 2025) provide local tracking of the trajectory of a camera. Popular examples include OpenVINS (Geneva et al., 2020), ORB-SLAM (Campos et al., 2021), DROID-SLAM (Teed & Deng, 2021), DSO (Engel et al., 2017), DPVO (Teed et al., 2023). While these systems excel at tracking relative motion, they are prone to accumulated drift over long trajectories and typically do not perform global localization (loop closure) without additional mechanisms. Some systems integrate inertial measurements (Lynen et al., 2020; Qin et al., 2018) for improved robustness. We build upon SLAM systems, leveraging their camera trajectory while providing lightweight global localization capabilities. 
+
+Sequential localization. Some approaches improve robust-ness by composing a local visual or visual-inertial tracker (Forster et al., 2014; Bloesch et al., 2015; Sattler et al., 2016b; Leutenegger et al., 2015; Qin et al., 2018), with a single-image global localizer (Middelberg et al., 2014; Ly-nen et al., 2020). Maplab (Schneider et al., 2018) provides a framework for visual-inertial benchmarking, while KFNet (Zhou et al., 2020) offers a learning-based alternative. Other methods incorporate temporal information by modeling im-age sequences, enabling joint localization across multiple frames. More recently, MASt3R-SLAM (Murai et al., 2025) and VGGT-SLAM (Maggio et al., 2026) use feed-forward 3D geometry for feature matching and mapping. In contrast, NeRF- and Gaussian Splat-based methods (Maggio et al., 2022; Adamkiewicz et al., 2022; Khatib et al., 2025; Meng et al., 2025) assume a pre-built dense reconstruction and localize by minimizing photometric error of rendered and observed views. While offering high-fidelity appearance matching, they are memory- and compute-intensive and re-main highly sensitive to illumination and scene changes. We instead propose lightweight scene graphs with semantic and depth cues, providing compact maps and constraints in addition to photometric consistency. 2Sequential Visual Localization on 3D Scene Graphs      
+
+> Figure 2. Sequential localization pipeline. Given the current image Itand its ego-motion, the pipeline updates the particle state while leveraging previously processed images I0, . . . , I t−1. The current image is passed through the SceneGraphLoc (Miao et al., 2024) encoder to predict object labels for each image patch. These predictions inform a 4D probability distribution over the camera pose (3D position and rotation around the vertical axis), which is then integrated into the posterior distribution, refining the estimated camera pose as new images become available.
+
+3D scene graphs for localization and retrieval have emerged as a powerful representation for capturing scene understanding, extending geometric representations with semantic and relational knowledge. Scene graphs first emerged as 2D representations of images, capturing objects and their relations for tasks such as image retrieval (John-son et al., 2015) and visual question answering (Hudson & Manning, 2019). This idea was later lifted to 3D, where scene graphs are constructed from point clouds or RGB-D reconstructions to capture spatial and semantic structure (Ar-meni et al., 2019; Wald et al., 2020). The recent Scene-GraphLoc (Miao et al., 2024) introduced the novel prob-lem of cross-modal localization of a query image within a database of 3D scene graphs, demonstrating significant stor-age savings and faster query times compared to image-based methods. While not localization, it showed promise for place recognition. Our approach builds upon the strengths of sequential localization methods and the light-weight na-ture of scene graphs to provide a new localization direction. 
+
+# 3. Sequential Localization with Particle Filter 
+
+We aim to estimate a 4 degree-of-freedom camera pose 
+
+st = ( x, y, z, ϕ ), where ϕ denotes rotation around the known gravity axis, from a sequence of images {I1, . . . , I T }. We maintain a set of N particles St = {s(1)  
+
+> t
+
+, . . . , s(N ) 
+
+> t
+
+} that evolves over time using a particle filter. The filter integrates a coarse , labeled 3D mesh (derived from a 3D scene graph) with the pre-trained SceneGraphLoc model (Miao et al., 2024) to compute observation likelihoods. The particle filter pipeline is visualized in Fig. 2. Note that the gravity and camera intrinsics are usually acces-sible from robot sensors, smartphones, and head-mounted devices. If this information is not readily available, meth-ods such as GeoCalib (Veicht et al., 2024) can be used to estimate both the intrinsics and gravity direction. 
+
+Scene representation. We model the environment as a 3D scene graph G = ( V, E), where each vertex vi ∈ V 
+
+corresponds to an object instance oi. Each object node oi is associated with: • A compact embedding ei ∈ Rd, obtained from the Scene-GraphLoc object encoder (Miao et al., 2024), which com-bines multi-modal inputs (e.g., RGB images, point clouds, textual annotations, relationships to other objects). • A coarse 3D mesh Mi that captures the approximate ge-ometry of the object for raycasting. The mesh needs only be detailed enough for visibility and occlusion checks. 1
+
+Edges in E encode spatial relationships (e.g., adjacency) among objects, though our localization pipeline primar-ily relies on object embeddings {ei} and coarse meshes 
+
+{M i}. By storing these low-dimensional descriptors and approximate geometries instead of dense image databases or large point clouds, we greatly reduce the memory foot-print while still enabling accurate pose estimation. We use existing methods to build scene graphs. For ScanNet, we use SceneGraphFusion (Wu et al., 2021), which incremen-tally predicts 3D scene graphs from RGB-D sequences. For 
+
+> 1On average, the 3RScan (Wald et al., 2019) meshes have 863 vertices per object and ScanNet (Dai et al., 2017) 11681 vertices per object in the experiments.
+
+3Sequential Visual Localization on 3D Scene Graphs 
+
+3RScan, scene graph annotations are provided. Our method is not tied to a specific scene graph construction method, it only requires object meshes and semantic embeddings. Any method that produces object-level 3D segmentations can be used, such as CLIO (Maggio et al., 2024), which builds scene graphs from open-vocabulary features in real time. 
+
+Particle filter. To approximate posterior p(st | I1: t), we maintain a set of weighted particles as 
+
+p(st | I1: t) ≈
+
+> N
+
+X
+
+> n=1
+
+w(n) 
+
+> t
+
+δ st − s(n)
+
+> t
+
+, (1) where δ is the Dirac delta function and w(n) 
+
+> t
+
+denotes the normalized weight of the n-th particle at time t. At each timestep, the filter performs (i) a prediction step (motion model), (ii) an update step (observation model), and (iii) optional resampling, as described below in the next section. 
+
+3.1. Initialization Patch embeddings from SceneGraphLoc. We subdivide each incoming image It into a grid of n × m rectangular patches {pr,c }, where r ∈ [0 , n ) and c ∈ [0 , m ). Following SceneGraphLoc (Miao et al., 2024), we use a 16 × 9 patch grid on 3RScan ( 144 patches) and a 32 ×24 grid on ScanNet (768 patches). We apply the SceneGraphLoc image encoder to obtain a set of patch embeddings {ˆer,c }. Each ˆer,c is a semantic descriptor indicating which object (from the scene graph vocabulary) is most likely visible in the patch. 
+
+Particle distribution. We then uniformly distribute parti-cles in a 3D bounding region Ω spanning four approximate camera heights {1.50 , 1.60 , 1.70 , 1.80 } meters above the floor. Concretely, we partition Ω into uniform grid cells of size 0.2 meters, sample three poses per cell, and randomly assign each a yaw angle ϕ ∈ [−π, π ]. All particles receive equal initial weight, determined as follows 
+
+p(s0) = 1
+
+|Ω| if s0 ∈ Ω else 0 (2) This broad initialization ensures coverage of plausible poses across the scene before the sequential estimation begins. 
+
+3.2. Prediction (Motion Model) 
+
+To propagate each particle s(n) 
+
+> t
+
+from timestep t to 
+
+t + 1 , we apply the camera’s ego-motion tt =[ tx,t , t y,t , t z,t , t ϕ,t ], augmented by i.i.d. Gaussian noise 
+
+ωt = [ ωx,t , ω y,t , ω z,t , ω ϕ,t ]:
+
+s(n) 
+
+> t+1
+
+= s(n) 
+
+> t
+
+⊕  tt + ωt
+
+. (3) Here, ⊕ applies a 4-DoF transformation (3D trans./rot. around the gravity axis). We set σtrans = 0.05 m and 
+
+σrot = 0 .05 rad as the standard deviations for translation and yaw noise, respectively. This accounts for modeling uncertainty in the motion estimates while maintaining grav-ity alignment. Those parameters were set once and kept fixed across all experiments on both 3RScan and ScanNet. In practice, ego-motion is obtained by the employed SLAM system, for example (Teed & Deng, 2021). 
+
+3.3. Update (Observation Model) 
+
+After predicting the particle set St+1 , we incorporate the new image It+1 to refine particle weights. 
+
+Raycasting. For each particle pose s(n)
+
+> t+1
+
+, we project the coarse 3D meshes {M i} from the scene graph into the image. This identifies which objects (nodes in G) are visible in each of the 16 ×9 patches, assigning an object embedding 
+
+ei to each patch ˆpr,c for that particle. 
+
+Patch similarity. We then compare the patch embedding 
+
+ˆer,c from the query image It+1 (Section 3.1) with the object embedding ei assigned by raycasting. We compute the cosine similarity and retain it if the predicted object matches the one determined by raycasting. Summing these valid similarities across all patches and normalizing by the patch count yields a score per particle s(n) ∈ [0 , 2] , where the cosine similarity in [−1, 1] is shifted to the positive range. 
+
+Particle weighting. We model the likelihood using a Gaus-sian centered on smax = 2 , so that the likelihood is maxi-mized when s(n) = smax :
+
+L s(n)
+
+> t+1
+
+ = exp  −(smax − s(n))2/(2 σ2),
+
+with σ = 0 .2. The unnormalized weight of each particle becomes: 
+
+˜w(n) 
+
+> t+1
+
+= w(n) 
+
+> t
+
+· L(s(n)
+
+> t+1
+
+), (4) which we normalize by P 
+
+> m
+
+˜w(m) 
+
+> t+1
+
+to obtain w(n)
+
+> t+1
+
+. Parti-cles whose similarity scores are closer to the maximum receive greater weight, driving the distribution toward accu-rate poses in subsequent steps. 
+
+3.4. Additional Supervision Signals 
+
+In addition to semantics, we use photometric and geometric cues to guide the particle filter. 
+
+Color supervision. As we are given an RGB sequence as input, we can leverage photometric losses to further improve our particle state quality measurements. Let us assume that our map representation is a coarse textured mesh. For each particle s(n)
+
+> t+1
+
+, we project the meshes {M i} of the visible objects into the image plane. Note that this step does not require additional computations as the mesh has already been projected for semantic supervision. Now, instead of assigning object identities, we render an RGB image I(n)
+
+> p
+
+4Sequential Visual Localization on 3D Scene Graphs 
+
+> Stride = 20
+
+Initialization (1) (2) (3) (4) MLE MLE ( 1st frame) Stride = 8 
+
+Initialization (1) (2) (3) (4) MLE MLE ( 1st frame) Stride = 4 
+
+Initialization (1) (2) (3) (4) MLE 
+
+Figure 3. Multi-round particle filter on a 5-image sequence, first running with a stride of 20, 8, and finally 4 (the stride controls the rate of downsampling the images). The first column shows the initial random particle distribution, gradually narrowing the search space in subsequent rounds. Each next column represents particle updates after integrating the nth image (indicated below each plot). Then, the Maximum Likelihood Estimate (MLE) is shown in blue, and the GT pose in green, back-propagated to the 1st frame for the next optimization round. 
+
+for the particle. Given the next image It+1 in the input sequence, we calculate the photometric score s(n) 
+
+> i
+
+of the particle by calculating the structural similarity (SSIM) as 
+
+s(n) 
+
+> i
+
+= LSSIM (It+1 , I (n) 
+
+> p
+
+), where LSSIM returns values be-tween 0 and 1, and higher values indicate greater similarity. 
+
+Depth supervision. When depth information is available, either from an RGB-D sensor or a depth estimator applied to the image sequence, we can further incorporate this infor-mation to enhance accuracy. We achieve this by adding a depth-based score. This allows us to guide the particles also through the geometric structure of the scene. 
+
+Depth map projection. For each particle s(n)
+
+> t+1
+
+, we project the coarse 3D meshes of the visible objects into the image plane. Now, instead of assigning object identities, we render a depth map D(n) 
+
+> p
+
+for the particle. This depth represents the distance from the camera plane to the projected mesh surfaces, according to the pose of the particle. We use the same resolution for D(n) 
+
+> p
+
+as the input image (or the downsampled version, as described in Sec. 3.5). Let DI be the depth map corresponding to the input image It+1 . If 
+
+It+1 is an RGB-D image, DI is directly obtained from the sensor. If only RGB data is available, DI can be estimated using a monocular or stereo depth estimation method. 
+
+Depth score calculation. We compute the depth score s(n)
+
+> d
+
+for particle s(n) 
+
+> t+1
+
+by calculating the L1 difference of the projected depth map D(n) 
+
+> p
+
+and the input DI . The score is calculated as follows: 
+
+s(n) 
+
+> d
+
+= 1 − 1
+
+R · C
+
+> R
+
+X
+
+> r=1
+> C
+
+X
+
+> c=1
+
+|D(n) 
+
+> p
+
+(r, c ) − DI (r, c )|, (5) where R and C are the number of rows and columns of the depth maps, respectively, and D(n) 
+
+> p
+
+(r, c ) and DI (r, c ) are the depth values at pixel (r, c ) in the projected and input depth maps, respectively. The score is designed such that 1 is best and lower values are worse. 
+
+Combined score. The final weight is then computed by combining the semantic similarity score s(n) (from Sec. 3.3), the depth s(n) 
+
+> d
+
+and color scores s(n) 
+
+> i
+
+as: 
+
+L s(n)
+
+> t+1
+
+ = exp 
+
+
+
+− (smax −(λ0s(n)+λ1s(n)   
+
+> d+λ2s(n)
+> i)) 2
+> 2σ2
+
+
+
+, (6) where λ0, λ1, λ2 balance the contribution of the semantic, depth and color scores, and smax is the maximum value the weighted sum can attain. The weights are set empirically. For our experiments, all scores contribute equally ( λ0 =
+
+λ1 = λ2 = 1 ) and are kept fixed across all experiments. The unnormalized weight becomes: 
+
+˜w(n) 
+
+> t+1
+
+= w(n) 
+
+> t
+
+· L s(n)
+
+> t+1
+
+, (7) We normalize these weights as before: w(n) 
+
+> t+1
+
+=˜w(n)
+
+> t+1
+
+/ P 
+
+> m
+
+˜w(m) 
+
+> t+1
+
+. This combined scoring mechanism lever-ages semantic, geometric and appearance information, lead-ing to more robust and accurate localization, especially 5Sequential Visual Localization on 3D Scene Graphs 
+
+where the semantic information alone might be ambiguous. The depth and color scores provide additional constraints based on geometric and photometric consistency, helping to disambiguate poses with similar semantic projections. 
+
+3.5. Coarse-to-Fine Optimization 
+
+We refine the pose estimate over multiple rounds, gradually increasing raycasting resolution and narrowing the search region. We observed that this process speeds up the local-ization and leads to higher accuracy. In the first round, we downsample the input image with a stride of 20 pixels, en-abling a coarse but efficient search over the entire scene. Particles are initialized uniformly within the full environ-ment bounds, allowing a rapid, coarse localization. Next, we apply an 8-pixel stride, restricting the particle initialization to a 1.63 m region centered around the maximum likelihood estimate (MLE) pose from the previous round. This second pass refines localization by focusing on a smaller region. Finally, we downsample the image with stride 4 and use an even tighter bounding box of 0.83 m around the new MLE pose. This final pass incorporates high-resolution visibility checks and yields the most precise pose estimate. 
+
+Adaptive resampling. Following each update, we dynam-ically adjust the particle count using an adaptive scheme based on KLD-sampling (Fox, 2001). Letting ϵ and δ be bounds on the Kullback–Leibler divergence and its confi-dence level, respectively, we compute 
+
+n = 12ϵ 1 − 29( k − 1) +
+
+s
+
+29( k − 1) z1−δ
+
+!3
+
+, (8) where k is the bin number in the state histogram used for divergence estimation, and z1−δ is the (1 − δ)-quantile of the normal distribution. We then apply stratified resampling to draw n new particles, ensuring that the MLE distribution remains an accurate approximation of the true posterior. An example visualization is shown in Fig. 3. 
+
+3.6. Pose Refinement with PnP 
+
+To refine the final particle filter pose, we render six synthetic views from the mesh. One from the MLE pose estimated in the previous steps and five sampled within a range of ±45 ◦
+
+yaw around it. We match each view with the query image using RoMav2 (Edstedt et al., 2025) and establish 2D-3D correspondences through a ray-mesh intersection. Pose re-finement uses RANSAC-based PnP from PoseLib (Larsson & contributors, 2020). For each sequence, we apply this pro-cess per frame by backpropagating the MLE pose (obtained from the last frame) to earlier images. We select the pose with the highest inlier count as the final estimate. 
+
+# 4. Sequential Scene Retrieval 
+
+The particle filter in Sec. 3 estimates a camera pose within a 
+
+known scene graph. In multi-scene deployments, one first needs to identify which scene the agent is in. The two stages are independent: the particle filter works without retrieval (by uniformly sampling the space), and retrieval can stand alone as a place-recognition step. For completeness, we propose a sequential extension of (Miao et al., 2024) for this complementary scene-identification step. SceneGraphLoc was originally designed to select the correct scene graph from a database {G i} given a single query im-age. We adapt it to leverage an entire input sequence instead. SceneGraphLoc (Miao et al., 2024) was originally designed to select the correct scene (represented as a 3D scene graph) from a set of candidate scene graphs {G i} given a query image as input. In this section, we adapt SceneGraphLoc to leverage not just one image but the entire input sequence when retrieving the current scene from the database. For each image It in the sequence, we extract a set of image patches Qt. For each patch q ∈ Q t, we compute its em-bedding eq using the pre-trained encoder. Similar to (Miao et al., 2024), we then compare eq with the embeddings ev of nodes v ∈ V i in each scene graph Gi in our database using a similarity metric as similarity (q, v ) = cos( eq , e v ). We as-sign a score to each scene graph Gi based on the similarity scores of its nodes to the image patches as: score t(Gi, I t) = 
+
+> 1
+> |Q t|
+
+P 
+
+> q∈Q t
+
+max v∈V i similarity (q, v ). To incorporate infor-mation from the sequence, we aggregate the scores from all images as score (Gi) = PTt=1 score t(Gi, I t). The scene graph with the highest final score is selected as the correct match for the sequence. This process allows us to better find the correct scene in a database of maps. 
+
+# 5. Experiments 
+
+Datasets. The 3RScan dataset (Wald et al., 2019) contains 1,335 annotated indoor scenes across 432 spaces, with 1,178 scenes (385 rooms) for training and 157 (47 rooms) for vali-dation. Each scene is represented by a semantically anno-tated 3D point cloud, with multiple captures over months to reflect environmental changes. For 3RScan, scene graph annotations are provided with the dataset. Since the test set lacks scene graph annotations, we follow (Miao et al., 2024) and reorganize the validation set into 34 scenes (17 rooms) for validation and 123 scenes (30 rooms) for testing. To ensure realistic evaluation, query sequences are localized against maps from different temporal states. We evaluate on 3RScan using the 30 test scenes with sequence lengths of 5, 10, and 25 frames, corresponding to 1865, 916, and 349 sequences (9325, 9160, and 8725 total images), respectively. We note that 3RScan is explicitly designed to evaluate lo-calization under significant scene changes, including object 6Sequential Visual Localization on 3D Scene Graphs                                                                                                                                                                                                                   
+
+> Table 1. Pose recalls and median errors on 3RScan and ScanNet. We report recalls at thresholds: position R@0.25m, rotation R@2 ◦
+> and the joint recall R@0.25m, 2 ◦, together with the median position (m) and rotation error ( ◦) for sequences of length 5, 10 and 25. Recall measures the fraction of errors that fall below those thresholds, higher is better. ACE and ACE+GS-CPR are shown faded on ScanNet since the ACE encoder was trained on parts of this dataset. Method 5 frames 10 frames 25 frames Recall ↑Med. err. ↓Recall ↑Med. err. ↓Recall ↑Med. err. ↓
+> m◦m, ◦m◦m◦m, ◦m◦m◦m, ◦m◦
+> 3RScan  HLoc 0.54 0.29 0.29 0.19 6.65 0.60 0.34 0.34 0.14 4.30 0.70 0.43 0.43 0.08 2.69 MeshLoc 0.55 0.29 0.29 0.19 5.91 0.62 0.34 0.33 0.14 3.93 0.69 0.41 0.41 0.08 2.61 Loc-NeRF 0.03 0.05 0.00 1.19 21.63 0.06 0.04 0.01 1.02 22.00 0.11 0.13 0.04 0.79 14.08 ACE 0.26 0.11 0.11 1.66 42.38 0.33 0.14 0.14 0.93 27.04 0.45 0.21 0.21 0.39 10.31 ACE + GS-CPR 0.33 0.14 0.14 1.61 50.13 0.42 0.19 0.19 0.75 20.88 0.54 0.27 0.27 0.18 5.93
+> SG2Loc (Ours) 0.58 0.39 0.34 0.15 2.92 0.66 0.42 0.39 0.11 2.55 0.75 0.46 0.44 0.07 2.21
+> ScanNet  HLoc 0.94 0.53 0.53 0.06 1.85 0.96 0.57 0.57 0.06 1.74 0.99 0.58 0.58 0.06 1.56
+> MeshLoc 0.93 0.55 0.54 0.06 1.83 0.95 0.55 0.55 0.06 1.83 0.97 0.58 0.58 0.06 1.70 Loc-NeRF 0.03 0.08 0.00 1.09 17.60 0.05 0.08 0.01 1.11 15.10 0.21 0.14 0.08 0.77 9.02 ACE 0.91 0.50 0.50 0.08 1.99 0.94 0.52 0.51 0.08 1.93 0.94 0.60 0.59 0.07 1.70 ACE + GS-CPR 0.92 0.55 0.55 0.06 1.84 0.93 0.58 0.58 0.06 1.78 0.92 0.63 0.63 0.06 1.53
+> SG2Loc (Ours) 0.87 0.49 0.49 0.07 2.06 0.94 0.52 0.52 0.07 1.90 0.94 0.60 0.60 0.06 1.79
+
+rearrangements, removal, and occlusions. SG2Loc is eval-uated on every frame of this dataset in a cross-temporal setting, where query sequences are matched against maps captured some time apart. For evaluation without GT scene graphs, we also use ScanNet (Dai et al., 2017). Starting from the split of (Miao et al., 2024), we filter for scan pairs with both a reference ( 00) and rescan ( 01), and for which SceneGraphFusion (Wu et al., 2021) generation succeeded, yielding 48 pairs. We sample one image every 25 frames be-cause frame rate is high (like SceneGraphLoc), resulting in 683, 310, and 95 sequences (3,415, 3,100, and 2,375 query frames) for sequence lengths 5, 10, and 25, respectively. 
+
+Baselines. We compare with HLoc (Sarlin et al., 2019), MeshLoc (Panek et al., 2022), Loc-NeRF (Maggio et al., 2022), ACE (Brachmann et al., 2023) and ACE poses re-fined with GS-CPR (Liu et al., 2025). HLoc is a hierarchical method combining image retrieval (10 nearest neighbors) with pose estimation from 2D-3D correspondences, requir-ing a large image database. MeshLoc localizes via a 3D mesh, storing a depth map per image generated from the mesh. We use MegaLoc (Berton & Masone, 2025) for image retrieval, SuperPoint (DeTone et al., 2018) and Super-Glue (Sarlin et al., 2020) for local feature matching. ACE is a scene coordinate regression network trained per scene. GS-CPR refines ACE by using rendered depth from Gaus-sian Splats and MASt3R correspondences. For sequential evaluation, we run HLoc, MeshLoc, ACE, and ACE+GS-CPR per image and select the pose with the most RANSAC inliers as the sequence result. Loc-NeRF follows a similar filtering approach as we do, using only photometric error. We replaced the original NeRF map with a Gaussian Splat for faster localization and refer to this adapted version as Loc-NeRF throughout. HLoc and MeshLoc both require substantial storage, limiting scalability. 
+
+Metrics. We evaluate the performance of our method and baselines using standard metrics for visual localization: me-dian position (in meters), rotation errors (in degrees) and recall. Additionally, we report the storage requirements of each method, including the size of the database and any additional structures needed for localization. The rotation error is calculated as the geodesic distance between the estimated rotation matrix ˆR and the ground truth rotation matrix Rgt on the SO(3) manifold. It is calculated as fol-lows: ϵR = arccos((1 /2)( tr (RTgt ˆR) − 1)) .
+
+Sequential visual localization. Table 1 shows that our method achieves the best joint recalls for all frame lengths on 3RScan. On ScanNet, it performs best for 25 frames for joint recall and position median. We obtain the best median errors and recall (all metrics) on 3RScan. HLoc and MeshLoc perform well across all sequence lengths and yield very similar results. ACE performs worse than HLoc and other baselines on 3RScan, but achieves high accu-racy on ScanNet. We excluded the scenes that the ACE encoder has been trained on from evaluation. Our method is roughly as good as ACE on ScanNet, especially for the longer seqeunces. The GS-CPR refinement of ACE poses (ACE+GS-CPR) improves ACE. All methods benefit from longer sequences, which consistently improve performance. Although all methods are built from the same input images, the resulting map representations differ substantially in size. SG2Loc achieves the best results on 3RScan across all se-quence lengths and performs on par with HLoc, MeshLoc, and ACE on ScanNet, while requiring roughly an order of magnitude less storage than HLoc and two orders of mag-nitude less than MeshLoc on 3RScan, and two orders of magnitude less than both on ScanNet (Table 2). This sig-nificant reduction in storage makes SG2Loc well-suited for 7Sequential Visual Localization on 3D Scene Graphs                                         
+
+> Table 2. Average storage per scene in MB. Method 3RScan ScanNet HLoc 57.6 2291.3 MeshLoc 701.3 10591.0 Loc-NeRF 143.9 66.6 ACE 4.2 4.2
+> ACE+GS-CPR 82.6 115.1
+> SG2Loc (Ours) 9.8 28.2
+> Table 3. Average runtime on 3RScan per scene (offline, seconds) for frame integration and final optimization by PnP (runs once). The localization time is averaged over sequences and accounts for the per-frame integration. Method Mapping Localization Final Opt. HLoc 333.6 0.32 –MeshLoc 337.9 0.93 –Loc-NeRF 1490.0 7.50 –ACE 134.2 0.08 –ACE+GS-CPR 924.0 0.28
+> SG2Loc (Ours) 1.6 2.90 4.2
+
+on-device localization, where efficient map storage and low-bandwidth transmission are critical constraints. Our method uses roughly 2500 particles on 3RScan and 3200 particles on ScanNet for the results reported in Table 1. Raycasting for all particles is run fully in parallel on GPU, which keeps runtime manageable even with larger particle sets. The mapping and per-frame processing times (in seconds) are reported in Table 3. For the proposed method, the map-ping time includes constructing a BVH-tree for raytracing with particles and computing object embeddings for the scene graph. We assume the scene graph and segmented mesh are given, they do not count into the mapping time reported in 3. For HLoc, it includes extracting image embed-dings and 2D-3D correspondences for the database (from the mesh), while for MeshLoc, it involves computing both image embeddings and depth maps. Loc-NeRF, ACE and GS-CPR require training a separate map representation for each scene. The localization for SG2Loc consists of state transitions, particle updates (embeddings are computed per query image and raycasting is performed from all particles), and resampling steps, before post-processing with PnP. The localization time represents the average time required to estimate the camera pose for a single frame. The proposed method requires substantially less computation during map-ping than the baselines. At inference, it runs at an average of 2.9 s per frame, followed by a one-time pose optimization step, which is suitable for sequential localization. 
+
+Keyframing. In practice, localization need not be per-formed on every frame, as high frame rates introduce re-dundancy. To simulate a realistic scenario, we integrate frames at a rate matched to our runtime (Table 5), where the agent moves in real time and incoming frames must be processed sequentially. To reflect online deployment, both HLoc and our method are evaluated per keyframe, rather than selecting the maximum-inlier pose across a sequence. We report results over 650 keyframes spaced apart by our per-frame runtime. Our method significantly outperforms HLoc on the same inputs, demonstrating its practicality for robot localization on resource-constrained devices. 
+
+Sequential scene retrieval. In this section, we evaluate the extension proposed in Section 4, which enables Scene-GraphLoc (Miao et al., 2024) to operate in a sequential setting. We compare this extension to the original method, which performs localization using only the first image of the sequence. Additionally, we benchmark against state-of-the-art image retrieval methods, AnyLoc (Keetha et al., 2023) and CVNet (Lee et al., 2022). We follow the evaluation protocol used in (Miao et al., 2024), where, given a query image (or sequence), we retrieve the top-k scenes from a candidate set of either 10 or 50 scenes. Query images are captured at a different time step than the reference map. We report recall at ranks 1, 3, and 5, measuring how often each method retrieves the correct scene among its top-k predic-tions ( k ∈ { 1, 3, 5}). Additionally, we provide localization time in milliseconds and storage requirements for retrieval. For our method, storage corresponds to the scene graph embeddings, whereas for CVNet and AnyLoc, it reflects the database of image embeddings. The results are presented in Table 4. As expected, using longer sequences for localization substantially and consis-tently improves retrieval recall in both the 10-scene and 50-scene settings while introducing only a minimal increase in runtime. These findings demonstrate that the sequential extension of SceneGraphLoc is effective and serves as a valuable complement to the proposed localization approach. 
+
+Ablation studies are conducted on the first 4 scenes of the 3RScan (Wald et al., 2019) dataset, comprising 335 sequences of 5 images. The results are presented in Ta-ble 6. The first 3 ablations evaluate components of our method relative to SG2Loc w/ semantic . The Max. resolu-tion (stride = 1) setting removes downsampling in the final pass of multi-round optimization, using the highest resolu-tion for raycasting. As shown in Table 6, this configuration achieves similar accuracy to SG2Loc w/ semantic , while achieving much lower computational cost. The Uniform sampling setting initializes particles on a uniform 3D grid with a resolution of 0.2m, assigning 3 random poses per grid cell. This approach results in significantly lower accu-racy compared to SG2Loc w/ semantic with the proposed init. strategy. The w/o adaptive resampling configuration replaces the adaptive resampling with a fixed particle count. While this achieves similar med. errors, it significantly re-8Sequential Visual Localization on 3D Scene Graphs 
+
+Table 4. Cross-modal sequential scene retrieval on the 3RScan dataset (Wald et al., 2019), where the goal is to identify the correct scene from a set of 10 or 50 candidates. We evaluate SceneGraphLoc (Miao et al., 2024) on single frames and our proposed extension, which enables (Miao et al., 2024) to process sequences. We also show results of standard techniques (copied from (Miao et al., 2024)) CVNet (Lee et al., 2022) and AnyLoc (Keetha et al., 2023). Tests are run on sequences of length 5, 10, 25, and 50. We report scene retrieval recall in the temporal setting ( Rt) at 1, 3, and 5 indicating whether the correct scene appears among the top-k predictions, along with inference time (ms) and storage requirements for the map, demonstrating the efficiency of our approach. 10 scenes 50 scenes Storage # of frames Rt@1 Rt@3 Rt@5 Time (ms) Rt@1 Rt@3 Rt@5 Time (ms) MB 1 ((Miao et al., 2024)) 0.82 0.94 0.98 0.3 0.69 0.79 0.84 1.5 5.4 
+
+5 0.84 0.95 0.98 1.5 0.72 0.84 0.88 7.5 5.4 
+
+10 0.86 0.95 0.98 3.0 0.75 0.85 0.89 15.0 5.4 
+
+25 0.88 0.96 0.98 7.5 0.78 0.87 0.91 37.5 5.4 
+
+50 0.89 0.96 0.98 15.0 0.81 0.89 0.92 75.0 5.4 
+
+CVNet (Lee et al., 2022) 0.79 0.91 0.95 60.0 0.67 0.77 0.82 311.1 239.1 AnyLoc (Keetha et al., 2023) 0.88 0.95 0.98 1826.4 0.81 0.87 0.90 1451.1 5720.3 
+
+Table 5. Keyframing on 3RScan. We report avg. and median pos. (m) and rot. error ( ◦), and recall at (25 cm , 2◦).HLoc Ours w/ keyframing Mean pos. (m) ↓ 16.55 1.13 
+
+Mean rot. ( ◦) ↓ 57.02 12.39 
+
+Med. pos. (m) ↓ 0.63 0.24 
+
+Med. rot. ( ◦) ↓ 24.10 4.26 
+
+Pos. R@0.25m ↑ 0.41 0.51 
+
+Rot. R@2 ◦ ↑ 0.20 0.31 
+
+R@25cm, 2 ◦ ↑ 0.20 0.28 
+
+Table 6. Ablation study on 3RScan. We report recall at 
+
+(10 cm , 5◦) and (25 cm , 10 ◦) for 5-frame sequences. Method R@10cm, 5◦ R@25cm, 10 ◦
+
+Max. raycast resolution (3.5) 0.07 0.33 Uniform sampling (3.1) 0.10 0.30 w/o adaptive resampling (3.5) 0.11 0.30 SG2Loc w/ sem. (3.4) 0.11 0.35 SG2Loc w/ sem.+depth (3.4) 0.20 0.54 SG2Loc w/ sem.+depth+RGB (3.4) 0.35 0.61 
+
+SG2Loc (Ours) (3.6) 0.50 0.65 
+
+duces recall, showing that dynamic particle count increases accuracy. The ablations SG2Loc w/ semantic , w/ seman-tic+depth , w/ semantic+depth+RGB , explore the impact of supervision signals without PnP. Each additional signal improves performance. The best variant ( SG2Loc w/ seman-tic+depth+RGB ) initializes the PnP refinement, and our full SG2Loc method (last row), yields the best overall results. 
+
+Limitations. Although the proposed method achieves sub-stantial storage savings and competitive localization accu-racy compared to the state-of-the-art HLoc and MeshLoc, it incurs higher computational cost during per-frame inte-gration. We believe that this overhead can be significantly reduced through code optimizations. Moreover, the keyfram-ing experiment highlights that SG2Loc can already be used in time-sensitive applications by processing only keyframes. 
+
+# 6. Conclusion 
+
+We present a lightweight approach to sequential visual local-ization using 3D scene graphs and a particle filter, avoiding the need for large image databases or dense point clouds. By leveraging semantic object descriptors and coarse meshes, our method efficiently refines pose estimates over time while significantly reducing storage requirements. Exper-iments show that SG2Loc achieves competitive accuracy with far lower storage overhead than existing methods. The proposed coarse-to-fine optimization balances efficiency and precision, making the approach practical for resource-constrained applications. SG2Loc achieves performance similar to storage-intensive baselines, sometimes it is better in accuracy, sometimes slightly worse. Future work will focus on enhancing feature representations and runtime. 
+
+# Acknowledgements 
+
+This work was supported by RobotX. Nicole Damblon is supported by the ETH AI Center doctoral fellowship. We thank both programs for their support. 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of computer vision and robotics. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+# References 
+
+Adamkiewicz, M., Chen, T., Caccavale, A., Gardner, R., Culbertson, P., Bohg, J., and Schwager, M. Vision-only robot navigation in a neural radiance world. IEEE Robotics and Automation Letters , 7(2):4606–4613, 2022. Arandjelovic, R., Gronat, P., Torii, A., Pajdla, T., and Sivic, J. Netvlad: Cnn architecture for weakly supervised place 9Sequential Visual Localization on 3D Scene Graphs 
+
+recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 5297–5307, 2016. Armeni, I., He, Z.-Y., Gwak, J., Zamir, A. R., Fischer, M., Malik, J., and Savarese, S. 3d scene graph: A structure for unified semantics, 3d space, and camera. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 5664–5673, 2019. Berton, G. and Masone, C. Megaloc: One retrieval to place them all. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 2861–2867, 2025. Bloesch, M., Omari, S., Hutter, M., and Siegwart, R. Robust visual inertial odometry using a direct ekf-based approach. In 2015 IEEE/RSJ international conference on intelligent robots and systems (IROS) , pp. 298–304. IEEE, 2015. Brachmann, E. and Rother, C. Learning less is more-6d camera localization via 3d surface regression. In Pro-ceedings of the IEEE conference on computer vision and pattern recognition , pp. 4654–4662, 2018. Brachmann, E., Krull, A., Nowozin, S., Shotton, J., Michel, F., Gumhold, S., and Rother, C. Dsac-differentiable ransac for camera localization. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pp. 6684–6692, 2017. Brachmann, E., Cavallari, T., and Prisacariu, V. A. Ac-celerated coordinate encoding: Learning to relocalize in minutes using rgb and poses. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 5044–5053, 2023. Campos, C., Elvira, R., Rodr ´ıguez, J. J. G., Montiel, J. M., and Tard ´os, J. D. Orb-slam3: An accurate open-source library for visual, visual–inertial, and multimap slam. 
+
+IEEE transactions on robotics , 37(6):1874–1890, 2021. Dai, A., Chang, A. X., Savva, M., Halber, M., Funkhouser, T., and Nießner, M. Scannet: Richly-annotated 3d recon-structions of indoor scenes. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pp. 5828–5839, 2017. DeTone, D., Malisiewicz, T., and Rabinovich, A. Super-point: Self-supervised interest point detection and de-scription. In Proceedings of the IEEE conference on computer vision and pattern recognition workshops , pp. 224–236, 2018. Dusmanu, M., Rocco, I., Pajdla, T., Pollefeys, M., Sivic, J., Torii, A., and Sattler, T. D2-net: A trainable cnn for joint description and detection of local features. In 
+
+Proceedings of the ieee/cvf conference on computer vision and pattern recognition , pp. 8092–8101, 2019. Edstedt, J., Nordstr ¨om, D., Zhang, Y., B ¨okman, G., Astermark, J., Larsson, V., Heyden, A., Kahl, F., Wadenb ¨ack, M., and Felsberg, M. Roma v2: Harder better faster denser feature matching. arXiv preprint arXiv:2511.15706 , 2025. Engel, J., Sch ¨ops, T., and Cremers, D. Lsd-slam: Large-scale direct monocular slam. In European conference on computer vision , pp. 834–849. Springer, 2014. Engel, J., Koltun, V., and Cremers, D. Direct sparse odome-try. IEEE transactions on pattern analysis and machine intelligence , 40(3):611–625, 2017. Fischler, M. A. and Bolles, R. C. Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography. Communications of the ACM , 24(6):381–395, 1981. Forster, C., Pizzoli, M., and Scaramuzza, D. Svo: Fast semi-direct monocular visual odometry. In 2014 IEEE interna-tional conference on robotics and automation (ICRA) , pp. 15–22. IEEE, 2014. Fox, D. Kld-sampling: Adaptive particle filters. Advances in neural information processing systems , 14, 2001. Gao, X., Wang, R., Demmel, N., and Cremers, D. Ldso: Direct sparse odometry with loop closure. In 2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pp. 2198–2204. IEEE, 2018. Geneva, P., Eckenhoff, K., Lee, W., Yang, Y., and Huang, G. Openvins: A research platform for visual-inertial estimation. In 2020 IEEE International Conference on Robotics and Automation (ICRA) , pp. 4666–4672. IEEE, 2020. Hudson, D. A. and Manning, C. D. Gqa: A new dataset for real-world visual reasoning and compositional question answering. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 6700– 6709, 2019. Johnson, J., Krishna, R., Stark, M., Li, L.-J., Shamma, D., Bernstein, M., and Fei-Fei, L. Image retrieval using scene graphs. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 3668–3678, 2015. Keetha, N., Mishra, A., Karhade, J., Jatavallabhula, K. M., Scherer, S., Krishna, M., and Garg, S. Anyloc: Towards universal visual place recognition. IEEE Robotics and Automation Letters , 9(2):1286–1293, 2023. Kendall, A., Grimes, M., and Cipolla, R. Posenet: A convo-lutional network for real-time 6-dof camera relocalization. In Proceedings of the IEEE international conference on computer vision , pp. 2938–2946, 2015. 10 Sequential Visual Localization on 3D Scene Graphs 
+
+Khatib, F., Moran, D., Trostianetsky, G., Kasten, Y., Galun, M., and Basri, R. Gsvisloc: Generalizable visual localiza-tion for gaussian splatting scene representations. arXiv preprint arXiv:2508.18242 , 2025. Kruppa, E. Zur Ermittlung eines Objektes aus zwei Perspek-tiven mit innerer Orientierung . H¨ older, 1913. Larsson, V. and contributors. PoseLib - Minimal Solvers for Camera Pose Estimation, 2020. URL https:// github.com/vlarsson/PoseLib .Lee, S., Seong, H., Lee, S., and Kim, E. Correlation verifica-tion for image retrieval. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 5374–5384, 2022. Leutenegger, S., Lynen, S., Bosse, M., Siegwart, R., and Furgale, P. Keyframe-based visual–inertial odometry using nonlinear optimization. The International Journal of Robotics Research , 34(3):314–334, 2015. Liu, C., Chen, S., Bhalgat, Y., Hu, S., Cheng, M., Wang, Z., Prisacariu, V., and Braud, T. Gs-cpr: Efficient camera pose refinement via 3d gaussian splatting. In Interna-tional Conference on Learning Representations , volume 2025, pp. 76761–76780, 2025. Lynen, S., Zeisl, B., Aiger, D., Bosse, M., Hesch, J., Polle-feys, M., Siegwart, R., and Sattler, T. Large-scale, real-time visual–inertial localization revisited. The Interna-tional Journal of Robotics Research , 39(9):1061–1084, 2020. Maggio, D., Abate, M., Shi, J., Mario, C., and Carlone, L. Loc-nerf: Monte carlo localization using neural radiance fields. arXiv preprint arXiv:2209.09050 , 2022. Maggio, D., Chang, Y., Hughes, N., Trang, M., Griffith, D., Dougherty, C., Cristofalo, E., Schmid, L., and Carlone, L. Clio: Real-time task-driven open-set 3d scene graphs. 
+
+IEEE Robotics and Automation Letters , 9(10):8921–8928, 2024. Maggio, D., Lim, H., and Carlone, L. Vggt-slam: Dense rgb slam optimized on the sl (4) manifold. Advances in Neural Information Processing Systems , 38:129839– 129867, 2026. Meng, W., Wu, T., Yin, H., and Zhang, F. Nurf: Nudging the particle filter in radiance fields for robot visual localiza-tion. IEEE Transactions on Cognitive and Developmental Systems , 2025. Miao, Y., Engelmann, F., Vysotska, O., Tombari, F., Polle-feys, M., and Bar ´ath, D. B. Scenegraphloc: Cross-modal coarse visual localization on 3d scene graphs. In Eu-ropean Conference on Computer Vision , pp. 127–150. Springer, 2024. Middelberg, S., Sattler, T., Untzelmann, O., and Kobbelt, L. Scalable 6-dof localization on mobile devices. In 
+
+European Conference on Computer Vision , pp. 268–283. Springer, 2014. Moravec, H. P. Obstacle avoidance and navigation in the real world by a seeing robot rover . Stanford University, 1980. Murai, R., Dexheimer, E., and Davison, A. J. Mast3r-slam: Real-time dense slam with 3d reconstruction priors. In 
+
+Proceedings of the Computer Vision and Pattern Recog-nition Conference , pp. 16695–16705, 2025. Panek, V., Kukelova, Z., and Sattler, T. Meshloc: Mesh-based visual localization. In European Conference on Computer Vision , pp. 589–609. Springer, 2022. Qin, T., Li, P., and Shen, S. Vins-mono: A robust and versatile monocular visual-inertial state estimator. IEEE transactions on robotics , 34(4):1004–1020, 2018. Revaud, J., Almaz ´an, J., Rezende, R. S., and Souza, C. R. d. Learning with average precision: Training image retrieval with a listwise loss. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 5107– 5116, 2019a. Revaud, J., De Souza, C., Humenberger, M., and Weinza-epfel, P. R2d2: Reliable and repeatable detector and descriptor. Advances in neural information processing systems , 32, 2019b. Sarlin, P.-E., Cadena, C., Siegwart, R., and Dymczyk, M. From coarse to fine: Robust hierarchical localization at large scale. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 12716– 12725, 2019. Sarlin, P.-E., DeTone, D., Malisiewicz, T., and Rabinovich, A. Superglue: Learning feature matching with graph neural networks. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 4938–4947, 2020. Sattler, T., Havlena, M., Schindler, K., and Pollefeys, M. Large-scale location recognition and the geometric bursti-ness problem. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 1582–1590, 2016a. Sattler, T., Leibe, B., and Kobbelt, L. Efficient & effective prioritized matching for large-scale image-based localiza-tion. IEEE transactions on pattern analysis and machine intelligence , 39(9):1744–1756, 2016b. Sattler, T., Maddern, W., Toft, C., Torii, A., Hammarstrand, L., Stenborg, E., Safari, D., Okutomi, M., Pollefeys, M., 11 Sequential Visual Localization on 3D Scene Graphs 
+
+Sivic, J., et al. Benchmarking 6dof outdoor visual lo-calization in changing conditions. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pp. 8601–8610, 2018. Schneider, T., Dymczyk, M., Fehr, M., Egger, K., Lynen, S., Gilitschenski, I., and Siegwart, R. maplab: An open framework for research in visual-inertial mapping and localization. IEEE Robotics and Automation Letters , 3 (3):1418–1425, 2018. Teed, Z. and Deng, J. Droid-slam: Deep visual slam for monocular, stereo, and rgb-d cameras. Advances in neural information processing systems , 34:16558–16569, 2021. Teed, Z., Lipson, L., and Deng, J. Deep patch visual odome-try. Advances in Neural Information Processing Systems ,36:39033–39051, 2023. Veicht, A., Sarlin, P.-E., Lindenberger, P., and Pollefeys, M. Geocalib: Learning single-image calibration with geomet-ric optimization. In European Conference on Computer Vision , pp. 1–20. Springer, 2024. Walch, F., Hazirbas, C., Leal-Taixe, L., Sattler, T., Hilsen-beck, S., and Cremers, D. Image-based localization using lstms for structured feature correlation. In Proceedings of the IEEE international conference on computer vision ,pp. 627–637, 2017. Wald, J., Avetisyan, A., Navab, N., Tombari, F., and Nießner, M. Rio: 3d object instance re-localization in changing indoor environments. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 7658– 7667, 2019. Wald, J., Dhamo, H., Navab, N., and Tombari, F. Learning 3d semantic scene graphs from 3d indoor reconstructions. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pp. 3961–3970, 2020. Wang, F., Jiang, X., Galliani, S., Vogel, C., and Pollefeys, M. Glace: Global local accelerated coordinate encoding. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 21562–21571, 2024. Wu, S.-C., Wald, J., Tateno, K., Navab, N., and Tombari, F. Scenegraphfusion: Incremental 3d scene graph prediction from rgb-d sequences. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 7515–7525, 2021. Zhou, L., Luo, Z., Shen, T., Zhang, J., Zhen, M., Yao, Y., Fang, T., and Quan, L. Kfnet: Learning temporal camera relocalization using kalman filtering. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 4919–4928, 2020. 12 Sequential Visual Localization on 3D Scene Graphs 
+
+# A. Additional Ablations on Supervision Signals 
+
+To understand the individual contribution of each supervision signal, we run the particle filter using only a single score at a time (semantic, depth, or RGB). Table 7 reports the resulting localization accuracy and pose recall on 3RScan (Wald et al., 2019). SG2Loc w/ semantic achieves the lowest median position error and consistently good performance in all metrics. 
+
+SG2Loc w/ depth has the lowest median rotation error. In contrast, SG2Loc w/ RGB performs worse in terms of position and rotation accuracy, but interestingly achieves the highest recall at the strict threshold (10 cm , 5◦). These results suggest that all three supervision signals contribute useful information to the final localization performance. 
+
+Table 7. Ablations on supervision signals on 3RScan . We report the average and median position error (in meters) and average and median rotation error (in degrees) for sequences of 5 frames, where lower values indicate better performance. We also measure recall at thresholds (10 cm , 5◦) and (25 cm , 10 ◦), where higher values indicate better performance. Mean Median Recall Method Pos. (m) Rot. ( ◦) Pos. (m) Rot. ( ◦) R@10cm, 5 ◦ R@25cm, 10 ◦
+
+SG2Loc w/ semantic 1.20 21.44 0.66 8.77 0.08 0.26 SG2Loc w/ depth 1.44 39.01 0.96 6.42 0.09 0.32 
+
+SG2Loc w/ RGB 1.79 44.78 1.51 17.37 0.14 0.20 
+
+# B. Qualitative Results 
+
+Figure 4 shows a failure case of the particle filter on a 5-frame sequence from the 3RScan dataset (Wald et al., 2019). Although the particle distribution narrows over time, the final estimate still results in a coarse localization with a pos. error of 1.06 meters and a rot. error of 6.6 degrees. This example highlights a limitation of our method. The input views in the query sequence look very similar (Figure 5), with little change in perspective. In such cases, the information in the image sequence is not discriminative enough to resolve pose ambiguities. As a result, the method struggles to converge to a precise pose and only returns a coarse estimate. Stride = 20 
+
+Initialization (1) (2) (3) (4) MLE MLE ( 1st frame) Stride = 8 
+
+Initialization (1) (2) (3) (4) MLE MLE ( 1st frame) Stride = 4 
+
+Initialization (1) (2) (3) (4) MLE 
+
+Figure 4. A failure case of our coarse-to-fine particle filter on a 5-image sequence, first running with a stride of 20, 8, and finally 4 (the stride controls the rate of downsampling the images). The first column shows the initial random particle distribution, gradually narrowing the search space in subsequent rounds. Each next column represents particle updates after integrating the nth image (indicated below each plot). Then, the Maximum Likelihood Estimate (MLE) is shown in blue, and the GT pose in green, back-propagated to the 1st frame for the next optimization round. The position error for this example is 1.06 meter and rotation error 6.60 ◦. This failure is potentially caused by the uninformative input views (all looking very similar) visualized in Fig. 5. 
+
+13 Sequential Visual Localization on 3D Scene Graphs 
+
+(a) (b) (c) (d) (e) (f) Figure 5. Query images and MLE view. The five query images (a)-(e) used in Figure 4 for the course-to-fine particle filter on the 3RScan dataset (Wald et al., 2019). After the fifth image (e), we retrieve the Maximum Likelihood Estimate (MLE) pose. Image (f) shows the segmented 3D mesh projected into a virtual camera located at the MLE pose. Colors denote object instances. 
+
+Table 8. Results on ScanNet (all frames not only last frame) using DROID-SLAM poses 
+
+Method Med. Pos. (m) ↓ Med. Rot. ( ◦) ↓ R@0.25m ↑ R@2° ↑ R@0.25m,2° ↑
+
+SG2Loc (ours) 0.09 2.41 0.82 0.41 0.40 SG2Loc (ours) /w SLAM poses 0.09 2.37 0.81 0.40 0.40 
+
+# C. Experiment using DROID-SLAM poses 
+
+We additionally report results using DROID-SLAM (Teed & Deng, 2021) for the relative motion on ScanNet (sequence length 5) in table 8. The performance is comparable, showing that SG2Loc is robust to moderate drift in the motion estimate. This are the results from the whole sequence. We do not pick the maximum inlier here. 
+
+# D. Large-scale environments 
+
+We conducted an additional experiment simulating a larger-scale environment. Since the available datasets do not provide large-scale, object-annotated environments (all scenes are apartment-sized), we merged every 3 ScanNet scenes into a single environment, initializing particles across the entire space and allowing the filter to automatically determine the correct scene. We report both the retrieval accuracy ( Rt@1 , i.e., fraction of cases where the correct room was identified) and the final pose accuracy. The results for 50-frame sequences, shown below, demonstrate that our method can successfully localize in this scenario. It achieves slightly lower retrieval performance compared to the proposed sequential SceneGraphLoc and the original SceneGraphLoc, while still producing accurate poses. The lower recall could potentially be improved by increasing the number of initial particles. Given its efficiency, running the sequential SceneGraphLoc variant for the coarse localization stage remains preferable. As per standard practice in localization (Sarlin et al., 2019), SG2Loc can provide an accurate pose after the room has been identified by the proposed sequential SceneGraphLoc. 
+
+Table 9. Localization results large-scale environment on ScanNet.                                   
+
+> Method Rt@1 Mean Pos. (m) ↓Mean Rot. ( ◦)↓Med. Pos. (m) ↓Med. Rot. ( ◦)↓R@10cm,5 ◦↑R@25cm,10 ◦↑
+> SGL (Miao et al., 2024) 92.4 ––––––Seq. SGL (Ours) 95.1 ––––––SG2Loc (Ours) 85.7 0.24 7.21 0.16 2.25 0.33 0.80
+
+14

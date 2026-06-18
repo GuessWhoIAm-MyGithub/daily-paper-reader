@@ -1,0 +1,493 @@
+Title: SalArt-VQA: Diagnosing Whether VLMs Understand Salient Artifacts in Generated Images
+
+URL Source: https://arxiv.org/pdf/2606.12671v1
+
+Published Time: Fri, 12 Jun 2026 00:18:18 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# SAL ART -VQA: Diagnosing Whether VLMs Understand Salient Artifacts in Generated Images 
+
+Xiaoxiao Sun ∗
+
+Stanford University 
+
+Ruotian Zhang ∗
+
+Zhejiang University 
+
+Junzhe Huang 
+
+The University of Queensland 
+
+James Burgess 
+
+Stanford University 
+
+Serena Yeung-Levy 
+
+Stanford University 
+
+https://huggingface.co/datasets/salartvqa/SalArt-VQA 
+
+## Abstract 
+
+Vision-language models (VLMs) are increasingly used to detect whether AI-generated images contain visible artifacts, yet their ability to analyze such artifacts remains poorly understood. A correct image-level decision can still hide important failures: a model may correctly flag an artifact while relying on the wrong visual cue, selecting the wrong region, or describing a defect that the image does not support. To evaluate these behaviors directly, we introduce S AL ART -VQA, a diagnostic benchmark for fine-grained SAL ient ART ifact understanding in AI-generated images. S AL ART -VQA contains 950 images and 3,681 human-authored multiple-choice questions spanning artifact images, matched real reference images, and paired generated reference images. Four aligned question types evaluate pres-ence detection, semantic localization, spatial grounding, and evidence-grounded defect identification, while the reference splits test calibration and abstention when the annotated defect is absent. Across 20 VLMs, S AL ART -VQA reveals failures that image-level detection accuracy hides: the strongest model reaches 99.37% detection recall on artifact images but answers all four artifact-side questions cor-rectly on only 53.26% of images. Comparing artifact images with artifact-free references reveals a sensitivity-calibration tradeoff: sensitive models often make unsupported artifact claims, while conservative models avoid false alarms largely by missing real artifacts. These results show that high artifact detection accuracy alone does not imply grounded artifact understanding. S AL ART -VQA exposes these hidden failure modes and provides a fine-grained evaluation of whether VLM artifact claims are supported by local visual evidence. 
+
+## 1 Introduction 
+
+As AI-generated images improve and spread across real-world applications [Muthaiah et al., 2024, Rombach et al., 2022], automatically determining whether an image contains visible artifacts is becoming increasingly important [Baraheem and Nguyen, 2023]. Such artifacts may appear as structural distortions, inconsistent object geometry, broken reflections, implausible spatial relations, or malformed text. Although many salient artifacts are visually prominent to human viewers, automatically analyzing them remains challenging: a system must recognize subtle irregularities, describe open-ended defect types, and ground each claim to the supporting image region. Vision-language models (VLMs) are therefore increasingly used for artifact detection [Burgess et al., 2026, Wang et al., 2024], and as evaluators in generative-image pipelines that screen outputs, rank candidate                                                        
+
+> ∗Equal contribution. Preprint.
+> arXiv:2606.12671v1 [cs.CV] 10 Jun 2026 Q2 :If there is a
+> clearly visible artifact ,
+> which region best
+> contains it?
+> A:the man’s eyes
+> B: the man’s right hand
+> C:the banana
+> D: the man’s left hand
+> E:none
+> Q4 : If there is a clearly visible
+> artifact , which option best
+> describes it ?
+> A: the man’s pupils are misshapen
+> B:right hand … unnatural …
+> C:… banana…unnaturally smooth
+> D:extra fingers on his left hand…
+> E: none of these descriptions
+> Q3: If there is a clearly
+> visible artifact , which
+> box best localizes it?
+> DC
+> B
+> A
+> A:box A
+> B:box B
+> C:box C
+> D:box D
+> E: None
+> Does this image contain a
+> salient artifact: alocalized,
+> visually identifiable
+> structural defect? If yes,
+> describe where it is and
+> what is wrong .
+> Yes. The most salient
+> artifacts are located on the
+> left side of the image
+> (the man's right hand) :
+> Mangled Hand Anatomy:
+> The hand holding the
+> stem of the banana lacks
+> coherent physical
+> structure ...
+> Gemini 3.1 Pro GPT 5.5
+> Yes. There is a localized
+> artifact at the left end of
+> the banana: the peel/stem
+> area looks structurally
+> malformed ,with a small
+> jagged protruding piece that
+> does not look naturally
+> connected to the banana ...
+> Yes ,there's a clear artifact
+> in the hands holding the
+> banana, particularly on the
+> right side of the image
+> (the man's left hand). The
+> fingers there look
+> anatomically off —the
+> fingertips appear oddly
+> shaped …
+> Claude 4.7 Opus Yes. The
+> man’s left
+> hand has
+> an extra
+> finger…
+> (c)SAL ART -VQA diagnostic questions
+> (b)Model Responses (a) Image and question example
+> Q1
+
+Figure 1: Motivation and question example for S AL ART -VQA . Image-level artifact detection may look successful even when downstream behavior differs substantially. In panels (a) and (b), several VLMs flag the image as artifacted, but most refer to the wrong region and none gives the correct defect description. Panel (c) shows how S AL ART -VQA probes artifact presence (Q1), location (Q2-Q3), and visual evidence (Q4) beyond the artifact-present decision. generations, or provide feedback for refinement. However, their actual ability to reliably perceive, localize, and explain visible artifacts remains poorly understood. This gap matters: unsupported artifact claims can reject valid images, misdirect edits, or mislead users. As shown in Figure 1(a,b), these risks are not captured by image-level artifact detection alone. In the example, several models correctly answer “yes” to the presence question, yet their follow-up responses point to different regions and different defect hypotheses. A model may therefore make the right image-level decision while relying on the wrong visual cue, such as selecting the wrong object part, confusing which local abnormality is responsible, or describing a defect that the image does not support. These failures matter because artifact analysis is often used to guide downstream actions, where the predicted location and explanation can be as important as the binary artifact-present decision. To study these behaviors more directly, we introduce S AL ART -VQA, a diagnostic benchmark for salient artifact 2 understanding in AI-generated images. SAL ART -VQA is designed to expose these distinctions through aligned, closed-set VQA questions. The questions form a diagnostic chain: they ask whether a model detects artifact presence, names the relevant region, grounds that region spatially, and selects the defect description supported by the image (Figure 1(c)). The benchmark contains 950 images and 3,681 human-annotated multiple-choice questions spanning artifact images, matched real references, and paired generated references. Artifact images evaluate model behavior on genuine salient defects; matched real references test calibration on real photographs; and paired generated references test whether models can abstain from artifact claims when the annotated salient defect is absent from a visually similar generated scene. Using these diagnostics, we evaluate 20 VLMs and several specialized artifact-analysis baselines. On artifact images, current VLMs struggle with the full artifact-understanding chain: the strongest model answers all four questions correctly on only 53.3% of images, and the next-best model remains near 33%, despite much higher artifact-presence detection accuracy. Across artifact and reference images, we further find a clear sensitivity-calibration tradeoff: no model combines high artifact sensitivity with strong reference-side calibration. Current systems largely split into two main regimes: aggressive detectors that perform best on artifact images but make unsupported artifact claims on reference images, and conservative models that stay calibrated to reference images but are insensitive to artifacts. Additional analyses reveal finer-grained failures in localization, evidence selection, and 
+
+> 2
+
+We use salient artifact to refer to a human-visible defect that is visually prominent, localizable, and describable in natural language; the benchmark focuses on such target defects. 
+
+2reference-side abstention. S AL ART -VQA makes these differences visible, exposing capability gaps that aggregate detection accuracy alone would hide. Our contributions are three-fold: • We introduce S AL ART -VQA, a closed-set VQA benchmark for fine-grained diagnosis of salient artifact understanding in AI-generated images beyond image-level detection. • We design aligned question types together with matched real and paired generated reference images that separate artifact sensitivity, semantic localization, spatial grounding, evidence reasoning, and reference-side calibration. • We evaluate 20 VLMs and several specialized methods, showing that current systems struggle with the full artifact-understanding chain and exhibit a consistent sensitivity-calibration tradeoff. 
+
+## 2 Related work 
+
+Synthetic image detection benchmarks. Much prior work treats AI-generated image detection as binary classification and studies generalization across generators or deployment conditions. GenIm-age [Zhu et al., 2023], B-Free [Guillaro et al., 2025], AIDE [Yan et al., 2024], and RRDataset [Li et al., 2025a] evaluate synthetic-image detection under cross-generator, bias, fidelity, and real-world transmission shifts. LOKI [Ye et al., 2024] introduces a benchmark for synthetic data detection, evaluating whether large multimodal models can distinguish real from AI-generated content across multiple modalities. In contrast, our work focuses on visible artifact understanding in AI-generated images, assessing whether VLMs can detect, localize, and explain concrete visual defects. 
+
+Fine-grained and explainable artifact analysis. Other work moves toward artifact localization, categorization, and explanation. PAL [Zhang et al., 2023] provides per-pixel artifact labels; HiFi-IFDL [Guo et al., 2023] and TruFor [Guillaro et al., 2023] localize manipulated regions; HAD [Wang et al., 2024] targets anatomical anomalies; and related studies build perceptual-artifact taxonomies or human-visible artifact categories [Xiao et al., 2026, Kamali et al., 2025]. LEGION [Kang et al., 2025] combines detection, segmentation, and explanation; AIGI-Holmes [Zhou et al., 2025] and FakeXplain [Ji et al., 2026] train localized rationales; and ArtifactLens [Burgess et al., 2026] adapts pretrained VLMs for low-label artifact recognition. Rather than training artifact recognizers or collecting free-form rationales, S AL ART -VQA provides a closed-set diagnostic benchmark for off-the-shelf VLMs, linking detection, localization, grounding, evidence selection, and reference-side abstention for the same salient artifact. 
+
+Grounded and diagnostic multimodal evaluation. Artifact understanding also relates to region-grounded perception and diagnostic VQA. GLIP [Li et al., 2022], Grounding DINO [Liu et al., 2024], GPT4RoI [Zhang et al., 2024], GLaMM [Rasheed et al., 2024], and LMM-Det [Li et al., 2025b] study open-vocabulary or region-level grounding. VQA v2 [Goyal et al., 2017], BLINK [Fu et al., 2024], and HallusionBench [Guan et al., 2024] use controlled questions or paired examples to probe perception and reasoning, while POPE [Li et al., 2023], NOPE [Lovenia et al., 2024], and removed-object counterfactual evaluation [He et al., 2025] test object hallucination. S AL ART -VQA shifts this diagnostic style from object presence to artifact evidence, using aligned questions and paired references to test whether a claimed defect remains visually supported. 
+
+## 3 SAL ART -VQA Construction 
+
+3.1 Image Collection 
+
+SAL ART -VQA contains four image splits: direct-generation artifact images (Art-DG), inpainting-induced artifact images from paired generated scenes (Art-PG), matched real reference images (Ref-Real), and paired generated reference images (Ref-PG). We use “PG” for the paired generated construction, where each Art-PG image is produced from a corresponding Ref-PG image. 
+
+Artifact images. These images evaluate whether a model can detect, localize, and correctly describe one annotated salient artifact. The benchmark questions target this selected artifact; in a small number of cases, weaker secondary imperfections may remain elsewhere. We keep only images with simple compositions where the selected artifact can be isolated by closed-set questions and described unambiguously in natural language. The artifact set combines two construction sources. 3Artifact       
+
+> images.
+> Artifact -free
+> reference images.
+> Art -DG: direct -generation artifact images Art -PG: inpainting -induced artifact images ( paired)
+> Ref -Real: matched real reference images Ref -PG: paired generated reference
+> images
+
+Figure 2: Examples from the S AL ART -VQA image splits. Artifact images from Art-DG and Art-PG are shown with their corresponding reference images from Ref-Real and Ref-PG. 
+
+(1) Direct-generation artifact images (Art-DG, 356). We build this split primarily from im-ages generated with Imagen 4 [Google DeepMind, 2025], Midjourney [Midjourney, 2026], and FLUX.2 [klein] [Black Forest Labs, 2026b]. Prompts are adapted from COCO captions [Lin et al., 2014] and augmented with photorealistic style cues such as “natural light” and “detailed surround-ings”; no prompt explicitly asks for artifacts. From around 13,000 images, we manually flag potential salient artifacts, remove non-photorealistic outputs, and keep only cases satisfying the criteria above. 
+
+(2) Inpainting-induced artifact images (Art-PG, 119). These images form aligned Art-PG-Ref-PG pairs. Starting from a generated reference image, we edit one local body region while leaving the rest of the image unchanged. The pipeline uses MediaPipe [Lugaresi et al., 2019] to propose region hints, SAM 2 [Ravi et al., 2024] to refine them into masks, and FLUX.1-Fill-dev [Black Forest Labs, 2026a] to inpaint each mask with multiple random seeds. Annotators retain outputs with a single, clear salient artifact in the edited region. Appendix B.3 gives the full pipeline. 
+
+Reference images. These images support calibration checks in two complementary settings: 
+
+(1) Matched real reference images (Ref-Real, 356). These are ordinary real photographs that serve as real-image references for Art-DG. For each of the 356 Art-DG images, we retrieve a COCO photograph either using the same source caption or by selecting a high-similarity match in CLIP [Radford et al., 2021] image-embedding space. We choose matches with similar visual content, including subject type, pose, and scene layout. 
+
+(2) Paired generated reference images (Ref-PG, 119). These are the original generated images related to the Art-PG images, prior to the localized edit that introduces the target artifact. We do not assume that Ref-PG images are globally artifact-free; rather, they are artifact-free of the annotated salient defect targeted by the paired options. The correct answer for Q2-Q4 is “none of these,”. This split supports paired comparisons between artifact-bearing images and generated references. 
+
+Artifact taxonomy and subject categories. After curation, we group the observed salient defects into five broad categories, informed by prior studies of perceptual artifacts [Borji, 2023]: count anomaly for wrong numbers of repeated parts such as fingers or teeth; topology anomaly for merged, disconnected, intersecting, or clipped parts; local render/structure anomaly for a single warped, smeared, or collapsed part; anatomy anomaly for implausible large-scale body composition; and 
+
+plausibility anomaly for scene-level violations of physics, reflection, identity, or text. Images without a stable assignment are Others . Figure 3(a) shows the distribution and examples. These categories are descriptive metadata rather than answer labels. Full definitions are given in Appendix A. The artifact images also span diverse subject categories, as shown by the common subject terms in Figure 3(b). 
+
+3.2 Multiple-Choice VQA Design 
+
+SAL ART -VQA uses closed-set multiple-choice questions to reduce scoring ambiguity while keeping each answer tied to visible evidence. Figure 1(c) and Figure 3(c) summarize the four question types: Q1 asks whether a salient artifact is present, Q2 asks for the semantic region containing the artifact, 4(a) Artifact Taxonomy (b) Subject Categories              
+
+> Q1 Presence detection
+> Perception
+> Q4Artifact understanding
+> Fine -grained perception + reasoning
+> Q2 Semantic localization
+> Perception + grounding
+> Q3 Spatial grounding
+> Perception +Grounding
+> Detect -only : detects artifact but fails localization/evidence
+
+(c ) Diagnostic evaluation framework                 
+
+> Artifact images :Where does understanding fail? Reference images: Does the model abstain correctly?
+> Q1 Q2 Q3 Q4
+> ×××√
+> ××××
+> √×√√
+> ×××√
+> ××××
+> …
+> Incomplete abstention: no artifact, but selected
+> unsupported downstream claim
+> Missed artifact: fails the whole chain
+> Ungrounded evidence selection …
+> Q1 Q2 Q3 Q4
+> Hallucination: unsupported artifact claim
+> Word Cloud
+
+Figure 3: Dataset composition and diagnostic framework of S AL ART -VQA. (a) Curated artifact taxonomy with example images. (b) Common subject terms in the benchmark. (c) Diagnostic framework. The bottom panel shows examples of failure patterns. Q3 asks for the corresponding bounding box, and Q4 asks for the defect description supported by the image. Full prompt templates and option conventions are given in Appendix E. Options are constructed around the annotated target artifact rather than around taxonomy names. During annotation, candidate regions and defect hypotheses are initialized from image captions and auxiliary screening outputs, then manually verified. Annotators identify the target artifact region, insert or revise the correct option when needed, and retain plausible distractors only when they do not contain the target artifact and do not introduce ambiguous alternative answers. For Q2-Q4, the final A-D options follow an aligned design: the same letter refers to the same candidate region across semantic location, box grounding, and evidence description; option E is always “none of these.” 
+
+Reference-image evaluation. The 356 Ref-Real images receive all four questions, with Q1 = “no” and Q2-Q4 = E. The 119 Ref-PG images receive only Q2-Q4, also with answer E, and skip Q1 .Because Ref-PG images are themselves generated images, a global Q1 artifact-present judgment could be affected by generation imperfections unrelated to the paired salient defect. We therefore exclude Ref-PG from Q1 and use it only for the more targeted Q2-Q4 checks. 
+
+Scoring and Diagnostic Evaluation. Each question is presented in an independent, single-turn API call and scored by deterministic exact match. Beyond per-question accuracy, we analyze answer patterns across Q1-Q4, as shown in Figure 3(c). For example, a model that answers Q1 and Q4 correctly but misses Q2 or Q3 selects the correct evidence statement but fails one of the explicit localization checks; models that select A-D on references make unsupported artifact claims. These help separate detection, localization, grounding, evidence selection, and reference-side abstention. 
+
+## 4 Experiments 
+
+We evaluate 20 vision-language models from 9 families, covering both closed-source and open-weight systems. For clarity we group them by access category. • Closed-source: Gemini 3.1 Pro and Gemini 3.1 Flash Lite [Google DeepMind, 2026a]; 
+
+Claude Opus 4.6 [Anthropic, 2026] and Haiku 4.5 [Anthropic, 2025]; GPT-5.4 and GPT-5.4-nano [OpenAI, 2026a]. • Open-weight (Thinking / Hybrid-thinking by default): Qwen3.5-397B-A17B and Qwen3.5-35B-A3B [Qwen Team, 2026]; Gemma-4-31B-it and -4-26B-it-A4B [Google DeepMind, 5Table 1: Main results on S AL ART -VQA (%). Columns are grouped by artifact images, reference images, and overall performance. Models are grouped by access category and sorted within each group by artifact-image All Q1−4 accuracy; best per column in bold .
+
+Model Question Data type Artifact images Reference images Overall 
+
+Artifact Ref-Real Ref-PG All splits 
+
+> Q1 detection recall All Q1−4
+> complete accuracy All Q2−4
+> grounding accuracy Q1 no artifact specificity All Q1−4
+> complete accuracy All Q2−4
+> grounding accuracy All Q2−4
+> grounding accuracy Q1 detection accuracy All Q1−4
+> complete accuracy All Q2−4
+> grounding accuracy
+
+Random 50.00 0.40 0.80 50.00 0.40 0.80 0.80 50.00 0.40 0.80 
+
+Human 100.00 100.00 100.00 99.53 99.53 99.53 99.16 99.80 99.80 99.72 
+
+Closed-source 
+
+Gemini 3.1 Pro 99.37 53.26 53.89 50.28 7.87 8.71 0.00 78.34 33.81 30.21 
+
+Gemini 3.1 Flash Lite 83.37 32.63 37.47 93.26 16.01 16.01 0.00 87.61 25.51 24.73 
+
+Claude 4.6 Opus 47.58 11.79 17.47 100.00 96.35 96.35 0.84 70.04 48.01 44.95 
+
+GPT-5.4 4.63 1.89 6.32 100.00 95.79 95.79 20.17 45.49 42.12 41.58 
+
+Claude 4.5 Haiku 0.42 0.00 0.84 99.44 49.16 49.16 7.56 42.84 21.06 19.79 
+
+GPT-5.4-nano 0.21 0.00 0.42 99.72 78.65 78.93 19.33 42.84 33.69 32.21 
+
+Open-weight (Thinking / Hybrid-thinking by default) 
+
+Gemma-4-31B-it 86.32 33.26 37.68 68.26 3.93 3.93 0.00 78.58 20.70 20.31 
+
+Gemma-4-26B-it-A4B 57.89 17.68 28.00 83.71 14.61 15.17 0.00 68.95 16.37 19.68 
+
+Qwen3.5-397B-A17B 33.26 12.63 27.79 96.63 39.33 40.17 0.00 60.41 24.07 28.95 
+
+Qwen3.5-35B-A3B 20.63 6.32 18.11 96.35 39.61 40.17 0.84 53.07 20.58 24.21 
+
+Kimi K2.5 3.79 1.68 4.84 100.00 77.25 77.25 28.57 45.01 34.06 34.95 
+
+Qwen3-VL-30B-A3B-T 22.53 1.47 3.16 89.89 56.74 59.55 10.92 51.39 25.15 25.26 
+
+Qwen3-VL-235B-A22B-T 7.79 1.26 5.05 96.91 35.67 35.96 11.76 45.97 16.00 17.47 
+
+Qwen3-VL-8B-T 3.79 0.42 2.74 98.60 38.48 38.76 10.08 44.41 16.73 17.16 
+
+GLM-4.6V 0.42 0.21 0.21 100.00 97.47 97.47 84.87 43.08 41.88 47.26 Open-weight (Instruct) 
+
+Qwen3-VL-30B-A3B-I 18.32 2.74 7.16 97.47 0.00 0.00 0.00 52.23 1.56 3.58 
+
+Qwen3-VL-235B-A22B-I 1.47 0.42 1.47 100.00 92.70 92.70 84.03 43.68 39.95 46.00 
+
+Qwen3-VL-8B-I 0.42 0.21 1.05 99.44 91.85 92.42 68.91 42.84 39.47 43.79 
+
+Llama-4-Maverick-17B-128E-I 3.16 0.00 0.21 99.72 75.84 76.12 57.98 44.53 32.49 35.89 
+
+Llama-4-Scout-17B-16E-I 0.63 0.00 0.00 100.00 82.30 82.30 74.79 43.20 35.26 40.21 
+
+2026b]; GLM-4.6V [V Team et al., 2025]; Kimi K2.5 [Kimi Team et al., 2026]; and Qwen3-VL-30B-A3B-Thinking, -235B-A22B-Thinking, and -8B-Thinking [Qwen Team, 2025]. • Open-weight (Instruct): Qwen3-VL-30B-A3B-I, Qwen3-VL-235B-A22B-Instruct, and Qwen3-VL-8B-Instruct [Qwen Team, 2025]; Llama-4-Maverick-17B-128E-Instruct and Llama-4-Scout-17B-16E-Instruct [Meta AI, 2025]. In the following, we use -I and -T to denote Instruct-mode and Thinking-mode evaluations. 
+
+Evaluation Protocol. We evaluate all systems in a zero-shot, single-turn setting. Each MCQ is submitted independently with the corresponding image, fixed prompt wording, and image-specific options; no conversation history is shared across questions. For models that expose a temperature parameter, we set temperature to 0; otherwise, we use the provider default. Reasoning-capable models are queried under the default provider configuration unless an explicit Instruct/Thinking variant is named, and we do not manually override reasoning budgets. Llama models are evaluated using their publicly released multimodal Instruct weights. For the Human reference, three raters answer the same MCQs under the same single-turn, no-context protocol; we report mean accuracy across raters. 
+
+4.1 Main Evaluation Setup. Table 1 reports results on artifact images, matched real references (Ref-Real), and paired generated references (Ref-PG). Artifact and Ref-Real images receive Q1-Q4, while Ref-PG receives Q2-Q4 only, as described in Section 3.2. We report Q1 accuracy as artifact recall on artifact images and no-artifact specificity on Ref-Real, together with two image-level summaries: All Q1−4 requires all four answers to be correct on the same image, and All Q2−4 requires the three downstream answers to be correct. Rows are grouped by model access category and sorted within each group by artifact-image All Q1−4. We first focus on the artifact-image block, which combines Art-DG and Art-PG 6(a) Per -Question accuracy (b) Failure patterns Figure 4: Artifact-side diagnostic breakdown on representative models. (a) Per-question accuracy on artifact images for Q1-Q4. (b) Image-level failure-pattern distribution over Q1-Q4 for the same models in the same left-to-right order, indicated by model icons. Here, 1 denotes a correct answer and 0 denotes an incorrect answer; 1111 indicates full success and 0000 indicates complete failure. (Appendix Table 6 reports Art-DG and Art-PG separately), and then compare artifact and reference blocks to analyze behavior across data types. 
+
+4.1.1 Artifact-Side Performance and Failure Patterns 
+
+We first analyze the artifact-image block of Table 1 and Figure 4. 
+
+Even the binary presence decision is difficult for most models . Only four VLMs exceed the 50% random baseline on Q1 recall, namely Gemini 3.1 Pro, Gemini 3.1 Flash Lite, Gemma-4-31B-it, and Gemma-4-26B-it-A4B. The remaining 16 models fall below chance on artifact detection, including several models that are strong on reference images. This shows that many current VLMs are conservative or insensitive to the salient artifacts. 
+
+High artifact recall also does not translate into full artifact understanding. Gemini 3.1 Pro reaches 99.4% Q1 recall but answers all four artifact-side questions correctly on only 53.3% of images. The next tier remains much lower: Gemma-4-31B-it and Gemini 3.1 Flash Lite reach 33.3% and 32.6% All Q1−4, respectively, despite strong Q1 recall. The same gap appears in the downstream-only metric: the best All Q2−4 score is 53.9%, followed by 37.7%. Thus, detecting that an artifact is present is substantially easier than consistently identifying the relevant region, grounding it spatially, and selecting the supported defect description. 
+
+Models with similar artifact-side performance tend to share similar bottlenecks. Figure 4(a) shows this grouping at the per-question level. Gemini Pro and Gemma-4-31B-it are strongest on Q1 and Q4, while their Q2 and Q3 accuracies are lower; for these models, detecting an artifact and selecting the supported defect description are easier than explicitly localizing the artifact by semantic region or bounding box. GPT-5.4, Kimi K2.5, and Qwen3.5-397B-A17B show a different profile: their Q1 recall is much lower than several downstream accuracies, suggesting that they can sometimes identify the correct region or evidence under targeted Q2-Q4 options, even though they often do not commit to artifact presence. Claude Opus 4.6 is distinct again, with Q2 semantic localization higher than its other artifact-side scores. 
+
+Image-level answer patterns reveal where each model fails. Figure 4(b) records which subset of Q1-Q4 is correct on the same image. Gemini Pro has no 0000 (complete failure) cases; most of its errors are partial, and many involve one or two missed downstream questions after Q1 succeeds. Its largest three-error pattern is 1000 (Q2-Q4 errors, 5.5%), where the model detects artifact presence but misses all downstream questions. Gemma-4-31B-it spreads errors across many patterns, with very few complete failures; its largest single-error pattern is 1101 (Q3 error, 13.7%), where Q1, Q2, and Q4 are correct but spatial grounding is wrong. In contrast, GPT-5.4, Kimi K2.5, GLM-4.6V, and Llama-4-Maverick place much more mass on 0000 (complete failure), with GLM-4.6V 7(a) Q1 : detection tradeoff (b) All Q1-4: complete understanding tradeoff Figure 5: Artifact detection vs. false-alarm avoidance in S AL ART -VQA. (a) Q1 artifact recall vs. Ref-Real specificity. (b) Artifact All Q1−4 accuracy vs. Ref-Real All Q1−4 accuracy. especially concentrated there (96.4%). These diverse patterns show how S AL ART -VQA turns a single artifact-present decision into a diagnosis of which part of the Q1-Q4 chain failed. 
+
+4.1.2 Behavior Across Artifact and Reference Data 
+
+We next compare the artifact and reference-image blocks of Table 1. Human raters are near-perfect across all splits, confirming that the MCQs are answerable, while random guessing is near zero for all-correct metrics. In contrast, current VLMs do not jointly achieve artifact-side understanding and reference-side abstention. The tradeoff becomes clearer when we separate the binary Q1 decision from the full Q1-Q4 diagnostic chain. 
+
+Q1 detection exposes a sensitivity-specificity tradeoff. Figure 5(a) shows this binary detection regime. Gemini 3.1 Pro is the most sensitive detector, with 99.4% artifact Q1 recall, but this comes with only 50.3% Ref-Real Q1 specificity. GLM-4.6V, Llama-4-Scout-I, Qwen3-VL-235B-A22B-I, and GPT-5.4 occupy the opposite corner: they almost always reject artifacts on Ref-Real images, but rarely detect artifacts when they are present. Gemini 3.1 Flash Lite is an important intermediate case. It is not the best model on full artifact understanding, but at the binary level it gives the strongest Q1 operating point, with high recall and high specificity. Appendix Table 5 reports the full precision, recall, specificity, and F1 breakdown behind these groups. 
+
+The full diagnostic chain reveals a sharper failure mode. Figure 5(b) shows that the upper-right region is empty once we require all four artifact-side questions and all four Ref-Real questions to be correct. Models that perform best on artifact images still fail to abstain reliably on references. Gemini 3.1 Pro, Gemini 3.1 Flash Lite, and Gemma-4-31B-it obtain the top artifact All Q1−4 scores, but only 7.9%, 16.0%, and 3.9% Ref-Real All Q1−4, respectively, and all three score 0.0% on Ref-PG All Q2−4. Thus, even when a model has reasonable Q1 specificity, it may still select a non-E region, box, or defect description on an artifact-free reference. 
+
+Reference-side calibration can also hide artifact insensitivity. GLM-4.6V, Qwen3-VL-235B-A22B-I, Qwen3-VL-8B-I, and Llama-4-Scout-I are strongest on artifact-free references, with 68.9-84.9% Ref-PG All Q2−4 and at least 82.3% Ref-Real All Q1−4. However, their artifact All Q1−4 scores remain near the 0.4% random baseline. These models achieve reference-side calibration largely by avoiding artifact commitments. 
+
+Ref-Real and Ref-PG test different abstention behaviors. For highly artifact-sensitive models such as Gemini 3.1 Pro and Gemma-4-31B-it, the two reference splits show a similar trend: these models struggle to abstain on both Ref-Real and Ref-PG. For moderately artifact-sensitive models, however, abstention depends more strongly on image type. Claude Opus 4.6 is the clearest example: it reaches 96.3% All Q2−4 on Ref-Real, yet only 0.8% All Q2−4 on Ref-PG. The Qwen3.5 checkpoints and Gemma-4-26B-it-A4B show the same pattern at lower Ref-Real accuracy. This indicates that 8(b) artifact localization baselines (Q3) (c) Example generated by GPT Images 2.0 (a) No -image control Figure 6: Additional analyses. (a) No-image control for Q4: whether models abstain (F) or return A–E without seeing the image. The black line in GT-match bar marks E matches. ♦ marks the rate at which no-image and with-image choose the same non-E answer. (b) Task-adapted Q3 evaluation of artifact-localization baselines, decomposed into artifact-image correctness/errors and clean-reference correctness/errors. (c) Salient artifact detection remains relevant for modern generators: a ChatGPT Image 2 sample whose overall scene is plausible but still contains clear local irregularities (red boxes). rejecting artifacts in ordinary real photographs does not guarantee rejection of the same unsupported artifact hypothesis in a paired generated scene. 
+
+4.2 Additional Analyses and Discussion No Image Control. To check whether Q4 answers depend on the image, we re-run Q4 without the image, keeping A–E and adding a no-image abstention option F (“no image was provided”); the correct answer is always F. Figure 6(a) reports all rates over the same 950-image denominator: selection rates for F and A-E, GT matches, and repeats of the with-image answer after excluding E-to-E matches. We evaluate GPT-5.4 and Claude Opus 4.6. GPT-5.4 selects F on 100.0% of queries, consistent with its conservative behavior on the main benchmark. Claude Opus 4.6 abstains on only 32.1% and returns A–E rather than F on the remaining 67.9% without any visual input, but these no-image answers match the Q4 ground truth on only 19.6% of images, with 10.3% coming from E matches. They also repeat a non-E with-image answer on 18.5% of images, close to a random same-letter baseline among four choices. Thus, the Q4 options alone do not recover the correct answer. This complements the Ref-PG control: Ref-PG tests whether a defect claim survives in a paired reference, while the no-image control isolates how much of it survives with no image at all. 
+
+Task-Adapted Artifact Localization Models. We evaluate PAL4VST [Zhang et al., 2023], LE-GION [Kang et al., 2025], and SIDA-7B [Huang et al., 2025] on Q3 by converting each predicted mask into a box choice via the candidate box with the highest average mask score. This adaptation chooses among A-D but cannot produce the abstention answer E, so clean real references are incorrect by construction; we report artifact-image box accuracy, clean-reference abstention accuracy, and overall accuracy on the artifact images and ref-clean. Figure 6(b) shows that these methods are only a partial baseline: LEGION is the best of the three but still selects the correct box on fewer than half of the artifact images, while PAL4VST and SIDA-7B sit close to the forced-choice baseline. All three are inherently miscalibrated on clean references because their mask outputs lack a no-artifact option, clarifying the gap between identifying visible artifacts and knowing when no claim should be made. 
+
+Is salient artifact detection still meaningful for complex scenes and modern generators? Al-though S AL ART -VQA deliberately focuses on salient, language-describable artifacts so that each question has a unique visually grounded answer, this controlled scope does not narrow the bench-mark’s relevance to today’s strongest generators. Visible artifacts have not disappeared as image quality has improved: Figure 6(c) shows a ChatGPT Image 2 [OpenAI, 2026b] sample where the overall scene is plausible yet several local regions still contain clear irregularities. Complex generated images are themselves built from simpler local components, so reliably detecting, localizing, and abstaining on salient local defects is a prerequisite for analyzing more crowded or ambiguous scenes. 
+
+## 5 Conclusion 
+
+SAL ART -VQA benchmarks the ability of VLMs to analyze salient artifacts and provides a diagnostic evaluation of their artifact claims beyond image-level detection. By decomposing each claim into 9presence detection, semantic localization, spatial grounding, evidence-grounded defect identification, and reference-side abstention, the benchmark identifies where support for the claim breaks down. Across 20 VLMs, no system reliably completes this chain while remaining calibrated when the queried defect is absent: more sensitive models often make unsupported reference-side claims, while conservative models avoid false alarms largely by missing real artifacts. These results suggest that progress requires defect claims tied more tightly to local visual evidence and evaluation protocols that separate detection, localization, grounding, explanation, and abstention. More broadly, S AL ART -VQA can help generative-image pipelines choose artifact evaluators and provide a balanced testbed for VLM sensitivity, grounding, and abstention. 
+
+## References 
+
+Anthropic. System card: Claude haiku 4.5. https://www-cdn.anthropic.com/ 7aad69bf12627d42234e01ee7c36305dc2f6a970.pdf , October 2025. Accessed 2026-05-04. Anthropic. System card: Claude opus 4.6. https://www-cdn.anthropic.com/ 14e4fb01875d2a69f646fa5e574dea2b1c0ff7b5.pdf , February 2026. Samah S Baraheem and Tam V Nguyen. Ai vs. ai: Can ai detect ai-generated images? Journal of Imaging , 9 (10):199, 2023. Black Forest Labs. FLUX.1 fill [dev]. https://huggingface.co/black-forest-labs/FLUX. 1-Fill-dev , 2026a. Official model card, updated Jan. 2, 2026. Black Forest Labs. FLUX.2 [klein]: Towards interactive visual intelligence. https://bfl.ai/blog/ flux2-klein-towards-interactive-visual-intelligence , 2026b. Accessed: 2026-05-04. Ali Borji. Qualitative failures of image generation models and their application in detecting deepfakes. Image and Vision Computing , 137:104771, 2023. James Burgess, Rameen Abdal, Dan Stoddart, Sergey Tulyakov, Serena Yeung-Levy, and Kuan-Chieh Jack-son Wang. Artifactlens: Hundreds of labels are enough for artifact detection with vlms. arXiv preprint arXiv:2602.09475 , 2026. Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen, Sen Xing, Muyan Zhong, Qinglong Zhang, Xizhou Zhu, Lewei Lu, et al. Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 24185–24198, 2024. Xingyu Fu, Yushi Hu, Bangzheng Li, Yu Feng, Haoyu Wang, Xudong Lin, Dan Roth, Noah A Smith, Wei-Chiu Ma, and Ranjay Krishna. Blink: Multimodal large language models can see but not perceive. In European Conference on Computer Vision , pages 148–166. Springer, 2024. Google DeepMind. Imagen 4 model card. https://storage.googleapis.com/deepmind-media/ Model-Cards/Imagen-4-Model-Card.pdf , 2025. Published May 20, 2025. Google DeepMind. Gemini 3.1 pro model card. https://deepmind.google/models/model-cards/ gemini-3-1-pro/ , February 2026a. Accessed 2026-05-04. Google DeepMind. Gemma 4 model card. https://ai.google.dev/gemma/docs/core/model_card_4 ,2026b. Last updated 2026-04-17 UTC; accessed 2026-05-04. Yash Goyal, Tejas Khot, Douglas Summers-Stay, Dhruv Batra, and Devi Parikh. Making the v in vqa matter: Elevating the role of image understanding in visual question answering. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 6904–6913, 2017. Tianrui Guan, Fuxiao Liu, Xiyang Wu, Ruiqi Xian, Zongxia Li, Xiaoyu Liu, Xijun Wang, Lichang Chen, Furong Huang, Yaser Yacoob, et al. Hallusionbench: an advanced diagnostic suite for entangled language hallucination and visual illusion in large vision-language models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 14375–14385, 2024. Fabrizio Guillaro, Davide Cozzolino, Avneesh Sud, Nicholas Dufour, and Luisa Verdoliva. Trufor: Leveraging all-round clues for trustworthy image forgery detection and localization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 20606–20615, 2023. Fabrizio Guillaro, Giada Zingarini, Ben Usman, Avneesh Sud, Davide Cozzolino, and Luisa Verdoliva. A bias-free training paradigm for more general ai-generated image detection. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 18685–18694, 2025. 
+
+10 Xiao Guo, Xiaohong Liu, Zhiyuan Ren, Steven Grosz, Iacopo Masi, and Xiaoming Liu. Hierarchical fine-grained image forgery detection and localization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 3155–3165, 2023. Yixiao He, Haifeng Sun, Pengfei Ren, Jingyu Wang, Huazheng Wang, Qi Qi, Zirui Zhuang, and Jing Wang. Evaluating and mitigating object hallucination in large vision-language models: Can they still see removed objects? In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 6841–6858, 2025. Zhenglin Huang, Jinwei Hu, Xiangtai Li, Yiwei He, Xingyu Zhao, Bei Peng, Baoyuan Wu, Xiaowei Huang, and Guangliang Cheng. Sida: Social media image deepfake detection, localization and explanation with large multimodal model. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28831–28841, 2025. Yikun Ji, Yan Hong, Qi Fan, Huijia Zhu, Weiqiang Wang, Liqing Zhang, Jianfu Zhang, et al. Fakexplain: Ai-generated image detection via human-aligned grounded reasoning. In The Fourteenth International Conference on Learning Representations , 2026. Negar Kamali, Karyn Nakamura, Aakriti Kumar, Angelos Chatzimparmpas, Jessica Hullman, and Matthew Groh. Characterizing photorealism and artifacts in diffusion model-generated images. In Proceedings of the 2025 CHI Conference on Human Factors in Computing Systems , pages 1–26, 2025. Hengrui Kang, Siwei Wen, Zichen Wen, Junyan Ye, Weijia Li, Peilin Feng, Baichuan Zhou, Bin Wang, Dahua Lin, Linfeng Zhang, et al. Legion: Learning to ground and explain for synthetic image detection. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 18937–18947, 2025. Kimi Team, Tongtong Bai, Yifan Bai, Yiping Bao, S. H. Cai, Yuan Cao, Y. Charles, H. S. Che, Cheng Chen, Guanduo Chen, Huarong Chen, Jia Chen, Jiahao Chen, Jianlong Chen, Jun Chen, Kefan Chen, Liang Chen, Ruijue Chen, Xinhao Chen, Yanru Chen, Yanxu Chen, Yicun Chen, Yimin Chen, Yingjiang Chen, Yuankun Chen, Yujie Chen, Yutian Chen, Zhirong Chen, Ziwei Chen, Dazhi Cheng, Minghan Chu, Jialei Cui, Jiaqi Deng, Muxi Diao, Hao Ding, Mengfan Dong, Mengnan Dong, Yuxin Dong, Yuhao Dong, Angang Du, Chenzhuang Du, Dikang Du, Lingxiao Du, Yulun Du, Yu Fan, Shengjun Fang, Qiulin Feng, Yichen Feng, Garimugai Fu, Kelin Fu, Hongcheng Gao, Tong Gao, Yuyao Ge, Shangyi Geng, Chengyang Gong, Xiaochen Gong, Zhuoma Gongque, Qizheng Gu, Xinran Gu, Yicheng Gu, Longyu Guan, Yuanying Guo, Xiaoru Hao, Weiran He, Wenyang He, Yunjia He, Chao Hong, Hao Hu, Jiaxi Hu, Yangyang Hu, Zhenxing Hu, Ke Huang, Ruiyuan Huang, Weixiao Huang, Zhiqi Huang, Tao Jiang, Zhejun Jiang, Xinyi Jin, Yu Jing, Guokun Lai, Aidi Li, C. Li, Cheng Li, Fang Li, Guanghe Li, Guanyu Li, Haitao Li, Haoyang Li, Jia Li, Jingwei Li, Junxiong Li, Lincan Li, Mo Li, Weihong Li, Wentao Li, Xinhang Li, Xinhao Li, Yang Li, Yanhao Li, Yiwei Li, Yuxiao Li, Zhaowei Li, Zheming Li, Weilong Liao, Jiawei Lin, Xiaohan Lin, Zhishan Lin, Zichao Lin, Cheng Liu, Chenyu Liu, Hongzhang Liu, Liang Liu, Shaowei Liu, Shudong Liu, Shuran Liu, Tianwei Liu, Tianyu Liu, Weizhou Liu, Xiangyan Liu, Yangyang Liu, Yanming Liu, Yibo Liu, Yuanxin Liu, Yue Liu, Zhengying Liu, Zhongnuo Liu, Enzhe Lu, Haoyu Lu, Zhiyuan Lu, Junyu Luo, Tongxu Luo, Yashuo Luo, Long Ma, Yingwei Ma, Shaoguang Mao, Yuan Mei, Xin Men, Fanqing Meng, Zhiyong Meng, Yibo Miao, Minqing Ni, Kun Ouyang, Siyuan Pan, Bo Pang, Yuchao Qian, Ruoyu Qin, Zeyu Qin, Jiezhong Qiu, Bowen Qu, Zeyu Shang, Youbo Shao, Tianxiao Shen, Zhennan Shen, Juanfeng Shi, Lidong Shi, Shengyuan Shi, Feifan Song, Pengwei Song, Tianhui Song, Xiaoxi Song, Hongjin Su, Jianlin Su, Zhaochen Su, Lin Sui, Jinsong Sun, Junyao Sun, Tongyu Sun, Flood Sung, Yunpeng Tai, Chuning Tang, Heyi Tang, Xiaojuan Tang, Zhengyang Tang, Jiawen Tao, Shiyuan Teng, Chaoran Tian, Pengfei Tian, Ao Wang, Bowen Wang, Chensi Wang, Chuang Wang, Congcong Wang, Dingkun Wang, Dinglu Wang, Dongliang Wang, Feng Wang, Hailong Wang, Haiming Wang, Hengzhi Wang, Huaqing Wang, Hui Wang, Jiahao Wang, Jinhong Wang, Jiuzheng Wang, Kaixin Wang, Linian Wang, Qibin Wang, Shengjie Wang, Shuyi Wang, Si Wang, Wei Wang, Xiaochen Wang, Xinyuan Wang, Yao Wang, Yejie Wang, Yipu Wang, Yiqin Wang, Yucheng Wang, Yuzhi Wang, Zhaoji Wang, Zhaowei Wang, Zhengtao Wang, Zhexu Wang, Zihan Wang, Zizhe Wang, Chu Wei, Ming Wei, Chuan Wen, Zichen Wen, Chengjie Wu, Haoning Wu, Junyan Wu, Rucong Wu, Wenhao Wu, Yuefeng Wu, Yuhao Wu, Yuxin Wu, Zijian Wu, Chenjun Xiao, Jin Xie, Xiaotong Xie, Yuchong Xie, Yifei Xin, Bowei Xing, Boyu Xu, Jianfan Xu, Jing Xu, Jinjing Xu, L. H. Xu, Lin Xu, Suting Xu, Weixin Xu, Xinbo Xu, Xinran Xu, Yangchuan Xu, Yichang Xu, Yuemeng Xu, Zelai Xu, Ziyao Xu, Junjie Yan, Yuzi Yan, Guangyao Yang, Hao Yang, Junwei Yang, Kai Yang, Ningyuan Yang, Ruihan Yang, Xiaofei Yang, Xinlong Yang, Ying Yang, Yi Yang, Yi Yang, Zhen Yang, Zhilin Yang, Zonghan Yang, Haotian Yao, Dan Ye, Wenjie Ye, Zhuorui Ye, Bohong Yin, Chengzhen Yu, Longhui Yu, Tao Yu, Tianxiang Yu, Enming Yuan, Mengjie Yuan, Xiaokun Yuan, Yang Yue, Weihao Zeng, Dunyuan Zha, Haobing Zhan, Dehao Zhang, Hao Zhang, Jin Zhang, Puqi Zhang, Qiao Zhang, Rui Zhang, Xiaobin Zhang, Y. Zhang, Yadong Zhang, Yangkun Zhang, Yichi Zhang, Yizhi Zhang, Yongting Zhang, Yu Zhang, Yushun Zhang, Yutao Zhang, Yutong Zhang, Zheng Zhang, Chenguang Zhao, Feifan Zhao, Jinxiang Zhao, Shuai Zhao, Xiangyu Zhao, Yikai Zhao, Zijia Zhao, Huabin Zheng, Ruihan Zheng, Shaojie Zheng, Tengyang Zheng, Junfeng Zhong, Longguang Zhong, Weiming Zhong, M. Zhou, 
+
+11 Runjie Zhou, Xinyu Zhou, Zaida Zhou, Jinguo Zhu, Liya Zhu, Xinhao Zhu, Yuxuan Zhu, Zhen Zhu, Jingze Zhuang, Weiyu Zhuang, Ying Zou, and Xinxing Zu. Kimi k2.5: Visual agentic intelligence, 2026. URL 
+
+https://arxiv.org/abs/2602.02276 .Chunxiao Li, Xiaoxiao Wang, Meiling Li, Boming Miao, Peng Sun, Yunjian Zhang, Xiangyang Ji, and Yao Zhu. Bridging the gap between ideal and real-world evaluation: Benchmarking ai-generated image detection in challenging scenarios. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 20379–20389, 2025a. Jincheng Li, Chunyu Xie, Ji Ao, Dawei Leng, and Yuhui Yin. Lmm-det: Make large multimodal models excel in object detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 308–318, 2025b. Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jianwei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, et al. Grounded language-image pre-training. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10965–10975, 2022. Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and Ji-Rong Wen. Evaluating object hallucination in large vision-language models. In Proceedings of the 2023 conference on empirical methods in natural language processing , pages 292–305, 2023. Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European conference on computer vision , pages 740–755. Springer, 2014. Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In European conference on computer vision , pages 38–55. Springer, 2024. Holy Lovenia, Wenliang Dai, Samuel Cahyawijaya, Ziwei Ji, and Pascale Fung. Negative object presence evaluation (nope) to measure object hallucination in vision-language models. In Proceedings of the 3rd Workshop on Advances in Language and Vision Research (ALVR) , pages 37–58, 2024. Camillo Lugaresi, Jiuqiang Tang, Hadon Nash, Chris McClanahan, Esha Uboweja, Michael Hays, Fan Zhang, Chuo-Ling Chang, Ming Guang Yong, Juhyun Lee, et al. Mediapipe: A framework for building perception pipelines. arXiv preprint arXiv:1906.08172 , 2019. Meta AI. Llama 4 model card. https://www.llama.com/docs/model-cards-and-prompt-formats/ llama4/ , April 2025. Accessed 2026-05-04. Midjourney. Midjourney. https://www.midjourney.com/ , 2026. Official website, accessed Apr. 27, 2026. U Muthaiah, A Divya, TN Swarnalaxmi, and BS Vidhyasagar. A comparative review of ai-generated vs real images and classification techniques. In 2024 4th International Conference on Ubiquitous Computing and Intelligent Information Systems (ICUIS) , pages 141–147. IEEE, 2024. OpenAI. Gpt-5.4 thinking system card. https://openai.com/index/gpt-5-4-thinking-system-card/ ,2026a. Accessed 2026-05-04. OpenAI. Gpt image 2. https://developers.openai.com/api/docs/models/gpt-image-2 , 2026b. Ac-cessed 2026-05-06. Qwen Team. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .Qwen Team. Qwen3.5: Towards native multimodal agents, February 2026. URL https://qwen.ai/blog? id=qwen3.5 .Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR, 2021. Hanoona Rasheed, Muhammad Maaz, Sahal Shaji, Abdelrahman Shaker, Salman Khan, Hisham Cholakkal, Rao M Anwer, Eric Xing, Ming-Hsuan Yang, and Fahad S Khan. Glamm: Pixel grounding large multimodal model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13009–13018, 2024. Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. 
+
+12 Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. V Team, Wenyi Hong, Wenmeng Yu, Xiaotao Gu, Guo Wang, Guobing Gan, Haomiao Tang, Jiale Cheng, Ji Qi, Junhui Ji, Lihang Pan, Shuaiqi Duan, Weihan Wang, Yan Wang, Yean Cheng, Zehai He, Zhe Su, Zhen Yang, Ziyang Pan, Aohan Zeng, Baoxu Wang, Bin Chen, Boyan Shi, Changyu Pang, Chenhui Zhang, Da Yin, Fan Yang, Guoqing Chen, Jiazheng Xu, Jiale Zhu, Jiali Chen, Jing Chen, Jinhao Chen, Jinghao Lin, Jinjiang Wang, Junjie Chen, Leqi Lei, Letian Gong, Leyi Pan, Mingdao Liu, Mingde Xu, Mingzhi Zhang, Qinkai Zheng, Sheng Yang, Shi Zhong, Shiyu Huang, Shuyuan Zhao, Siyan Xue, Shangqin Tu, Shengbiao Meng, Tianshu Zhang, Tianwei Luo, Tianxiang Hao, Tianyu Tong, Wenkai Li, Wei Jia, Xiao Liu, Xiaohan Zhang, Xin Lyu, Xinyue Fan, Xuancheng Huang, Yanling Wang, Yadong Xue, Yanfeng Wang, Yanzi Wang, Yifan An, Yifan Du, Yiming Shi, Yiheng Huang, Yilin Niu, Yuan Wang, Yuanchang Yue, Yuchen Li, Yutao Zhang, Yuting Wang, Yu Wang, Yuxuan Zhang, Zhao Xue, Zhenyu Hou, Zhengxiao Du, Zihan Wang, Peng Zhang, Debing Liu, Bin Xu, Juanzi Li, Minlie Huang, Yuxiao Dong, and Jie Tang. Glm-4.5v and glm-4.1v-thinking: Towards versatile multimodal reasoning with scalable reinforcement learning, 2025. URL 
+
+https://arxiv.org/abs/2507.01006 .Kaihong Wang, Lingzhi Zhang, and Jianming Zhang. Detecting human artifacts from text-to-image models. 
+
+arXiv preprint arXiv:2411.13842 , 2024. Yao Xiao, Weiyan Chen, Jiahao Chen, Zijie Cao, Weijian Deng, Binbin Yang, Ziyi Dong, Xiangyang Ji, Wei Ke, Pengxu Wei, and Liang Lin. Unveiling perceptual artifacts: A fine-grained benchmark for interpretable ai-generated image detection. arXiv preprint arXiv:2601.19430 , 2026. Shilin Yan, Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Weidi Xie. A sanity check for ai-generated image detection. arXiv preprint arXiv:2406.19435 , 2024. Junyan Ye, Baichuan Zhou, Zilong Huang, Junan Zhang, Tianyi Bai, Hengrui Kang, Jun He, Honglin Lin, Zihao Wang, Tong Wu, et al. Loki: A comprehensive synthetic data detection benchmark using large multimodal models. arXiv preprint arXiv:2410.09732 , 2024. Lingzhi Zhang, Zhengjie Xu, Connelly Barnes, Yuqian Zhou, Qing Liu, He Zhang, Sohrab Amirghodsi, Zhe Lin, Eli Shechtman, and Jianbo Shi. Perceptual artifacts localization for image synthesis tasks. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 7579–7590, 2023. Shilong Zhang, Peize Sun, Shoufa Chen, Minn Xiao, Wenqi Shao, Wenwei Zhang, Yu Liu, Kai Chen, and Ping Luo. Gpt4roi: Instruction tuning large language model on region-of-interest, 2024. In URL https://openreview. net/forum , volume 1, 2024. Ziyin Zhou, Yunpeng Luo, Yuanchen Wu, Ke Sun, Jiayi Ji, Ke Yan, Shouhong Ding, Xiaoshuai Sun, Yunsheng Wu, and Rongrong Ji. Aigi-holmes: Towards explainable and generalizable ai-generated image detection via multimodal large language models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 18746–18758, 2025. Mingjian Zhu, Hanting Chen, Qiangyu Yan, Xudong Huang, Guanyu Lin, Wei Li, Zhijun Tu, Hailin Hu, Jie Hu, and Yunhe Wang. Genimage: A million-scale benchmark for detecting ai-generated image. In Advances in Neural Information Processing Systems , volume 36, 2023. 
+
+## A Artifact taxonomy details 
+
+Table 2 gives the artifact type definitions used by annotators. The categories are organized by the unit being judged: counts of repeated parts, relations between parts, the local quality of one part, the anatomy of a whole body, and scene-level plausibility. 
+
+## B Image generation details 
+
+B.1 Generators 
+
+The candidate pool came from three generation sources: 
+
+Imagen 4. Imagen 4 is an image generation model from Google DeepMind [Google DeepMind, 2025]. In our candidate pool, it produced photorealistic images with the fewest salient structural defects. 13 Table 2: Artifact type definitions provided to annotators.       
+
+> Type Definition
+> Count anomaly The image has the wrong count for small repeated parts or object components, such as extra or missing fingers, toes, teeth, claws, wheels, handles, or mirrors. Extra or missing major body parts fall under anatomy anomaly. Topology anomaly Parts have an impossible relation: they are merged, disconnected, attached to the wrong place, intersect-ing, clipping, or violating depth/occlusion order. Use this when connectivity or part-to-part spatial logic is the main defect. Local render/structure anomaly One local part or object is malformed in shape or rendering, while count and attachment are not the main issue. Examples include warped shapes, smeared or under-resolved details, ghost-like endings, blob or stump-like collapse, a fading lower limb, or a hand reduced to an amorphous lump. Anatomy anomaly A biological body has implausible large-scale structure or major-part inventory. This includes extra or missing major parts (arms, legs, heads, tails, wings, necks, trunks, hands, feet, paws, hooves) and impossible whole-body arrangements. Plausibility anomaly The defect concerns scene physics, material behavior, identity, text, or symbols rather than object or body structure. Cases include impossible reflection, shadow, contact, gravity, transparency, or support; a recognizable feature with the wrong identity for its subject; or malformed, unreadable, or semantically wrong text or symbols. Use this only when the other four types do not fit better.
+
+Midjourney. Midjourney is a commercial image generation service [Midjourney, 2026]. Retained artifacts most often appeared in hands and limbs. 
+
+FLUX.2 [klein]. FLUX.2 [klein] is an image generation model from Black Forest Labs [Black Forest Labs, 2026b]. We used it across all object classes. 
+
+Inpainting model. For the inpainting path, we used FLUX.1-Fill-dev [Black Forest Labs, 2026a]. The model regenerates a masked region from the text prompt and surrounding pixels. 
+
+External artifact examples. Most retained artifact candidates were generated by the systems above. The 356 Art-DG images also include 30 Midjourney-generated anatomical anomaly examples from HAD [Wang et al., 2024]. These images are not a separate split: they are counted inside Art-DG, so the artifact set remains 356 Art-DG images plus 119 Art-PG images. We kept them only when they satisfied the same salient-artifact criteria as the rest of the benchmark, and we authored the SAL ART -VQA questions, controls, and answer annotations under the same protocol. 
+
+B.2 Prompt design 
+
+We adapted prompts from COCO captions [Lin et al., 2014] and wrote them as realistic scene descriptions. We appended “natural light, detailed surroundings” and avoided language that asks for defects. We oversampled scene types that often expose structural failures in current generators: • Occlusion : subjects partly hidden by barriers, so the model must complete occluded body parts. • Support : subjects rest on or lean against surfaces, where contact geometry can break. • Reflection : subjects near water, glass, or mirrors, where physical consistency can fail. • Crossing : body parts or objects crossing over each other, often producing topology errors. • Contact : close interaction between subjects or between a subject and an object. We chose these scene types because prior work reports anatomical inconsistency, reflection errors, compositional relation failures, and implausible scene physics in generated images [Borji, 2023, Kamali et al., 2025]. The prompts describe plausible real world scenes rather than adversarial inputs. 
+
+B.3 Inpainting pipeline 
+
+The inpainting path is used only for the paired generated split. Its goal is to create one edited image and one unedited counterpart from the same generated scene, so that Q2-Q4 can test the same localized claim on both images. 
+
+Stage 1: Landmark detection (MediaPipe). We use MediaPipe [Lugaresi et al., 2019] to locate body landmarks. FaceLandmarker , HandLandmarker , and PoseLandmarker provide the keypoints, and 14 we convert them into rough region hints: hand hulls, foot ellipses, and face polygons. Each hint contains a rough boundary, positive prompt points, and optionally negative points or a bounding box. 
+
+Stage 2: Mask refinement (SAM 2). SAM 2 [Ravi et al., 2024] turns each MediaPipe hint into a pixel mask. It uses the positive points, optional negative points, and optional box from Stage 1 to predict candidate masks. We keep masks that cover the seed region and reject masks that spread to unrelated subjects, adjacent objects, or multiple body parts. Small holes are filled before inpainting. 
+
+Stage 3: Inpainting (FLUX.1-Fill-dev). The image and refined mask are passed to FLUX.1-Fill-dev. The prompt is the original scene description and never mentions defects. Each generated reference image is inpainted up to five times with different random seeds. We use guidance scales from 10 to 20, strengths from 0.6 to 0.9, and 20 inference steps as a fixed candidate-generation range: lower strengths often preserve the original part, while higher strengths more often change the local structure without replacing the whole scene. 
+
+Stage 4: Screening. We apply auxiliary VLM screening followed by human verification. The screening script uses InternVL2-2B [Chen et al., 2024], an open-weight VLM outside the evaluated model families, to flag likely artifacts with a short JSON label and reason. This output is only a prefilter for candidate review; final inclusion is decided by human inspection. We keep an inpainted image only if the edited region contains one salient artifact and the rest of the image is visually unchanged. Images that do not yield a qualifying edit after five attempts are excluded. The artifacts come from regenerating fine-grained body structures, such as fingers, toes, and facial features, in a tightly constrained region; the prompts do not ask for errors. 
+
+## C Prompt examples 
+
+Table 3 shows one prompt for each subject category. These categories were used to cover common visual subjects during candidate construction; they are not evaluation groups in the main results. Table 3: Representative text prompts by subject category.        
+
+> Subject category Prompt
+> Human A realistic photograph of a young commuter stepping into the back seat of a rideshare sedan, one leg already inside, the open door partly blocking the body, natural light, detailed surroundings Animal A realistic photograph of a horse turning through a narrow farm gate, with part of the body hidden by the barrier, natural light, detailed surroundings Objects A realistic photograph of a floor lamp standing on a polished floor near a wall corner, viewed from a low angle, detailed surroundings Sports action A realistic photograph of a gymnast during a balance beam routine, arms extended, natural light, detailed surroundings Indoor/home A realistic photograph of a dining table with place settings for four, one chair slightly pulled out, natural light, detailed surroundings Vehicle A realistic side view photograph of a bicycle parked beside a curb ramp, with one wheel partly hidden by the barrier, no readable text, detailed surroundings
+
+## D Annotation process 
+
+D.1 Annotation interface 
+
+Annotators used a Gradio interface that showed the image at full resolution. For each artifact image, they selected the artifact type, wrote the Q2 semantic location, drew the Q3 box, and wrote the Q4 evidence statement. Whenever possible, Q2-Q4 were centered on the same salient artifact; Appendix F.1 uses this alignment for the collapsed diagnostic analysis. For Art-PG images, the paired generated reference image (Ref-PG) was shown beside the edited image to help annotators isolate the changed region. 
+
+D.2 Annotation schema 
+
+The raw annotation payload stores the authored artifact options A-D: 15 {"artifact_type": "count_anomaly", "q1_ref": "yes", "semantic_loc": {"ref": "B", "options": {"A": "...", "B": "..."}}, "box": {"ref": "A", "candidates": {"A": [322, 181, 414, 271]}}, "evidence": {"ref": "B", "options": {"A": "...", "B": "..."}} }
+
+For Q2-Q4, annotators author options A-D and choose the reference answer. The export step adds the fixed “none of these” answer. For Q2 and Q4, the final table includes q2_option_e (“none of these regions”) and q4_option_e (“none of these descriptions”). For Q3, option E means “none of these boxes” and has no box coordinates. The benchmark therefore scores Q2-Q4 over A-E. Distractors A-D are plausible by design. They usually put the right defect at the wrong location, the wrong defect at the right location, or a suspicious but non-defective region into the answer set. 
+
+D.3 Location conventions 
+
+Spatial descriptions follow a two-level convention. Subjects are identified from the viewer’s perspec-tive: “the person on the left” is the person on the left side of the image as displayed. Body parts use the subject’s own anatomical left and right: “the right hand of the person on the left” refers to the anatomical right hand of the person appearing on the viewer’s left. This convention was established at the start of annotation and enforced through training and interface reminders. 
+
+D.4 Quality control 
+
+Quality control combines consensus filtering and export-time validation. Annotators first received guidelines for the salient-artifact criterion, left/right conventions, option alignment, and box drawing, with pilot examples. Each candidate item was then checked by three reviewers for artifact salience, location clarity, Q2–Q4 alignment, and box precision. We retained only items for which all three reviewers agreed that the annotation was valid; items with disagreement were revised and rechecked or excluded from the release. This consensus protocol ensures that every released item passed unanimous review, although we do not use it to estimate a formal inter-annotator agreement statistic. During export, automated checks reject duplicate row IDs, invalid pair structure, empty reference answers, invalid option labels, non-positive boxes, and boxes outside image bounds. 
+
+## E VQA question design 
+
+E.1 Question prompts and options 
+
+The benchmark uses four independent, single-turn question prompts. The wording of Q1-Q4 is fixed across the dataset, and Q1 always uses the same yes/no answer set. For Q2-Q4, annotators provide the image-specific choices: semantic regions for Q2, boxes for Q3, and evidence statements for Q4. Figure 7 shows one benchmark instance. Q1, Q2, and Q4 use the original image; Q3 uses the same image with candidate boxes overlaid. All models receive the same pre-rendered Q3 overlay for a given item. Boxes A-D use fixed colors (red, blue, teal, and orange), with line width and bold letter badges scaled by image size; overlapping boxes are left as drawn and therefore identical across models. The prompt text below is shown as the model sees it, with textual choices inline for Q1, Q2, and Q4. For Q3, choices A-D are the labeled boxes in the overlay image, and E is the none-of-these choice described by the prompt. The location convention is intentionally repeated in Q2 and Q4 because each prompt is evaluated independently; we reproduce both copies verbatim below. 
+
+Q1: PresenceQA. 
+
+> This image may be a real photograph or an AI-generated image. If you judge it to be a real photograph, treat it as having no generation artifacts. If you judge it to be an AI-generated image, it may or may not contain visible generation artifacts. Do not answer yes merely because the image looks AI-generated, stylized, cinematic, or slightly imperfect. Conversely, do not answer no merely because a rare real case could have an unusual structure, such as a person naturally having four or fewer fingers. Does this image contain at least one salient artifact, meaning at least one obvious abnormality that stands out more than minor, weak, or debatable imperfections? Answer yes only if there is at least one salient artifact. If the image appears real, or if it appears AI-generated but no salient artifact is present, answer no.
+
+16 Original image for Q1, Q2, and Q4. Box overlay image for Q3. 
+
+Figure 7: Visual inputs used by the four VQA prompts. Q1, Q2, and Q4 are answered from the original image. Q3 is answered from an overlay image containing boxes A-D. 
+
+Answer with exactly one word: yes or no. 
+
+Q2: SemanticLocQA. 
+
+This image may be a real photograph or an AI-generated image. If you judge it to be a real photograph, treat it as having no generation artifacts. If you judge it to be an AI-generated image, it may or may not contain visible generation artifacts. Among the provided options, which object, body part, local region, or larger subject region best captures the most salient artifact? Judge only among the provided options. If you judge the image to be real, choose E. If you judge the image to be AI-generated but none of options A-D correctly identifies a region that actually contains a visible artifact, choose E. Choose A-D only if you judge that the selected option actually contains a visible artifact. Do not reject a region solely because an unusual real-world case could make the appearance possible, such as a person naturally having four or fewer fingers. If more than one option could contain a visible artifact, choose the one that best captures the most visually and semantically salient artifact rather than a smaller, weaker, or secondary issue. Resolve location wording in two steps: 1. Use viewer perspective only to identify which person, animal, or object is being referred to. 2. After that subject is identified, use that subject’s own anatomical left/right for body parts. Important: - Do not determine left/right from where the body part appears on the screen. - A hand that appears on the viewer’s left side of the image can still be the subject’s right hand, and a hand that appears on the viewer’s right side of the image can still be the subject’s left hand. - First decide which subject is being referred to, then decide that subject’s own anatomical left/right. - Do not flip left/right to match the viewer’s perspective, and do not relabel the option text. For subject identification, phrases such as ’leftmost person’, ’rightmost person’, ’first person from the right’, ’second person from the left’, and ’second person from the right’ are all based on the viewer’s perspective. If there are three people, ’the middle person’ or ’the person in the center’ means the person between the leftmost and rightmost people. After the subject is fixed, phrases such as ’left hand’, ’right hand’, ’left leg’, ’right leg’, ’left eye’, and ’right eye’ are based on that subject’s own body, not the viewer’s mirrored view. Examples: ’the left hand of the rightmost person’, ’the right hand of the second person from the left’, ’the left leg of the middle person’, and ’the right eye of the person in the center’ all use the subject’s own anatomy after the subject is identified. Example: ’the right hand of the person on the right’ means first find the person on the right from the viewer’s perspective, then inspect that person’s own right hand. Example: ’the left hand of the person on the right’ does not mean the hand appearing on the viewer’s left side of that person; it means that subject’s own left hand. Example: ’the right hand of the leftmost person’ may visually appear on either side of that person in the image, depending on pose and camera angle. Example: ’the left leg of the middle person’ means the middle person’s own left leg, not whichever leg appears on the viewer’s left. Do not rewrite the option text, do not flip left/right to match the image, and choose only from the provided options. Options: A. the water spray from the leading elephant’s trunk B. the legs of the elephant on the far right C. the reflection of the sun on the water D. The trunk of the elephant on the far left E. none of these regions Answer with exactly one uppercase letter: A or B or C or D or E 
+
+17 Q3: BoxGroundingQA. 
+
+This image may be a real photograph or an AI-generated image. If you judge it to be a real photograph, treat it as having no generation artifacts. If you judge it to be an AI-generated image, it may or may not contain visible generation artifacts. Among the provided boxes, which box best captures the most salient artifact? Judge only among the provided boxes. If you judge the image to be real, choose E. If you judge the image to be AI-generated but none of boxes A-D correctly captures a visible artifact-bearing region, choose E. Choose A-D only if you judge that the selected box actually contains a visible artifact. Do not reject a box solely because the boxed appearance might have a rare real-world explanation, such as a person naturally having four or fewer fingers. If more than one box could contain a visible artifact, choose the one that best captures the most visually and semantically salient artifact rather than a smaller, weaker, or secondary issue. Answer with exactly one uppercase letter: A or B or C or D or E 
+
+Q4: EvidenceQA. 
+
+This image may be a real photograph or an AI-generated image. If you judge it to be a real photograph, treat it as having no generation artifacts. If you judge it to be an AI-generated image, it may or may not contain visible generation artifacts. Which option best describes the most salient artifact? Judge only among the provided options. If you judge the image to be real, choose E. If you judge it to be AI-generated but none of options A-D correctly describes a visible artifact, choose E. Choose A-D only if the selected description is directly supported by visible evidence and best matches the most salient artifact in the image. Do not reject a description solely because a rare real case could have a similar structure, such as a person naturally having four or fewer fingers. If more than one option describes a visible artifact, choose the one that best matches the salient artifact rather than a smaller, weaker, or secondary issue. Do not choose an option that is merely true about the scene, merely suggests that the image looks AI-generated, or describes a weak or debatable irregularity that does not rise to the level of the salient artifact. If an evidence option uses location wording, apply the same location convention below. Resolve location wording in two steps: 1. Use viewer perspective only to identify which person, animal, or object is being referred to. 2. After that subject is identified, use that subject’s own anatomical left/right for body parts. Important: - Do not determine left/right from where the body part appears on the screen. - A hand that appears on the viewer’s left side of the image can still be the subject’s right hand, and a hand that appears on the viewer’s right side of the image can still be the subject’s left hand. - First decide which subject is being referred to, then decide that subject’s own anatomical left/right. - Do not flip left/right to match the viewer’s perspective, and do not relabel the option text. For subject identification, phrases such as ’leftmost person’, ’rightmost person’, ’first person from the right’, ’second person from the left’, and ’second person from the right’ are all based on the viewer’s perspective. If there are three people, ’the middle person’ or ’the person in the center’ means the person between the leftmost and rightmost people. After the subject is fixed, phrases such as ’left hand’, ’right hand’, ’left leg’, ’right leg’, ’left eye’, and ’right eye’ are based on that subject’s own body, not the viewer’s mirrored view. Examples: ’the left hand of the rightmost person’, ’the right hand of the second person from the left’, ’the left leg of the middle person’, and ’the right eye of the person in the center’ all use the subject’s own anatomy after the subject is identified. Example: ’the right hand of the person on the right’ means first find the person on the right from the viewer’s perspective, then inspect that person’s own right hand. Example: ’the left hand of the person on the right’ does not mean the hand appearing on the viewer’s left side of that person; it means that subject’s own left hand. Example: ’the right hand of the leftmost person’ may visually appear on either side of that person in the image, depending on pose and camera angle. Example: ’the left leg of the middle person’ means the middle person’s own left leg, not whichever leg appears on the viewer’s left. Do not rewrite the option text, do not flip left/right to match the image, and choose only from the provided options. Options: A. the water spray appears as a solid, unnatural shape rather than droplets B. the legs of the elephant on the far right appear to float without proper water displacement C. the reflection of the sun on the water is perfectly sharp and static D. the elephant on the far left has an extra trunk E. none of these descriptions Answer with exactly one uppercase letter: A or B or C or D or E 
+
+18 E.2 Distractor design 
+
+Q2-Q4 options are written around the same candidate regions. Q2 names a region, Q3 marks the corresponding box, and Q4 pairs that region with a defect claim. With this construction, a Q4 success followed by a Q2 or Q3 error is a localization failure, not a mismatch in option wording. For Q2, distractors vary the referred subject and local part, such as the left person versus the right person, or a hand versus a sleeve. The model must identify both the subject and the affected part. For Q3, distractor boxes cover plausible but wrong regions: the right part on the wrong subject, a nearby unaffected part, or a visually suspicious clean region. All boxes have positive area and lie within image bounds. For Q4, distractors combine the wrong location with the right defect type, the right location with the wrong defect type, or a plausible defect not supported by the image. 
+
+Cross-question consistency. The collapsed diagnosis in Appendix F.1 uses this per-option con-sistency. The correct-answer letter is identical across Q2-Q4 for 97.3% of artifact images. In the remaining 2.7%, the options still refer to matched candidate regions, but annotation review selected a different letter for the best semantic phrase, box, or evidence statement. Scoring always uses the reference answer for each individual question; the diagnostic table uses those per-question correctness values rather than forcing a shared letter. 
+
+E.3 Scoring 
+
+All questions use exact-match scoring. Q1 accepts “yes” or “no” case-insensitively. Q2-Q4 accept one letter, A-E. We give no partial credit, so scoring does not depend on fuzzy matching or manual judgment of free-form text. 
+
+E.4 Evaluation protocol 
+
+Models are evaluated in a single-turn, zero-shot setting. Each question is sent in an independent API call with the fixed prompt wording above and the options for that image. The image is provided with the question text. For Q3, the visual input also includes an overlay with boxes A-D. 
+
+Question assignment by image category. The 475 artifact images and 356 Ref-Real images receive Q1-Q4. The Ref-Real images have answer Q1 = “no” and Q2-Q4 = E. The 119 Ref-PG images from the pixel-aligned inpainting pairs receive only Q2-Q4, with answer E for each question. We skip Q1 on this split because Ref-PG images are still generated images: minor unrelated synthesis flaws can blur a global artifact-present judgment. Q2-Q4 are tied to the paired salient defect. A non-E answer on Ref-PG asserts that the artifact-side region, box, or defect description is still supported after the edit is removed, so minor unrelated flaws elsewhere do not make an A-D answer correct. Each pixel-aligned pair contains one Art-PG image and one Ref-PG image. Both use the same Q2-Q4 options A-D. In Art-PG, one option points to the edited defect. In Ref-PG, that defect is absent and the other A-D options are still distractors. Thus all A-D claims about the paired salient artifact are false on Ref-PG, and the correct answer is E. This is the paired hallucination control used in Section 3.2: a non-E answer on Ref-PG is a false artifact claim under the same options. 
+
+## F Additional results 
+
+F.1 Hierarchical analysis 
+
+Table 4 gives an appendix-only hierarchical breakdown for the 475 artifact images. This four-bucket view collapses the 16 Q1-Q4 answer patterns in Figure 4(b). We first separate Q1 misses. Among the remaining images, we next check Q4 because it is the most semantically complete downstream question: the model must select the defect description supported by the image. If Q1 and Q4 are correct but Q2 or Q3 is wrong, we count the image as a localization failure. This ordering is a diagnostic summary of the answer pattern, not an additional task protocol. For the three strongest artifact-side models, Q1 is no longer the main bottleneck. Gemini Pro misses only 0.6% of artifact images at Q1, then loses 18.9% to evidence failures and 27.2% to localization failures. Flash Lite and Gemma-4-31B-it detect less often, but their remaining errors also occur mainly after the model has already said that an artifact is present. Claude Opus 4.6 and Qwen3.5-397B-A17B have a different shape: Q1 is still the main filter, and the model only sometimes reaches 19 Table 4: Hierarchical failure diagnosis on representative models over 475 artifact images (%). Rows span the strongest artifact-side models and the high-specificity, low-recall operating points discussed in the main results. Each image is assigned to exactly one category. Q1 miss means the artifact-side Q1 answer is incorrect. Evidence failure means Q1 is correct but Q4 is wrong. Localization failure means Q1 and Q4 are correct but Q2 or Q3 (or both) is wrong.                                      
+
+> Model Q1 miss Evidence failure Localization failure Full success Gemini 3.1 Pro 0.6 18.9 27.2 53.3 Gemini 3.1 Flash Lite 16.6 32.4 18.3 32.6 Gemma-4-31B-it (thinking) 13.7 25.9 27.2 33.3 Claude 4.6 Opus 52.4 23.8 12.0 11.8 Qwen3.5-397B-A17B 66.7 10.5 10.1 12.6 GPT-5.4 95.4 1.3 1.5 1.9 GLM-4.6V (thinking) 99.6 0.2 0.0 0.2 Qwen3-VL-235B-A22B-I 98.5 0.4 0.6 0.4 Qwen3-VL-30B-A3B-I 81.7 10.9 4.6 2.7
+
+the downstream questions. High-specificity, low-recall models are mostly abstainers on artifact images. GPT-5.4, GLM-4.6V, Kimi K2.5, Llama-4 Scout/Maverick, and the conservative Qwen3-VL instruct checkpoints get strong reference-side scores largely by avoiding artifact commitments. Qwen3-VL-30B-A3B-I is the edge case: it reaches 18.3% Q1 recall, but only 2.7% artifact all-4 and 0.0% Ref-Real all-4. This table should not be read as a causal chain. Since Q1-Q4 are asked independently, a Q1 miss does not always mean the model has no local visual signal. Qwen3.5-35B-A3B has 20.6% Q1 recall but 51.6% Q4 accuracy; 37.5 points of that Q4 accuracy come from images where Q1 was wrong. Qwen3.5-397B-A17B and GPT-5.4 show the same pattern. Q1 is therefore a commitment threshold as well as a perception test. The downstream questions separate skills that aggregate accuracy would merge. Table 7 shows Q4-only and Q3-only disagreements on the same images, plus Q2/Q3 disagreements between semantic and box localization. The type block gives a separate check on artifact categories: Gemini, Gemma, and Qwen3.5-397B are higher on plausibility than local render/structure, while Claude Opus 4.6 reverses that pattern. The category effect is therefore model-specific, not a universal difficulty ranking. Finally, the unsolved images are not isolated failures of one model. A per-image oracle over all 20 models solves 327/475 artifact images, or 68.8%. The remaining 148 images are not solved by any evaluated model under all-4 correctness, giving a rough ceiling for the current evaluated model pool rather than a benchmark upper bound. 
+
+F.2 Q1 detection metrics 
+
+Table 5 reports the Q1 detection metrics derived from artifact images as positives and Ref-Real images as negatives. These numbers complement the Q1 accuracies in Table 1 by making the precision-recall-specificity tradeoff explicit. 
+
+F.3 Artifact performance by construction route 
+
+Table 6 separates artifact performance on the 356 Art-DG images and the 119 Art-PG images. The two subsets differ in how artifacts are produced: Art-DG comes from direct generation and filtering, while Art-PG comes from localized inpainting failures on paired generated reference images. The two construction routes do not produce a single difficulty ordering. Gemini Pro is nearly unchanged across Art-DG and Art-PG, with all-4 accuracy around 53% on both. Flash Lite and Claude Opus 4.6 do better on Art-PG, where the salient defect is concentrated in one edited region, while Gemma-4-31B-it and Qwen3.5-397B-A17B do better on Art-DG. The combined artifact block in Table 1 represents an average of two complementary routes, rather than a result from a single source. 20 Table 5: Q1 detection metrics on artifact versus Ref-Real images (%). Precision, recall, and specificity are computed from Q1 with artifact images as positives and Ref-Real images as negatives. Row groups summarize observed operating points for readability and are not additional model categories.                                                                                     
+
+> Model Precision Recall Specificity F1
+> High artifact recall / all-4
+> Gemini 3.1 Pro 72.7 99.4 50.3 84.0 Gemini 3.1 Flash Lite 94.3 83.4 93.3 88.5 Gemma-4-31B-it 78.4 86.3 68.3 82.2
+> Moderate artifact recall / all-4
+> Claude 4.6 Opus 100.0 47.6 100.0 64.5 Gemma-4-26B-it-A4B 82.6 57.9 83.7 68.1 Qwen3.5-397B-A17B 92.9 33.3 96.6 49.0 Qwen3.5-35B-A3B 88.3 20.6 96.3 33.4
+> High specificity, low artifact recall
+> GPT-5.4 100.0 4.6 100.0 8.9 GLM-4.6V 100.0 0.4 100.0 0.8 Qwen3-VL-235B-A22B-I 100.0 1.5 100.0 2.9 Llama-4-Scout-17B-16E-I 100.0 0.6 100.0 1.3 Qwen3-VL-8B-I 50.0 0.4 99.4 0.8 Llama-4-Maverick-17B-128E-I 93.8 3.2 99.7 6.1 Kimi K2.5 100.0 3.8 100.0 7.3 GPT-5.4-nano 50.0 0.2 99.7 0.4
+> Low end-to-end success
+> Qwen3-VL-30B-A3B-I 90.6 18.3 97.5 30.5 Qwen3-VL-30B-A3B-T 74.8 22.5 89.9 34.6 Qwen3-VL-235B-A22B-T 77.1 7.8 96.9 14.1 Qwen3-VL-8B-T 78.3 3.8 98.6 7.2 Claude 4.5 Haiku 50.0 0.4 99.4 0.8
+
+F.4 Artifact type and cross-question checks 
+
+Table 7 keeps the appendix diagnostics that are not visible from aggregate accuracy alone. The type block reports all-4 accuracy within the displayed artifact categories. The disagreement block shows asymmetric errors between aligned questions: Q4-only means the evidence statement is correct but the Q3 box is wrong; Q3-only means the reverse. The Q2/Q3 columns make the same comparison for semantic and box localization. 
+
+## G Broader impacts and ethics statement 
+
+SAL ART -VQA is an evaluation benchmark for diagnosing whether VLMs can detect, localize, and reject salient artifact claims in generated images. The intended use is model auditing. Better artifact evaluation can help developers find cases where a model over-claims visual defects, misses obvious synthesis errors, or fails to abstain on clean references. The benchmark images are synthetic or generated controls rather than photographs collected from private users. Some images contain people or person-like subjects, but the annotations describe visible artifact regions and defect evidence rather than personal identity or protected attributes. The benchmark is not designed for identity recognition, demographic inference, or surveillance. Annotators were instructed to judge visual support for artifact claims, not to label demographic categories. The paired reference setting directly tests unsupported artifact claims: on Ref-PG, all A-D options are false with respect to the paired salient defect, so a correct model must choose the abstention option. We frame the benchmark as an evaluation tool, report aggregate model behavior, and use closed-set questions rather than open-ended instructions for producing artifacts. 
+
+## H Reproducibility statement 
+
+The paper gives the full VQA prompt wording, answer schema, scoring rule, and question assignment protocol in Appendix E. Appendix B and Appendix B.3 describe the two artifact construction routes, including the generator families, masking pipeline, inpainting model, sampling ranges, and screening procedure. The main text reports the model list, zero-shot protocol, answer parsing rule, and evaluation window for closed-source systems. 21 Table 6: Artifact performance split by artifact-image source (%). Art-DG contains the 356 directly curated artifact images; Art-PG contains the 119 inpainting-induced artifact images. We report Q1 detection accuracy and artifact all-4 for each subset. Row groups summarize observed operating points for readability and are not additional model categories.                                                                                     
+
+> Model Art-DG Q1 Art-PG Q1 Art-DG All-4 Art-PG All-4
+> High artifact recall / all-4
+> Gemini 3.1 Pro 99.4 99.2 53.1 53.8 Gemini 3.1 Flash Lite 78.9 96.6 30.1 40.3 Gemma-4-31B-it 87.6 82.4 35.4 26.9
+> Moderate artifact recall / all-4
+> Claude 4.6 Opus 44.7 56.3 9.6 18.5 Gemma-4-26B-it-A4B 58.7 55.5 18.0 16.8 Qwen3.5-397B-A17B 36.0 25.2 14.9 5.9 Qwen3.5-35B-A3B 22.5 15.1 7.0 4.2
+> High specificity, low artifact recall
+> GPT-5.4 5.9 0.8 2.5 0.0 GLM-4.6V 0.6 0.0 0.3 0.0 Qwen3-VL-235B-A22B-I 1.1 2.5 0.3 0.8 Llama-4-Scout-17B-16E-I 0.6 0.8 0.0 0.0 Qwen3-VL-8B-I 0.3 0.8 0.3 0.0 Llama-4-Maverick-17B-128E-I 3.9 0.8 0.0 0.0 Kimi K2.5 3.9 3.4 2.2 0.0 GPT-5.4-nano 0.3 0.0 0.0 0.0
+> Low end-to-end success
+> Qwen3-VL-30B-A3B-I 17.1 21.8 3.4 0.8 Qwen3-VL-30B-A3B-T 17.7 37.0 1.7 0.8 Qwen3-VL-235B-A22B-T 7.6 8.4 1.7 0.0 Qwen3-VL-8B-T 3.7 4.2 0.6 0.0 Claude 4.5 Haiku 0.6 0.0 0.0 0.0
+
+Table 7: Artifact-type all-4 accuracy and cross-question disagreement rates on 475 artifact images (%). Type columns report all-4 accuracy within each displayed artifact type. Disagreement columns report asymmetric per-image correctness patterns over all artifact images. Rows report representative nontrivial artifact-side operating points from Table 4, plus GPT-5.4 as a high-specificity, low-recall reference point; near-zero rows are omitted for readability.                                                           
+
+> Artifact type all-4 Q4 vs. Q3 Q2 vs. Q3 Model Anatomy Topology Local render Plaus. Q4-only Q3-only Q2-only Q3-only Gemini 3.1 Pro 51.0 62.4 42.4 64.1 18.7 9.5 15.4 10.7 Gemini 3.1 Flash Lite 20.3 45.6 22.0 38.5 14.7 20.4 13.5 13.5 Gemma-4-31B-it 35.0 34.4 25.4 51.3 28.0 13.5 24.0 9.7 Claude 4.6 Opus 7.7 13.6 20.3 10.3 19.2 23.4 22.9 10.1 Qwen3.5-397B-A17B 12.6 13.6 5.1 41.0 23.2 17.5 19.6 10.7 GPT-5.4 2.1 2.4 0.0 7.7 7.6 25.3 12.4 15.6
+
+For evaluation and data construction, we use official provider APIs for closed-source systems and Hugging Face implementations for open-weight models when available. For closed-source models, the evaluation window is 2026-04-08 to 2026-04-10 (UTC). 
+
+## I Limitations 
+
+SAL ART -VQA is a controlled diagnostic benchmark rather than a survey of how often artifacts appear in the wild. Each artifact image is built around one salient, language-describable defect so that Q1-Q4 have well-defined answers. This choice makes the benchmark useful for separating detection, semantic localization, box grounding, evidence selection, and abstention. It also means that the benchmark should not be read as covering every artifact that can occur in generated images. At the same time, many artifacts in complex generated scenes are built from local, visually identifiable defects of the kind studied here. Therefore, reliably detecting, localizing, and abstaining on these controlled salient artifacts is an important prerequisite for analyzing more crowded, ambiguous, or open-ended generated images. 22 J Compute resources 
+
+Local experiments ran on a workstation with two NVIDIA RTX A6000 GPUs. We ran FLUX.2 generation, FLUX.1-Fill-dev inpainting, SAM 2 mask refinement, InternVL2-2B filtering, and smaller open-weight VLM evaluations locally. Examples of locally evaluated VLMs include Gemma-4-31B-it and Qwen3.5-35B-A3B. Closed-source models and larger open-weight models that did not fit in local memory were queried through official APIs. We did not train or fine-tune VLMs for this paper. 23

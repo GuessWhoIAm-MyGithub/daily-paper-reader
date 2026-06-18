@@ -1,0 +1,690 @@
+Title: Edit the Bits, Diff the Codes: Bitwise Residual Editing for Visual Autoregressive Models
+
+URL Source: https://arxiv.org/pdf/2606.13558v1
+
+Published Time: Fri, 12 Jun 2026 01:21:01 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# Edit the Bits, Diff the Codes: Bitwise Residual Editing for Visual Autoregressive Models 
+
+Shengqiang Zhang ∗, Ruotong Liao ∗, Volker Tresp , Barbara Plank , Hinrich Schütze 
+
+LMU Munich & Munich Center for Machine Learning (MCML) 
+
+> ∗
+
+Equal contribution. 
+
+Text-guided image editing with visual autoregressive (VAR) generators requires controlling both what the model samples and where the sampled change is written back into the image code. Existing VAR editors mainly operate on token streams, features, or flat next-token logits, leaving two native structures of bitwise-residual VAR models underused: the per-bit Bernoulli prediction head and the additive multi-scale residual code field from which the image is assembled. We propose BitResEdit ,a training-free editor for bitwise-residual VAR generators such as Infinity . BitEdit performs source-negative guidance by tilting the post-CFG per-bit log-odds along a source–target contrast computed on a shared edited prefix, then projects each update into a closed-form Bernoulli-KL trust region around the clean CFG sampler. ResEdit converts the sampled bits into per-scale continuous-code residuals, gates them with a localization mask, and re-injects them through the generator’s native sum-of-scales. Together they couple decision-time bit guidance with combination-time code composition, so masked-out latent features are preserved exactly by code arithmetic while localized, scale-aware edits are applied inside the target region. On PIE-Bench with Infinity-2B, BitResEdit 
+
+attains the strongest text alignment among same-backbone VAR editors, improving CLIP on the edited region by +1 .07 over the strongest prior editor while keeping background preservation competitive with it. Ablations show BitEdit and ResEdit play complementary roles in target alignment and background preservation. 
+
+Correspondence: shengqiang@cis.lmu.de 
+
+Code: https://github.com/Shengqiang-Zhang/BitResEdit              
+
+> a squirrel →rabbit sitting on top of a wooden fence
+> a girl and her dog →monkey in a field a panda bear close →open his mouth
+> a round painting of a forest with +deer, flowers, trees
+> a cartoon girl in a hat and dress +standing in front of a beautiful house
+> illustration of a woman meditating in a yoga pose +in the sky with stars
+
+Figure 1 Text-guided edits by BitResEdit , our training-free editor for visual autoregressive models. Each pair shows the source (left) and edited (right) image; colored prompt diffs mark substitutions and insertions. BitResEdit 
+
+applies the requested change while preserving the rest of the image. 
+
+> arXiv:2606.13558v1 [cs.CV] 11 Jun 2026
+
+# 1 Introduction 
+
+Text-guided image editing modifies a user-specified region of a source image according to a natural-language instruction—substituting objects, changing attributes, or inserting content—while preserving unrelated content (Fig. 1). Diffusion editors address this through inversion, guidance, attention or feature control, and instruction tuning [Brack et al., 2024, Xu et al., 2024, Tang et al., 2024, Liu et al., 2025b, Bai et al., 2025, Sheynin et al., 2024, Zhao et al., 2024, Wei et al., 2025, Yu et al., 2025]. Visual autoregressive (VAR) generators [Tian et al., 2024, Han et al., 2025] now reach high image quality with lower latency, but expose a different mechanism: they sample discrete multi-scale codes rather than denoise a continuous trajectory. Diffusion-specific editing tools therefore do not transfer directly. These differences are not only implementation details. In VAR models, an edit decision at a coarse scale can constrain later fine-scale details, while a late token change can still disturb local texture. A practical editor must therefore decide where to change the autoregressive distribution and how to write that change back into the image code. This motivates looking inside the generator rather than adapting diffusion controls as black-box perturbations. We focus on bitwise-residual VAR generators such as Infinity [Han et al., 2025], in which each token is a 
+
+D-bit code indexing one scale of a multi-scale residual code field, and the prediction head emits independent per-bit Bernoulli log-odds at every (scale, position, bit), instead of a 2D -way softmax over the token vocabulary. Existing VAR editors mainly work at the token or feature level: AREdit [Wang et al., 2025c] recombines cached source and target token streams under a mask, VAREdit [Mao et al., 2026] learns scale-aligned reference injection, and Masked Logit Nudging [El-Ghoussani et al., 2026] softly biases VAR token logits using source–target prompt differences. These methods improve VAR editing but operate on discrete tokens, features, or token logits, not in the continuous residual-code field from which the image is assembled; the per-bit Bernoulli geometry likewise goes unused, and token-logit guidance lacks an explicit per-bit bound on drift from a clean classifier-free guidance (CFG) sampler. This gap follows from two native properties of these generators. Before sampling, the prediction head factorizes each token into independent per-bit Bernoullis, so residual-code distributions admit a closed-form per-bit KL bound. After sampling, the multi-scale residual codes combine into the final VAE latent by a fixed linear sum. This sum makes the code space the natural place to localize an edit: a mask-gated residual composes algebraically against a cached source code and vanishes exactly outside the mask, so localization is enforced by the generator’s own arithmetic rather than attention maps or token recombination. These facts suggest a split design with one component per property: guide what the model samples with calibrated bit-level intervention, then realize the sampled change as a mask-gated residual in code space. Token-level editors and categorical logit nudging miss one or both properties, while diffusion models expose neither. Building on this observation, we propose BitResEdit , a training-free editor for bitwise-residual VAR generators. We assume access to a localization mask, either provided by the benchmark or predicted by an external grounding-and-segmentation pipeline. BitEdit tilts the post-CFG log-odds at every (scale, position, bit) along a source–target contrast computed on a shared edited prefix, then projects the result into a per-bit Bernoulli-KL trust region around the clean CFG sampler. This keeps each bit-level edit close to the model’s target-prompt behavior while adding source-aware pressure. ResEdit converts each scale’s sampled bits into a continuous-code residual against the cached source image, gates it by the localization mask, and re-injects it through Infinity ’s native sum-of-scales. At masked-out positions the residual is exactly zero, so background preservation is anchored in the generator’s residual-code arithmetic up to the VAE decoder’s boundary effects. Coupled, BitResEdit realizes calibrated bit-level decisions as localized, scale-aware code-space edits. 
+
+Contributions. (i) We identify two algebraic properties that make bitwise-residual VAR generators natively editable: per-bit Bernoulli factorization at the prediction head, admitting a closed-form per-bit KL bound, and additive multi-scale code-sum at latent assembly, admitting gated algebraic composition against a cached source code. (ii) We instantiate them as BitEdit , a Bernoulli-KL trust-region source-negative guidance computed on a shared edited prefix, and ResEdit , a mask-gated continuous-code residual re-injected through the native sum-of-scales. (iii) On PIE-Bench, BitResEdit attains the strongest text alignment among same-backbone VAR editors: +0 .72 whole-image and +1 .07 edited-region CLIP over the strongest prior Infinity-2B editor, while keeping background preservation competitive with it. Ablations show BitEdit and 
+
+ResEdit play complementary roles in target alignment and background preservation. 22 Bitwise Residual Editing 
+
+BitResEdit edits in two steps. BitEdit guides which bits are sampled; ResEdit controls where the sampled change is written into the image code. We first review the structures both steps act on. 
+
+## 2.1 Preliminaries: Bitwise residual visual autoregressive modeling 
+
+Multi-scale residual generation. We build on Infinity [Han et al., 2025], a bit-quantized VAR generator. Given a text prompt y, Infinity produces an image’s continuous VAE code z ∈ RC×Hz ×Wz as a sum of K
+
+coarse-to-fine residual fields, 
+
+z =
+
+> K
+
+X
+
+> k=1
+
+up k→K
+
+ ck , ck ∈ RC×Hk ×Wk , (1) where up k→K bilinearly upsamples to Hz × Wz . Each scale uses a Binary Spherical Quantizer (BSQ; Zhao et al., 2025, Han et al., 2025). At every spatial position p ∈ { 1, . . . , P k} (Pk = HkWk), the tokenizer produces a 
+
+D-bit sign vector bkp ∈ {− 1, +1 }D . Following BSQ, we view the signed vector as a normalized code on the unit hypersphere, qkp = bkp /√D, in the tokenizer latent space, and write BSQ : {− 1, +1 }D → RC , BSQ (bkp ) = bkp /√D,identifying C = D for notational simplicity. Any learned projection between bit-feature and decoder channels is absorbed into the tokenizer/decoder and omitted from this notation. Thus ckp = BSQ (bkp ) is the continuous code at (k, p ), and the image is reconstructed as ˆx = D(z) through a fixed VAE decoder D.
+
+Per-bit Bernoulli head and CFG. At every scale k the transformer outputs 2-class logits ℓk(y) ∈
+
+RB×Pk ×D×2, one categorical distribution per (position, bit), conditioned on y and the coarser scales. We adopt the per-bit log-odds dk(y) = ℓk
+
+> :,:,:,1
+
+(y) − ℓk
+
+> :,:,:,0
+
+(y) as our working representation, since each bit is sampled from a Bernoulli distribution Bern (σ(dkp,j (y))) . Classifier-free guidance (CFG; Ho and Salimans, 2022) is linear in d and is applied at the same visual prefix ˜c<k :
+
+dk
+
+> cfg
+
+(˜ c<k ) = dk(∅ ∥ ˜c<k ) + s· dk(T ∥ ˜c<k ) − dk(∅ ∥ ˜c<k ), (2) with target prompt T , unconditional branch ∅ (a learned unconditional text embedding in Infinity , not a literal empty string), and CFG scale s ≥ 1. We will keep the prefix ˜c<k implicit in later equations when it is unambiguous. 
+
+Two intervention sites and editing notation. Eqs. (1) – (2) expose two handles for training-free editing: the per-bit log-odds dk before sampling (which bits are likely) and the per-scale code field ck after sampling 
+
+(where and how strongly a code change is realized). Throughout, S is the source prompt and T the target. Given a source image xsrc , the source pass runs the BSQ tokenizer on xsrc and caches the resulting per-scale source code fields {ck
+
+> src
+
+}; the tokenizer itself is not prompt-conditioned. The edit pass regenerates scales 1:K
+
+to produce the edited code ˜z = P 
+
+> k
+
+up k→K (˜ ck), decoded to the edited image ˜x = D(˜ z).
+
+## 2.2 BIT EDIT : Bernoulli trust-region source-negative guidance 
+
+BitEdit tilts the post-CFG Bernoulli log-odds along a per-bit source–target contrast direction and projects the result onto a Bernoulli-KL trust region around the post-CFG target. At each scale k, a 3-branch forward returns  dk(T ∥ ˜c<k ), d k(∅ ∥ ˜c<k ), d k(S ∥ ˜c<k ) , (3) where the three log-odds fields are evaluated at the same edited prefix ˜c<k and differ only in the text condition. At the first scale the visual prefix is empty and each branch starts from its own text-derived start map. The signed per-bit contrast 
+
+∆k ≜ dk(S ∥ ˜c<k ) − dk(T ∥ ˜c<k ) ∈ RB×Pk ×D (4) encodes the target-relative source advantage at every bit. Anchoring the contrast at dk(T ∥ ˜c<k ) rather than at dk(∅ ∥ ˜c<k ) keeps directions shared between source and target out of the guidance budget. 3Inputs 
+
+Source prompt  S:
+
+“a vase on a table” 
+
+Target prompt  T:
+
+“a teapot on a table” 
+
+Source codes  
+
+> (coarse → fi ne)
+> c1src
+> c2src
+
+⋮
+
+> cKsrc
+
+Source image 
+
+> BSQ
+> Tokenizer
+
+❄
+
+Binary localization mask 
+
+Process 
+
+> dilate → resize
+> → blur →
+> normalize
+
+Gfi nal  (soft gate) 
+
+> gates the ResEdit residual →
+
+Per-scale edit pass (scale-k) 
+
+> Scale-1 (coarsest)
+> Scale-( k−1)
+> Scale-k(current)
+
+Visual pre fi x
+
+> (shared)
+
+z̃ <k 
+
+Batched VAR Transformer  (frozen)  ❄
+
+1) Conditioned on  T
+
+> (target)
+
+2) Unconditional 
+
+> (∅)
+
+3) Conditioned on  S
+
+> (source)
+
+dk(T)
+
+> (per-bit log-odds)
+
+dk(∅)
+
+> (per-bit log-odds)
+
+dk(S)
+
+> (per-bit log-odds)
+
+CFG combiner 
+
+dkcfg  = dk(T) +  w · (  dk(T) −  dk(∅) ) 
+
+Source-negative contrast 
+
+Δk = dk(S) −  dk(T)
+
+BitEdit (Ours) — decision-time, in log-odds space 
+
+(a) Tilt 
+
+dktilt  = (  dkcfg  − ηk · Δ k ) /  τ
+
+(b) KL trust-region projection   
+
+> Bernoulli-KL bisection, Nsteps
+
+→ dkguided 
+
+> 1D view (per bit)
+
+★ ☆   
+
+> project back into trust region
+> anchor
+> KL ball (radius δk)
+> dk
+> tilt (raw)
+> dk
+> guided (projected)
+
+Per-bit Bernoulli sampling    
+
+> B∈{−1, +1} p×HkWk(binary tokens)
+
+BSQ Encoder  ❄ 
+
+> c̃ k(scale-k)
+
+up k→K  
+
+> (to fi nal resolution)
+> c̃ ksrc
+> (cache, scale k)
+
+up k→K 
+
+> (to fi nal res.)
+> c̃ ksrc
+> (fi nal resolution)
+
+ResEdit (Ours) — combination-time, in code space  
+
+> Residual:
+
+Δc̃ k = c̃ k − c̃ ksrc  
+
+> Gated output:
+
+c̃ kout  = c̃ ksrc  + α · Gfi nal  ⊙ Δc̃ k 
+
+> c̃ k
+> out (fi nal res.)
+
++
+
+> z̃ <k
+> z̃ ≤k
+> (running cumulative latent)
+> downsample to ( Hk−1 , Wk−1 )
+> becomes the visual pre fi x of the next scale
+
+Output 
+
+Final cumulative latent 
+
+> (after scale-K)
+
+z̃ ≤K
+
+VAE Decoder  D 
+
+> (frozen) ❄
+
+Edited image  (teapot) 
+
+Legend              
+
+> ❄frozen weights
+> Ssource prompt
+> Ttarget prompt
+> ∅unconditional
+> dkper-bit log-odds
+> c̃ continuous code
+> z̃ cumulative latent
+> Gfi nal soft localization gate
+> wCFG guidance scale
+> ηksource-negative strength
+> τtilt temperature
+> δktrust-region radius
+> αresidual strength
+
+BitEdit:  source-negative guidance + Bernoulli-KL trust region on per-bit log-odds  (before sampling) .
+
+ResEdit:  gated code-space residual at the  fi nal VAE resolution  (after sampling) .Figure 2 BitResEdit pipeline. A source pass caches BSQ codes and the processed edit mask. Each edit scale applies BitEdit to guide bit sampling and ResEdit to write mask-gated code residuals before final decoding. 
+
+The BitEdit update. Let τ > 0 be the sampling temperature, dk
+
+cfg ,τ ≜ dk
+
+cfg /τ the post-temperature CFG anchor, and factorize the per-bit guidance strength as ηkp,j = ηk M kp,j , with per-scale scalar ηk ≥ 0 (schedule below) and a spatial-bit mask M kp,j ∈ [0 , 1] that zeros guidance at non-edit positions. Throughout we set M k
+
+to the binary edit-region gate derived from the same localization mask as ResEdit (§2.3), so guidance acts only inside the edit region; M k ≡ 1 recovers unmasked guidance. The raw source-negative guided log-odds is 
+
+dk
+
+raw ,p,j =  dk
+
+cfg ,p,j − ηkp,j ∆kp,j 
+
+/τ, (5) where dividing the full bracket by τ keeps dk
+
+raw and dk
+
+cfg ,τ on a common temperature scale, so their Bernoulli-KL distance is directly comparable. Large ηk can push dk
+
+raw off-distribution, so we project it onto a per-bit Bernoulli-KL ball of radius δKL > 0
+
+around dk
+
+cfg ,τ by taking the largest mixing weight that stays inside: 
+
+dk
+
+guided = λ⋆ dk
+
+raw + (1 − λ⋆) dk
+
+cfg ,τ , (6) where 
+
+λ⋆ = max 
+
+n
+
+λ ∈ [0 , 1] KL  Bern( σ(λ d k
+
+raw + (1 −λ) dk
+
+cfg ,τ )) Bern( σ(dk
+
+cfg ,τ ))  ≤ δKL 
+
+o
+
+. (7) The Bernoulli-KL is monotone along this segment, so λ⋆ is solved per bit by bisection; bits already feasible at λ = 1 retain the full update. A secondary element-wise clamp caps the deviation |dk
+
+guided − dk
+
+cfg ,τ | as a safety rail for outlier bits (value in Appendix A). The clamped dk
+
+guided is mapped to a softmax-equivalent logit pair (one logit gauged to zero) and sampled per bit with the same top-k/top-p truncation policy as our 
+
+Infinity [Han et al., 2025] implementation (the temperature is already applied in Eq. (5) ), recovering signs 
+
+˜bkp,j = 2 ukp,j − 1 from labels ukp,j ∈ { 0, 1}. We linearly anneal ηk = η0
+
+ 1 − (k − 1) /(K − 1)  from base scale 
+
+η0 ≥ 0, so guidance is strongest at the coarsest scale (global layout and coarse semantics) and zero at the finest (high-frequency texture). Setting η0 = 0 recovers standard post-temperature CFG. 42.3 RES EDIT : Gated code-residual editing 
+
+ResEdit acts on the combination layer: it takes as input the bits sampled under BitEdit (or any other guidance scheme) and determines where and how strongly the implied code change is written into the image’s continuous latent, replacing discrete token reassembly with per-scale code-space residual injection. 
+
+Per-scale residual at the final latent resolution. Sampling under BitEdit yields native-scale binary tokens ˜bk ∈ {− 1, +1 }D×Hk ×Wk and continuous codes ˜ck = BSQ (˜bk). We upsample once and form the residual at the final VAE resolution Hz ×Wz :
+
+¯ck ≜ up k→K (˜ ck), ¯ck 
+
+> src
+
+≜ up k→K (ck
+
+> src
+
+), ∆¯ ck ≜ ¯ck − ¯ck 
+
+> src
+
+∈ RC×Hz ×Wz , (8) where ck 
+
+> src
+
+is the cached source-image code from the source pass (the source-pass BSQ encoding), rather than a same-prefix source-conditional forward: the same-prefix forward is specific to BitEdit (Eq. (3) ), whereas the code-space residual anchors preservation to the original image. 
+
+Localization mask. We assume a binary localization mask Mgt is provided alongside the source–target prompt pair. 1 The same processed mask is shared across all scales: it is dilated, bilinearly resized to Hz ×Wz
+
+(typically a downsample, since pixel-space masks are at the source-image resolution while Hz ×Wz is the tokenizer/VAE latent resolution), Gaussian-blurred, and peak-normalized to [0 , 1] , yielding a soft-edged spatial gate 
+
+Gfinal ≜ Process( Mgt ) ∈ [0 , 1] Hz ×Wz . (9) This single soft mask lets us apply the same localization rule at all scales, including coarse scales, without introducing a separate hand-designed coarse-scale cutoff. Coarse scales can still influence broad structure through the decoder and through the next-scale visual prefix; the gate only constrains where the edited residual is written into the cumulative latent. 
+
+The ResEdit update. At the final resolution, the per-scale combination rule is 
+
+¯ck 
+
+> out
+
+= ¯ ck 
+
+> src
+
++ α G final ⊙ ∆¯ ck, (10) with ⊙ a channel-broadcast spatial product and α ≥ 0 a residual-strength scalar. The edited image is 
+
+˜x = D P  
+
+> k
+
+¯ck
+
+> out
+
+. At background positions outside the processed edit region, where Gfinal = 0 , the update reduces to ¯ck 
+
+> out
+
+= ¯ck 
+
+> src
+
+for every scale k, so the summed latent is exactly the source latent there. Background 
+
+latent features are therefore preserved exactly; in pixel space they are preserved up to boundary effects introduced by the decoder receptive field and by the mask dilation/blur. 
+
+## 2.4 BIT RES EDIT : Coupling decision-time bits with combination-time codes 
+
+BitEdit (log-odds, before sampling) and ResEdit (code residuals, after sampling) operate on different algebraic objects but are coupled through the cumulative edited latent ˜z≤k, which is fed back as the visual prefix for the next scale. The only other shared state is the source-pass cache. Because each ¯ck 
+
+> out
+
+has been spatially gated at the final latent resolution, ˜z≤k is an off-token-manifold continuous prefix: it generally does not correspond to any native-scale BSQ token sequence. We therefore feed ˜z≤k into the next scale through the same downsampling/input-preparation operator Infinity uses to construct the scale-(k+ 1) visual input, treating ResEdit as intentional continuous code-space composition rather than discrete token reassembly. Together BitEdit and ResEdit realize sampled bit-level changes as localized, scale-aware code-space residuals (Fig. 2). BitResEdit requires no fine-tuning, no per-image optimization, and no auxiliary generative editor; the localization mask is supplied by dataset annotations or by an off-the-shelf grounding-and-segmentation model. Algorithm 1 summarizes the edit pass in PyTorch-like pseudocode: at each scale, the BitEdit block (§2.2) guides and samples the bits, and the ResEdit block (§2.3) writes the resulting code residual under the mask; the Bernoulli-KL projection kl_clip is detailed in Appendix B (Algorithm 2).   
+
+> 1In benchmark experiments, we use the dataset-provided ground-truth masks when available; otherwise, Mgt can be obtained from an off-the-shelf grounding-and-segmentation pipeline.
+
+5Algorithm 1 BitResEdit : edit pass       
+
+> Note: fwd batches the three text conditions over one shared visual prefix; at k=0, each branch uses its own text-derived start map sos ;bsq (b) = b/ √D.
+
+# fwd(p, c): per bit log odds head at prefix p, text c # sample(d): per bit 2 class draw, Infinity top k/p truncation # x_src: source image; S, T, null: source, target, uncond text # M: edit mask; c_src = bsq_enc(x_src); G = process(M) in [0,1] # Mb[k]: binary edit region gate from M at the scale k grid # hw[k] = (Hk, Wk) scale grid; (Hz, Wz) = final latent grid # hyperparams K, eta0, s, tau, delta, lim, alpha: see text z = zeros(C, Hz, Wz) # cumulative edited latent for k in range(K): eta = eta0 * (1 - k / (K - 1)) # anneal: strong coarse, 0 fine p = sos if k == 0 else to_input(z, hw[k]) # BitEdit: decision time guidance on per bit log odds d_T, d_0, d_S = fwd(p, [T, null, S]) # 3 branch, shared prefix d_cfg = d_0 + s * (d_T - d_0) # CFG a = d_cfg / tau # post temperature anchor d_raw = (d_cfg - eta * Mb[k] * (d_S - d_T)) / tau # source neg tilt d = kl_clip(d_raw, a, delta) # Bernoulli KL ball d = a + clip(d - a, -lim, lim) # secondary linf clamp b = 2 * sample(d) - 1 # sample signed bits # ResEdit: combination time mask gated code residual c_e = up(bsq(b), (Hz, Wz)) # edited code, final res c_s = up(c_src[k], (Hz, Wz)) # source code, final res z = z + (c_s + alpha * G * (c_e - c_s)) # mask gated write x_edit = decode(z) 
+
+# 3 Experiments 
+
+## 3.1 Experimental setup 
+
+Benchmark and metrics. We evaluate on PIE-Bench [Ju et al., 2024], a standard text-guided image-editing benchmark of 700 source–target pairs covering 10 editing categories (random, change/add/delete object, attribute changes for content, pose, color and material, change background, change style). Following the benchmark protocol, we report two groups of metrics: (i) background preservation on the unedited region using PSNR, LPIPS [Zhang et al., 2018], MSE and SSIM [Wang et al., 2004]; and (ii) text alignment using the CLIP image–text similarity [Radford et al., 2021] on the whole image and on the edited region. All numbers are means over the full 700 -example set. 
+
+Backbone and configuration. BitResEdit is training-free and runs on top of Infinity-2B [Han et al., 2025], a bit-quantized residual VAR generator with K = 13 scales and a D-bit BSQ tokenizer. Across all experiments we keep the sampling temperature τ , top-k/top-p truncation, CFG scale s, and KL bisection budget N = 4 at fixed defaults (values in Appendix A), and report sensitivity to the main BitEdit and 
+
+ResEdit components and to mask source in §3.4. For Table 1 we use, as the localization mask, the binary 
+
+ground-truth mask provided with each PIE-Bench source–target pair, which gives the strongest background-preservation profile among the mask sources we test (Table 5). Robustness to weaker mask sources, including a tight axis-aligned bounding box of the same region and an automatic GroundingDINO+SAM [Liu et al., 2024, Kirillov et al., 2023] pipeline, is reported in §3.4.2. 
+
+Baselines. Figure 3 compares BitResEdit against three VAR editors and two flow-matching editors. AREdit [Wang et al., 2025c] edits training-free on Infinity-2B by recombining cached source and target token 6Table 1 PIE-Bench quantitative results. BitResEdit attains the strongest text alignment among Infinity-2B editors while remaining competitive on background preservation. Methods are grouped by generative-model family: diffusion (top), flow matching (middle), and visual autoregressive (bottom). Best results are bold ; second-best are underlined .
+
+Background Preservation Text Alignment Method Backbone PSNR ↑ LPIPS 10 3 ↓ MSE 10 4 ↓ SSIM 10 2 ↑ Whole ↑ Edited ↑
+
+P2P [Hertz et al., 2022] SD1.4 17.87 208.80 219.88 71.14 25.01 22.44 MasaCtrl [Cao et al., 2023] SD1.4 22.17 106.62 86.97 79.67 23.96 21.16 P2P-Zero [Parmar et al., 2023] SD1.4 20.44 172.22 144.12 74.67 22.80 20.54 NTI [Mokady et al., 2023] SD1.4 27.03 60.67 35.86 84.11 24.75 21.86 PnP-Inv [Ju et al., 2024] SD1.4 22.46 106.06 80.45 79.68 25.41 22.62 NP [Miyake et al., 2025] SD1.4 26.21 69.01 39.73 83.40 24.61 21.87 StableFlow [Avrahami et al., 2025] FLUX 21.64 92.28 115.21 84.94 24.65 21.70 RF-Edit [Wang et al., 2025b] FLUX 23.22 131.18 75.00 81.44 25.22 22.40 FlowEdit [Kulikov et al., 2025] FLUX 28.33 43.57 37.48 86.23 26.43 23.03 VAGS [Luo et al., 2026] SD3.5-L 26.38 70.38 34.86 87.68 26.92 23.08 FlowChef [Patel et al., 2025] FLUX 29.03 43.11 36.67 87.44 27.05 23.09 RewardFlow [Susladkar et al., 2026] Qwen-Image-20B 32.09 38.47 23.57 90.21 29.78 27.57 
+
+AREdit [Wang et al., 2025c] Infinity-2B 24.19 87.00 – 83.70 25.42 22.77 MLN [El-Ghoussani et al., 2026] SWITTI-2.5B 29.70 36.50 23.30 86.80 26.15 22.72 VAREdit-8B [Mao et al., 2026] Infinity-8B – – – – 26.60 23.30 EditInfinity [Wang et al., 2025a] Infinity-2B 27.95 33.08 24.27 92.12 26.41 23.47 
+
+BitResEdit (ours) Infinity-2B 26.67 43.21 31.61 91.71 27.13 24.54 
+
+streams under the mask with attention refinement. VAREdit-8B [Mao et al., 2026] trains a next-scale editing model with scale-aligned source conditioning on Infinity-8B. EditInfinity [Wang et al., 2025a] inverts each source image by per-image fine-tuning of Infinity-2B before editing. FlowChef [Patel et al., 2025] regenerates the image with FLUX, steering each flow-matching step toward the target prompt with gradient updates. VAGS [Luo et al., 2026] extends FlowEdit [Kulikov et al., 2025] on SD3.5-L with a velocity-adaptive guidance scale and takes no localization mask. Except for Table 1, which quotes numbers from the original papers, all tables and figures report our own runs of the released models or our re-implementations (Appendix A). 
+
+## 3.2 Quantitative results 
+
+PIE-Bench leaderboard. Table 1 2 summarizes background-preservation and text-alignment metrics across all three families. Under the default GT-mask localization, BitResEdit is second-best overall on SSIM and on both CLIP scores, behind only the same-backbone EditInfinity on SSIM and the 20 B-parameter RewardFlow on text alignment. Within the Infinity-2B backbone, BitResEdit attains the strongest text alignment, improving CLIP-Edited by +1 .07 over the best prior same-backbone editor (EditInfinity) while staying within 0.42 SSIM of its background preservation. PSNR is BitResEdit ’s weakest metric: it trails MLN, EditInfinity, and the strongest flow-matching and inversion baselines, and among Infinity-2B editors it improves only over AREdit. 
+
+Preservation, alignment, and latency. The leaderboard exposes a clear trade-off: inversion (NTI, NP) and flow (FlowEdit, FlowChef) baselines sit at moderate preservation and alignment, while RewardFlow buys top alignment at a 20 B-parameter cost. Within Infinity-2B, EditInfinity leads preservation and BitResEdit 
+
+leads alignment, reflecting our two-stage design: ResEdit ’s residual injection clamps unedited regions to the source, while BitEdit ’s Bernoulli-KL guidance drives the CLIP gains. The trade-off extends to latency (Table 7, Appendix A): EditInfinity’s preservation lead costs per-image fine-tuning, which makes it ∼ 45 ×
+
+> 2All numbers in Table 1 are taken from the original papers’ reported results or from RewardFlow [Susladkar et al., 2026]. All other tables and figures report our own runs of the released models or our re-implementations; running details and the full-set metrics of these runs are in Appendix A (Table 6).
+
+7Figure 3 Per-category PIE-Bench results for AREdit, VAREdit-8B, EditInfinity, FlowChef and VAGS (our reproduc-tions; Appendix A), and BitResEdit . BitResEdit encloses the largest CLIP polygons while its SSIM polygon stays compact across all ten categories. All methods use GT-mask localization except VAREdit-8B, whose edits are driven by the instruction alone, and the mask-free VAGS, whose edits are driven by the prompt pair alone.          
+
+> Table 2 Component ablation on PIE-Bench. ResEdit carries background preservation, BitEdit carries text alignment, and their coupling is second-best on all six metrics. BitEdit and ResEdit are toggled with other settings fixed.
+
+Background Preservation Text Alignment Configuration BitEdit ResEdit PSNR ↑ LPIPS 10 3 ↓ MSE 10 4 ↓ SSIM 10 2 ↑ Whole ↑ Edited ↑
+
+baseline (w/ GT) x x 24.21 68.90 70.40 88.58 23.01 19.32 + BitEdit only ✓ x 11.66 402.15 908.46 55.17 27.89 24.66 + ResEdit only x ✓ 29.46 31.83 17.40 93.10 26.11 23.17 
+
+BitResEdit (ours) ✓ ✓ 26.67 43.21 31.61 91.71 27.13 24.54 
+
+slower than BitResEdit , and RewardFlow’s alignment lead costs reward-guided sampling on its 20 B backbone. 
+
+BitResEdit edits one image in 10 .41 s, in line with the training-free VAR baselines. 
+
+Per-category behavior. Figure 3 breaks the comparison down over PIE-Bench’s 10 categories. On CLIP alignment, BitResEdit encloses the largest polygon on both panels: it surpasses AREdit and VAREdit-8B in every category, and its few losses to the same-backbone EditInfinity are within 0.36 . FlowChef trails in nearly every category and its SSIM polygon is the innermost: it regenerates the full image from noise with soft guidance rather than anchoring unedited regions. The mask-free VAGS is the stronger flow baseline, and even edges BitResEdit on CLIP-Whole in six of ten categories. But it trails on CLIP-Edited and SSIM 10 2
+
+in all ten: without localization, its edits bleed into unedited regions. On SSIM 10 2 , AREdit preserves best on the seven local-edit categories but degrades sharply on the three global ones, where BitResEdit leads; EditInfinity edges BitResEdit on most categories, but by under 2.5 points. The hardest category is change style : VAREdit-8B’s SSIM collapses to 63 .58 while BitResEdit holds at 93 .67 . The polygons are compact and centered: the gains are not driven by a few easy categories. 
+
+## 3.3 Qualitative results 
+
+Figure 4 compares BitResEdit against AREdit, VAREdit, EditInfinity, FlowChef, VAGS, and RewardFlow on a representative set of PIE-Bench prompts spanning object swap, attribute change, and color edits. 
+
+BitResEdit applies the requested change while preserving non-target regions (e.g. background, layout, and surrounding objects), whereas the baselines either drift in identity, leak edits into untargeted areas, or under-apply the prompt. These failure modes track the quantitative trade-off. In the goat-to-horse swap, 
+
+BitResEdit produces a natural horse and leaves the cat, the rocks, and the ocean untouched. VAGS produces a comparable horse but changes the cat as well. Without a mask, its edits bleed into unedited regions in every row; in the collar edit it replaces the dog outright. FlowChef leaves distorted artifacts in the horse swap and several other rows. When the string lights turn red, the instruction-driven VAREdit lets the color flood the whole frame and FlowChef drifts in global tone. When the lipstick turns green, most of the methods 8Figure 4 Qualitative comparison on PIE-Bench. Columns show the source image and edits produced by BitResEdit ,AREdit, VAREdit, EditInfinity, FlowChef, VAGS, and RewardFlow for the prompt on the left of each row. BitResEdit 
+
+> applies the requested change while anchoring unedited regions to the source.
+
+leave it red, and EditInfinity’s and VAREdit’s flat green clashes with the red powder around it. BitResEdit 
+
+applies both color edits inside the mask and nowhere else, the behavior ResEdit ’s gated residual enforces by construction. 
+
+## 3.4 Ablation study 
+
+3.4.1 Independent B IT EDIT & R ES EDIT 
+
+We disentangle the two contributions of BitResEdit with a 2×2 factorial on PIE-Bench. Each row of Table 2 toggles BitEdit (log-odds-level source-negative guidance with Bernoulli-KL projection, Eqs. (5) – (7) ) and 
+
+ResEdit (gated code-space residual injection at the final latent resolution, Eq. (10) ) independently. “No 
+
+BitEdit ” rows fall back to standard post-temperature CFG (the 3-branch forward collapses to 2-branch); “no ResEdit ” rows accumulate the BitEdit -sampled target codes directly into the latent without per-scale gated residual or mask compositing, so source enters only through BitEdit ’s logit-space source-negative direction. The numbers reveal a sharp division of labor: ResEdit owns every background-preservation metric (PSNR/LPIPS/MSE/SSIM), BitEdit owns every text-alignment metric (CLIP-Whole/Edited), and 
+
+BitResEdit is second-best on all six — close to each component’s strength on its own axis without sacrificing the other. 
+
+Inner ablation of BitEdit . Within BitEdit , we further isolate the source-negative direction ∆k (Eq. (4) ), the Bernoulli-KL trust-region projection (Eq. (7) ), and the linear ηk schedule (§2.2). Each row in Table 3 turns off exactly one mechanism while keeping ResEdit fully enabled, so the remaining edit pressure flows through 9Table 3 BitEdit sub-knob ablation on PIE-Bench, with ResEdit enabled. The ηk annealing matters most; the KL trust region rarely binds. Each row turns off exactly one BitEdit mechanism. The KL trust-region row uses δKL = 2.0
+
+(the largest value we swept; the projection is essentially inactive at this radius and serves as an upper bound for the 
+
+δKL →∞ limit). 
+
+Background Preservation Text Alignment 
+
+BitEdit variant PSNR ↑ LPIPS 10 3 ↓ MSE 10 4 ↓ SSIM 10 2 ↑ Whole ↑ Edited ↑
+
+Full BitEdit (η0>0, KL proj., source-neg., annealed) 26.67 43.10 31.59 91.73 27.15 24.58 
+
+– trust region ( δKL =2 .0) 26.68 43.11 31.51 91.72 27.08 24.55 – annealing ( ηk=η0 constant) 27.04 43.52 28.74 91.51 26.62 23.37 – source-negative ( ∆k EP anchor) 26.77 42.64 30.65 91.80 26.90 24.42 – guidance ( η0=0 ; ≡ standard CFG) 26.79 42.59 30.50 91.80 26.89 24.43 – BitEdit entirely ( arcfg_mode =off) 25.90 45.45 38.43 91.37 26.38 23.51 
+
+Table 4 ResEdit sub-knob ablation on PIE-Bench, with BitEdit enabled. The localization gate Gfinal holds the preservation–alignment trade-off in place. The α=1.3 row is the closest tested value to the symbolic α=1.5 in the original method specification. 
+
+Background Preservation Text Alignment 
+
+ResEdit variant PSNR ↑ LPIPS 10 3 ↓ MSE 10 4 ↓ SSIM 10 2 ↑ Whole ↑ Edited ↑
+
+Full ResEdit (α=1 , gated, dilated mask) 26.67 43.10 31.59 91.73 27.15 24.58 
+
+– localization ( Gfinal ≡1) 29.49 40.32 27.40 91.04 24.45 21.21 – mask dilation (kernel =0 ) 29.15 33.75 18.52 93.22 26.95 24.44 
+
+α=0 .5 31.09 27.90 11.47 93.97 25.68 22.87 
+
+α=1 .3 (proxy for α=1 .5) 25.18 50.57 44.33 90.56 27.01 24.18 
+
+the gated code-space residual. 3 Two findings stand out. (i) The KL trust-region projection is essentially inactive at our default δKL = 1.0: widening to δKL = 2.0 shifts CLIP-T by −0.07 and PSNR by +0 .01 , both within ≈2σ of the seed-noise floor ( ±0.04 CLIP-T, ±0.02 PSNR; estimated from three baseline seeds), so the bisection rarely binds on the production overlay and only acts as a safety rail for occasional outlier bits. (ii) The other four ablations each cost between 0.25 and 0.77 CLIP-Whole when disabled. Removing 
+
+ηk-annealing collapses CLIP-Edited the most ( −1.21 ), confirming that concentrating guidance pressure at the coarsest scales is what drives prompt-aligned semantic changes. Dropping the source-negative anchor (the “EP” variant, in which ∆k is taken against ∅ rather than the post-CFG target) and zeroing η0 collapse to almost identical metrics, because both leave the per-bit log-odds at the post-temperature CFG anchor; this empirically validates the Eq. (5) prediction that η0= 0 recovers standard CFG. Disabling BitEdit altogether (arcfg_mode=off ) is the worst row on every preservation metric as well, since the source-conditional branch is no longer used to keep edits localized in log-odds space. 
+
+Inner ablation of ResEdit . Within ResEdit , we isolate the localization gate Gfinal (Eq. (9) ), the mask dilation that softens its boundary (§2.3), and the residual-strength scalar α (Eq. (10) ). Each row in Table 4 keeps BitEdit fully enabled and toggles one ingredient of ResEdit . The clearest signal is that 
+
+Gfinal is what holds the preservation–alignment trade-off in place: removing the mask ( Gfinal ≡1) drops both CLIP-Whole ( −2.69 ) and CLIP-Edited ( −3.37 ) by large margins because the edited residual now writes everywhere, including outside the prompt’s target region; even though pixel-level PSNR goes up, the resulting image disagrees with the text. Skipping the mask-dilation step (kernel = 0 ) keeps the mask alive but lets the boundary stay tight to the GT annotation: this preserves CLIP-Whole within 0.20 of the baseline while picking up an additional ∼ 2.5 PSNR and ∼ 9 LPIPS 10 3 , indicating that the dilation buffer in our processed            
+
+> 3The Full anchor row shared by Tables 3 and 4 (CLIP-Whole 27 .15 ) is the reference run of this ablation campaign, against which the within-table deltas are measured. It is a separate run from the identically-configured production model reported in Table 1 (CLIP-Whole 27 .13 ): the two use the same configuration and seed, and the 0.02 gap reflects multi-GPU sampling nondeterminism, well within the ±0.04 CLIP-T seed-noise floor estimated for this benchmark.
+
+10 Table 5 Mask-source robustness on PIE-Bench. An automatic GroundingDINO+SAM mask tracks the GT mask closely; a bounding box collapses preservation. All other settings use the default BitResEdit configuration. 
+
+Background Preservation Text Alignment Mask source PSNR ↑ LPIPS 10 3 ↓ MSE 10 4 ↓ SSIM 10 2 ↑ Whole ↑ Edited ↑
+
+GT mask (default) 26.67 43.21 31.61 91.71 27.13 24.54 Bounding box of GT region 19.68 130.07 233.10 82.27 27.35 24.70 
+
+GroundingDINO + SAM (auto) 25.75 47.82 42.59 90.77 26.52 23.65 
+
+gate exists primarily to soak up small GT-mask annotation errors rather than to improve preservation. The 
+
+α sweep behaves as a smooth knob: α=0.5 defines the preservation-extreme of our front (PSNR = 31 .09 ,SSIM = 93 .97 ) at the cost of 1.47 CLIP-Whole; α=1.3 (our closest tested value to α=1.5) over-edits, dropping PSNR by 1.49 for a marginal CLIP-Whole change. 
+
+3.4.2 Robustness to mask 
+
+BitResEdit consumes a binary localization mask Mgt to construct Gfinal . We test sensitivity to the mask source by swapping the dataset’s ground-truth mask with two weaker substitutes: a mask predicted by an off-the-shelf grounding-and-segmentation pipeline (GroundingDINO + SAM), and a tight axis-aligned bounding box around the same region. Table 5 shows that the automatic GroundingDINO+SAM pipeline tracks the GT-mask configuration closely, losing only 0.92 PSNR, 0.94 SSIM, and 0.89 CLIP-Edited points, which indicates that BitResEdit does not require an oracle mask to retain most of its preservation–alignment profile. The tight bounding box, in contrast, slightly improves CLIP-Whole ( +0 .22 ) and CLIP-Edited ( +0 .16 )but collapses preservation by ∼ 7 PSNR, ∼ 87 LPIPS and ∼ 9 SSIM, since the rectangular envelope leaks edits into the unmasked corners around the target region. Mask tightness , not perfect boundaries, therefore drives the preservation–alignment trade-off in our pipeline. 
+
+# 4 Related Work 
+
+## 4.1 Visual autoregressive models 
+
+Visual autoregressive (AR) models generate images by factorizing visual data into ordered predictions, from raw pixels to discrete or continuous latent variables. Early work such as iGPT [Chen et al., 2020], VQ-VAE [van den Oord et al., 2017], and VQGAN [Esser et al., 2021] established next-token prediction over pixels or quantized latents, while DALL-E [Ramesh et al., 2021] and Parti [Yu et al., 2022] scaled this paradigm to text-conditioned image generation. Recent visual AR models revisit the ordering and representation of visual tokens. VAR [Tian et al., 2024] replaces raster-scan prediction with coarse-to-fine next-scale prediction, and LlamaGen [Sun et al., 2024] shows that standard LLaMA-style AR transformers remain competitive when paired with strong visual tokenizers. Infinity [Han et al., 2025] further scales next-scale AR through bitwise token prediction for high-resolution synthesis. Follow-up works improve flexibility, efficiency, or representation: FlowAR [Ren et al., 2024a] combines scale-wise AR with flow matching; M-VAR [Ren et al., 2024b] decouples intra- and inter-scale modeling; FlexVAR [Jiao et al., 2025] removes residual prediction; HMAR [Kumbong et al., 2025] adds masked generation; Continuous VAR [Shao et al., 2025] avoids vector quantization; and InfinityStar [Liu et al., 2025a] extends discrete AR modeling to unified image-video generation. Our work builds on this line: we keep a bitwise-residual generator, Infinity , frozen and use two structures native to it—the per-bit prediction head and the additive multi-scale code field—as the interface for editing. 
+
+## 4.2 Image editing for visual autoregressive models 
+
+Diffusion-based image editing has achieved strong results through denoising priors, inversion, and attention con-trol, including SDEdit [Meng et al., 2022], Prompt-to-Prompt [Hertz et al., 2022], Null-text Inversion [Mokady et al., 2023], DiffEdit [Couairon et al., 2023], Plug-and-Play Diffusion Features [Tumanyan et al., 2023], 11 Pix2Pix-Zero [Parmar et al., 2023], MasaCtrl [Cao et al., 2023], and InstructPix2Pix [Brooks et al., 2023]. Flow-matching backbones extend this line with inversion-free editors: FlowEdit [Kulikov et al., 2025] trans-ports the source latent directly toward the target prompt, and VAGS [Luo et al., 2026] augments it with a velocity-adaptive guidance scale that modulates the CFG strength per step from the alignment between source and target velocity fields. All of these methods, however, rely on iterative denoising rather than causal visual-token generation. BitResEdit shares the inversion-free, guidance-based spirit of this line, but realizes it in the discrete bitwise sampler of a VAR generator, where there is no continuous trajectory to steer. In contrast, image editing for visual autoregressive models remains under-explored, but offers a token-level alternative that can naturally exploit causal generation, discrete visual codes, and coarse-to-fine prediction. EditAR [Mu et al., 2025] formulates editing and other conditional generation tasks as unified next-token prediction over visual tokens. AREdit [Wang et al., 2025c] performs training-free text-guided editing with VAR by caching source token indices and probability distributions, while VAREdit [Mao et al., 2026] trains a next-scale editing model with scale-aligned source conditioning. Recent works further improve controllability and post-training: EARL [Ahmadi et al., 2025] applies reinforcement learning to autoregressive image editing, Masked Logit Nudging [El-Ghoussani et al., 2026] preserves unchanged regions through masked source-token guidance, and Rethinking Structure Preservation [Xia et al., 2026] injects structure-related VAR features for better layout consistency. VARIN [Dao et al., 2025] inverts the discrete Gumbel noise of next-scale sampling through a location-aware argmax pseudo-inverse, reconstructing the source image and applying prompt-guided edits while preserving background structure. These editors intervene on token streams, learned conditioning, token-level logits, features, or sampling noise. BitResEdit instead intervenes at two points these methods leave untouched: BitEdit acts before sampling, on the per-bit Bernoulli log-odds under a closed-form KL trust region, and ResEdit acts after sampling, composing mask-gated residuals in the continuous code field from which the image is assembled—all training-free, with a frozen generator. 
+
+# 5 Conclusion 
+
+We presented BitResEdit , a training-free editor that exploits the native geometry of bitwise-residual VAR generators: BitEdit performs bounded source-negative guidance in per-bit Bernoulli log-odds space, while ResEdit writes the resulting changes as mask-gated residuals in the continuous sum-of-scales code space. On PIE-Bench, this coupling gives strong target alignment among same-backbone Infinity-2B editors while retaining competitive background preservation, and ablations show that the two components play complementary roles. BitResEdit touches no weights and adds no auxiliary model; the editor is the generator’s own bit distributions and code arithmetic. We hope this perspective—edit the bits, diff the codes—carries over to other bit-quantized autoregressive generators. 
+
+# Acknowledgments 
+
+This work is supported by the DAAD programme Konrad Zuse Schools of Excellence in Artificial Intelligence, sponsored by the Federal Ministry of Research, Technology and Space. 
+
+# References 
+
+Saba Ahmadi, Rabiul Awal, Ankur Sikarwar, Amirhossein Kazemnejad, Ge Ya Luo, Juan A. Rodriguez, Sai Rajeswar, Siva Reddy, Christopher Pal, Benno Krojer, and Aishwarya Agrawal. The promise of rl for autoregressive image editing. In Advances in Neural Information Processing Systems , 2025. Omri Avrahami, Or Patashnik, Ohad Fried, Egor Nemchinov, Kfir Aberman, Dani Lischinski, and Daniel Cohen-Or. Stable flow: Vital layers for training-free image editing. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pages 7877–7888, June 2025. Qingyan Bai, Hao Ouyang, Yinghao Xu, Qiuyu Wang, Ceyuan Yang, Ka Leong Cheng, Yujun Shen, and Qifeng Chen. Edicho: Consistent image editing in the wild. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025. 12 Gaspard Beaudouin, Minghan Li, Jaeyeon Kim, Sung-Hoon Yoon, and Mengyu Wang. Delta rectified flow sampling for text-to-image editing, 2025. Manuel Brack, Felix Friedrich, Katharina Kornmeier, Linoy Tsaban, Patrick Schramowski, Kristian Kersting, and Apolinário Passos. LEDITS++: Limitless image editing using text-to-image models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. Tim Brooks, Aleksander Holynski, and Alexei A. Efros. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023. Mingdeng Cao, Xintao Wang, Zhongang Qi, Ying Shan, Xiaohu Qie, and Yinqiang Zheng. Masactrl: Tuning-free mutual self-attention control for consistent image synthesis and editing. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023. Mark Chen, Alec Radford, Rewon Child, Jeffrey Wu, Heewoo Jun, David Luan, and Ilya Sutskever. Generative pretraining from pixels. In Proceedings of the 37th International Conference on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pages 1691–1703. PMLR, 2020. Guillaume Couairon, Jakob Verbeek, Holger Schwenk, and Matthieu Cord. Diffedit: Diffusion-based semantic image editing with mask guidance. In International Conference on Learning Representations , 2023. Quan Dao, Xiaoxiao He, Ligong Han, Ngan Hoai Nguyen, Amin Heyrani Nobari, Faez Ahmed, Han Zhang, Viet Anh Nguyen, and Dimitris Metaxas. Discrete noise inversion for next-scale autoregressive text-based image editing. arXiv preprint arXiv:2509.01984 , 2025. Amir El-Ghoussani, Marc Hölle, Gustavo Carneiro, and Vasileios Belagiannis. Prompt-guided image editing with masked logit nudging in visual autoregressive models. arXiv preprint arXiv:2604.14591 , 2026. Patrick Esser, Robin Rombach, and Björn Ommer. Taming transformers for high-resolution image synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021. Jian Han, Jinlai Liu, Yi Jiang, Bin Yan, Yuqi Zhang, Zehuan Yuan, Bingyue Peng, and Xiaobing Liu. Infinity: Scaling bitwise autoregressive modeling for high-resolution image synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 15733–15744, 2025. Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross attention control. arXiv preprint arXiv:2208.01626 , 2022. Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. Siyu Jiao, Gengwei Zhang, Yinlong Qian, Jiancheng Huang, Yao Zhao, Humphrey Shi, Lin Ma, Yunchao Wei, and Zequn Jie. Flexvar: Flexible visual autoregressive modeling without residual prediction. arXiv preprint arXiv:2502.20313 , 2025. Xuan Ju, Ailing Zeng, Yuxuan Bian, Shaoteng Liu, and Qiang Xu. Pnp inversion: Boosting diffusion-based editing with 3 lines of code. In International Conference on Learning Representations , 2024. URL 
+
+https://openreview.net/forum?id=FoMZ4ljhVw .Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, and Ross Girshick. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023. Vladimir Kulikov, Matan Kleiner, Inbar Huberman-Spiegelglas, and Tomer Michaeli. Flowedit: Inversion-free text-based editing using pre-trained flow models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 19721–19730, October 2025. Hermann Kumbong, Xian Liu, Tsung-Yi Lin, Ming-Yu Liu, Xihui Liu, Ziwei Liu, Daniel Y. Fu, Christopher Re, and David W. Romero. Hmar: Efficient hierarchical masked auto-regressive image generation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 13 Jinlai Liu, Jian Han, Bin Yan, Hui Wu, Fengda Zhu, Xing Wang, Yi Jiang, Bingyue Peng, and Zehuan Yuan. Infinitystar: Unified spacetime autoregressive modeling for visual generation. arXiv preprint arXiv:2511.04675 , 2025a. Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, Jun Zhu, and Lei Zhang. Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection. In Proceedings of the European Conference on Computer Vision , 2024. Xudong Liu, Zikun Chen, Ruowei Jiang, Ziyi Wu, Kejia Yin, Han Zhao, Parham Aarabi, and Igor Gilitschenski. S2edit: Text-guided image editing with precise semantic and spatial control. arXiv preprint arXiv:2507.04584 ,2025b. Yan Luo, Ahmadou Aidara, Jingyi Lu, Jeremy Moebel, Kai Han, and Mengyu Wang. VAGS: Velocity adaptive guidance scale for image editing and generation, 2026. Qingyang Mao, Qi Cai, Yehao Li, Yingwei Pan, Mingyue Cheng, Ting Yao, Qi Liu, and Tao Mei. Visual autoregressive modeling for instruction-guided image editing. In International Conference on Learning Representations , 2026. Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. Sdedit: Guided image synthesis and editing with stochastic differential equations. In International Conference on Learning Representations , 2022. Daiki Miyake, Akihiro Iohara, Yu Saito, and Toshiyuki Tanaka. Negative-prompt inversion: Fast image inversion for editing with text-guided diffusion models. In Proceedings of the Winter Conference on Applications of Computer Vision (WACV) , pages 2063–2072, February 2025. Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real images using guided diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023. Jiteng Mu, Nuno Vasconcelos, and Xiaolong Wang. Editar: Unified conditional generation with autoregressive models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. Gaurav Parmar, Krishna Kumar Singh, Richard Zhang, Yijun Li, Jingwan Lu, and Jun-Yan Zhu. Zero-shot image-to-image translation. In ACM SIGGRAPH Conference Proceedings , 2023. Maitreya Patel, Song Wen, Dimitris N. Metaxas, and Yezhou Yang. Flowchef: Steering of rectified flow models for controlled generations. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 15308–15318, October 2025. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Proceedings of the International Conference on Machine Learning , 2021. Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec Radford, Mark Chen, and Ilya Sutskever. Zero-shot text-to-image generation. In Proceedings of the 38th International Conference on Machine Learning , 2021. Sucheng Ren, Qihang Yu, Ju He, Xiaohui Shen, Alan Yuille, and Liang-Chieh Chen. Flowar: Scale-wise autoregressive image generation meets flow matching. arXiv preprint arXiv:2412.15205 , 2024a. Sucheng Ren, Yaodong Yu, Nataniel Ruiz, Feng Wang, Alan Yuille, and Cihang Xie. M-var: Decoupled scale-wise autoregressive modeling for high-quality image generation. arXiv preprint arXiv:2411.10433 ,2024b. Chenze Shao, Fandong Meng, and Jie Zhou. Continuous visual autoregressive generation via score maximization. In Proceedings of the 42nd International Conference on Machine Learning , 2025. Shelly Sheynin, Adam Polyak, Uriel Singer, Yuval Kirstain, Amit Zohar, Oron Ashual, Devi Parikh, and Yaniv Taigman. Emu edit: Precise image editing via recognition and generation tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. 14 Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 , 2024. Onkar Susladkar, Dong-Hwan Jang, Tushar Prakash, Adheesh Juvekar, Vedant Shah, Ayush Barik, Nabeel Bashir, Muntasir Wahed, Ritish Shrirao, and Ismini Lourentzou. Rewardflow: Generate images by optimizing what you reward, 2026. CVPR 2026. Chuanming Tang, Kai Wang, Fei Yang, and Joost van de Weijer. LocInv: Localization-aware inversion for text-guided image editing. arXiv preprint arXiv:2405.01496 , 2024. Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Liwei Wang. Visual autoregressive modeling: Scalable image generation via next-scale prediction. In Advances in Neural Information Processing Systems , 2024. Narek Tumanyan, Michal Geyer, Shai Bagon, and Tali Dekel. Plug-and-play diffusion features for text-driven image-to-image translation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023. Aaron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning. In 
+
+Advances in Neural Information Processing Systems , 2017. Jiahuan Wang, Yuxin Chen, Jun Yu, Guangming Lu, and Wenjie Pei. Editinfinity: Image editing with binary-quantized generative models. In Advances in Neural Information Processing Systems , 2025a. Jiangshan Wang, Junfu Pu, Zhongang Qi, Jiayi Guo, Yue Ma, Nisha Huang, Yuxin Chen, Xiu Li, and Ying Shan. Taming rectified flow for inversion and editing. In International Conference on Machine Learning ,2025b. URL https://openreview.net/forum?id=uDreZphNky .Yufei Wang, Lanqing Guo, Zhihao Li, Jiaxing Huang, Pichao Wang, Bihan Wen, and Jian Wang. Training-free text-guided image editing with visual autoregressive model. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025c. Zhou Wang, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. Image quality assessment: From error visibility to structural similarity. IEEE Transactions on Image Processing , 13(4):600–612, 2004. Cong Wei, Zheyang Xiong, Weiming Ren, Xinrun Du, Ge Zhang, and Wenhu Chen. Omniedit: Building image editing generalist models through specialist supervision. In International Conference on Learning Representations , 2025. Tao Xia, Jiawei Liu, Yukun Zhang, Ting Liu, Wei Wang, and Lei Zhang. Rethinking structure preservation in text-guided image editing with visual autoregressive models. arXiv preprint arXiv:2603.28367 , 2026. Sihan Xu, Yidong Huang, Jiayi Pan, Ziqiao Ma, and Joyce Chai. Inversion-free image editing with language-guided diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. Jiahui Yu, Yuanzhong Xu, Jing Yu Koh, Thang Luong, Gunjan Baid, Zirui Wang, Vijay Vasudevan, Alexander Ku, Yinfei Yang, Burcu Karagol Ayan, Ben Hutchinson, Wei Han, Zarana Parekh, Xin Li, Han Zhang, Jason Baldridge, and Yonghui Wu. Scaling autoregressive models for content-rich text-to-image generation. 
+
+arXiv preprint arXiv:2206.10789 , 2022. Qifan Yu et al. Anyedit: Mastering unified high-quality image editing for any idea. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. Richard Zhang, Phillip Isola, Alexei A. Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2018. Haozhe Zhao et al. Ultraedit: Instruction-based fine-grained image editing at scale. In Advances in Neural Information Processing Systems , 2024. Yue Zhao, Yuanjun Xiong, and Philipp Krähenbühl. Image and video tokenization with binary spherical quantization. In International Conference on Learning Representations , 2025. 15 A Implementation Details 
+
+BitResEdit . All BitResEdit results in this paper — Table 1, the latency in Table 7, the per-category curves in Figure 3, and the reference rows of §3.4 — use one configuration on the released Infinity-2B stack: the 2B transformer, the D=32 -bit BSQ tokenizer/VAE, and the Flan-T5-XL text encoder, run training-free in bfloat16 with the K=13 -scale 1:1 schedule ( 1×1 up to 64 ×64 token grids). Source images are loaded at 
+
+512 2 and tokenized by the source pass; edited outputs are saved at 512 2 and scored on all 700 images by the standard PIE-Bench evaluator [Ju et al., 2024] at 512 2. In the notation of §2: CFG scale s=5; BitEdit base guidance η0= 3 with the linear anneal of §2.2; per-bit trust region δKL =1.0 solved with N = 4 bisection steps, plus a secondary ℓ∞ clamp of 7.0 on the deviation of the guided log-odds from the post-CFG anchor; the spatial-bit mask M k is the binary edit-region gate derived from the same localization mask, so guidance acts only inside the edit region; sampling temperature τ = 1.0 with Infinity ’s default truncation (top-k 900 , top-p
+
+0.97 ); the unconditional branch ∅ is Infinity ’s learned unconditional embedding. For ResEdit , the residual strength is α=1.0, and Gfinal processes the benchmark’s ground-truth mask (decoded at 512 2, white = edit) by 9×9 max-pool dilation, bilinear resize to the final 64 ×64 latent grid, 5×5 Gaussian blur ( σ=2), and peak normalization. The 3-branch forward (Eq. (3) ) runs as one condition-batched forward at the shared visual prefix; the per-branch hidden states and self-attention K/V caches still differ, because the text condition enters through cross-attention and adaptive normalization. Its FLOPs grow linearly in the number of branches but its wall-clock cost is sub-linear (see Inference latency below); the KL bisection costs N scalar steps per bit, and the ResEdit update is element-wise on C ×Hz ×Wz tensors. Following the PIE-Bench protocol, the source/target prompts are the original/editing prompts (square brackets stripped). All 700 images use one fixed seed ( 42 ); repeated runs agree to within the ±0.04 CLIP-T seed-noise floor (footnote of §3.4.1). Latency in Table 7 is total wall-clock (including per-worker model loading) times the number of GPUs over 700 images: 
+
+1821 s on 4 NVIDIA A100-80GB gives 10 .41 s per image. 
+
+AREdit. The AREdit per-category curves in Figure 3, its latency in Table 7, and its column in Figure 4 come from our re-implementation of Wang et al. [2025c] on the same Infinity-2B stack (checkpoints, text encoder, 512 2 I/O, scale schedule, and evaluator as above); per the footnote of Table 1, the AREdit row of that table quotes the original paper. Following the paper, the source pass tokenizes the source image and caches its per-scale bit tokens; the edit pass samples each scale under target-prompt CFG (scale 3.0,temperature 1.0, top-k 900 , top-p 0.97 , guidance applied at the output logits) and reassembles tokens at bit granularity: positions inside the edit mask take the sampled target bits, positions outside keep the cached source bits. We follow the paper’s two-regime protocol: for change color , change background , and change style ,the cross-attention refinement controller is enabled (source attention maps are captured and re-injected at scales up to 16 ×16 token grids) with no force-preserved coarse scales ( γ=0); for the remaining categories the controller is off and the first γ=3 scales are fully preserved. Under the GT-mask protocol shared with the other methods, the benchmark mask (decoded at 512 2) replaces the paper’s adaptive divergence mask: it is bilinearly resized to each scale’s token grid, re-binarized at 0.5, and broadcast over the 32 bits. The run covers all 700 images with seed 42 . Latency follows the same protocol as the other rows of Table 7: 2072 s of wall-clock on 4 NVIDIA A100-80GB gives 11 .84 s per image. 
+
+VAREdit-8B and EditInfinity. The VAREdit-8B and EditInfinity per-category curves in Figure 3, their latencies in Table 7, and their columns in Figure 4 come from our runs of the authors’ released implementations on the full 700 -example set, scored by the standard PIE-Bench evaluator [Ju et al., 2024] at 512 2. VAREdit-8B [Mao et al., 2026] uses the official 8B-1024 checkpoint: single-pass instruction-conditioned editing at 1024 2
+
+(outputs downscaled to 512 2 for evaluation) with CFG scale 4.0, sampling temperature τ = 1.0, and seed 42 .The model takes the editing instruction only — it accepts no localization mask — so the GT mask enters only the evaluation. EditInfinity [Wang et al., 2025a] runs the official per-image pipeline on the same Infinity-2B 
+
+stack as BitResEdit , with the released three-stage recipe for every image: text-embedding optimization ( 10 
+
+iterations), LoRA fine-tuning ( 50 iterations), and mask-blended inference, where the localization mask is the benchmark’s GT mask (decoded at 512 2 and inverted to the repository’s white = preserve convention) — the same GT-mask protocol as the other mask-based methods. 16 FlowChef. The FlowChef latency in Table 7, its per-category curves in Figure 3, and its column in Figure 4 come from our run of the authors’ released implementation [Patel et al., 2025] on the full 700 -example PIE-Bench set. The released editing script loads FLUX.1-schnell in fp16 and edits at 1024 × 1024 ; we use the repository’s recommended editing recipe unchanged: 30 inference steps with steering enabled at every step, learning rate 0.6, 10 source steps, 5 optimization steps per sampling step, true classifier-free guidance 4.5 with the source prompt as the negative prompt, and no fixed seed. Following the PIE-Bench protocol, the target prompt is the editing prompt, the source prompt is the original prompt (square brackets stripped), and the localization mask is the benchmark’s ground-truth mask, decoded at 512 2 (white = edit) and nearest-resized to 1024 2—the same GT-mask protocol as the other methods in Figure 3. Outputs are scored on all 700 images by the standard PIE-Bench evaluator [Ju et al., 2024] at 512 2.Latency is wall-clock around the editing call only (image loading and saving excluded), with CUDA synchro-nization before and after, on a single NVIDIA A100-80GB—the same protocol as the other rows of Table 7. The mean is 26 .65 s per image (median 26 .64 s, p95 26 .72 s); the cost is constant across categories because the recipe is fixed-step. 
+
+VAGS. The VAGS latency in Table 7, its per-category curves in Figure 3, and its column in Figure 4 come from our run of the authors’ released implementation [Luo et al., 2026] (FlowEdit on Stable Diffusion 3.5 Large, fp16, 512 2) on the full 700 -example PIE-Bench set, using the paper’s hyperparameters: N = 50 
+
+sampling steps with Nmax =33 active editing steps, one noise draw per step, source/target guidance 3.5/13 .5,and modulation strength κ=0.9. Following the PIE-Bench protocol, the source/target prompts are the original/editing prompts (square brackets stripped); VAGS takes no localization mask, so the GT mask enters only the evaluation, which uses the standard PIE-Bench evaluator [Ju et al., 2024] at 512 2 on all 
+
+700 images. One reproduction caveat: the repository’s entry points wire the constant-base cosine variant of the method ( FlowEditSD3_ConflictAware_Cosine ), which in our environment edits substantially more aggressively than the paper’s table (PSNR 23 .79 , LPIPS 10 3 97 .10 , MSE 10 4 61 .89 , SSIM 10 2 84 .64 over the full set), even though the same environment reproduces the paper’s FlowEdit baseline row almost exactly with 
+
+κ=0. The released-but-unwired variant FlowEditSD3_VAGS_Cosine_Monotone —the same cosine-similarity modulation applied to a monotone-increasing base scale λtar (τ ) = 13 .5 (0 .5 + 0 .25 (1 − cos πτ )) over the active window—reproduces every reported metric to within 2 points in the table’s units (PSNR 26 .65 vs. 
+
+26 .38 , LPIPS 10 3 68 .55 vs. 70 .38 , MSE 10 4 33 .25 vs. 34 .86 , SSIM 10 2 87 .88 vs. 87 .68 , CLIP-Whole 26 .94 vs. 
+
+26 .92 , CLIP-Edited 23 .05 vs. 23 .08 ); all our VAGS measurements therefore use that variant. Latency follows the same protocol as the other rows of Table 7: wall-clock around the editing call only (VAE encode, flow integration, VAE decode; loading and saving excluded), CUDA-synchronized, on a single NVIDIA A100-80GB. The mean is 8.65 s per image (median 8.64 s, p90 8.70 s); the cost is constant across categories because the recipe is fixed-step. 
+
+RewardFlow. The RewardFlow latency in Table 7 and its column in Figure 4 come from our run of the authors’ officially released checkpoint and pipeline [Susladkar et al., 2026] (bf16, 512 2) on the full 700 -example PIE-Bench set, at the editing configuration that matches its reported PIE-Bench metrics in our reproduction: 
+
+28 inference steps with instruction conditioning, the released SigLIP and CLIP reward models scored against the target caption with three reward-gradient updates per step from step 8 onward, the reward gradient restricted to the benchmark’s GT edit mask (the same GT-mask protocol as the other methods), an identity tether to the source latent, and all models GPU-resident (no CPU offload). Latency is per-image wall-clock around the editing call (per-image text encoding, in-context flow integration, reward-gradient updates, and VAE decode; model loading excluded), measured on single NVIDIA A100-80GB GPUs — the same protocol as the other rows of Table 7. The mean over all 700 images is 18 .69 s per image (per-shard means 18 .53 –18 .78 sacross eight category-balanced shards); the cost is constant across categories because the recipe is fixed-step. 
+
+Note on the FlowChef row of Table 1. Following the footnote of Table 1, the FlowChef row quotes reported numbers; they originate from the evaluation in Susladkar et al. [2026], as the FlowChef paper itself does not report PIE-Bench preservation metrics. Our reproduction with the official recipe obtains comparable edit-region alignment (CLIP-Edited 22 .87 vs. the quoted 23 .09 ) but lower background preservation (PSNR 25 .18 , LPIPS 10 3 144 .0, MSE 10 4 43 .5, SSIM 10 2 79 .8, CLIP-Whole 25 .97 ), in line with an independent 17 reproduction of FlowChef on the same benchmark [Beaudouin et al., 2025]. The per-category, qualitative, and latency results in this paper therefore use our reproduction. 
+
+Full-set results of our baseline runs. Table 6 reports the aggregate PIE-Bench metrics of the six baseline runs described in this appendix — the runs behind the per-category curves of Figure 3, the latencies of Table 7, and the qualitative columns of Figure 4 — complementing Table 1, which quotes the original papers. The two tables agree closely where the protocols coincide: EditInfinity reproduces its quoted SSIM to within 
+
+0.01 (92 .13 vs. 92 .12 ) and its CLIP scores to within at most 0.20 (with mildly weaker PSNR, LPIPS and MSE); VAGS reproduces every quoted metric within 2 points in the table’s units (see the VAGS paragraph above); and RewardFlow matches its quoted CLIP scores within 0.2, landing on the stronger side of its quoted preservation numbers (e.g. SSIM 94 .46 vs. 90 .21 ), consistent with the GT-masked reward gradient and identity tether of the configuration above. Larger gaps trace to protocol differences detailed in the per-method paragraphs: our AREdit re-implementation replaces the paper’s adaptive divergence mask with the shared GT mask, which raises background preservation (SSIM 92 .95 vs. the quoted 83 .70 ) and lowers text alignment; our FlowChef reproduction preserves background less well than the numbers quoted from Susladkar et al. [2026] (see the preceding note); and VAREdit-8B scores 0.65 –1.15 CLIP points below its quoted row under this paper’s fixed 512 2 evaluator, while filling in the preservation metrics its paper does not report.                                                                        
+
+> Table 6 PIE-Bench results of the baseline runs we measure ourselves, with the BitResEdit run of Table 1 repeated for reference. Configurations are as described in this appendix; all runs cover the full 700 -example set and are scored by the standard PIE-Bench evaluator at 512 2(following its convention, the background-preservation columns average over the 556 examples whose GT mask leaves a non-empty unedited region; the CLIP columns over all 700 ). AREdit, EditInfinity, FlowChef, and RewardFlow use GT-mask localization; VAREdit-8B (instruction-only) and VAGS (prompt-pair-only) take no mask. Best results are bold ; second-best are underlined.
+> Background Preservation Text Alignment Method Backbone PSNR ↑LPIPS 10 3↓MSE 10 4↓SSIM 10 2↑Whole ↑Edited ↑
+> VAGS [Luo et al., 2026] SD3.5-L 26.65 68.55 33.25 87.88 26.94 23.05 FlowChef [Patel et al., 2025] FLUX 25.18 144.01 43.47 79.77 25.97 22.87 RewardFlow [Susladkar et al., 2026] Qwen-Image-20B 31.00 27.07 13.86 94.46 29.61 27.45
+> AREdit [Wang et al., 2025c] Infinity-2B 29.82 34.83 21.80 92.95 24.26 21.30 VAREdit-8B [Mao et al., 2026] Infinity-8B 26.54 67.16 73.77 89.10 25.45 22.65 EditInfinity [Wang et al., 2025a] Infinity-2B 27.41 40.11 28.38 92.13 26.36 23.67
+> BitResEdit (ours) Infinity-2B 26.67 43.21 31.61 91.71 27.13 24.54
+
+Inference latency. Table 7 reports per-image wall-clock latency averaged over the full 700 -example PIE-Bench test set on a single NVIDIA A100-80GB GPU. Per-image fine-tuning makes EditInfinity ∼ 45 × slower than BitResEdit (466 .77 s vs 10 .41 s, i.e. about 7.8 minutes vs 10 seconds per image), while the three training-free VAR methods differ by under 8 seconds. VAREdit-8B is the fastest at 4.70 s despite its larger Infinity-8B backbone, because it issues a single forward pass per image; BitResEdit runs its 3-branch 
+
+BitEdit guidance and the ResEdit residual injection in 10 .41 s, comparable to AREdit’s 11 .84 s on the same Infinity-2B backbone. Both methods run the same two autoregressive passes (source caching and editing), and at a per-scale batch of 2–3 the transformer forward is dominated by weight loading, so the third guidance branch of BitResEdit adds little. AREdit’s extra 1.4 s comes from its attention refinement: capturing source cross-attention maps and re-injecting them during editing materializes attention weights explicitly and bypasses the fused attention kernel. BitResEdit acts only on output log-odds and residual codes, leaving every attention layer on the fused path. The FLUX-based FlowChef, measured with its official 30 -step editing recipe (described above), takes 26 .65 s per image, about 2.6× BitResEdit : each sampling step evaluates the FLUX transformer twice for classifier-free guidance and adds gradient-steering updates on top. RewardFlow, measured with its officially released checkpoint and reward-guided pipeline (described above), takes 18 .69 sper image, about 1.8× BitResEdit : its in-context source conditioning doubles the transformer’s token sequence, and each reward-guided step adds gradient-ascent updates that backpropagate through the VAE decoder and its CLIP and SigLIP reward models. The SD3.5-based VAGS, measured with the configuration 18 that reproduces its reported results (described above), is the second-fastest method at 8.65 s: its 33 active flow-matching steps each evaluate the SD3.5 transformer once on a four-way batch, and the adaptive guidance scale adds no extra forward passes. 
+
+Table 7 PIE-Bench inference latency. Per-image wall-clock is averaged over the full 700 -example test set on an NVIDIA A100-80GB GPU. EditInfinity latency includes per-image fine-tuning (the user-facing cost); the other methods are training-free. FlowChef, VAGS, and RewardFlow are our measurements of the official editing pipelines (described in this appendix). 
+
+Method Backbone Latency (s/img) ↓
+
+FlowChef [Patel et al., 2025] FLUX 26.65 VAGS [Luo et al., 2026] SD3.5-L 8.65 RewardFlow [Susladkar et al., 2026] Qwen-Image-20B 18.69 EditInfinity [Wang et al., 2025a] Infinity-2B 466.77 AREdit [Wang et al., 2025c] Infinity-2B 11.84 VAREdit-8B [Mao et al., 2026] Infinity-8B 4.70 BitResEdit (ours) Infinity-2B 10.41 
+
+# B PyTorch-Style Pseudocode for B IT RES EDIT 
+
+Algorithm 1 (the edit pass, §2.4) and Algorithm 2 below (the Bernoulli-KL trust-region projection) give a PyTorch-like transcription of BitResEdit (§2), in the terse style of recent flow-based work; code indices run 
+
+0 .. K −1. At each of the K = 13 scales, BitEdit runs a 3-branch forward (Eq. 3), forms the post-CFG per-bit log-odds (Eq. 2), tilts them along the source-negative direction under the edit-region bit gate (Eqs. 4, 5), and projects the result onto a per-bit Bernoulli-KL ball around the post-temperature CFG anchor (Eqs. 6–7), followed by the element-wise clamp of §2.2; ResEdit writes the mask-gated code residual at the final latent resolution (Eq. 10) and accumulates it into the prefix carried to the next scale. Defaults (Appendix A): ηk
+
+linearly annealed from η0 = 3 to 0, δKL = 1 .0, clamp lim = 7 , α = 1 , N = 4 bisection steps; the CFG scale s,temperature τ , and top-k/top-p truncation follow our Infinity [Han et al., 2025] setup. Code-space tensors are C ×Hz ×Wz ; per-bit log-odds are Pk ×D.
+
+Algorithm 2 BitEdit : Bernoulli-KL trust-region projection kl_clip      
+
+> Note: bern_kl increases along the segment from anchor ato d_raw , so the bracket tracks a feasible lower bound.
+
+# kl_clip(d_raw, a, delta): pull d_raw toward anchor a until # its per bit Bernoulli KL to a is within delta, N steps # bern_kl(p, q): Bernoulli KL from Bern(p) to Bern(q) lo, hi = zeros_like(d_raw), ones_like(d_raw) # mix weight bracket for _ in range(N): m = (lo + hi) / 2 pm = sigmoid(m * d_raw + (1 - m) * a) ok = bern_kl(pm, sigmoid(a)) <= delta # inside the ball? lo = where(ok, m, lo) # largest feasible m hi = where(ok, hi, m) full = bern_kl(sigmoid(d_raw), sigmoid(a)) <= delta lam = where(full, ones_like(lo), lo) # full update return lam * d_raw + (1 - lam) * a 
+
+# C Limitations 
+
+BitResEdit assumes the user supplies a binary localization mask Mgt that delineates the region to be edited. Both algebraic sites in our editor read this mask: ResEdit ’s mask-gated sum-of-scales sets the residual to 19 exactly zero at masked-out positions, and BitEdit ’s per-bit Bernoulli-KL trust region is applied through the same gate Gfinal . Mask quality therefore lies directly on the path from prompt to edit, and our guarantees on background preservation and on bounded drift from the clean CFG sampler are guarantees relative to the supplied mask , not relative to the semantic region a user has in mind. The mask-robustness ablation in §3.4.2 (Table 5) makes this dependence explicit. Replacing the PIE-Bench ground-truth mask with a tight bounding box of the same region drops PSNR from 26 .67 to 19 .68 dB and roughly triples LPIPS 10 3 (43 .21 → 130 .07 ), because edits now spread across the entire bounding rectangle even where the source content should have been preserved. An automatic GroundingDINO+SAM pipeline closes most of this gap ( 25 .75 dB PSNR, 47 .82 LPIPS 10 3 ) but still trails the ground-truth mask, and inherits the failure modes of its grounding and segmentation components: missed or hallucinated entities, ambiguous referring expressions, occluded objects, and fine-structured or thin boundaries. For deployments without ground-truth masks, BitResEdit therefore inherits the reliability of the upstream localization pipeline, and a poor mask can suppress wanted edits inside the region or leak edits into the background even when BitEdit 
+
+and ResEdit themselves behave as designed. Jointly inferring or refining the mask together with the per-bit edit, or deriving a localization signal directly from the per-bit Bernoulli geometry that BitResEdit already computes, are natural directions for future work. 
+
+# D Failure Cases: Object Deletion 
+
+Object deletion is the category on which BitResEdit aligns least well with the edit instruction. Under the ground-truth mask it reaches a mean edit-region alignment of CLIP edit = 19 .4, the lowest of all ten PIE-Bench editing types and well below the 24 .5 macro-average (Figure 3), even though the same images retain strong background preservation—mean structure distance 0.023 and PSNR 27 .0 dB, among the strongest in the benchmark. This combination—faithful preservation but weak edited content—is intrinsic to how a residual editor handles removal. Figure 5 shows three representative cases. 
+
+Why deletion is hard for a residual editor. BitResEdit is preservation-biased by construction: 
+
+ResEdit sets the residual to exactly zero outside the mask, and inside the mask BitEdit only tilts the post-CFG log-odds toward the target prompt within a per-bit Bernoulli-KL trust region around the clean sampler. For most edits this is exactly right—the target prompt positively names the new content (a different object, colour, or style), and the editor moves the masked bits toward it. Deletion is different: the target prompt is subtractive , naming what should disappear but nothing that should take its place. Infinity is a generation prior, not an inpainting prior; it is never asked to continue the surrounding background, so inside the mask it must synthesise content from a prompt that specifies none. The three modes in Figure 5 follow directly. (a) When the masked object is salient, source-negative guidance restyles it instead of erasing it—the coarse-scale structure of a strong object survives the trust-region nudge. (b) Once the object is gone, the under-specified fill collapses to incoherent content rather than clean background. (c) When the deletion target is a diffuse texture such as “grass,” the correct ground-truth mask already covers most of the image, so the editor must repaint almost the entire scene with no positive target, recolouring it and hallucinating spurious objects. 
+
+The metric overstates the deficit. Part of the low CLIP edit is structural rather than a true error. CLIP edit scores the agreement between the edited region and the target caption, but a successful deletion turns that region into background, which has little positive text to align with, so the score is depressed even when removal succeeds. The 19 .4 figure therefore conflates genuine failures with an inherent mismatch between deletion and a text-alignment metric—consistent with deletion’s far healthier whole-image CLIP of 25 .2.The visible failures in Figure 5 are nonetheless real, and they are distinct from the mask-quality limitations of Section C: here the masks are the correct ground-truth regions, and the difficulty lies in synthesising background for an under-determined region, not in localisation. A natural remedy is to give the masked region an explicit inpainting target—for example, conditioning the in-mask generation on the surrounding context or compositing against a background estimate—rather than relying on a subtractive prompt alone. 20 E Declaration of LLM Usage 
+
+We used large language models (LLMs) as assistive tools during the preparation of this work, in three roles: (i) as coding assistants when writing experiment, evaluation, and plotting scripts; (ii) as a sounding board when brainstorming design alternatives for BitResEdit ; and (iii) for clarifying background concepts and prior work. All LLM-generated code and any technical claim attributed to such discussions were reviewed and verified by the authors before inclusion. LLMs were not used to generate or alter any experimental results, and they are not part of the core methodology of BitResEdit or of any baseline. 21 Source GT mask (edit region) BitResEdit 
+
+(a) “a cat wearing headphones on a gray background.” The masked headphones are recoloured into a washed-out form, not removed. 
+
+(b) “raspberry macarons with mint leaves.” The mint is replaced by an incoherent fruit-like smear (the category’s lowest CLIP edit , 8.6). 
+
+(c) “a cheetah walking across a grassy field.” The diffuse target makes the ground-truth mask span 88% of the image; the field is repainted and a spurious second cheetah is hallucinated, while only the masked-out animal is preserved. 
+
+Figure 5 Representative object-deletion failures of BitResEdit on PIE-Bench under ground-truth masks. Columns: source, the supplied edit region (red fill, yellow outline), and the BitResEdit output. The rows show the three dominant failure modes: (a) a salient object is restyled rather than removed; (b) the emptied region is filled with incoherent content; (c) a diffuse target forces near-global repainting that corrupts preserved content. Red words mark the deleted phrase. 
+
+22

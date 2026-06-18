@@ -1,0 +1,501 @@
+Title: AnchorEdit: Maintaining Temporal Consistency in Multi-turn Image Editing via Causal Memory
+
+URL Source: https://arxiv.org/pdf/2606.11751v1
+
+Published Time: Thu, 11 Jun 2026 00:46:53 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# AnchorEdit: Maintaining Temporal Consistency in Multi-turn Image Editing via Causal Memory 
+
+Hang Xu 1, Xiaoxiao Ma 1, Guohui Zhang 1, Hu Yu 1, Siming Fu 2, Jie Huang 2,Lin Song 2, Haoyang Huang 2, Nan Duan 2, Feng Zhao 1† 1University of Science and Technology of China, 2JD Explore Academy, 
+
+Abstract 
+
+Multi-turn image editing is essential for iterative design, yet current models often struggle with identity drift and error accumulation over successive steps. While ex-isting research leverages video priors for consistency, their reliance on bidirectional attention is fundamentally misaligned with the causal, sequential nature of interac-tive editing. In this paper, we propose AnchorEdit, the first autoregressive (AR) diffusion-based framework designed specifically for high-resolution, long-term multi-turn editing. AnchorEdit bridges the gap between video priors and causal inference through a three-stage training curriculum: identity-preserving sing-turn pretraining, causal AR forcing fine-tuning with a novel self-rollout strategy to mitigate exposure bias, and consistency distillation for efficient 4-step generation. During inference, we introduce a memory mechanism to anchor the initial subject identity and ensure stable extrapolation across extended editing trajectories. To eval-uate performance, we provide a new high-resolution multi-turn editing benchmark designed to stress-test long-horizon stability. Extensive experiments demonstrate that AnchorEdit achieves state-of-the-art results, maintaining exceptional subject fidelity and instruction following even over 10+ interaction rounds. 
+
+1 Introduction 
+
+Natural-language image editing is now essential for visual content creation [ 1, 2 , 3, 4, 5]. Yet, practical workflows are typically iterative, requiring users to refine images through a sequence of modifications to objects, styles, and details. While current models excel at single-turn tasks [ 6 , 7], they often struggle with multi-turn editing, failing to preserve subject identity and visual coherence as errors from earlier steps accumulate over successive turns. Due to the scarcity of multi-turn editing data, recent research leverages video data and pre-trained video generation models [ 8, 9 , 10 ] for supervision. These models offer rich priors on object perma-nence and identity preservation, which are essential for maintaining consistency across sequential edits, as illustrated in Fig. 1(a). Recent methods such as ChronoEdit [ 11 ], CoF-T2I [ 12 ], and VINCIE [ 13 ] further validate the effectiveness of using video-based priors for consistent image editing. However, existing video-based editing methods are largely built on bidirectional or full-context generation, which is fundamentally misaligned with the causal structure of interactive multi-turn editing as shown in Fig. 1(b). In practice, each edit should depend only on the source image and previous states, whereas earlier results cannot incorporate future instructions. This discrepancy often results in degraded instruction following, identity drift, and accumulated visual inconsistencies during deployment. Furthermore, the use of fixed-length contexts in these models restricts their ability to extrapolate to longer editing chains and prevents truly online interaction. 
+
+> †Corresponding author. Preprint.
+> arXiv:2606.11751v1 [cs.CV] 10 Jun 2026
+
+These observations suggest two key desiderata for long-horizon multi-turn editing: leveraging the rich visual priors of video generation model and aligning with the causal nature of sequential editing .Autoregressive (AR) video generation [ 14 , 15 , 16 , 17 , 18 , 19 ] provides a natural framework for this, as it models sequences causally and supports extrapolation beyond fixed horizons. However, directly applying AR video generation to editing is challenging. Unlike standard video continuation, multi-turn editing requires precise, instruction-driven state transitions and strict identity preservation. Because each generated edit serves as the condition for subsequent turns, minor artifacts or identity deviations can be recursively amplified. Therefore, an effective causal editor must incorporate specific mechanisms for identity anchoring and robustness to error accumulation in self-generated contexts. In this work, we introduce AnchorEdit, a comprehensive framework for high-resolution, long-term multi-turn image editing. The model development follows a systematic three-stage training regime. Initially, we fine-tune a video model for identity preservation, using "no-change" reconstruction tasks and increased RoPE [ 20 , 21 , 22 , 23 ] distance between frames to lock in subject fidelity. Building upon this, the second stage employs causal frame-autoregressive training. We implement a self-rollout [ 24 ]strategy—randomly replacing ground-truth inputs with model predictions—and apply progressive loss weighting to later turns to mitigate exposure bias and rectify cumulative errors. Finally, we use adversarial consistency distillation [ 25 ] to compress the model into an efficient 4-step generator. During inference, we propose a specialized memory mechanism and a manifold-constrained RoPE strategy to enable robust extrapolation. By anchoring the initial frame as a global reference and maintaining a historical sliding window [ 26 ], we ensure the model attends to consistent features. Crucially, we keep RoPE indices fixed within the trained range regardless of sequence length. This prevents the attention mechanism from entering untrained manifolds, ensuring stable, high-quality results across ten or more interaction rounds. To address the lack of standardized evaluation tools, we introduce a comprehensive multi-turn editing benchmark featuring high-resolution (1024p) data and diverse sequence depths, specifically designed to stress-test model stability across extended interactions. Extensive experiments demonstrate that AnchorEdit not only maintains state-of-the-art performance in single-turn tasks but also significantly surpasses existing methods in maintaining long-term subject identity and visual quality. Our primary contributions are summarized as follows: • First High-Resolution AR Diffusion Framework for Multi-turn Image Editing : We present AnchorEdit, the first autoregressive diffusion-based model designed specifically for high-resolution, long-term multi-turn image editing. • Robust Forcing Training and Memory Mechanisms : We are the first to introduce self-rollout forcing and historical memory mechanisms into the multi-turn editing paradigm. These strategies effectively mitigate exposure bias and cumulative errors, ensuring strict identity consistency and stable subject preservation over ten or more editing rounds. • Comprehensive Benchmark and State-of-the-Art Performance : We provide a new high-resolution multi-turn editing benchmark and a scalable data pipeline to support the community. Extensive experiments demonstrate that AnchorEdit achieves state-of-the-art results in both instruction adherence and visual coherence compared to existing methods. 
+
+2 Related work 
+
+2.1 Image Editing from Video Data and Video Generation Models 
+
+To enhance subject consistency, contemporary models increasingly leverage video data for its inherent temporal coherence, high realism, and cost-effective abundance compared to specialized image datasets. Recent research favors video-based frameworks over image-only ones, often incorporating "inference frames" to bridge the visual gap between original and edited states (e.g., ChronoEdit [ 11 ], COF-T2I [ 12 ]). Furthermore, works like VINCIE [ 13 ] and ChronoEdit demonstrate that complex editing logic and multi-turn capabilities can be robustly acquired directly from video sequences, providing a foundational source for training high-fidelity editing tasks. 2Full Video Generation     
+
+> Multi -turn Inference
+> misaligned
+> Video Generation Model
+> Stage 1 Model
+> Stage 2
+> Teacher Model
+> 1. Single -turn
+> Edit Pretrain
+> 2. Causal Multi -
+> turn Editing
+> 3. Causal
+> Distillation
+> Stage 3 few -
+> step Model
+> Long Streaming
+> Inference Stage 3 few -step Model
+> (a) (c)
+> (b)
+
+Figure 1: Motivation and Framework Overview. Top-left : Video sequences provide natural examples of continuous subject evolution, serving as a rich data source for multi-turn editing. 
+
+Bottom-left : Traditional video generation models rely on bidirectional attention, which is misaligned with the sequential, causal nature of multi-turn inference. Right : To bridge this gap, we propose a progressive three-stage training and inference pipeline—comprising single-turn pretraining, causal multi-turn optimization, and distillation. This results in an autoregressive (AR) diffusion model capable of maintaining exceptional long-term consistency across extended editing trajectories. 
+
+2.2 Autoregressive Video Diffusion Models 
+
+While bidirectional video models are widely used, they are often limited by fixed temporal horizons and high computational costs. Autoregressive (AR) video diffusion models [ 27 , 16 , 28 , 29 , 30 ]overcome these constraints by generating frames sequentially, offering the flexibility to introduce new prompts for each turn—a key advantage for multi-turn editing. Predominant training paradigms include Teacher Forcing [ 31 ], which conditions generation on clean history, and Diffusion Forc-ing [ 32 ], which uses noisy frames to mitigate the training-inference discrepancy. Recent methods further improve AR video generation through self-generated rollouts and causal distillation [ 24 , 16 ], as well as long-context memory and RoPE-based temporal extrapolation [33, 34, 35, 36]. 
+
+2.3 Multi-turn Image Editing 
+
+Multi-turn editing requires global consistency across iterative instructions. Early methods relied on training-free optimization, such as DDIM inversion (e.g., Multi-turn Consistent Editing [ 37 ], etc [ 38 , 39 , 40 , 41 ].), but often struggled with limited generalization. Recent research has shifted toward leveraging video generation models to provide consistency priors [ 13 ]. However, despite their improved robustness, current approaches still face critical bottlenecks in inference speed, output resolution, and temporal extrapolation, preventing them from becoming practical, application-level solutions. 
+
+3 AnchorEdit: Enhancing multi-turn consistency with forcing and memory 
+
+3.1 Preliminary: Autoregressive Video Generation and Multi-turn Image Editing 
+
+Autoregressive (AR) video generation models a video as a sequence of visual states generated in causal order. Given a text prompt c and a video sequence {xi}Ni=1 , the joint distribution is factorized as: 
+
+pθ (x1: N | c) = 
+
+> N
+
+Y
+
+> i=1
+
+pθ (xi | x<i , c ) (1) where x<i = {x1, . . . , x i−1} denotes the generated history. This causal procedure supports stream-ing generation and length extrapolation, as each new visual state is produced incrementally by conditioning on previous context without access to future information. Multi-turn image editing can be viewed as an instruction-conditioned extension of this process. Given a source image x0 and a 3Poor         
+
+> Consistency
+> Over -editing
+> I. Identity Mapping Learning
+> Keep the original image.
+> II. Expanded RoPE
+> ①②Source Image
+> ①Generated Image w/o I. and II.
+> ②Generated Image w/ I. and II.
+> Expand RoPE in dim
+> T with stride s
+> First Frame
+> Rt = 0
+> Second Frame
+> Rt = s
+
+Figure 2: Stage 1 training strategies for enhanced editing consistency. Left: Visual comparison. Without our proposed strategies ( ①), the model suffers from poor consistency and over-editing. Our approach ( ②) effectively preserves identity and structural integrity. Right: Core components: (I) 
+
+Identity Mapping Learning to enforce source reconstruction; (II) Expanded RoPE , which increases the relative temporal distance between the source and edited states using a stride s to prevent semantic collapse during discrete transitions. sequence of editing instructions {ci}Ni=1 , each edit corresponds to a visual state, and each instruction acts as a turn-wise condition driving the transition. By replacing the global video prompt c with turn-specific instructions ci, and treating the source image x0 as a persistent visual anchor, the AR objective naturally adapts into a causal formulation for multi-turn editing: 
+
+pθ (xi | x<i , c ) ⇒ pθ (xi | x0, x <i , c i) (2) This formulation aligns with the logic of interactive editing: the i-th edit depends strictly on the source image, the history of edited states, and the current instruction. This correspondence motivates us to build AnchorEdit on a video generation backbone, treating iterative modifications as a continuous temporal trajectory. By framing each editing turn as a state transition within a sequence, we leverage the robust temporal and structural priors inherent in video models. To bridge the gap between video continuation and instruction-guided editing which requires strict identity preservation and robustness to self-generated histories, AnchorEdit employs a staged causal training regime and anchor-based inference, as detailed in the following sections. 
+
+3.2 Multi-stage Causal Training 
+
+As shown in Fig. 1(c), Starting from a pre-trained video generation backbone, we implement a three-stage progressive training process: (1) single-turn editing pretraining, (2) causal multi-turn adaptation, and (3) few-step distillation. This progression yields a high-performance editing model that balances superior visual quality with rapid inference speed. 
+
+Stage 1: Single-turn Editing Pretraining. The first stage adapts the video generation backbone to instruction-guided image editing by representing each edit as a two-state sequence. The source and edited images are encoded as latents z1, z2 ∈ RC×H×W and concatenated along the temporal dimension, allowing the backbone to model the edit as a transition from source to target, as shown in Fig. 2. 
+
+Expanding RoPE distance for discrete edit transitions(I in Fig. 2) Standard video models assume small relative RoPE distances between frames to encourage smooth motion. However, editing often requires discrete semantic changes. We therefore enlarge the relative RoPE distance between states from ∆ = 1 to ∆ = S (S > 1). This weakens the backbone’s smooth-motion bias and provides more capacity for localized semantic modifications without altering unrelated regions. 
+
+Null-instruction training for identity preservation(II in Fig. 2). To mitigate identity drift, we augment the training with null-instruction reconstruction. Given a source latent zsrc and a null instruction 4w/o degradation w/o self -rollout 
+
+> w/ degradation w/o self -rollout
+> w/ degradation w/ self -rollout
+> (ours)
+> Phase 1 Model
+> Adding noise and degradation
+> (heavier for later turns)
+> Phase 1 Model
+> Copy and stop grad Random frame replacement
+> Frame Level
+> Causal Mask
+> Reweighted Flow Matching Loss
+> color -shift motion -blur JPEG -compression
+
+Figure 3: Stage 2: Multi-turn Consistency Training and Ablation. Top (Ablation): Visual comparison of training configurations. Without degradation injection (Row 1), the model accumulates artifacts. Without self-rollout (Row 2), distribution drift occurs. Our full design (Row 3) ensures long-term stability. Bottom (Methodology): The training pipeline uses a frame-level causal mask to model sequential dependencies. To enhance robustness, we incorporate synthetic degradation and self-rollout frames. A temporally-progressive strategy scales degradation intensity, noise levels, and loss weights per turn to effectively regularize multi-turn consistency. 
+
+cnull , the model is trained to minimize: 
+
+Lid = ∥F θ (zsrc , c null ) − zsrc ∥22 (3) This objective regularizes the model toward an identity mapping, encouraging the preservation of regions unrelated to the editing instruction. Overall, this stage converts the generative backbone into an instruction-guided editor with minimal perturbation to the original distribution. Unlike video-based editing methods that rely on auxiliary latent frames to bridge the source and target, AnchorEdit uses only the source and edited states, significantly reducing memory overhead for high-resolution tasks. =% Temporally-Progressive Objective: To force the model to handle increasing error accumulation, we design a curriculum where both the task difficulty and supervision intensity increase with the frame index i. Specifically, we set: 
+
+Stage 2: Multi-turn Causal Autoregressive Training. Given that multi-turn editing is inherently a sequential process, we convert the generation process to a causal autoregressive formulation by applying causal attention mask in Fig. 3. We adopt Diffusion Forcing to maintain efficiency, where the model learns to predict the i-th clean frame z0,i conditioned on previous noisy frames zt,<i .The central challenge is the exposure bias, where cumulative errors in z0,<i lead to divergence. To mitigate this, we implement three synergistic strategies: 
+
+Supervised training with synthetic degradation injection. We simulate inference-time drift by applying non-Gaussian degradation D(·) to historical frames. The training objective for a frame sequence of length N is: 
+
+Lstage2 =
+
+> N
+
+X
+
+> i=1
+
+λiEz1,i ,z0,i ,t i vθ
+
+ zt,i , Di(zgt 
+
+> t,<i
+
+), t i, c i
+
+ − (z1,i − z0,i ) 22 (4) where ti represents diffusion timesteps, and D includes multiple degradation. By using non-Gaussian 
+
+D, we mimic realistic artifacts without corrupting the standard Gaussian denoising process. 
+
+Temporally-progressive objective. To force the model to handle increasing error accumulation, we design a curriculum where both the task difficulty and supervision intensity increase with the frame index i. Specifically, we set: 
+
+ti ∼ U (tmin , 1) · iN , λi = f (i) where λ1 < λ 2 < · · · < λ N (5) 50 0 s 0 s 2s  0 x s 2s  0 x x s 2s           
+
+> RoPE indices in dim T :
+> sink frames
+> local memory
+> (sstride of expanded RoPE ;xdropped frames )
+> Multi -turn Editing Few -Steps Diffusion Transformer
+> Turn I Turn II Turn III Turn IV
+> concat
+> …
+> xx
+> Visible memory :
+> Input:
+> Pred:
+
+Figure 4: Long-chain Streaming Inference Pipeline. (1) Strided RoPE Indexing : We anchor the 
+
+sink frame at index 0, while local frames are assigned indices with a fixed stride s. This preserves the "semantic leap" distance learned in Stage 1, preventing identity collapse across long sequences. (2) Streaming Memory Management : We employ a selective KV cache where the source image serves as a persistent anchor for global consistency, complemented by a sliding window for local coherence. As shown by the ’x’ markers, dropped frames do not affect the fixed RoPE indices of the remaining cache, ensuring structural alignment throughout the streaming process. By sampling larger diffusion timesteps ti and assigning higher loss weights λi to later turns, we compel the model to develop robust error-correction capabilities, learning to rectify drifts introduced by preceding steps. 
+
+Self-rollout fine-tuning. Once foundational capabilities are established, we transition from ground-truth conditions xgt <i to the model’s own previous predictions ˜x<i to bridge the train-inference gap. The fine-tuning loss becomes: 
+
+˜Lstage2 =
+
+> N
+
+X
+
+> i=1
+
+λiEz0,i ,z1,i ,t i |vθ (zt,i , Di(sg [˜ zt,<i ]) , t i, c i) − (z1,i − z0,i )|22 (6) where sg [·] denotes the stop-gradient operation. These generated frames ˜z<i serve as realistic, imperfect historical conditions. This strategy significantly alleviates the cumulative color drift and identity erosion that often intensify across extended editing sequences. 
+
+Stage 3: Distribution Matching Distillation with Causal Consistency Initialization. To achieve high-efficiency deployment, we employ a two-step distillation pipeline to compress the sampling process into few steps. Following recent advances in consistency distillation [ 42 , 43 ], we first initialize model using Causal Consistency Distillation [16, 44], which leverages the frame-level injectivity of the autoregressive teacher to learn a consistent flow map. We optimize the consistency model Gθ by conditioning on the historical prefix x<i gt via a causal teacher-forcing objective: 
+
+θ∗ = min  
+
+> θ
+
+Ezgt ,ϵ,t,i 
+
+w(t)d  Gθ (zt,i , zgt 
+
+> 0,<i
+
+, t ), G θ− (ˆ zt−∆t,i , xgt <i , t − ∆t) , (7) where ˆxit−∆t is obtained by solving the ODE from xit using the Stage 2 teacher model. d(., . ) is a distance under a chosen norm. To further refine the generation quality and align the student’s output with the high-fidelity data distribution, we perform joint optimization using a Distribution Matching Distillation (DMD) objective combined with a flow-matching loss [ 45 , 25 ]. The gradient for the distribution matching is formulated as: 
+
+∇θ Et[DKL (pθ,t || pdata ,t )] = −E˜z,t, ˜zt
+
+
+
+(sreal (˜ zt, t ) − sfake (˜ zt, t )) ∂˜z
+
+∂θ 
+
+
+
+, (8) where ˜x is the student-generated image, and ˜xt is its noised version. Here, a frozen pretrained model 
+
+sreal predicts the score under the real data distribution pdata ,t , while an online-trainable model sfake 
+
+estimates the score of the current student distribution pθ,t . This hybrid strategy ensures that the model achieves both rapid convergence and superior visual fidelity in few-step multi-turn editing. 
+
+3.3 Long-chain Streaming Inference Pipeline 
+
+To exploit the extrapolation potential of our causal framework, we implement an efficient inference pipeline featuring a sliding-window KV cache and a persistent attention sink as shown in Fig. 4. To 6AnchorEdit 
+
+> AnchorEdit
+> JoyImage -
+> Edit
+> JoyImage -
+> Edit
+> AnchorEdit
+> VINCIE
+> VINCIE
+
+Figure 5: Qualitative comparison of image editing results. The top section displays single-turn editing results of our method. The bottom section provides a multi-turn editing comparison between our AnchorEdit and existing methods (JoyImage-Edit and VINCIE). Our approach demonstrates superior consistency and enhanced semantic alignment across extended editing sequences. support long-turn editing while maintaining the structural priors learned during training, we manage the temporal receptive field and positional embeddings as follows: 
+
+Attention Sink and Memory Management. During the i-th editing turn, the model performs self-attention over a selective set of historical latents Ωi stored in the KV cache. To ensure global subject consistency, we treat the first frame x1 (the original image) as a persistent anchor that is never evicted from the cache. The rest of the cache follows a sliding-window protocol to maintain local temporal coherence. The set of visible frames Ωi is defined as: 
+
+Ωi = 1 ∪ j | max(2 , i − W ) ≤ j < i (9) where W is the window size matching the training sequence length. This mechanism ensures that the model always references the original identity while adapting to the most recent edits. 
+
+Strided RoPE Indexing for Inference Memory. We extend the expanded RoPE from Stage 1 into a Strided Positional Indexing scheme for multi-turn inference. As illustrated in Fig. 4, instead of assigning sequential indices, we assign RoPE indices based on the frame’s role within the visible memory. Specifically, the Sink frame is anchored at a fixed index 0 to serve as a permanent structural reference. For the L frames maintained in the Local sliding window, we assign indices using a fixed stride s, where s corresponds to the expansion factor used in Stage 1. For a frame at the j-th position within the local window ( j ∈ { 1, . . . , L }), its positional index pj is formulated as: 
+
+pj =
+
+0, if sink frame 
+
+j · s, if j-th local frame (10) This design ensures that even as historical frames are dropped (indicated by ’x’ in Fig. 4), the remaining frames in the KV cache retain their relative "semantic distance." By keeping these indices as multiples of s, the model consistently perceives a large separation between editing turns, effec-tively preventing "identity collapse" and ensuring that the multi-turn generation remains within the distribution of the two-frame expanded-distance pretraining. 7Figure 6: Visual results of long-chain 10-turn editing. Each row showcases a sequential 10-turn inference process using our model. Table 1: Results on ImgEdit-Bench                                         
+
+> Model Add Adjust Extract Replace Remove Background Style Hybrid Action Overall ↑
+> ChronoEdit-turbo [11] 4.36 4.38 3.28 4.11 4.00 4.31 4.31 3.67 4.78 4.13 JoyAI-Image-Edit [48] 4.63 4.52 4.32 4.71 4.76 4.53 4.88 4.09 4.69 4.57 AnchorEdit 4.41 4.42 3.08 4.14 3.92 4.49 4.31 3.60 4.78 4.13
+
+4 Experiment 
+
+4.1 Benchmark 
+
+Currently, there is a notable absence of benchmarks for high-resolution, multi-turn editing. To fill this void, we curated a dataset of 50 samples derived from diverse video and image sources. These samples encompass various editing categories and varying numbers of turns, designed to explore the performance ceiling of models in complex multi-step scenarios. Our evaluation framework is multi-faceted. For each turn, we employ a VLM to assess the results based on two key dimensions: visual consistency and semantic instruction following. Both metrics are scored on a scale of 1 to 10. We implement a termination criterion where an edit is deemed a failure if either score falls below 3, at which point the sequence does not proceed to the subsequent turn. Finally, we report the overall Success Rate, along with the average Consistency Score and Semantic Following Score. 
+
+4.2 Experimental Details Data. We train our model on two primary datasets: (1) approximately 1 million multi-turn se-quences derived from high-motion video clips to ensure temporal stability, and (2) 200,000 diverse image-based editing samples from proprietary generative models to enhance semantic variety. Com-prehensive details for data preparation are provided in the Appendix. 
+
+Model. Our framework is built on the WAN2.1-T2V-14B [ 8] and follows a three-stage training curriculum. It begins with a single-turn stage of 1,500 steps (BS=256) to establish foundational editing capabilities, followed by a multi-turn stage of 1,500 steps (BS=64) to optimize for causal sequential reasoning. Finally, we perform a distillation stage, comprising 500 steps of Consistency Distillation and 1,000 steps of hybrid loss training (both BS=64), to enable few-step inference. 
+
+Evaluation. We use a 4-step inference strategy with CFG [ 46 ] disabled. For stability, the context window includes the fixed first frame and the 4 most recent edited frames. Performance is evaluated on ImgEdit [ 47 ] for single-turn tasks, our custom benchmark for multi-turn scenarios, and MSE Bench [13] for generalizability. Further details and hyperparameters are provided in the Appendix. 
+
+4.3 Quantitative Results Single-turn Editing. On ImgEdit in Tab. 1, our model achieves competitive performance. The model maintains high subject fidelity and instruction following, demonstrating that the single-turn pretraining effectively adapts the 14B backbone while preserving its generative power. 8Table 2: Quantitative results on Our Multi-turn Benchmark and MSE-Bench . We report Consis-tency, Semantic Following, Success Rate for our benchmark, and multi-turn results for MSE-Bench.                                     
+
+> Method Custom Multi-turn Benchmark MSE-Bench (Success Rate per Turn) Cons. ↑Sem. ↑SR (%) ↑Turn-1 Turn-2 Turn-3 Turn-4 Turn-5
+> JoyImage-Edit [48] 5.1 5.4 29.8 0.980 0.802 0.679 0.617 0.446 VINCIE [13] 5.8 5.1 34.1 0.950 0.693 0.667 0.617 0.487
+> AnchorEdit 6.2 5.3 52.9 0.950 0.737 0.707 0.623 0.567
+
+Multi-turn Editing. Our model demonstrates superior stability in extended sequences. As shown in Tab. 2, our model maintains a high Success Rate on both bench. These improvements are primarily driven by our memory mechanism and Self-Rollout fine-tuning, which rectify artifacts and prevent catastrophic drift. Furthermore, our distilled 4-step inference delivers these results with much higher efficiency than full-diffusion baselines. 
+
+4.4 Qualitative Results 
+
+We present qualitative comparisons in Fig. 5 to demonstrate our model’s performance in challenging multi-turn scenarios. A key advantage of our approach is its exceptional visual consistency: while existing baselines often suffer from "identity drift" after only a few turns, our model maintains remarkable subject and background stability even in sequences exceeding ten turns (Fig. 6). These results showcase not only high-fidelity 1024 × 1024 generation without over-smoothing but also a robust error-correction capability that prevents recursive artifact amplification. Table 3: Ablation of core components on our benchmark. SR: Success Rate.                
+
+> Configuration Consist. ↑Sem. ↑SR (%) ↑
+> Base 4.9 4.7 30.6 + Expanded RoPE 5.5 5.2 45.8 + Self-rollout (Full) 6.2 5.3 52.9
+
+Table 4: Impact of Inference Memory (Sink/Lo-cal) on long sequences ( Turns > 8 ).                    
+
+> Sink Local Consist. ↑Sem. ↑SR (%) ↑
+> 024.7 5.2 33.5 125.3 5.6 40.3 145.5 5.6 42.7
+
+4.5 Ablation Study Core Components. We first evaluate the impact of the training pipeline components in Tab. 3. Replacing standard sequential positional encoding with Expanded RoPE significantly improves the Consistency Score and Success Rate (SR). By increasing the index distance between frames, the model gains better temporal resolution, which prevents "identity collapse" and the blurring of features across distant turns. The addition of Self-rollout Finetuning provides the most substantial boost, raising the SR to 52.9%. This confirms that training on model-generated history allows the model to develop self-correction capabilities with preventing minor artifacts during inference. 
+
+Inference Memory Mechanism. We further analyze the impact of Sink and Local frames on long-chain sequences (Turns > 8) in Tab. 4. Without a visual anchor (Sink=0), the model struggles with identity drift as the sequence progresses. Introducing a Sink Frame —fixing the first frame as a persistent reference—leads to a significant jump in both consistency and SR, effectively anchoring the subject’s identity. Increasing the number of Local Frames in the sliding window further enhances short-term coherence. These results demonstrate that our hybrid memory strategy is essential for maintaining stability across extended editing trajectories. 
+
+5 Conclusion 
+
+This paper presents a robust framework for multi-turn image editing by repurposing autoregressive video diffusion models. By introducing a causal training curriculum and a hybrid memory mechanism, our model maintains exceptional subject fidelity and semantic consistency across sequences of 10+ turns. This work demonstrates the potential of causal diffusion architectures in establishing a reliable and scalable foundation for long-horizon interactive visual creation. 9References 
+
+[1] Tim Brooks, Aleksander Holynski, and Alexei A Efros. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 18392–18402, 2023. [2] Bahjat Kawar, Shiran Zada, Oran Lang, Omer Tov, Huiwen Chang, Tali Dekel, Inbar Mosseri, and Michal Irani. Imagic: Text-based real image editing with diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 6007–6017, 2023. [3] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A manually annotated dataset for instruction-guided image editing, 2024. [4] Shelly Sheynin, Adam Polyak, Uriel Singer, Yuval Kirstain, Amit Zohar, Oron Ashual, Devi Parikh, and Yaniv Taigman. Emu edit: Precise image editing via recognition and generation tasks, 2023. [5] Qifan Yu, Wei Chow, Zhongqi Yue, Kaihang Pan, Yang Wu, Xiaoyang Wan, Juncheng Li, Siliang Tang, Hanwang Zhang, and Yueting Zhuang. Anyedit: Mastering unified high-quality image editing for any idea, 2025. [6] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng-ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, et al. Qwen-image technical report. arXiv preprint arXiv:2508.02324 , 2025. [7] Super Intelligence Team, Changhao Qiao, Chao Hui, Chen Li, Cunzheng Wang, Dejia Song, Jiale Zhang, Jing Li, Qiang Xiang, Runqi Wang, et al. Firered-image-edit-1.0 technical report. arXiv preprint arXiv:2602.13344 , 2026. [8] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. [9] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiaohan Zhang, Guanyu Feng, Da Yin, Yuxuan Zhang, Weihan Wang, Yean Cheng, Bin Xu, Xiaotao Gu, Yuxiao Dong, and Jie Tang. Cogvideox: Text-to-video diffusion models with an expert transformer, 2025. [10] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, Kathrina Wu, Qin Lin, Junkun Yuan, Yanxin Long, Aladdin Wang, Andong Wang, Changlin Li, Duojun Huang, Fang Yang, Hao Tan, Hongmei Wang, Jacob Song, Jiawang Bai, Jianbing Wu, Jinbao Xue, Joey Wang, Kai Wang, Mengyang Liu, Pengyu Li, Shuai Li, Weiyan Wang, Wenqing Yu, Xinchi Deng, Yang Li, Yi Chen, Yutao Cui, Yuanbo Peng, Zhentao Yu, Zhiyu He, Zhiyong Xu, Zixiang Zhou, Zunnan Xu, Yangyu Tao, Qinglin Lu, Songtao Liu, Dax Zhou, Hongfa Wang, Yong Yang, Di Wang, Yuhong Liu, Jie Jiang, and Caesar Zhong. Hunyuanvideo: A systematic framework for large video generative models, 2025. [11] Jay Zhangjie Wu, Xuanchi Ren, Tianchang Shen, Tianshi Cao, Kai He, Yifan Lu, Ruiyuan Gao, Enze Xie, Shiyi Lan, Jose M Alvarez, et al. Chronoedit: Towards temporal reasoning for image editing and world simulation. arXiv preprint arXiv:2510.04290 , 2025. [12] Chengzhuo Tong, Mingkun Chang, Shenglong Zhang, Yuran Wang, Cheng Liang, Zhizheng Zhao, Ruichuan An, Bohan Zeng, Yang Shi, Yifan Dai, et al. Cof-t2i: Video models as pure visual reasoners for text-to-image generation. arXiv preprint arXiv:2601.10061 , 2026. [13] Leigang Qu, Feng Cheng, Ziyan Yang, Qi Zhao, Shanchuan Lin, Yichun Shi, Yicong Li, Wenjie Wang, Tat-Seng Chua, and Lu Jiang. Vincie: Unlocking in-context image editing from video. In The Fourteenth International Conference on Learning Representations , 2025. [14] Xun Huang, Zhengqi Li, Guande He, Mingyuan Zhou, and Eli Shechtman. Self forcing: Bridging the train-test gap in autoregressive video diffusion. arXiv preprint arXiv:2506.08009 , 2025. [15] Tianwei Yin, Qiang Zhang, Richard Zhang, William T. Freeman, Frédo Durand, Eli Shechtman, and Xun Huang. From slow bidirectional to fast autoregressive video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [16] Hongzhou Zhu, Min Zhao, Guande He, Hang Su, Chongxuan Li, and Jun Zhu. Causal forcing: Autoregres-sive diffusion distillation done right for high-quality real-time interactive video generation. arXiv preprint arXiv:2602.02214 , 2026. 
+
+10 [17] Kunhao Liu, Wenbo Hu, Jiale Xu, Ying Shan, and Shijian Lu. Rolling forcing: Autoregressive long video diffusion in real time, 2025. [18] Shuai Yang, Wei Huang, Ruihang Chu, Yicheng Xiao, Yuyang Zhao, Xianbang Wang, Muyang Li, Enze Xie, Yingcong Chen, Yao Lu, Song Han, and Yukang Chen. Longlive: Real-time interactive long video generation, 2025. [19] Guibin Chen, Dixuan Lin, Jiangping Yang, Chunze Lin, Junchen Zhu, Mingyuan Fan, Hao Zhang, Sheng Chen, Zheng Chen, Chengcheng Ma, Weiming Xiong, Wei Wang, Nuo Pang, Kang Kang, Zhiheng Xu, Yuzhe Jin, Yupeng Liang, Yubing Song, Peng Zhao, Boyuan Xu, Di Qiu, Debang Li, Zhengcong Fei, Yang Li, and Yahui Zhou. Skyreels-v2: Infinite-length film generative model, 2025. [20] Byeongho Heo, Song Park, Dongyoon Han, and Sangdoo Yun. Rotary position embedding for vision transformer. In European Conference on Computer Vision , pages 289–305. Springer, 2024. [21] Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding, 2023. [22] Yiran Ding, Li Lyna Zhang, Chengruidong Zhang, Yuanyuan Xu, Ning Shang, Jiahang Xu, Fan Yang, and Mao Yang. Longrope: Extending llm context window beyond 2 million tokens, 2024. [23] Bowen Peng, Jeffrey Quesnelle, Honglu Fan, and Enrico Shippole. Yarn: Efficient context window extension of large language models, 2026. [24] Xun Huang, Zhengqi Li, Guande He, Mingyuan Zhou, and Eli Shechtman. Self forcing: Bridging the train-test gap in autoregressive video diffusion. arXiv preprint arXiv:2506.08009 , 2025. [25] Tianwei Yin, Michaël Gharbi, Taesung Park, Richard Zhang, Eli Shechtman, Fredo Durand, and William T Freeman. Improved distribution matching distillation for fast image synthesis. Advances in neural information processing systems , 37:47455–47487, 2024. [26] Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. Efficient streaming language models with attention sinks, 2024. [27] Tianwei Yin, Qiang Zhang, Richard Zhang, William T Freeman, Fredo Durand, Eli Shechtman, and Xun Huang. From slow bidirectional to fast autoregressive video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22963–22974, 2025. [28] Kunhao Liu, Wenbo Hu, Jiale Xu, Ying Shan, and Shijian Lu. Rolling forcing: Autoregressive long video diffusion in real time. arXiv preprint arXiv:2509.25161 , 2025. [29] Justin Cui, Jie Wu, Ming Li, Tao Yang, Xiaojie Li, Rui Wang, Andrew Bai, Yuanhao Ban, and Cho-Jui Hsieh. Self-forcing++: Towards minute-scale high-quality video generation. arXiv preprint arXiv:2510.02283 ,2025. [30] Shenghai Yuan, Yuanyang Yin, Zongjian Li, Xinwei Huang, Xiao Yang, and Li Yuan. Helios: Real real-time long video generation model. arXiv preprint arXiv:2603.04379 , 2026. [31] Deyu Zhou, Quan Sun, Yuang Peng, Kun Yan, Runpei Dong, Duomin Wang, Zheng Ge, Nan Duan, and Xiangyu Zhang. Taming teacher forcing for masked autoregressive video generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7374–7384, 2025. [32] Boyuan Chen, Diego Martí Monsó, Yilun Du, Max Simchowitz, Russ Tedrake, and Vincent Sitzmann. Diffusion forcing: Next-token prediction meets full-sequence diffusion. Advances in Neural Information Processing Systems , 37:24081–24125, 2024. [33] Shuo Chen, Cong Wei, Sun Sun, Ping Nie, Kai Zhou, Ge Zhang, Ming-Hsuan Yang, and Wenhu Chen. Context forcing: Consistent autoregressive video generation with long context, 2026. [34] Steven Xiao, Xindi Zhang, Dechao Meng, Qi Wang, Peng Zhang, and Bang Zhang. Knot forcing: Taming autoregressive video diffusion models for real-time infinite interactive portrait animation, 2025. [35] Xilin Wei, Xiaoran Liu, Yuhang Zang, Xiaoyi Dong, Pan Zhang, Yuhang Cao, Jian Tong, Haodong Duan, Qipeng Guo, Jiaqi Wang, Xipeng Qiu, and Dahua Lin. Videorope: What makes for good video rotary position embedding?, 2025. [36] Hidir Yesiltepe, Tuna Han Salih Meral, Adil Kaan Akan, Kaan Oktay, and Pinar Yanardag. Infinity-rope: Action-controllable infinite video generation emerges from autoregressive self-rollout, 2026. 
+
+11 [37] Zijun Zhou, Yingying Deng, Xiangyu He, Weiming Dong, and Fan Tang. Multi-turn consistent image editing. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15792– 15801, 2025. [38] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross attention control, 2022. [39] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real images using guided diffusion models, 2022. [40] Narek Tumanyan, Michal Geyer, Shai Bagon, and Tali Dekel. Plug-and-play diffusion features for text-driven image-to-image translation, 2022. [41] Mingdeng Cao, Xintao Wang, Zhongang Qi, Ying Shan, Xiaohu Qie, and Yinqiang Zheng. Masactrl: Tuning-free mutual self-attention control for consistent image synthesis and editing, 2023. [42] Simian Luo, Yiqin Tan, Longbo Huang, Jian Li, and Hang Zhao. Latent consistency models: Synthesizing high-resolution images with few-step inference, 2023. [43] Axel Sauer, Dominik Lorenz, Andreas Blattmann, and Robin Rombach. Adversarial diffusion distillation, 2023. [44] Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. 2023. [45] Tianwei Yin, Michaël Gharbi, Richard Zhang, Eli Shechtman, Fredo Durand, William T. Freeman, and Taesung Park. One-step diffusion with distribution matching distillation, 2024. [46] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 ,2022. [47] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A unified image editing dataset and benchmark. arXiv preprint arXiv:2505.20275 , 2025. [48] Lin Song, Wenbo Li, Guoqing Ma, Wei Tang, Bo Wang, Yuan Zhang, Yijun Yang, Yicheng Xiao, Jianhui Liu, Yanbing Zhang, Guohui Zhang, Wenhu Zhang, Hang Xu, Nan Jiang, Xin Han, Haoze Sun, Maoquan Zhang, Haoyang Huang, and Nan Duan. Awaking spatial intelligence in unified multimodal understanding and generation, 2026. 
+
+12 A Experimental Details 
+
+A.1 Training Data Construction 
+
+To train a robust autoregressive editor capable of high-resolution (1024p) output, we constructed a large-scale, diverse dataset combining natural temporal transitions from videos and complex semantic modifications from synthetic image editing chains. 
+
+Video-based Multi-turn Data. The primary source for learning subject constancy and motion-aware transitions is a curated collection of approximately 2 million single-shot video clips. These clips were selected based on high motion dynamics and structural complexity to ensure the model learns to handle significant visual changes. • Curation and Sampling: From the 2M clips, we sampled 1 million sequences. For each sequence, we extract N frames (where N ranges from 3 to 8) with adaptive temporal spacing. This sampling strategy simulates "editing steps" by treating subsequent frames as the results of sequential instructions. • Annotation Pipeline: We utilized a state-of-the-art Vision-Language Model (VLM) to generate dense captions for each frame and, crucially, delta-instructions that describe the transformation from frame t to frame t + 1 . This transforms raw video into a "natural editing" dataset where the model learns how objects move and evolve while maintaining strict identity. 
+
+Synthetic Image-based Editing Data. While video data provides excellent identity priors, it lacks the diversity of explicit semantic edits (e.g., "change the texture to gold" or "add a cyberpunk hat"). To fill this gap, we generated a specialized dataset of 200,000 multi-turn editing sequences. • Synthesizing Edit Chains: We employed a "Teacher-Critic" framework. A Large Language Model (LLM) first generates a logically consistent 5-step editing plan for a source image. A high-quality closed-source diffusion editor then executes these steps. • Diversity: This subset focuses on diverse categories including global style transfers, local object manipulation, and attribute editing. Although smaller in scale than the video data, its high semantic variance prevents the model from overfitting to the simple physical transitions found in natural videos. 
+
+Quality Control and Preprocessing. To ensure the high-fidelity performance of AnchorEdit, we applied a multi-stage filtering pipeline: • Resolution and Aesthetics: All data were filtered to ensure a minimum resolution of 1024p. We used an internal aesthetic scorer to remove samples with motion blur, watermarks, or low-quality compression artifacts. • Alignment Filtering: We calculated CLIP-based text-image alignment scores for every turn. Sequences where the visual change did not match the generated instruction were discarded. • Identity Consistency: For the synthetic image data, we applied a face-reid and DINO-v2 feature similarity check across the editing chain. Only sequences that maintained a high similarity score (ensuring the subject did not "morph" into a different entity) were retained for Stage 2 training. This hybrid dataset ensures that AnchorEdit is both a stable "anchor" for subject identity (via video priors) and a versatile "editor" for complex instructions (via synthetic image data). 
+
+A.2 Model Training Details 
+
+We initialize AnchorEdit using the Wan2.1-T2V-14B backbone, a state-of-the-art autoregressive video generation model. The training is divided into three specialized stages to transition the model from a video generator to a robust, high-resolution causal editor. 13 Stage 1: Multi-Resolution Single-Turn Pretraining. In the first stage, we establish foundational editing capabilities and identity preservation. • Dataset: We utilize a massive dataset of 3 million samples, including public single-turn editing datasets and our internally constructed image-editing chains. • Multi-Resolution Strategy: To ensure the model is resolution-agnostic up to 1024p, we employ a multi-resolution training strategy where the total pixel count is ≤ 1024 × 1024 ,with aspect ratios ranging up to 4:1. This ensures the model can handle various canvas shapes (e.g., cinematic wide or mobile portrait). • Optimization: We train for 1,500 steps with a batch size of 256. We use a fixed learning rate of 1e − 5, with AdamW optimizer parameters set to β1 = 0 .9, β 2 = 0 .999 , and a weight decay of 0.01 . The maximum gradient norm is clipped at 10 .0 to ensure stability. 
+
+Stage 2: Causal Multi-Turn and Self-Rollout Training. This stage optimizes the model for se-quential reasoning and robustness against error accumulation. We split this stage into two progressive phases: • Warm-up Phase (Steps 0–500): We train exclusively on ground-truth (GT) history frames to establish basic causal reasoning. The self-rollout probability is set to 0. • Self-Rollout Phase (Steps 500–1,500): To mitigate exposure bias, we introduce a Self-Rollout strategy. For each sequence, internal frames (excluding the first and last) have a 0.3 probability of being replaced by the model’s own previous-step predictions. While these rollout frames receive noise and degradation like GT frames, we apply a loss mask to them, ensuring gradients are only computed for the target frame. • Robustness via Degradation: To simulate the distribution shift encountered during infer-ence, we apply three types of degradations to historical frames with a 0.3 trigger probability each: (1) Spatial Blur (excluding Gaussian blur to avoid interference with the diffusion process), (2) JPEG Compression artifacts, and (3) Color Shifting via channel perturbations. Furthermore, we pass frames through the VAE encoder/decoder loop to simulate latent-space distribution shifts. • Temporal Scheduling: We increase the difficulty of the task for later turns in a sequence. Specifically, the noise intensity, degradation strength, and loss weights are scaled progres-sively. The loss weight is set to 1.0 for the second turn and increases linearly to 2.0 for the final turn. 
+
+Stage 3: Causal Consistency Distillation. The final stage focuses on accelerating inference while maintaining the causal properties developed in Stage 2. • Consistency Distillation (CD): We adapt the consistency distillation objective to our causal framework. The training setup mirrors the "Causal Forcing" strategy from Stage 2. • Procedure: We extract the initial image and the full sequence of prompts from our training set. The model is trained to map any point on the ODE trajectory to the solution in a single (or few) steps. This phase comprises 1,500 steps (500 for initial CD and 1,000 for few-step refinement) with a batch size of 64, resulting in a high-efficiency editor capable of generating high-quality results in just 4 sampling steps. 14 A.3 Benchmark System Prompt for Multi-turn Evaluation 
+
+Role: You are an expert visual quality inspector specialized in multi-turn image editing. Your task is to evaluate the quality of an edit based on the initial state, the previous state, and the current editing instruction. 
+
+Input Information: 
+
+1. Initial Image ( I0): The original image before any edits (The identity anchor). 2. Previous Image ( It−1): The image from the last turn. 3. Current Image ( It): The result of the current edit. 4. Instruction: The specific modification requested for this turn. 
+
+Task: Assign two scores (1-10) based on the following criteria: 
+
+1. Visual Consistency Score (CS): Compare It with I0 and It−1.• 9-10: Subject identity, background structure, and non-edited details are perfectly preserved. • 7-8: Subject is clearly the same, but very minor flickering or texture changes occur. • 5-6: Subject is identifiable, but shows noticeable drift (e.g., facial feature shifts, clothing pattern changes). • 3-4: Significant identity drift; subject looks like a "different person/object" of the same category. • 1-2: Identity collapse or image corruption. 
+
+2. Semantic Following Score (SF): Compare It with It−1 and the Instruction. • 9-10: Instruction is followed precisely with high visual quality and natural blending. • 7-8: Modification is clear and correct, with only minor artifacts or slight inaccuracies in extent. • 5-6: Instruction is partially followed but lacks precision (e.g., wrong color shade, object added unrealistically). • 3-4: The edit is attempted but the result is barely recognizable or visually garbled. • 1-2: The instruction was ignored, or the edit is irrelevant. 
+
+Output Format: Return only a JSON object: {"Consistency_Score": X, "Semantic_Score": Y, "Reasoning": "..."} 
+
+To rigorously evaluate AnchorEdit, we move beyond simple CLIP-based metrics, which often fail to capture fine-grained identity drift in multi-turn scenarios. Instead, we utilize a GPT-4o-based evaluation protocol that simulates a human user’s judgment across two critical dimensions: 
+
+Identity Anchoring vs. Instruction Adherence. A common failure mode in multi-turn editing is "over-editing," where the model follows the instruction but completely loses the original subject’s identity. By providing the VLM with the Initial Image ( I0) as a global reference and the Previous Image ( It−1) as a local reference, the Consistency Score (CS) specifically penalizes the "identity leakage" that accumulates over time. 
+
+Sequential Failure and Chain Termination. In our benchmark, we emphasize the sequential stability .Unlike single-turn benchmarks, the error in turn n directly affects turn n + 1 . Our scoring system incorporates a "Success Threshold" (Score ≥ 3). If a model produces a result that is either visually corrupted (CS < 3) or completely ignores the prompt (SF < 3), the editing chain is considered "broken." This reflects real-world usability: once a user’s subject is lost, subsequent edits are meaningless. 
+
+High-Resolution Sensitivity. Since our benchmark is conducted at 1024p resolution, the VLM is instructed to look for high-frequency artifacts (e.g., JPEG noise, texture blurring) in its reasoning process. The CS score specifically looks for background stability—ensuring that an edit to a person’s hat does not inadvertently change the texture of the trees behind them. 15 Table 5: Ablation study on Reweighted FLow Matching Loss. We compare the performance of the model trained with a fixed loss weight versus our proposed linear weighting strategy ( 1.0 → 2.0
+
+from the second to the final turn). 
+
+Configuration CS ↑ SF ↑ SR ↑
+
+Fixed Loss Weight ( wt = 1 .0) 6.0 5.0 .50.1 Temporal Loss Weighting ( 1.0 → 2.0) 6.2 5.3 52.9 
+
+B More Ablations 
+
+Reweighted FLow Matching Loss A core challenge in autoregressive multi-turn editing is the "exposure bias" and the resulting error accumulation. As the number of editing turns increases, the input frames for the current turn inevitably contain more artifacts or subtle identity drifts from previous steps. To address this, we proposed a Temporal Loss Weighting strategy during the second stage of training. These results validate that temporal scheduling is essential for mastering long-horizon editing tasks, as it effectively guides the model to prioritize robustness as the difficulty of the task increases across turns. Table 6: Ablation study on degradation strategies for historical frames. We compare the effects of no degradation, fixed-intensity degradation, and our proposed progressive degradation across 10-turn editing sequences. 
+
+Configuration CS ↑ SF ↑ SR ↑
+
+Base (Clean History) 4.9 4.7 30.6 Fixed Degradation 6.2 5.2 49.7 Progressive Degradation (Full) 6.2 5.3 52.9 The Necessity of Progressive Degradation. In an autoregressive inference chain, the quality of historical frames is not constant; rather, it exhibits a "decaying" trend where late-turn frames accumulate more artifacts than early-turn ones. We conduct an ablation study to verify whether the training noise should reflect this temporal distribution. • Fixed Degradation: In this setting, we inject a constant level of noise, blur, and compression to all historical frames regardless of their turn index. As shown in Table 6, this improves the Success Rate (SR) from 30% to 49.7% compared to the clean-history baseline. This suggests that simply exposing the model to imperfect inputs helps mitigate exposure bias to some extent. • Progressive Degradation (Full): Our proposed strategy scales the intensity of degradations (e.g., Gaussian noise σ and VAE-loop blur) linearly with the turn index t. This configuration yields the best performance across all metrics (SR: 52.9%, Consist.: 6.2). The reason for this improvement is twofold: (1) Distribution Alignment: Progressive degradation accurately simulates the inference-time environment where the "anchor" frames in later turns are significantly noisier. (2) Curriculum Learning: It acts as a form of curriculum learning, where the model first learns to preserve identity from relatively clean history in early turns, and gradually learns more robust "rectification" skills to handle heavily corrupted history in later turns. The gap between Fixed and Progressive degradation (3.2% in SR) demonstrates that teaching the model to handle "increasingly difficult" history is key to maintaining a stable and consistent 10-turn editing chain. 
+
+C More Visual Results 
+
+C.1 Training Data Visualization 
+
+In Fig. 7, we provide a comprehensive visualization of the synthesized training samples used in our two-stage training pipeline. Unlike single-turn editing datasets, our training data is specifically designed to capture the complex dynamics of multi-turn interactions. Each sample consists of an 16 initial "anchor" image followed by a sequence of logically connected editing instructions and their corresponding outcomes. As illustrated, these samples cover a diverse range of editing scenarios, including local object manipulation (e.g., changing clothes, adding accessories), global style transfer, and background modifications. Our model is required to learn not only the specific semantic "delta" defined by each new instruction but also the strict preservation of identity and spatial consistency across the entire chain. By visualizing the training pairs, we demonstrate how the model is exposed to varying degrees of "historical noise" and "simulated degradations" (as discussed in the ablation study), which is crucial for mastering the transition from one editing state to the next without losing the core features of the subject. 
+
+C.2 Benchmark Visualization 
+
+To further validate the robustness and generalization of AnchorEdit, we present extended visual results on our multi-turn benchmark in Fig. 8, Fig. 9, and Fig. 10. These sequences represent some of the most challenging cases in our evaluation set, involving up to 10 consecutive editing turns with diverse and sometimes conflicting instructions. A key observation from these results is that, despite the extreme sequence length, our model maintains excellent temporal-consistency and high-fidelity textures. Specifically: • Identity Preservation: Even in the 10th turn, the primary subject’s fine-grained features (e.g., facial structure, garment textures) remain consistent with the original frame, effectively avoiding the "identity drift" common in standard autoregressive models. • Semantic Precision: The model demonstrates a high degree of instruction-following capability, accurately executing complex commands (e.g., "now change the background to a snowy mountain while keeping the red jacket") without being confused by the long history of previous edits. • Quality Stability: There is no significant accumulation of VAE-related artifacts or blurring, proving that our progressive degradation training strategy effectively teaches the model to "rectify" potential errors at each step. These visualizations confirm that AnchorEdit successfully bridges the gap between short-term image editing and long-horizon, conversation-driven content creation. 
+
+D Limitation 
+
+Despite its robustness, our framework has a few limitations. First, the autoregressive nature of the model results in inference time that scales linearly with the number of editing turns, which may limit its use in real-time interactive scenarios. Second, while our memory mechanism excels at maintaining subject identity, it may occasionally lead to "over-consistency," making it challenging to perform radical semantic transformations where the original subject’s structure needs to be fundamentally altered. Future work will explore more efficient inference techniques and adaptive mechanisms to balance preservation with flexibility. 17 Figure 7: Visualization of training data. {
+
+"instructions": [ 
+
+"Adjust the material of the car to appear as if it is made of transparent glass, showing the internal seats and steering whee l c learly while it 
+
+remains caught in the dark blue vortex.", 
+
+"Change the car's body material to solid rusted steel and remove the orange fire and sparks, then add a terrified person in t he  driver's seat 
+
+with their hands gripping the steering wheel.", 
+
+"Replace the rusty car with a futuristic, silver metallic submarine, while keeping the man visible and maintaining his panick ed  expression inside 
+
+the vessel.", 
+
+"Replace the swirling water whirlpool with a vibrant cosmic nebula in deep space, ensuring the lighting and reflections on th e c raft's metallic 
+
+hull are consistent with the new celestial environment.", 
+
+"Replace the panicked human pilot with a calm, three -eyed green alien wearing a sleek silver flight suit, ensuring the hands rem ain positioned on 
+
+the controls and the cockpit interior remains unchanged.", 
+
+"Transform the entire image into a retro 1950s pulp sci -fi comic book style, featuring bold black ink outlines, Ben -Day dot patt erns for shading, 
+
+and a slightly weathered paper texture.", 
+
+"Replace the three -eyed green alien inside the cockpit with a sleek, chrome -plated robot, ensuring its metallic surface reflects  the colorful 
+
+cosmic vortex surrounding the spaceship.", 
+
+"Restore the image to a pristine digital condition by removing all artificial aging effects, such as the corner wear, surface  sc ratches, and paper 
+
+creases, while sharpening the line work and enhancing the saturation of the halftone colors.", 
+
+"Reimagine this comic cover as a hyper -realistic 3D cinematic render, replacing the 2D line art and halftone dots with detailed  metallic 
+
+textures, realistic glass reflections on the cockpit, and volumetric lighting within the vortex.", 
+
+"Restore the image to its original digital clarity by removing all simulated aging effects, including the paper scratches, co rne r scuffs, and 
+
+grainy surface noise to make it look brand new." 
+
+]
+
+}
+
+Figure 8: Visual results of our models on our proposed benchmark. 
+
+18 {
+
+"instructions": [ 
+
+"Replace the flat white background with a traditional Chinese palace interior at night and change the texture of all red scarv es  to a luxurious 
+
+silk material, ensuring the lighting from the lanterns reflects realistically on the subjects.", 
+
+"Change the gesture of the woman on the far right from a peace sign to having her arm resting naturally at her side, ensuring  he r facial identity 
+
+and the rest of the group's arrangement are preserved.", 
+
+"Change the color of all the red scarves worn by the people to a vibrant emerald green, while preserving the silk texture and  th e way they drape 
+
+over their shoulders.", 
+
+"Process the entire image into a traditional Chinese ink wash painting style, using soft red watercolor for the lantern glows  an d varying densities 
+
+of black ink for the people and architectural details.", 
+
+"Change the color of all the hanging lanterns from red to a warm golden yellow, while keeping the ink wash texture and the wa y t he light reflects 
+
+off the ceiling intact.", 
+
+"Convert the image into a detailed stained glass mosaic style, where the characters and lanterns are composed of vibrant glas s f ragments with 
+
+dark leading, maintaining the overall composition and the warm, glowing atmosphere.", 
+
+"Replace all the glowing yellow lanterns hanging from the ceiling with intricate white paper cranes that emit a soft, etherea l b lue light, while 
+
+maintaining their original positions and the hanging strings.", 
+
+"Change the material of the floor to a perfectly still, dark water surface that creates a clear, symmetrical reflection of th e p eople, the glowing 
+
+cranes, and the ornate ceiling structure.", 
+
+"Transform the entire image into a detailed 3D claymation style, giving the people, paper cranes, and the room's interior a h and crafted, tactile 
+
+clay texture with soft, diffused lighting.", 
+
+"Replace the glowing blue origami cranes with small, traditional Chinese lanterns that emit a warm orange light, ensuring the  wa rm glow naturally 
+
+illuminates the people's faces and the wooden pillars." 
+
+]
+
+}Figure 9: Visual results of our models on our proposed benchmark. 
+
+19 {
+
+"instructions": [ 
+
+"Replace the black scissors in the drawer with a red stapler and change the blue floor to a light -colored wooden parquet.", 
+
+"Replace the laptop on the desk with an open sketchbook showing a detailed graphite drawing of a landscape, ensuring it lies  fla t on the surface.", 
+
+"Shift the camera focus to the red stapler inside the drawer to create a shallow depth of field, making it the sharp center o f i nterest while 
+
+blurring the sketchbook and the background office chair.", 
+
+"Replace the red stapler in the open drawer with a sleek, chrome -plated tape dispenser.", 
+
+"Add a steaming ceramic mug of coffee next to the sketchbook on the white desk, ensuring its lighting and shadows are consist ent  with the 
+
+scene.", 
+
+"Change the material of the white tabletop to a polished dark emerald marble, and replace the black coffee in the mug with a  lat te featuring 
+
+heart -shaped foam art.", 
+
+"Replace the landscape sketch in the notebook with a detailed pencil drawing of a classic car, ensuring the perspective and p ape r texture are 
+
+perfectly maintained.", 
+
+"Replace the vintage car drawing on the sketchbook with a detailed hand -drawn pencil sketch of a medieval castle, maintaining th e same graphite 
+
+texture and shading style.", 
+
+"Replace the castle drawing in the sketchbook with a detailed graphite sketch of a vintage steam locomotive, ensuring the sha din g and line work 
+
+match the existing artistic style of the paper.", 
+
+"Extract the spiral -bound notebook featuring the locomotive sketch, excluding the pen resting on its surface and the desk tablet op 
+
+underneath." 
+
+]
+
+}Figure 10: Visual results of our models on our proposed benchmark. 
+
+20

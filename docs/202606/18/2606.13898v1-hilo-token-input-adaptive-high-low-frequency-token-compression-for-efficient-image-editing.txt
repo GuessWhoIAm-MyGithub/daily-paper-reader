@@ -1,0 +1,313 @@
+Title: HiLo-Token: Input-Adaptive High-Low Frequency Token Compression for Efficient Image Editing
+
+URL Source: https://arxiv.org/pdf/2606.13898v1
+
+Published Time: Mon, 15 Jun 2026 00:18:36 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> 2026-6-15
+
+# HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing 
+
+Haoran You 1, Yotam Nitzan 2, Lingzhi Zhang 1, Yifan Gong 2, Mang-Tik Chiu 1, Connelly Barnes 2, Yan Kang 2, Yuqian Zhou 2, Eli Shechtman 2 and Sohrab Amirghodsi 1 
+
+> 1Adobe ART AI Lab, 2Adobe Research
+
+Abstract: Creative image editing tools, such as Photoshop’s Remove or Generative Fill buttons, are central to everyday customer use and account for a major share of traffic in Photoshop and Lightroom. However, current generative AI models face significant latency challenges, which become even more pronounced when transitioning from convolution-based U-Nets to Diffusion Transformers (DiTs). In our evaluation on hundreds of representative image editing samples spanning a wide range of mask ratios, the DiT module alone accounts for an average of 73% of the total model latency, even after being distilled from 50 timesteps down to 8 timesteps. To tackle this challenge, we propose HiLo-Token , an input-adaptive token compression framework that allocates more token budget to high-frequency, rich-context regions while assigning fewer tokens to low-frequency areas. Specifically, for the editing region specified by the user mask, we retain all tokens within a dilated mask to preserve strong locality and contextual relevance. Outside the editing region, we introduce a simple yet effective high-frequency token selection strategy based on spatial frequency to capture important local details, while using tokens from a 16 × downsampled image to represent low-frequency components and preserve the blurry but global structure. Extensive experiments on production-level evaluation data validate the effectiveness of the proposed method, achieving 3.13 ×, 2.59 ×, and 1.67 × DiT speedups on A100-80GB for image editing tasks across small, medium, and large mask ratio categories with average ratios of 6.38%, 15.92%, and 35.36%, respectively, without any regression in generation quality. 
+
+## 1. Introduction 
+
+Creative image editing has received widespread attention in the era of generative artificial intelli-gence (GenAI). Representative examples include specialist editing models such as the Remove Tool (Adobe, 2025c) and Generative Fill (Adobe, 2025b) in Adobe’s Photoshop, Lightroom, and Ex-press, as shown in Fig. 1a, which are fine-tuned on carefully curated high-quality data from pre-trained generalist Firefly Image models (Adobe, 2024, 2025a), as well as large-scale image gener-ation and editing models from other companies, including Google’s Gemini Image (also known as Nano Banana) (Google, 2025a,b), OpenAI’s ChatGPT Image (OpenAI, 2025), ByteDance’s See-dream and SeedEdit (Chen et al., 2025c; Wang et al., 2025), Black Forest Labs’ FLUX (Black For-est Labs, 2025), and Alibaba’s Qwen Image (Wu et al., 2025; Yin et al., 2025), etc. Among these image editing systems, most companies primar-ily emphasize improving intrinsic model control-lability over where to edit or leave untouched, whereas Adobe’s specialist models or partnered models explicitly operate on user-defined masks through Photoshop’s UI interactions to better align with the needs of users for pixel-level pre-cise control and established creative workflows. For example, within 28 days of the release of Pho-toshop v27.0 on October 28, 2025, 1.1 million out of 3.3 million users engaged with the Generative Fill image editing feature, resulting in 36.2 mil-lion total interactions and 82.8 million generative credits consumed. However, serving such GenAI models to mil-lions of users poses significant challenges, partic-ularly as the field transitions from convolution-based U-Nets (Rombach et al., 2022; Podell et al., 2023) to Diffusion Transformers (DiTs) (Peebles and Xie, 2023; Chen et al., 2025b; Zhang et al., 2025) or Transformer-based multimodal models that combine Vision Language Models (VLMs) with DiTs (Adobe, 2025a; Chen et al., 2025c) to achieve higher editing or generation quality. These models are nearly 6× more expensive to serve in cloud environments, driven by slower DiT inference—even when the parameter count    
+
+> Correspondence to: Haoran You (hyou@adobe.com) and Sohrab Amirghodsi (tamirgho@adobe.com).
+> arXiv:2606.13898v1 [cs.CV] 11 Jun 2026 HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing Remove Tool Generative Fill
+> Available at:
+> 33%
+> $1.2 K
+> per
+> hour
+> (a) (b)
+> Figure 1: (a) Representative GenAI features in Adobe products: Remove Tool (Adobe, 2025c) and Generative Fill (Adobe, 2025b). When no text prompt is provided, Generative Fill invokes the Remove model. (b) Number of Amazon AWS p5.48xlarge nodes (8 ×H100) required to serve the Remove feature with and without HiLo-Token. The p5.48xlarge instance costs $55.04 per hour based on public pricing data (Vantage Instances, 2025).
+
+is 1.8× lower than that of U-Nets—as well as the need for hardware upgrades, such as switching from A100 to H100 GPUs, to achieve acceptable latency. Existing compression techniques, such as token-level (Bolya and Hoffman, 2023; Wang et al., 2024; Smith et al., 2024; Chen et al., 2024) or model-level (Kim et al., 2023; Fang et al., 2023) compression, activation caching (Xu et al., 2018; Moura et al., 2019; Ma et al., 2024), and low-bit model quantization (Chen et al., 2025a; Hwang et al., 2025), either provide limited benefits be-yond aggressive timestep distillation (Yin et al., 2024b,a), which is often the most effective and widely adopted approach in industry, or inevitably introduce quality regression; even small-scale dis-tortions on a small subset of test images can im-pact many users and are therefore unacceptable for production deployment. Also, only a few prior works consider the unique optimization proper-ties of user-defined mask–based GenAI models in Photoshop UI interaction settings, such as Lazy-Diffusion (Nitzan et al., 2024) and DiffCR (You et al., 2025), which generate content only within masked regions rather than over the entire image. To reduce serving costs without quality regres-sion, we present HiLo-Token, an input-adaptive token compression framework that allocates a larger token budget to high-frequency, context-rich regions while assigning fewer tokens to low-frequency areas. Our HiLo-Token is built on Lazy-Diffusion (Nitzan et al., 2024), so by default, we retain all tokens within a dilated mask to preserve strong locality and contextual relevance. In addi-tion, HiLo-Token addresses three key challenges. 
+
+First , how can editing quality be preserved under aggressive token dropping? Retaining only tokens within the dilated mask inevitably leads to con-text loss; even with a separate context encoder, most useful context tokens are discarded to match the mask’s spatial shape, as context and mask to-kens are concatenated along the feature dimen-sion (Nitzan et al., 2024). We address this issue through frequency-aware token selection: high-frequency tokens are retained to capture impor-tant local details, while tokens from a 16 × down-sampled image represent low-frequency context that preserve global structure. These additional context tokens are concatenated along the token dimension. Second , how can the overhead of ob-taining context tokens be reduced? LazyDiffusion relies on a transformer-based context encoder that must be fully computed even though most tokens are later dropped. We replace this costly model with a lightweight frequency-based selec-tion mechanism that uses only two convolution operations to compute a spatial edge/frequency map for high-frequency token selection, and a single linear layer to patchify downsampled im-ages for low-frequency tokens, adding only a few milliseconds of negligible overhead. Third , how can token allocation be input-adaptive? Image complexity varies widely: simple scenes require minimal context, whereas complex scenes with rich textures or strong structural symmetry rela-tive to the masked regions demand more tokens. Learning-based importance prediction methods, such as attention-based signals, are costly and unreliable in this setting because (1) relevant con-tent may not yet be generated at early diffusion steps, requiring prediction in the middle of the dif-fusion process, and (2) attention-based methods rely heavily on cross-region relationships and can fail when important content has not yet been gen-
+
+> 2HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+Figure 2: Two representative examples of images with complex textures or occluded symmetric high-frequency patterns, highlighting the importance of token selection by comparing LazyDiffusion with the proposed HiLo-Token. In the token selection maps, white regions denote selected tokens. Images are compressed for visualization, with important details zoomed in; the originals are at 30-megapixel (MP) resolution. 
+
+erated. For example, when removing a traffic sign in front of a symmetric church painting, as shown in Fig. 2, attention-based approaches may over-look the symmetric region on the opposite side because the occluded content does not yet exist to provide meaningful attention signals. Instead, we employ robust Sobel-based edge detection to approximate a spatial frequency map, followed by pooling and regionalization, to guide token selection without relying on semantic priors or cross-region relationships. Extensive experiments on production-level eval-uation data validate the effectiveness of the pro-posed method, achieving DiT speedups of 3.13 ×,2.59 ×, and 1.67 × on A100-80GB for image edit-ing tasks with small, medium, and large mask ratios, corresponding to average ratios of 6.38%, 15.92%, and 35.36%, respectively, without any regression in generation quality. As shown in Fig. 1b, HiLo-Token reduces the number of Ama-zon AWS p5.48xlarge nodes required to serve the Remove feature by 33%. 
+
+## 2. The Proposed Method 
+
+In this section, we introduce the proposed HiLo-Token framework. We first describe the general-ist model, MultiEdit (ME), which is pre-trained 
+
+> 3HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+Figure 3: Representative examples of the Remove Tool and Generative Fill with our token compression applied.   
+
+> 4HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+> Figure 4: ME model architecture overview, including a VAE, a DiT, a refiner, and an optional text encoder.
+> Figure 5: Illustration of the training pipeline.
+
+from Firefly Image 3 (Adobe, 2024). We then present profiling results for ME, revealing the DiT latency bottleneck. Next, guided by a user data study based on mask analysis, we introduce the HiLo-Token design for efficient and effective to-ken allocation. Finally, we detail the post-training procedure for integrating HiLo-Token into ME. 
+
+2.1. Image Editing Generalist 
+
+Our HiLo-Token framework is built on top of the ME model (Chen et al., 2025b; Zhang et al., 2025). As shown in Fig. 5, the ME model is fine-tuned from Firefly’s foundation model (Adobe, 2024). Note that this is not the latest Firefly Im-age model; however, it is well suited for specialist image editing deployment due to its moderate scale with a 2B-parameter DiT backbone. The ME model serves as a generalist across a wide range of image editing tasks, including object and effect insertion, removal, replacement, re-lighting, text editing, camera pose adjustment, and subject extraction. Despite its strong general capabilities, certain tasks benefit from dedicated specialist models fine-tuned on carefully curated, task-specific high-quality datasets, which may otherwise conflict with the objectives of other tasks (e.g., removal versus insertion). As a result, the ME generalist model is further fine-tuned into task-specific specialists, such as erase and gener-ative fill models, which are directly deployed to end users in production. HiLo-Token is applied during supervised fine-tuning (SFT) to adapt the ME model into task-specific specialist models. Regarding the ME model architecture, as il-lustrated in Fig. 4, it comprises four main com-ponents: a VAE encoder, a VAE decoder, a DiT backbone, and a refiner model. A text encoder is optionally included, depending on whether text conditioning is provided. The VAE encodes in-put images and masks into a latent space, en-abling the DiT to operate on compressed repre-sentations (Rombach et al., 2022). The refiner model (Zheng et al., 2022, 2025) is the only com-ponent that operates entirely in pixel space and is closest to the final output images; as a result, it is more sensitive to compression artifacts. In practice, we use full precision or BF16 for the refiner. 
+
+2.2. Model Profiling 
+
+We profile the ME model to better understand its computational bottlenecks. As shown in Fig. 6, we report latency and memory profiling results under four commonly used image resolutions: 512 2, 768 2, 1024 2, and 2048 2. Among the four components of the ME model, the DiT module consistently dominates end-to-end latency, ac-counting for approximately 70% of the total run-time across all resolutions, followed by the VAE decoder and encoder, and the refiner. The mem-ory profile exhibits a different trend. Owing to the adopted memory-efficient attention mecha-nisms (Lefaudeux et al., 2022; Dao, 2023; PyT, 2026), the DiT module is not the primary mem-ory bottleneck at high resolutions. Its memory footprint decreases from 61% at 512 2 resolution     
+
+> 5HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing 8%
+> 74%
+> 9%
+> 9%
+> Total:
+> 0.6s
+> 512×512
+> 11%
+> 68%
+> 14%
+> 6%
+> Total:
+> 1.0s
+> 768×768
+> 12%
+> 68%
+> 16%
+> 4%
+> Total:
+> 1.6s
+> 1024×1024
+> 10%
+> 74%
+> 14%
+> 2%
+> Total:
+> 7.9s
+> 2048×2048
+> 11%
+> 61%
+> 18%
+> 9%
+> Total:
+> 6.4G
+> 15%
+> 47%
+> 26%
+> 13%
+> Total:
+> 8.7G
+> 17%
+> 35% 32%
+> 16%
+> Total:
+> 11.9G
+> 22%
+> 16%
+> 42%
+> 20%
+> Total:
+> 33.9G
+> Latency Memory
+> Encoder DiT-2B Decoder Refiner
+
+Figure 6: Latency and memory profiling results for ME models using standard PyTorch on an A100-80GB GPU across four resolution settings. The VAE encoder latency is counted twice to account for encoding both the image and the mask, while the DiT latency is counted eight times to align with 8-timestep distillation. 
+
+to only 16% at 2048 2. In contrast, the VAE and refiner increasingly dominate memory consump-tion and become the main memory bottlenecks for large-resolution image editing. For cloud serving on A100 or H100 nodes, la-tency and throughput are the dominant factors determining cost–benefit efficiency. In contrast, for edge deployment, memory serves as a hard constraint, as customer GPUs often have limited capacity (e.g., 12 GB), requiring the model to be explicitly optimized to fit within strict memory budgets. In this work, we primarily target latency reduction to lower cloud serving costs; the asso-ciated memory reduction of the DiT model is a by-product of this optimization. 
+
+2.3. HiLo-Token Framework Mask Distribution. Given input images, the user-specified edited regions exhibit substantial diver-sity. We analyze the mask statistics, as shown in Fig. 7. In terms of mask ratio, more than 50% of editing requests involve small masks covering less than 10% of the image area. We further compute the cumulative distribution (shown as the brown curve), which indicates that in 90% of cases, users edit no more than 50% of the image. Regarding mask shape, the majority of cases (55%) consist 0 20 40 60 80 100   
+
+> Mask Ratio (%)
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Percentage (%)
+> (a) Ratio Distribution
+> 025 50
+> Percentage (%)
+> Square
+> Scatter
+> Elongated
+> Irregular
+> 8%
+> 55%
+> 34%
+> 3%
+> (b) Shape Distribution
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Cumulative (%)
+> Cumulative Percentage
+
+Figure 7: User editing mask statistics. (a) Mask ratio distribution; (b) Mask shape category distribution. 
+
+of scattered holes, followed by elongated holes, while the remaining cases are square or irregular shapes. These statistics suggest that it is unnec-essary for the DiT model to operate on the full image in most scenarios. Instead, the content within the masked regions and their relevant sur-rounding context is sufficient. For example, hu-man retouching tasks typically require processing only the relevant skin regions. 
+
+HiLo-Token Selection. As analyzed above, not all tokens or spatial regions contribute meaning-fully to editing results; therefore, careful token selection is crucial for improving efficiency while preserving editing quality. In this work, we pro-pose a HiLo-Token selection method. As illus-trated in Fig. 8, given an input image and the user-
+
+> 6HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing 16 ×
+> Downsample
+> Low-Freq Tokens
+> VAE Encoder
+> Low-Freq
+> Patchify
+
+…
+
+> High-Freq
+> Patchify
+> High-Freq Tokens
+
+…
+
+… …             
+
+> HiLo-Token
+> Token Selection
+> Mask Image
+> −10+1
+> −20+2
+> −10+1
+> −1−2−1000+1 +2 +1 Sobel
+> Operator
+
+* *    
+
+> 𝐺𝐺 =
+> 𝐺𝐺 𝑥𝑥 2+𝐺𝐺 𝑦𝑦 2
+> 𝑥𝑥 𝑦𝑦
+> Spatial Freq Map
+> Regionalization
+> & Thresholding
+> Mask
+> Dilation
+> Max Budget Cap (Optional) Selection Map
+
+Figure 8: Overview of the proposed HiLo-Token framework, illustrating low- and high-frequency token selection. 
+
+provided mask, we employ two parallel branches to extract low-frequency and high-frequency to-kens, respectively. For low-frequency tokens, we aggressively downsample the input image by 16 ×
+
+and then pass it through the VAE encoder fol-lowed by a low-frequency patch-embedding lin-ear layer to capture blurry, global structural infor-mation. Because this aggressive downsampling yields a very small number of tokens, we retain all low-frequency tokens. For high-frequency tokens, we avoid aggressive downsampling and use a VAE with a moderate 8 × compression ratio, together with a patch-embedding layer using an additional 2× compression, to preserve spatial resolution and prevent over-smoothing in the generation re-sults. As a result, this branch produces a large number of tokens, making effective token selec-tion essential. While attention-based methods can provide guidance for token selection, they rely on correlation priors that may fail under occlusions. For example, when removing a traffic sign occlud-ing a symmetric church painting, attention-based approaches may overlook the symmetric region on the opposite side because the occluded content does not yet exist to generate meaningful atten-tion signals. To avoid such limitations, we adopt a simple, correlation-free strategy: we directly estimate a normalized spatial-frequency map us-ing Sobel operators and select tokens whose fre-quency magnitude exceeds a threshold (e.g., 0.1). However, naive thresholding yields spatially scat-tered tokens that are ineffective for the model to process. To address this, we further region-alize the selected token map by applying 16 ×
+
+spatial pooling to the frequency map, aligning it with the token grid. This produces more co-herent, region-level token selections. In addition, we dilate the user mask to retain nearby contex-tual tokens and combine the dilated mask with the high-frequency selection map. The compu-tational cost of this token selection is negligible (approximately 10 ms). Finally, the selected high-frequency tokens are concatenated with the low-frequency tokens to construct the HiLo-Token rep-resentation, which is subsequently processed by the DiT. We note that the proposed input-adaptive HiLo-Token representation generalizes well to a broad spectrum of editing tasks and the associ-ated generalist or specialist models. 
+
+2.4. Post-training with HiLo-Token Supervised Finetuning (SFT). The first step in adapting the ME generalist into a specialist for image editing tasks such as removal or genera-tive fill is to perform supervised fine-tuning on a 
+
+> 7HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+carefully curated dataset. For instance, when fine-tuning the removal model, we use approximately 407,630 image–mask pairs spanning datasets for object removal (including both synthetically ren-dered and real-world data), retouching, object stitching and composition, manual masking, and omni-edit mixed tasks, across multiple image resolutions. Fine-tuning is initialized from the ME generalist checkpoint and runs for approxi-mately 20K iterations. We observe that the fine-tuning recipe must be carefully co-designed with the data distribution. In particular, if too few object-removal samples are included, the model requires significantly longer training to suppress object insertion artifacts during removal. Con-versely, excessively long fine-tuning can exacer-bate seam artifacts, necessitating careful moni-toring to achieve a balanced trade-off. Moreover, different editing tasks inherently favor different fine-tuning recipes to achieve optimal quality. For instance, generative fill and removal are trained as separate specialist models, as these tasks are partially contradictory: one focuses on adding content while the other removes it. Joint opti-mization can lead to interference effects, such as insertion artifacts during removal, motivating task-specific fine-tuning strategies. 
+
+Few-step Distillation. After obtaining the teacher model via supervised fine-tuning (SFT), we perform timestep distillation to improve infer-ence efficiency prior to deployment. The teacher model employs a 50-step diffusion process, which is prohibitively slow for practical use, requiring ap-proximately 7 seconds to generate a 1K-resolution image even on high-end A100 GPUs. Ideally, we would like the fast student generator to produce samples that are indistinguishable from those generated by the teacher. Following Distribution Matching Distillation (DMD) (Yin et al., 2024b,a), we minimize the Kullback–Leibler (KL) diver-gence between the student and teacher image distributions, denoted as 𝑝 s and 𝑝 t, respectively: 
+
+𝐷 KL (𝑝 s ‖ 𝑝 t) = E𝑥 ∼𝑝 s(︂ log 𝑝 s(𝑥 )
+
+𝑝 t(𝑥 ))︂ 
+
+= E𝑧 ∼𝒩 (0 ,𝐼 ) (log 𝑝 s(𝑥 ) − log 𝑝 t(𝑥 )) ,
+
+where 𝑥 = 𝐺 𝑠 (𝑧 ). Direct computing the likeli-hood term is intractable. Following DMD, we opti-mize this objective via gradient-based distribution matching using the score functions of the teacher and student models. In practice, the teacher pro-vides an estimate of the score ∇𝑥 log 𝑝 t(𝑥 ), which serves as a supervision signal for aligning the stu-dent distribution with that of the teacher. This for-mulation effectively transfers generative knowl-edge from the teacher to the student, enabling few-step (e.g., 8-step) inference while preserving high-fidelity editing quality. 
+
+## 3. Experiments 
+
+3.1. Experiment Settings Model and Dataset. We apply our HiLo-Token framework on top of the ME model described in Sec. 2.1. For finetuning, we use an internally cu-rated dataset comprising approximately 407,630 image–mask pairs, spanning multiple editing cate-gories and including both synthetic and real data. 
+
+SFT, Distillation, and Inference Settings. For SFT, we optimize the ME DiT and patchify lay-ers using AdamW with a learning rate of 1.2 ×
+
+10 −5, weight decay 10 −2, and 𝛽 = (0 .9, 0.95) ,together with a linear warmup–cosine decay schedule with 2K warmup steps and a minimum learning rate of 10 −5. Training is performed with FSDP full sharding across four nodes of 
+
+8×A100 GPUs, gradient clipping set to 1.0, EMA with decay 0.9999 , and checkpoints saved ev-ery 1K steps. For DMD-style distillation, we train an eight-step student using the timestep list {999 , 917 , 825 , 724 , 612 , 486 , 344 , 184 } under BF16 mixed precision and FSDP across four nodes of 8×A100 GPUs, using AdamW with a learning rate of 2 × 10 −5 and weight decay 10 −2, a total batch size of 128, EMA decay 0.995 from step 0, and a DMD objective augmented with adversarial learning with a GAN weight of 0.1. The discrim-inator is trained with AdamW using a learning rate of 5 × 10 −5 and a softplus loss. For inference, we evaluate on a suite of internal benchmarks, generating four samples per input with fixed man-ual seeds; sampling uses the same timestep list as distillation, a constant CFG of 1.0, a prompt suffix # photorealistic , and a negative prompt 
+
+cartoonish, distorted, mask, deformed, low quality, bad or poor aesthetics . We exclude samples containing harmful or biased content              
+
+> 8HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing 020 40 60 80 100
+> User Preference (%)
+> Remove
+> GenFill
+> GenExpand
+> 27% 48% 25%
+> 24% 70% 6%
+> 10% 81% 9%
+> w/ HiLo-Token Tie w/o HiLo-Token
+
+Figure 9: User study results w/ and w/o HiLo-Token. 
+
+and restrict evaluation to prevent malicious use cases, such as attempts to remove clothing or oth-erwise violate personal integrity. 
+
+Evaluation. We argue that existing quantita-tive metrics, such as FID and CLIP score, do not accurately reflect image editing quality. We there-fore rely on evaluations conducted by a dedicated quality engineering (QE) team, who assess edit-ing results across a wide range of categories and compare model performance with and without our HiLo-Token. Latency improvements are mea-sured on A100-80GB GPUs. 
+
+3.2. Generalist Performance 
+
+The ME generalist supports a wide range of image editing tasks with consistent performance. On the ImgEdit benchmark (Ye et al., 2025), it achieves an overall score (4.3) comparable to state-of-the-art models such as FLUX Kontext (Labs et al., 2025), Nano Banana (Google, 2025a), and GPT Image (OpenAI, 2025). Moreover, on soft effect removal tasks, the ME generalist surpasses com-peting models and methods (Zhang et al., 2025). 
+
+3.3. Result of Specialists with HiLo-Token User Study Statistics. We conduct a user study to evaluate model performance with and without the proposed HiLo-Token. As shown in Fig. 9, we evaluate three ME specialists for removal, genera-tive fill, and generative expand tasks, all of which are available in Adobe products. In most cases, token pruning produces editing results of com-parable quality, with tie rates of 48%, 70%, and 
+
+Figure 10: Latency speedup results for the ME model with HiLo-Token across three ranges of mask ratios. 
+
+81% for the three tasks, respectively. Models with and without HiLo-Token each exhibit their own strengths, with comparable numbers of winning cases, and in some settings the model with HiLo-Token performs better. Notably, for generative fill with text prompts, tokens outside a dilated mask can be more aggressively or even fully pruned, since the inserted content is largely self-contained within the user-specified mask area. 
+
+Speedup Analysis. We evaluate the latency speedup achieved by applying HiLo-Token. Specif-ically, we measure performance on 92 represen-tative user editing cases and partition them into three evenly sized groups based on mask ratio, corresponding to small, medium, and large holes. As shown in Fig. 10, HiLo-Token accelerates the DiT model by 1.67 ×, 2.59 ×, and 3.13 × for the three groups, respectively. When considering the end-to-end inference pipeline, this translates to overall speedups of 1.33 ×, 1.66 ×, and 1.77 ×.These results demonstrate the effectiveness of our token compression technique. 
+
+Compatibility with Quantization and Distil-lation. HiLo-Token is fully compatible with quan-tization techniques, such as FP8, yielding up to 40% additional latency reduction on DiTs. It also integrates seamlessly with timestep distillation: while our main results use 8 sampling steps to preserve optimal quality, the model can be further distilled to 5 steps, achieving an additional 37.5% latency reduction with only minor and acceptable quality degradation affecting fewer than 5% of 
+
+> 9HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+images. Moreover, HiLo-Token remains compat-ible with optimizations applied to the VAE and refiner models, enabling end-to-end efficiency im-provements across the entire pipeline. 
+
+## 4. Related Works 
+
+Efficient DiTs. DiTs (Peebles and Xie, 2023) have demonstrated strong generative capacity but remain computationally expensive, primar-ily due to the quadratic complexity with respect to the number of tokens. As a result, a growing body of work has focused on improving the de-ployment efficiency of DiTs. Existing approaches can be broadly categorized along three orthog-onal dimensions: token, layer, and timestep op-timization. Token-level efficiency methods aim to reduce the number of tokens involved in at-tention computation. Prior work explores token merging (Bolya and Hoffman, 2023), token prun-ing (Wang et al., 2024; Whalen et al., 2025), and spatial resolution downsampling (Smith et al., 2024) to eliminate redundant tokens. More task-specific strategies have also emerged (Nitzan et al., 2024; You et al., 2025), which exploit the sparsity patterns for inpainting tasks. Layer-level efficiency reduces redundant computation across network depth via structural simplification or computation reuse. Representative approaches include layer pruning (Kim et al., 2023), channel pruning (Fang et al., 2023), and intermediate fea-ture caching (Xu et al., 2018; Moura et al., 2019; Ma et al., 2024). However, these methods often incur quality degradation and may be less effec-tive when combined with timestep distillation. Timestep-level efficiency targets the iterative na-ture of diffusion sampling. Knowledge distillation has been extensively studied for diffusion mod-els (Salimans and Ho, 2022; Meng et al., 2023; Yin et al., 2024b; Kang et al., 2024; Yin et al., 2024a; Sauer et al., 2025), significantly reduc-ing the number of required timesteps. Our HiLo-Token targets principled, input-adaptive token pruning to improve efficiency without quality re-gression for image editing tasks, and is designed to operate on top of timestep distillation. 
+
+Dynamic Inference. Prior work on improv-ing inference efficiency can be broadly divided into static model compression (Deng et al., 2020) and dynamic inference strategies that adapt com-putation based on the input or intermediate states (Wang et al., 2020; Zhao et al., 2024; Wu et al., 2018; Wang et al., 2018; Raposo et al., 2024). Dynamic inference methods typically mod-ulate execution along the network depth, for ex-ample through early-exit mechanisms (Teerapit-tayanon et al., 2016; Huang et al., 2017; Moon et al., 2023) or conditional layer skipping (Wang et al., 2020; Wu et al., 2018; Wang et al., 2018), often relying on auxiliary predictors or gating net-works. More fine-grained adaptations have also been explored at the channel or token level, such as channel skipping (Mullapudi et al., 2018; Fang et al., 2023) and mixture-of-depths models (Ra-poso et al., 2024; You et al., 2025), which allow different tokens to traverse different computa-tional paths. Our HiLo-Token focuses on input-adaptive token selection tailored to DiTs, enabling dynamic computation reduction for each image editing query while remaining compatible with distillation and preserving editing quality. 
+
+## 5. Conclusion 
+
+In this work, we propose HiLo-Token, an input-adaptive and principled token compression frame-work that allocates more computation to high-frequency, context-rich regions while assigning fewer tokens to low-frequency areas. HiLo-Token is used to train efficient generative image editing models that are deployed in Adobe applications, such as Generative Fill and Remove. By enabling dynamic token allocation without compromising editing quality, HiLo-Token provides a practical and scalable solution for accelerating DiTs in real-world creative workflows. Users can experience these models directly in the latest Photoshop. 
+
+## Acknowledgment 
+
+We acknowledge the scientists, engineers, and leaders across Adobe Firefly and Research who built Firefly Image 3 and the associated gener-alist editing model, as well as the many engi-neers who helped ship the feature, such as Shayan Chandrashekar. We also thank the QE teams for 
+
+> 10 HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+their evaluation efforts, including Yukie Taka-hashi, Pablo Serrano, Rick Mandia, and Irina Maderych. We are grateful to our product man-agers, Meredith Payne Stotzner and Dongmei Li, for their coordination and support. Finally, we acknowledge the leadership from the DI organiza-tion, including Sohrab Amirghodsi, Betty Leong, Sarah Kong, David Hackel, and Maria Yap. 
+
+## References 
+
+Adobe. Adobe introduces firefly image 3 foun-dation model to take creative exploration and ideation to new heights. https://news.ado be.com/news/news-details/2024/adobe-int roduces-firefly-image-3-foundation-mod el-to-take-creative-exploration-and-ide ation-to-new-heights , April 2024. Adobe Newsroom. Adobe. Adobe firefly: The next evolution of cre-ative ai is here. https://blog.adobe.com/en/ publish/2025/04/24/adobe-firefly-next-e volution-creative-ai-is-here , April 2025a. Adobe Blog. Adobe. Generative fill: Ai-powered image editing in adobe photoshop. https://www.adobe.com/ products/photoshop/generative-fill.html ,2025b. Adobe Product. Adobe. Remove tool in adobe photoshop. https: //www.adobe.com/products/photoshop/rem ove-object.html , 2025c. Adobe Product. Black Forest Labs. Flux.2: Frontier visual intelli-gence. https://bfl.ai/blog/flux-2 , Novem-ber 2025. Official FLUX.2 model announce-ment. Daniel Bolya and Judy Hoffman. Token merging for fast stable diffusion. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4599–4603, 2023. Junyu Chen, Han Cai, Junsong Chen, Enze Xie, Shang Yang, Haotian Tang, Muyang Li, Yao Lu, and Song Han. Deep compression autoencoder for efficient high-resolution diffusion models. 
+
+arXiv preprint arXiv:2410.10733 , 2024. Lei Chen, Yuan Meng, Chen Tang, Xinzhu Ma, Jingyan Jiang, Xin Wang, Zhi Wang, and Wenwu Zhu. Q-dit: Accurate post-training quantization for diffusion transformers. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28306–28315, 2025a. Xi Chen, Zhifei Zhang, He Zhang, Yuqian Zhou, Soo Ye Kim, Qing Liu, Yijun Li, Jianming Zhang, Nanxuan Zhao, Yilin Wang, et al. Unireal: Uni-versal image generation and editing via learn-ing real-world dynamics. In Proceedings of the Computer Vision and Pattern Recognition Con-ference , pages 12501–12511, 2025b. Yunpeng Chen, Yu Gao, Lixue Gong, Meng Guo, Qiushan Guo, Zhiyao Guo, Xiaoxia Hou, Weilin Huang, Yixuan Huang, Xiaowen Jian, Huafeng Kuang, Zhichao Lai, Fanshi Li, Liang Li, Xi-aochen Lian, Chao Liao, Liyang Liu, Wei Liu, Yanzuo Lu, Zhengxiong Luo, Tongtong Ou, Guang Shi, Yichun Shi, Shiqi Sun, Yu Tian, Zhi Tian, Peng Wang, Rui Wang, Xun Wang, Ye Wang, Guofeng Wu, Jie Wu, Wenxu Wu, Yonghui Wu, Xin Xia, Xuefeng Xiao, Shuang Xu, Xin Yan, Ceyuan Yang, Jianchao Yang, Zhonghua Zhai, Chenlin Zhang, Heng Zhang, Qi Zhang, Xinyu Zhang, Yuwei Zhang, Shi-jia Zhao, Wenliang Zhao, and Wenjia Zhu. Seedream 4.0: Toward next-generation mul-timodal image generation, 2025c. URL https: //arxiv.org/abs/2509.20427 .Tri Dao. Flashattention-2: Faster attention with better parallelism and work partitioning. arXiv preprint arXiv:2307.08691 , 2023. Lei Deng, Guoqi Li, Song Han, Luping Shi, and Yuan Xie. Model compression and hardware acceleration for neural networks: A compre-hensive survey. Proceedings of the IEEE , 108(4): 485–532, 2020. Gongfan Fang, Xinyin Ma, and Xinchao Wang. Structural pruning for diffusion models. In Ad-vances in Neural Information Processing Systems ,2023. Google. Introducing gemini 2.5 flash image (aka nano-banana). https://developers.googleb 
+
+> 11 HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+log.com/introducing-gemini-2-5-flash-i mage/ , August 2025a. Google Blog. Google. Introducing nano banana pro. https: //blog.google/technology/ai/nano-banan a-pro/ , November 2025b. Google Blog. Gao Huang, Danlu Chen, Tianhong Li, Felix Wu, Laurens Van Der Maaten, and Kilian Q Wein-berger. Multi-scale dense networks for resource efficient image classification. arXiv preprint arXiv:1703.09844 , 2017. Younghye Hwang, Hyojin Lee, and Joonhyuk Kang. Tq-dit: Efficient time-aware quantiza-tion for diffusion transformers. arXiv preprint arXiv:2502.04056 , 2025. Minguk Kang, Richard Zhang, Connelly Barnes, Sylvain Paris, Suha Kwak, Jaesik Park, Eli Shechtman, Jun-Yan Zhu, and Taesung Park. Distilling diffusion models into conditional gans. ECCV 2024 , 2024. Bo-Kyeong Kim, Hyoung-Kyu Song, Thibault Castells, and Shinkook Choi. Bk-sdm: Alightweight, fast, and cheap version of stable diffusion. arXiv preprint arXiv:2305.15798 ,2023. Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, et al. Flux. 1 kontext: Flow matching for in-context image genera-tion and editing in latent space. arXiv preprint arXiv:2506.15742 , 2025. Benjamin Lefaudeux, Francisco Massa, Diana Liskovich, Wenhan Xiong, Vittorio Caggiano, Sean Naren, Min Xu, Jieru Hu, Marta Tintore, Susan Zhang, Patrick Labatut, Daniel Haziza, Luca Wehrstedt, Jeremy Reizenstein, and Grig-ory Sizov. xformers: A modular and hack-able transformer modelling library. https: //github.com/facebookresearch/xformers ,2022. Xinyin Ma, Gongfan Fang, Michael Bi Mi, and Xin-chao Wang. Learning-to-cache: Accelerating diffusion transformer via layer caching. arXiv preprint arXiv:2406.01733 , 2024. Chenlin Meng, Robin Rombach, Ruiqi Gao, Diederik Kingma, Stefano Ermon, Jonathan Ho, and Tim Salimans. On distillation of guided diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14297–14306, 2023. Taehong Moon, Moonseok Choi, EungGu Yun, Jongmin Yoon, Gayoung Lee, and Juho Lee. Early exiting for accelerated inference in diffu-sion models. In ICML 2023 Workshop on Struc-tured Probabilistic Inference & Generative Mod-eling , 2023. Giovane CM Moura, John Heidemann, Ricardo de O Schmidt, and Wes Hardaker. Cache me if you can: Effects of dns time-to-live. In Pro-ceedings of the Internet Measurement Conference ,pages 101–115, 2019. Ravi Teja Mullapudi, William R Mark, Noam Shazeer, and Kayvon Fatahalian. Hydranets: Specialized dynamic architectures for efficient inference. In Proceedings of the IEEE Confer-ence on Computer Vision and Pattern Recogni-tion , pages 8080–8089, 2018. Yotam Nitzan, Zongze Wu, Richard Zhang, Eli Shechtman, Daniel Cohen-Or, Taesung Park, and Michaël Gharbi. Lazy diffusion transformer for interactive image editing. In European Conference on Computer Vision , pages 55–72. Springer, 2024. OpenAI. The new chatgpt images is here. https: //openai.com/index/new-chatgpt-images-i s-here/ , December 2025. OpenAI Product Announcement. William Peebles and Saining Xie. Scalable dif-fusion models with transformers. In Proceed-ings of the IEEE/CVF International Conference on Computer Vision , pages 4195–4205, 2023. Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution im-age synthesis. arXiv preprint arXiv:2307.01952 ,2023. 
+
+torch.nn.functional.scaled_dot_product_attention -PyTorch Documentation . PyTorch, 2026. URL 
+
+> 12 HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+https://docs.pytorch.org/docs/stable/g enerated/torch.nn.functional.scaled_do t_product_attention.html .David Raposo, Sam Ritter, Blake Richards, Timothy Lillicrap, Peter Conway Humphreys, and Adam Santoro. Mixture-of-depths: Dy-namically allocating compute in transformer-based language models. arXiv preprint arXiv:2404.02258 , 2024. Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF confer-ence on computer vision and pattern recognition ,pages 10684–10695, 2022. Tim Salimans and Jonathan Ho. Progressive dis-tillation for fast sampling of diffusion models. 
+
+arXiv preprint arXiv:2202.00512 , 2022. Axel Sauer, Dominik Lorenz, Andreas Blattmann, and Robin Rombach. Adversarial diffusion dis-tillation. In European Conference on Computer Vision , pages 87–103. Springer, 2025. Ethan Smith, Nayan Saxena, and Aninda Saha. Todo: Token downsampling for efficient gener-ation of high-resolution images. arXiv preprint arXiv:2402.13573 , 2024. Surat Teerapittayanon, Bradley McDanel, and Hsiang-Tsung Kung. Branchynet: Fast infer-ence via early exiting from deep neural net-works. In 2016 23rd international conference on pattern recognition (ICPR) , pages 2464–2469. IEEE, 2016. Vantage Instances. p5.48xlarge pricing and specs – aws ec2. https://instances.vantage.sh /aws/ec2/p5.48xlarge?currency=USD , 2025. Vantage Instances website; provides EC2 in-stance specs and pricing information. Hongjie Wang, Difan Liu, Yan Kang, Yijun Li, Zhe Lin, Niraj K Jha, and Yuchen Liu. Attention-driven training-free efficiency enhancement of diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16080–16089, 2024. Peng Wang, Yichun Shi, Xiaochen Lian, Zhonghua Zhai, Xin Xia, Xuefeng Xiao, Weilin Huang, and Jianchao Yang. Seededit 3.0: Fast and high-quality generative image editing, 2025. URL 
+
+https://arxiv.org/abs/2506.05083 .Xin Wang, Fisher Yu, Zi-Yi Dou, Trevor Darrell, and Joseph E Gonzalez. Skipnet: Learning dy-namic routing in convolutional networks. In 
+
+Proceedings of the European conference on com-puter vision (ECCV) , pages 409–424, 2018. Yue Wang, Jianghao Shen, Ting-Kuei Hu, Pengfei Xu, Tan Nguyen, Richard Baraniuk, Zhangyang Wang, and Yingyan Lin. Dual dynamic infer-ence: Enabling more efficient, adaptive, and controllable deep inference. IEEE Journal of Selected Topics in Signal Processing , 14(4):623– 633, 2020. Lexington Whalen, Zhenbang Du, Haoran You, Chaojian Li, Sixu Li, and Yingyan Lin. Early-bird diffusion: Investigating and leveraging timestep-aware early-bird tickets in diffusion models for efficient training. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 7675–7684, 2025. Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, Yuxiang Chen, Zecheng Tang, Zekai Zhang, Zhengyi Wang, An Yang, Bowen Yu, Chen Cheng, Dayiheng Liu, Deqing Li, Hang Zhang, Hao Meng, Hu Wei, Jingyuan Ni, Kai Chen, Kuan Cao, Liang Peng, Lin Qu, Minggang Wu, Peng Wang, Shuting Yu, Tingkun Wen, Wensen Feng, Xiaoxiao Xu, Yi Wang, Yichang Zhang, Yongqiang Zhu, Yujia Wu, Yuxuan Cai, and Zenan Liu. Qwen-image technical report, 2025. URL https://arxiv. org/abs/2508.02324 .Zuxuan Wu, Tushar Nagarajan, Abhishek Kumar, Steven Rennie, Larry S Davis, Kristen Grauman, and Rogerio Feris. Blockdrop: Dynamic infer-ence paths in residual networks. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 8817–8826, 2018. Mengwei Xu, Mengze Zhu, Yunxin Liu, Felix Xi-aozhu Lin, and Xuanzhe Liu. Deepcache: Prin-cipled cache for mobile deep vision. In Pro-
+
+> 13 HiLo-Token: Input-Adaptive High–Low Frequency Token Compression for Efficient Image Editing
+
+ceedings of the 24th annual international con-ference on mobile computing and networking ,pages 129–144, 2018. Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Sheng-hai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A unified image edit-ing dataset and benchmark. arXiv preprint arXiv:2505.20275 , 2025. Shengming Yin, Zekai Zhang, Zecheng Tang, Kaiyuan Gao, Xiao Xu, Kun Yan, Jiahao Li, Yilei Chen, Yuxiang Chen, Heung-Yeung Shum, Li-onel M. Ni, Jingren Zhou, Junyang Lin, and Chenfei Wu. Qwen-image-layered: Towards inherent editability via layer decomposition, 2025. URL https://arxiv.org/abs/2512.156 03 .Tianwei Yin, Michaël Gharbi, Taesung Park, Richard Zhang, Eli Shechtman, Fredo Durand, and Bill Freeman. Improved distribution match-ing distillation for fast image synthesis. Ad-vances in neural information processing systems ,37:47455–47487, 2024a. Tianwei Yin, Michaël Gharbi, Richard Zhang, Eli Shechtman, Fredo Durand, William T Freeman, and Taesung Park. One-step diffusion with dis-tribution matching distillation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 6613–6623, 2024b. Haoran You, Connelly Barnes, Yuqian Zhou, Yan Kang, Zhenbang Du, Wei Zhou, Lingzhi Zhang, Yotam Nitzan, Xiaoyang Liu, Zhe Lin, et al. Layer-and timestep-adaptive differentiable to-ken compression ratios for efficient diffusion transformers. In Proceedings of the Computer Vi-sion and Pattern Recognition Conference , pages 18072–18082, 2025. Jingdong Zhang, Lingzhi Zhang, Qing Liu, Mang Tik Chiu, Connelly Barnes, Yizhou Wang, Haoran You, Xiaoyang Liu, Yuqian Zhou, Zhe Lin, et al. Uniser: A foundation model for unified soft effects removal. arXiv preprint arXiv:2511.14183 , 2025. Wangbo Zhao, Yizeng Han, Jiasheng Tang, Kai Wang, Yibing Song, Gao Huang, Fan Wang, and Yang You. Dynamic diffusion transformer. arXiv preprint arXiv:2410.03456 , 2024. Haitian Zheng, Zhe Lin, Jingwan Lu, Scott Co-hen, Eli Shechtman, Connelly Barnes, Jianming Zhang, Ning Xu, Sohrab Amirghodsi, and Jiebo Luo. Image inpainting with cascaded modula-tion gan and object-aware training. In European conference on computer vision , pages 277–296. Springer, 2022. Haitian Zheng, Yuan Yao, Yongsheng Yu, Yuqian Zhou, Jiebo Luo, and Zhe Lin. Pixperfect: Seamless latent diffusion local editing with discriminative pixel-space refinement. arXiv preprint arXiv:2512.03247 , 2025.

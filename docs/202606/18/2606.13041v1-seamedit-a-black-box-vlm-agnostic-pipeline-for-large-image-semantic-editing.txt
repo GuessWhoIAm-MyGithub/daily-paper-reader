@@ -1,0 +1,764 @@
+Title: SeamEdit: A Black-Box VLM-Agnostic Pipeline for Large-Image Semantic Editing
+
+URL Source: https://arxiv.org/pdf/2606.13041v1
+
+Published Time: Fri, 12 Jun 2026 00:52:04 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# SeamEdit: A Black-Box VLM-Agnostic Pipeline for Large-Image Semantic Editing 
+
+## Xiangyu Lyu 1 and Dan Lei 21Technische Universität Darmstadt, Darmstadt, Germany 
+
+> 2
+
+## Fine-Arts Educator, Yuncheng Middle School, Yuncheng, Shanxi, China June 2026 
+
+Abstract 
+
+Semantic region editing for large images must satisfy two requirements at the same time: high generative quality and natural integration with surrounding content. Some related methods rely on white-box models and leave the strong generation capability of closed-source models underexplored. Directly applying closed-source models to tiled editing, however, introduces several failure modes: semantic deformation, canvas-level alignment drift, and visible seam artifacts. This paper presents SeamEdit, a training-free and model-agnostic pipeline that treats any VLM with inpainting capa-bility as a black-box oracle. SeamEdit mitigates these issues through a five-stage post-hoc pipeline: overlay-based tile decomposition, black-box VLM inpainting, geometric and color-consistency correc-tion, seam-risk-based multi-candidate ranking, and dynamic-programming curved seam fusion. The pipeline reduces seam visibility and supports semantic modification of arbitrary tile regions. Our code is available at https://github.com/lvxiangyu11/SeamEdit .
+
+# 1 Introduction 
+
+With the development of vision-language models (VLMs) and diffusion-based generative models, the quality of AI-generated and AI-edited images has continued to improve [10, 5, 16, 6]. However, applying these models to large images still faces practical challenges: most VLMs operate at fixed input resolutions, which makes tile-based processing necessary for high-resolution content editing. In practical scenarios such as game art asset production, concept-art iteration, and semantic modification of large maps, users need to edit local semantic regions in images that exceed the input resolution of a single VLM call, while preserving natural continuity between the edited region and its surrounding content [11, 19, 14]. 
+
+Problem formulation. When closed-source black-box VLMs are directly used as inpainting back-ends for tiled editing, two types of failure commonly appear. The first is alignment drift : black-box models usually do not expose pixel-level geometric consistency constraints, and the generated tile may have slight translation, rotation, or scale deviations relative to its original canvas position. The sec-ond is seam artifacts : adjacent tiles generated independently lack cross-tile context, leading to visible discontinuities along tile boundaries. 
+
+Limitations of existing methods. Existing tile-based high-resolution processing methods, such as MultiDiffusion [4], MobilePicasso [11], and HiPrompt [13], extend generation resolution and improve lo-cal consistency by controlling diffusion sampling, latent projection, or patch-wise prompting mechanisms. These methods require access to intermediate states in the diffusion pipeline, and therefore cannot be directly applied to closed-source VLMs that expose only an API-level input-output interface. RDIS-titcher [19] introduces a quality assessment metric based on multimodal large models, but its generation backend is still a self-supervised text-to-image diffusion model. Therefore, large-image semantic editing with black-box VLMs still requires a processing pipeline that does not rely on model-internal states. 
+
+This work. We propose SeamEdit, a training-free and VLM-agnostic pipeline that treats any VLM with inpainting capability as a black-box oracle and introduces dedicated mechanisms for the failure modes described above. The main contributions of this paper are as follows: 1. Overlay-based black-box tiled editing : an overlay-tile decomposition and masking strategy that enables large-image semantic editing through black-box VLM inpainting, while providing boundary context and overlap buffers for subsequent correction and fusion. 1
+
+> arXiv:2606.13041v1 [cs.CV] 11 Jun 2026
+
+2. Post-hoc candidate correction and ranking : a candidate-level processing module that com-bines Grid-SIFT geometric alignment, local color-consistency correction, and seam-risk-based qual-ity scoring to select reliable VLM-generated tile results without accessing model-internal states. 3. Seam-aware integration of selected tile candidates : a post-hoc fusion stage that adapts content-adaptive seam search and feathered blending to the black-box VLM tiled-editing setting, merging selected candidates back into the global canvas while reducing visible boundary artifacts. The rest of this paper is organized as follows. Section 2 reviews related work. Section 3 describes each module of the pipeline. Section 4 reports experimental results. Section 5 discusses limitations and application scenarios. Section 6 concludes the paper. 
+
+# 2 Related Work 
+
+## 2.1 Tile-Based High-Resolution Image Processing 
+
+To overcome the resolution limit of a single model call, researchers have proposed various tile-based methods for high-resolution image generation and editing. Diffusion models and their latent-space variants provide widely used generative backends for high-quality image synthesis [10, 17, 16]. MultiDiffusion [4] achieves training-free large-image generation by fusing denoising directions over overlapping crops, but repeated texture patterns may still occur. MobilePicasso [11] decomposes high-resolution editing into standard-resolution editing, latent projection, and context-aware tiled upsampling for improved mobile efficiency. HiPrompt [13] uses a multimodal large model to generate patch-wise local descriptions and combines them with a global prompt to improve semantic consistency in high-resolution generation. Tiled Diffusion [14] generates seamlessly tileable images under multiple tile-connection constraints. These methods all rely on access to internal diffusion-model states, such as latent variables, denoising directions, or attention maps, whereas closed-source VLMs expose only input-output interfaces; therefore, they cannot be directly used for black-box VLM tiled editing. 
+
+## 2.2 Diffusion-Based Image Stitching 
+
+Recent work in image stitching focuses on removing seams and tonal inconsistencies that arise when multiple images are merged. Classical panorama stitching typically relies on local invariant features for image matching and registration [7], and uses multi-resolution blending or gradient-domain editing to smooth boundary transitions [8, 15]. RDIStitcher [19] reformulates image fusion and rectangling as a reference-based inpainting problem and introduces a multimodal-large-model-based quality assessment metric, but its generative backend remains a self-supervised fine-tuned text-to-image diffusion model that requires white-box training access. Seamless-Through-Breaking [9] addresses geometric alignment for panoramic stitching from multiple photographs, which differs from the single-large-image tiled semantic editing setting considered in this paper. This class of methods targets different usage scenarios and does not directly cover alignment drift in black-box VLM tiled editing. 
+
+## 2.3 VLM-Based Image Editing 
+
+Recent work has explored the use of VLMs for semantic image editing. In diffusion-based image editing, InstructPix2Pix [6] and MagicBrush [21] focus on natural-language-instruction-driven real-image editing, while Blended Latent Diffusion [2] restricts editing to user-specified local regions. UniEdit-I [3] proposes a training-free closed-loop editing framework in a unified VLM semantic latent space, but it focuses on single-image closed-loop editing and does not address large-image tiling or seam fusion. The above work does not address alignment drift and seam artifacts that arise when black-box VLMs are applied to large-image tiled editing. This paper focuses on this more specific tiled editing setting. 23 Method 
+
+## 3.1 Pipeline Overview 
+
+Figure 1: Overview of the SeamEdit pipeline. The five stages are tile decomposition, VLM inpainting, geometric and color correction, multi-candidate ranking, and dynamic-programming curved seam fusion. Figure 1 shows the five-stage pipeline of SeamEdit. Given a large image I ∈ RH×W ×3, the user selects one or more tile regions for semantic editing. The pipeline proceeds through the following stages: (1) overlay-based tile decomposition and mask generation; (2) VLM inpainting for each tile, where each tile produces K candidate results; (3) geometric and color-consistency correction; (4) seam risk measurement and multi-candidate ranking; (5) dynamic-programming curved seam fusion, which stitches the selected candidates back into the global image. 
+
+## 3.2 Tile Decomposition with Overlay Masks 
+
+Given an input large image I ∈ RH×W ×3, SeamEdit first divides the image into an R × C regular grid. For the tile at row r and column c, its core region Cr,c is defined as the independent image region assigned to this tile during final stitching: 
+
+Cr,c = [ x0 
+
+> c
+
+, x 1 
+
+> c
+
+) × [y0 
+
+> r
+
+, y 1 
+
+> r
+
+),
+
+where 
+
+x0 
+
+> c
+
+= round (cW/C ), x1 
+
+> c
+
+= round (( c + 1) W/C ),y0 
+
+> r
+
+= round (rH/R ), y1 
+
+> r
+
+= round (( r + 1) H/R ).
+
+3Figure 2: Overlay-based tile decomposition. The thick blue lines indicate the core region Cr,c , and the thin red frame indicates the tile region Tr,c obtained by expanding the core by δ pixels in all directions. The expanded region provides boundary context for black-box VLM inpainting and an overlap buffer for subsequent seam fusion. To provide local boundary context to the black-box VLM, SeamEdit expands each core region by an overlay width δ on all four sides. The actual tile region Tr,c sent to the VLM is defined as 
+
+Tr,c = [max(0 , x 0 
+
+> c
+
+− δ), min( W, x 1 
+
+> c
+
++ δ)) × [max(0 , y 0 
+
+> r
+
+− δ), min( H, y 1 
+
+> r
+
++ δ)) .
+
+Here, δ denotes the overlay width. Tiles located on image boundaries are clipped to the original image canvas, so corner and edge tiles naturally have smaller overlay regions. In the implementation, the program first computes the core rectangle from the regular grid, expands it with the overlay, and then constrains the tile rectangle to the image range using a clamp operation. After cropping the tile image, SeamEdit converts the core-region coordinates into the local tile coor-dinate system. Let (x0 
+
+> T
+
+, y 0 
+
+> T
+
+) denote the top-left coordinate of Tr,c . The local core region is 
+
+˜Cr,c = Cr,c − (x0 
+
+> T
+
+, y 0 
+
+> T
+
+).
+
+Based on this local core region, the system generates a binary inpainting mask Mr,c for each tile: 
+
+Mr,c (p) = 
+
+(
+
+255 , p ∈ ˜Cr,c ,
+
+0, p ∈ Tr,c \ ˜Cr,c .
+
+The tile image and its corresponding mask are then resized according to the target VLM input size. The RGB image uses Lanczos interpolation to preserve more texture details, while the binary mask uses nearest-neighbor interpolation to keep a sharp discrete boundary. The system also records spatial metadata including the core region, overlay region, tile size, scale ratio, and four directional overlay subregions at both the original resolution and the output resolution. These metadata are reused in the subsequent alignment correction, candidate ranking, and final fusion stages. This decomposition plays three roles. First, it provides boundary context to the VLM so that gener-ated content can naturally continue the surrounding image. Second, it provides feature-matching regions for later alignment correction, improving geometric consistency. Third, it provides an operational buffer for seam processing so that cuts can be placed away from visually salient core content. 43.3 Tile Repainting and Multi-Candidate Generation 
+
+After obtaining the overlay tile Tr,c and its binary mask Mr,c , SeamEdit feeds each tile into a vision-language model with local inpainting capability. This paper treats the model as a black-box generator and assumes only that it can receive an image, a mask, and a text editing instruction, and then return an inpainted image. The entire workflow depends only on the model’s input-output interface, making it compatible with different closed-source or open-source VLM backends. For the (r, c )-th tile, the input consists of three components: the local image Tr,c , the inpainting mask 
+
+Mr,c , and the user-provided semantic editing instruction q. The white region in the mask corresponds to the core region to be repainted, while the black region corresponds to the overlay area preserved as visual context. The VLM semantically inpaints the core region according to the structure, color, and texture information in the surrounding overlay area: 
+
+ˆTr,c = G(Tr,c , M r,c , q ),
+
+where G denotes the black-box VLM inpainting function and ˆTr,c denotes the generated local tile result. Because the generation process of a black-box VLM is stochastic, the same input may produce different local structures, texture details, and boundary transitions. To increase the selection space in subsequent stages, SeamEdit repeatedly generates K candidate results for each tile: 
+
+Yr,c = { ˆT 1
+
+> r,c
+
+, ˆT 2
+
+> r,c
+
+, . . . , ˆT Kr,c },
+
+where ˆT kr,c = G(Tr,c , M r,c , q ; ξk),
+
+and ξk denotes the stochastic sampling state of the k-th generation process. All candidates share the same tile input, mask constraint, and text instruction; their differences come only from the model’s internal sampling variation. This multi-candidate mechanism separates generation from selection. The generation stage focuses on obtaining diverse local inpainting results, while later stages correct and rank candidates according to geometric consistency, boundary consistency, and seam risk. In this way, SeamEdit uses the gener-ative capability of black-box VLMs for local semantic editing of large images without accessing model parameters, attention maps, or intermediate diffusion states. 
+
+## 3.4 Geometric and Color-Consistency Correction 
+
+During local inpainting, a black-box VLM may alter the pixel-level geometry of a tile, causing slight translation, rotation, or scale deviations of the generated candidate relative to the reference tile. At the same time, the overall tone, brightness, and local low-frequency color distribution of the generated candidate may differ from the original image context. These two types of deviations appear as structural misalignment and color discontinuity when the tile is fused back into the global image. Therefore, before candidate ranking and final fusion, SeamEdit applies geometric alignment and color-consistency correction to each generated candidate. Let Tr,c be the reference tile at position (r, c ), and let ˆT kr,c be the k-th VLM-generated candidate for this tile. The goal of this stage is to map the generated candidate back to the reference tile coordinate system and obtain a color-corrected candidate: 
+
+¯T kr,c = P
+
+
+
+W
+
+ ˆT kr,c ; Akr,c 
+
+
+
+, T r,c 
+
+
+
+, (1) where Akr,c ∈ R2×3 denotes a two-dimensional affine transform from the generated-candidate coor-dinate system to the reference-tile coordinate system, W(·) denotes affine resampling, and P(·) denotes local color-consistency correction. After this step, the candidate result shares the same local reference with the reference tile in both geometric coordinates and color distribution. 
+
+3.4.1 Grid-SIFT Geometric Alignment 
+
+Local feature detection can concentrate in a few high-texture regions, causing the estimated geometric transformation to depend too heavily on local structures. To improve feature coverage over the tile space, SeamEdit uses grid-based SIFT feature detection. Given a matching image I ∈ Rh×w×3, the image is divided into Gr × Gc rectangular subregions. The (i, j )-th subregion is defined as 5Ωi,j = [ x0 
+
+> j
+
+, x 1 
+
+> j
+
+) × [y0 
+
+> i
+
+, y 1 
+
+> i
+
+), (2) where 
+
+x0 
+
+> j
+
+= round( jw/G c), x1 
+
+> j
+
+= round(( j + 1) w/G c), (3) 
+
+y0 
+
+> i
+
+= round( ih/G r ), y1 
+
+> i
+
+= round(( i + 1) h/G r ). (4) Within each subregion Ωi,j , SeamEdit independently extracts local SIFT features. The detected local keypoint coordinate ˜p lies in the subregion coordinate system and is therefore mapped back to the full tile coordinate system: 
+
+p = ˜ p + ( x0 
+
+> j
+
+, y 0 
+
+> i
+
+). (5) The keypoints and descriptors from all subregions jointly form the feature set of the whole tile: 
+
+F(I) =  
+
+> Gr−1
+
+[
+
+> i=0
+> Gc−1
+
+[
+
+> j=0
+
+D(I|Ωi,j ), (6) where D(·) denotes the local SIFT feature extraction operator. This grid-based strategy allows local textures, edge structures, and region boundaries at different spatial locations to participate in transfor-mation estimation, improving the global reliability of geometric alignment. For the reference tile Tr,c and the generated candidate ˆT kr,c , SeamEdit extracts feature sets F(Tr,c )
+
+and F( ˆT kr,c ) respectively, and obtains candidate correspondences through descriptor matching. Let pi
+
+be a feature point in the reference tile and qi be its matched feature point in the generated candidate. The inlier set obtained by robust estimation is denoted as I. The affine transformation is obtained by minimizing the inlier reprojection error: 
+
+Akr,c = arg min 
+
+> A
+
+X
+
+> (pi,q i)∈I
+
+∥pi − Aq i∥22 . (7) This objective maps point qi in the generated candidate to the corresponding location pi in the reference tile. Thus, Akr,c is defined as the transform from the candidate coordinate system to the reference coordinate system. The resampling operator W(·; A) is implemented through backward sampling: for each output pixel p on the reference canvas, the value is sampled from A−1p in the candidate image, thereby mapping the candidate result onto the reference tile canvas: 
+
+˜T kr,c = W
+
+ ˆT kr,c ; Akr,c 
+
+
+
+. (8) To control abnormal deformation caused by erroneous matches, SeamEdit applies geometric validity constraints to the estimated result. A valid transformation must satisfy sufficient inlier count, reasonable spatial coverage of inliers, low reprojection error, and bounded translation, rotation, scale change, and shear. This constraint is written as 
+
+Akr,c ∈ A , (9) where 
+
+A = {A | Nin ≥ τin , Ccov ≥ τcov , Ermse ≤ τrmse ,
+
+|tx| ≤ τx, |ty | ≤ τy , |θ| ≤ τθ ,
+
+|sx − s∗
+
+> x
+
+| ≤ τs, |sy − s∗ 
+
+> y
+
+| ≤ τs, |h| ≤ τh}.
+
+(10) Here, Nin denotes the number of inliers in robust estimation, Ccov denotes the number of spatial regions covered by inliers, Ermse denotes the inlier reprojection error, (tx, t y ) denotes translation, θ denotes the rotation angle, (sx, s y ) denotes scale, (s∗
+
+> x
+
+, s ∗ 
+
+> y
+
+) denotes the expected scale given by the input-output size relation, and h denotes shear. Low-confidence estimates use the identity transform: 
+
+Akr,c = I2×3. (11) Thus, SeamEdit uses affine correction only when sufficient geometric evidence is available, reducing the risk of candidate-image deformation caused by local mismatches. 6Figure 3: Example of Grid-SIFT geometric alignment. The reference tile and the VLM-generated can-didate are matched using spatially uniform SIFT features. RANSAC estimates the affine transformation and maps the generated candidate back to the reference tile coordinate system. The checkerboard visu-alization shows the local alignment after correction. 
+
+3.4.2 Local Color-Consistency Correction 
+
+Geometric alignment maps the generated candidate back into the reference tile coordinate system, but the candidate may still contain global tonal shifts and low-frequency color differences. To make the candidate consistent with the surrounding context in illumination and color distribution, SeamEdit performs local color normalization within the valid candidate region. Let ˜T kr,c be the geometrically aligned candidate, and let V kr,c = {p | W ( ˆT kr,c ; Akr,c )( p) is valid } denote the set of non-hole pixels after affine resampling, namely the pixels in the output domain that can be covered by the candidate image. SeamEdit computes per-channel robust statistics of the reference tile and the candidate tile within V kr,c :
+
+μT , σ T = Stat  Tr,c , V kr,c 
+
+ , (12) 
+
+μ ˜T , σ ˜T = Stat 
+
+ ˜T kr,c , V kr,c 
+
+
+
+, (13) where μ and σ denote the RGB channel mean and standard deviation, respectively, and Stat( ·) denotes robust channel statistics over pixels inside the mask region. Based on these statistics, the per-channel color gain and bias are defined as 
+
+g = clip 
+
+ σT
+
+σ ˜T
+
+, g min , g max 
+
+
+
+, (14) 
+
+b = clip ( μT − g ⊙ μ ˜T , b min , b max ) , (15) where ⊙ denotes per-channel multiplication, and clip( ·) limits the magnitude of the color transform. The color-matched candidate is 
+
+˜T k, col  
+
+> r,c
+
+(p) = (1 − η) ˜T kr,c (p) + η
+
+
+
+g ⊙ ˜T kr,c (p) + b
+
+
+
+, p ∈ V kr,c , (16) where η controls the strength of color correction. This linear channel transform moves the candi-date region’s mean and contrast toward those of the reference tile, while magnitude limits preserve the generated result’s texture details. Using only global channel statistics may be insufficient for slowly varying low-frequency color dif-ferences. SeamEdit therefore further introduces low-frequency color compensation. Let Gρ(·) denote 7Figure 4: Example of local color-consistency correction. Each row shows the original tile, the VLM-generated tile, and the color-corrected tile. Color correction reduces brightness and tonal shifts in the generated result while preserving local structural details. Gaussian low-pass filtering at scale ρ. The low-frequency difference between the reference tile and the current candidate is 
+
+∆kr,c = clip 
+
+
+
+Gρ(Tr,c ) − G ρ( ˜T k, col  
+
+> r,c
+
+), −ϵ, ϵ 
+
+
+
+. (17) The final color-corrected candidate is defined as 
+
+¯T kr,c (p) = ˜T k, col  
+
+> r,c
+
+(p) + γ∆kr,c (p), p ∈ V kr,c , (18) where γ denotes the low-frequency compensation strength, and ϵ limits the magnitude of a single low-frequency correction. For regions outside V kr,c , the candidate canvas keeps the reference tile content: 
+
+¯T kr,c (p) = Tr,c (p), p / ∈ V kr,c . (19) After geometric and color-consistency correction, each VLM candidate is represented as a corrected result ¯T kr,c in the reference tile coordinate system. The subsequent seam risk metric, multi-candidate ranking, and dynamic seam fusion are all based on this corrected candidate, reducing the influence of canvas drift and color drift in black-box VLM outputs on the final large-image editing result. 
+
+3.4.3 Seam Risk Scoring and Candidate Ranking 
+
+After geometric alignment and color-consistency correction, SeamEdit scores each tile candidate before final stitching. This score estimates the risk that a candidate image will produce visible seams in the overlay region and selects the best candidate among multiple generations for the same tile. 8Let ¯T kr,c denote the k-th corrected candidate of the (r, c )-th tile, and let Tr,c denote the corresponding reference tile. The local tile region is denoted as Ωr,c , and the core repainting region is denoted as Cr,c .The overlay evaluation region is defined as 
+
+Br,c = Ω r,c \ Cr,c . (20) For each valid seam direction s ∈ S r,c , where Sr,c may contain the left, right, top, and bottom directions, the corresponding overlay boundary band is denoted as Bsr,c ⊂ Br,c . The color discontinuity error of candidate k in direction s is defined as 
+
+Ek,s  
+
+> col
+
+= 13|Bsr,c |
+
+X
+
+> p∈Bsr,c
+
+¯T kr,c (p) − Tr,c (p) 1 . (21) To further characterize local structural differences, this paper also computes the gradient residual: 
+
+Ek,s  
+
+> grad
+
+= 13|Bsr,c |
+
+X
+
+> p∈Bsr,c
+
+∇ ¯T kr,c (p) − ∇ Tr,c (p) 1 . (22) The seam risk of candidate k is defined as the maximum boundary risk among all valid directions: 
+
+Rkr,c = max 
+
+> s∈S r,c
+
+
+
+βcol Ek,s  
+
+> col
+
++ βgrad Ek,s 
+
+> grad
+
+
+
+, (23) where βcol and βgrad control the relative weights of color difference and gradient difference, respectively. A higher risk indicates that the candidate image is more likely to produce visible discontinuities around seam regions. Candidate ranking also considers geometric alignment quality, valid pixel coverage, and overall color consistency. Let Ek 
+
+> geo
+
+denote the geometric penalty derived from Grid-SIFT alignment residuals, inlier ratio, and scale consistency; let Ek 
+
+> valid
+
+denote the invalid-pixel penalty after affine resampling; and let 
+
+Ek 
+
+> color
+
+denote the overall color difference between the candidate and the reference tile. The final candidate quality score is defined as 
+
+Qkr,c = αpsnr P kr,c + αssim U kr,c − αseam Rkr,c − αgeo Ek 
+
+> geo
+
+− αvalid Ek 
+
+> valid
+
+− αcolor Ek
+
+> color
+
+, (24) where P kr,c and U kr,c denote the PSNR term and SSIM term in the overlay region, respectively. The final selected candidate is 
+
+k∗ = arg max  
+
+> k
+
+Qkr,c . (25) Thus, SeamRiskScore in Algorithm 1 corresponds to Eq. (23), and automatic multi-candidate selection corresponds to Eq. (24) and Eq. (25). This process preferentially selects candidates whose overlay regions are more consistent with the original context, whose geometric alignment is more reliable, and whose valid pixel coverage is more complete. 
+
+## 3.5 Dynamic-Programming Curved Seam Fusion 
+
+After candidate ranking in Section 3.4, each tile obtains an optimal candidate T ∗
+
+> r,c
+
+. This section writes all optimal candidates back into the global image canvas. Direct fusion along regular grid boundaries produces obvious straight seams, so SeamEdit searches for a low-cost curved seam inside the overlap between adjacent regions and performs smooth alpha blending on the two sides of the seam. Figure 5 visualizes the distribution of curved seams in the final fused result. These seams lie within the overlap regions between adjacent tiles and pass through locations with lower color and structural differences, thereby reducing visible discontinuities caused by regular grid boundaries. Let the current fused global canvas be Imos , and let its written region be Mmos . According to the spatial metadata recorded in Section 3.2, the optimal candidate T ∗ 
+
+> r,c
+
+is placed into the global coordinate system, producing a global candidate image Pr,c with valid region Vr,c . The overlap between the current tile and the existing canvas is defined as 
+
+Or,c = Vr,c ∩ Mmos . (26) If Or,c is empty, the candidate region is directly written to the canvas. Otherwise, SeamEdit computes a curved seam inside this region and uses blending weights to control the transition between the existing canvas and the current candidate. Inspired by minimum-energy seam search in seam carving [1], SeamEdit formulates seam selection in the overlap region as a one-dimensional dynamic programming problem. 9Figure 5: Visualization of dynamic-programming curved seam fusion. The figure shows the seam paths in the final fused image. SeamEdit searches for low-cost curved seams within the overlap regions between adjacent tiles and combines them with feathered alpha blending to reduce visible discontinuities caused by regular grid boundaries. 
+
+Seam cost. For a pixel p inside the overlap region, the seam cost is composed of color difference and structural difference: 
+
+C(p) = Pr,c (p) − Imos (p) 1 + λ ∇Pr,c (p) − ∇ Imos (p) 1, p ∈ Or,c , (27) where ∇ denotes the image gradient operator, and λ controls the weight of the structural-difference term. The color term encourages the seam to pass through regions with similar colors, while the gradient term encourages the seam to avoid salient structural boundaries. 
+
+Dynamic-programming curved seam. For a vertical overlap region, SeamEdit searches for a top-to-bottom curved seam Γ = {(x(y), y )}h−1 
+
+> y=0
+
+, where h is the height of the overlap region and x(y) denotes the horizontal seam coordinate at row y. The horizontal displacement between adjacent rows satisfies 
+
+x(y) − x(y − 1) ∈ {− 1, 0, 1}. Let D(y, x ) denote the minimum cumulative cost from the first row to position (x, y ). The recurrence relation is 
+
+D(y, x ) = C(y, x ) + min D(y − 1, x − 1) , D (y − 1, x ), D (y − 1, x + 1) . (28) The first row is initialized as D(0 , x ) = C(0 , x ). The position with the minimum cumulative cost in the last row is selected as the endpoint, and the optimal path Γ∗ is obtained by following the backtracking pointers. A horizontal overlap region is solved symmetrically in the transposed coordinate system. 
+
+Feathered alpha blending. After obtaining the optimal seam, SeamEdit constructs smooth alpha weights centered at Γ∗. For a vertical seam, let the seam position at row y be x∗(y). The blending weight of the candidate image is defined as 
+
+α(x, y ) = clip 
+
+ x − x∗(y) + f
+
+2f , 0, 1
+
+
+
+, (29) where f is the feathering width. The side with α = 0 keeps the existing canvas Imos , while the side with α = 1 uses the current candidate Pr,c . The final fused result in the overlap region is 
+
+Inew mos (p) = (1 − α(p)) Imos (p) + α(p) Pr,c (p), p ∈ Or,c . (30) 10 The candidate content is directly written in non-overlap regions, and Mmos is updated. After all tiles are processed, the final output is Iout = Imos . This process replaces regular grid boundaries with content-adaptive low-cost curved paths, making seam positions pass through regions with smaller color and structural differences whenever possible; feathered blending further reduces visible discontinuities caused by hard boundaries. Algorithm 1 summarizes the complete workflow. 
+
+Algorithm 1 Overall SeamEdit Pipeline 
+
+Input: Input image I, editing instruction q, grid size R × C, overlay width δ, number of candidates K
+
+Output: Edited large image Iout  
+
+> 1:
+
+{Tr,c , M r,c , Ωr,c }R−1,C −1 
+
+> r=0 ,c =0
+
+← TileDecompose (I, R, C, δ ) 
+
+> 2:
+
+for r = 0 to R − 1 do  
+
+> 3:
+
+for c = 0 to C − 1 do  
+
+> 4:
+
+Br,c ← ∅  
+
+> 5:
+
+for k = 1 to K do  
+
+> 6:
+
+ˆT kr,c ← G (Tr,c , M r,c , q ; ξk) 
+
+> 7:
+
+Akr,c ← GridSIFTAlign ( ˆT kr,c , T r,c ) 
+
+> 8:
+
+˜T kr,c ← W ( ˆT kr,c ; Akr,c ) 
+
+> 9:
+
+¯T kr,c ← ColorNormalize ( ˜T kr,c , T r,c ) 
+
+> 10:
+
+Score kr,c ← SeamRiskScore ( ¯T kr,c , T r,c , M r,c , A kr,c ) 
+
+> 11:
+
+Br,c ← B r,c ∪ { ¯T kr,c } 
+
+> 12:
+
+end for  
+
+> 13:
+
+k∗ ← arg max k∈{ 1,...,K } Score kr,c  
+
+> 14:
+
+T ∗ 
+
+> r,c
+
+← ¯T k∗ 
+
+> r,c
+> 15:
+
+end for  
+
+> 16:
+
+end for  
+
+> 17:
+
+Initialize the global canvas Imos and the written-region mask Mmos  
+
+> 18:
+
+for r = 0 to R − 1 do  
+
+> 19:
+
+for c = 0 to C − 1 do  
+
+> 20:
+
+(Pr,c , V r,c ) ← PlaceOnCanvas (T ∗
+
+> r,c
+
+, Ωr,c ) 
+
+> 21:
+
+Or,c ← Vr,c ∩ Mmos  
+
+> 22:
+
+if Or,c = ∅ then  
+
+> 23:
+
+Imos (Vr,c ) ← Pr,c (Vr,c ) 
+
+> 24:
+
+else  
+
+> 25:
+
+Γ∗ ← DPSeam (Pr,c , I mos , O r,c ) 
+
+> 26:
+
+α ← FeatherMask (Γ ∗) 
+
+> 27:
+
+Imos ← AlphaBlend (Imos , P r,c , α, V r,c ) 
+
+> 28:
+
+end if  
+
+> 29:
+
+Mmos ← Mmos ∪ Vr,c  
+
+> 30:
+
+end for  
+
+> 31:
+
+end for  
+
+> 32:
+
+Iout ← Imos 
+
+return Iout 
+
+Given an input large image and a user editing instruction, the system first generates overlay tiles and binary masks, and then invokes a black-box VLM to generate multiple candidate results. Each candidate is processed through geometric alignment, color-consistency correction, and seam-risk scoring. Finally, the best candidate for each tile is fused back into the global canvas through dynamic-programming curved seam fusion. 
+
+# 4 Experiments 
+
+## 4.1 Implementation Details 
+
+SeamEdit is implemented in Python. The core image-processing components rely on OpenCV and Pillow. The VLM backend is invoked through either a web interface or an API. The VLM backend used in the experiments is GPT-Image-2 .11 Table 1: Implementation configuration. Setting Value Input size 1672 × 941 Grid 3 × 4Tiles 12 Overlay 30 px / 120 px output Scale ×4Feature grid 5 × 5SIFT features 12000 RANSAC threshold 6 px Feather width 96 px Color match strength 0.65 Low-frequency strength 0.75 Seam method dynamic programming curved seam + color match + smoothed feather Backend GPT-Image-2 Table 2: Automatic candidate selection quality. Group N Score ↑ RMSE ↓ Color ∆ ↓ Max Seam MAE ↓ PSNR ↑ SSIM ↑                
+
+> All usable candidates 15 26.54 ±26.35 2.25 ±0.53 24.09 ±28.84 67.23 ±66.66 17.30 ±5.89 0.723 ±0.336 Auto-selected 12 33.18 ±25.37 2.24 ±0.58 10.38 ±5.66 36.20 ±20.11 19.98 ±2.27 0.884 ±0.058
+> Note: Ndenotes the number of usable candidates in this experiment. For generated results rejected by the model or below the minimum acceptance threshold of the system, new candidates were regenerated and added to the candidate pool. The final usable candidate pool contains 15 candidates. The Auto-selected row reports the candidates selected by automatic ranking for the 12 tiles.
+
+The experimental configuration is shown in Table 1. Since black-box VLM outputs are stochastic, the same tile can be generated multiple times to obtain multiple candidates. SeamEdit automatically ranks candidate quality and selects the best available candidate for each tile before the final fusion stage. In candidate ranking, the scoring weights in Eq. (24) are set to αpsnr = 1 .2, αssim = 20 .0, αseam = 0 .9,
+
+αgeo = 1 .0, αvalid = 1 .0, and αcolor = 1 .2. The composite geometric penalty is expanded as 6.0Ermse +0.05 |dx| + 0 .05 |dy | + 5 .0|θ| + 180 .0Escale + 30 .0 max(0 , 0.75 − rinlier ), and the composite validity penalty is expanded as 0.9Eblack + 0 .6Ecrop . The color blending strength in Eq. (16) is set to η = 0 .65 , and the low-frequency color compensation strength in Eq. (18) is set to γ = 0 .75 .
+
+## 4.2 Comparisons 
+
+We compare SeamEdit with two research baselines in qualitative experiments, and additionally include commonly used online image enhancement tools as visual references: 
+
+• FLUX.2-Dev [12]: an open-source generative image editing or repainting model used to compare structure preservation, texture consistency, and color continuity after local editing of large images. 
+
+• SUPIR [20]: an open-source image restoration and super-resolution method used to compare detail recovery, texture enhancement, and overall visual quality. 
+
+• Bigjpg / iLoveIMG / ImgLarger : online image enhancement tools used as references in quali-tative comparison to observe visual differences in local structure, texture, and color consistency. Figure 6 shows zoomed qualitative comparisons across different methods on representative local re-gions. Each row corresponds to the same image region, and each column corresponds to one method. The compared regions cover sky, towers, glass buildings, vegetation, roads, and dense building textures. 
+
+## 4.3 Qualitative Results 
+
+Table 2 reports quality statistics before and after automatic multi-candidate ranking. “All candidates” denotes all generated candidates, while “Auto-selected” denotes the final selected candidate for each tile. In this case study, automatic ranking improves color difference, seam MAE, PSNR, and SSIM. 12 Figure 6: Zoomed qualitative comparison across different methods on representative local regions. Each row corresponds to the same image region, and each column corresponds to one method. The compared regions cover sky, towers, glass buildings, vegetation, roads, and dense building textures. SeamEdit maintains good visual quality in building structure, local texture, and overall color consistency. This paper uses seam MAE to measure pixel-level discontinuity in boundary regions, SSIM [18] to measure structural similarity, and PSNR to measure pixel-level fidelity. LPIPS [22] can be used as a perceptual distance metric in extended baseline experiments. 
+
+## 4.4 Module Effect Analysis 
+
+Table 2 verifies the effect of multi-candidate quality ranking at the candidate level. When a black-box VLM repeatedly generates the same tile, different candidates may exhibit different degrees of geometric drift, color deviation, and boundary artifacts. Through geometric alignment, color-consistency correction, and seam-risk scoring, SeamEdit maps multiple candidates of each tile into a unified reference coordinate system for comparison, and selects the best available candidate for the final fusion stage. In the final fusion stage, the dynamic-programming curved seam preferentially passes through low-cost regions in the overlap band, and combines color matching with smooth feathering to reduce boundary discontinuities. Together, these modules reduce seam visibility after tiled editing. 
+
+# 5 Discussion 
+
+## 5.1 Limitations 
+
+Dependence on black-box backends. SeamEdit treats the VLM as a black-box API, and its gener-ation quality changes with the capability of the selected model. API changes or service discontinuation may affect reproducibility. However, the pipeline design in this paper is decoupled from any specific backend, so switching to another VLM, including an open-source model, does not require modifications to the pipeline components. 
+
+Empirical composite-score weights. The weights αi, β i in Eq. (24) are determined through em-pirical tuning. A systematic sensitivity analysis of these empirical weights is left for future work. 
+
+Multi-candidate call overhead. Generating K candidates for each tile requires K API calls, and the processing time scales linearly with K. For time-sensitive applications, K can be reduced, or multi-candidate generation can be applied only to tiles with high seam risk. 
+
+Context conflict under extreme semantic edits. When the semantic modification of a tile differs substantially from its surrounding regions, the local context provided by the overlap area may 13 conflict with the new semantics in the core region. In this case, geometric correction and seam fusion can reduce boundary artifacts, while final semantic consistency still depends on the generation quality of the black-box VLM and the user-specified editing region. 
+
+Applicable backend capability range. SeamEdit targets VLM foundation models with basic semantic understanding, defect localization, and visual inpainting capability. For models whose generated results are severely degraded or semantically invalid, the main source of error comes from the foundation model itself, and including such models in the evaluation would confound backend generation failure with the performance of the repair strategy. Therefore, this paper uses GPT-Image-2 as the main black-box backend for the final experiments. Appendix A.3 additionally reports a backend failure case with Google Nano Banana 2, showing that severely degraded backend outputs can dominate the observed failure modes. This setting matches SeamEdit’s intended use case: further repairing model outputs that are generally usable but contain local defects. Evaluating SeamEdit on more closed-source and open-source models with corresponding capabilities is an important direction for future work. 
+
+## 5.2 Application Scenarios 
+
+SeamEdit’s VLM-agnostic design allows it to scale with future improvements in closed-source or open-source VLMs. It is applicable to the following practical scenarios: 
+
+Game art asset production. For local style iteration of large game maps or scene textures, traditional workflows require artists to manually handle boundaries. SeamEdit can automate part of the seam-processing workflow and reduce the manual burden of boundary retouching. 
+
+Local semantic modification of concept art. Concept designers can freely replace local terrain types, material styles, or vegetation categories in a large full image without regenerating the entire image. 
+
+High-resolution image enhancement. The high-quality texture generation capability of VLMs can be applied to high-resolution tiles, while SeamEdit handles seam transitions between adjacent tiles, forming a training-free high-resolution image enhancement workflow. 
+
+# 6 Conclusion 
+
+This paper introduced SeamEdit, a training-free and VLM-agnostic pipeline for semantic region editing in large images. It is designed to mitigate two common issues that arise when black-box VLMs are applied to tiled image editing: alignment drift and seam artifacts. The pipeline performs end-to-end editing through three collaborative modules: overlay-based tile decomposition provides boundary context and seam buffers, grid-SIFT alignment correction and color-consistency correction handle local drift and tonal differences, seam-risk-driven multi-candidate ranking selects candidate results, and dynamic-programming curved seam fusion reduces boundary visibility. SeamEdit natively supports semantic modifications of arbitrary tile regions and has practical value in scenarios such as game art asset production, concept-art iteration, and high-resolution image enhance-ment. As closed-source VLMs continue to improve, SeamEdit’s black-box-compatible design allows it to connect to different backends and provides an extensible processing framework for large-image semantic editing. 
+
+# Author Contributions 
+
+Xiangyu Lyu: Conceptualization, methodology, implementation, experiments, analysis, and writ-ing. Dan Lei: Fine-arts guidance and visual-quality assessment criteria. 
+
+# Funding 
+
+No external funding was received for this work. 
+
+# References 
+
+[1] Shai Avidan and Ariel Shamir. Seam carving for content-aware image resizing. In ACM SIGGRAPH 2007 Papers , page 10–es, New York, NY, USA, 2007. Association for Computing Machinery. 14 [2] Omri Avrahami, Ohad Fried, and Dani Lischinski. Blended latent diffusion. ACM transactions on graphics (TOG) , 42(4):1–11, 2023. [3] Chengyu Bai, Jintao Chen, Xiang Bai, Yilong Chen, Qi She, Ming Lu, and Shanghang Zhang. Uniedit-i: Training-free image editing for unified vlm via iterative understanding, editing and veri-fying. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 29750–29759, 2026. [4] Omer Bar-Tal, Lior Yariv, Yaron Lipman, and Tali Dekel. Multidiffusion: Fusing diffusion paths for controlled image generation. 2023. [5] Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dockhorn, Seung Wook Kim, Sanja Fidler, and Karsten Kreis. Align your latents: High-resolution video synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 22563–22575, June 2023. [6] Tim Brooks, Aleksander Holynski, and Alexei A Efros. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 18392–18402, 2023. [7] Matthew Brown and David G Lowe. Automatic panoramic image stitching using invariant features. 
+
+International journal of computer vision , 74(1):59–73, 2007. [8] Peter J Burt and Edward H Adelson. A multiresolution spline with application to image mosaics. 
+
+ACM Transactions on Graphics (ToG) , 2(4):217–236, 1983. [9] KuanYan Chen, Atik Garg, and Yu-Shuen Wang. Seamless-through-breaking: Rethinking image stitching for optimal alignment. In Proceedings of the Asian Conference on Computer Vision , pages 4352–4367, 2024. [10] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. [11] Young D Kwon, Abhinav Mehrotra, Malcolm Chadwick, Alberto Gil Ramos, and Sourav Bhat-tacharya. Efficient high-resolution image editing with hallucination-aware loss and adaptive tiling. 
+
+arXiv preprint arXiv:2510.06295 , 2025. [12] Black Forest Labs. FLUX.2: Frontier Visual Intelligence. https://bfl.ai/blog/flux-2 , 2025. [13] Xinyu Liu, Yingqing He, Lanqing Guo, Xiang Li, Bu Jin, Yan Li, Chi-Min Chan, Wei Xue, Wenhan Luo, Qifeng Liu, and Yike Guo. Hiprompt: Tuning-free higher-resolution generation with hierarchical mllm prompts. International Journal of Computer Vision , 134(4):147, 2026. [14] Or Madar and Ohad Fried. Tiled diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7795–7804, 2025. [15] Patrick Pérez, Michel Gangnet, and Andrew Blake. Poisson image editing. 2003. [16] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis. In International Conference on Learning Representations , volume 2024, pages 1862–1874, 2024. [17] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. [18] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Simoncelli. Image quality assessment: from error visibility to structural similarity. IEEE transactions on image processing , 13(4):600–612, 2004. [19] Ziqi Xie, Xiao Lai, Weidong Zhao, Siqi Jiang, Xianhui Liu, and Wenlong Hou. Modification takes courage: Seamless image stitching via reference-driven inpainting. arXiv preprint arXiv:2411.10309 ,2024. 15 [20] Fanghua Yu, Jinjin Gu, Zheyuan Li, Jinfan Hu, Xiangtao Kong, Xintao Wang, Jingwen He, Yu Qiao, and Chao Dong. Scaling up to excellence: Practicing model scaling for photo-realistic image restora-tion in the wild, 2024. [21] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A manually annotated dataset for instruction-guided image editing. Advances in Neural Information Processing Systems ,36:31428–31449, 2023. [22] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 586–595, 2018. 16 A Additional Supplementary Results 
+
+## A.1 Additional Full-Image Results Additional Visual Results   
+
+> Scene 4: Original Scene 4: SeamEdit
+> Scene 3: Original Scene 3: SeamEdit
+
+Figure 7: Additional full-image qualitative results. Each group shows the original image and the SeamEdit output. These results demonstrate SeamEdit’s ability to preserve global layout, overall color tone, and semantic-region continuity at the full-image scale. 17 A.2 Local Zoomed Qualitative Results Additional zoomed qualitative comparisons Left: Original Right: SeamEdit 
+
+S1-A Bamboo huts and left path  
+
+> Original SeamEdit
+
+S1-B Central grass and stone path  
+
+> Original SeamEdit
+
+S1-C Road, lanterns, and vegetation  
+
+> Original SeamEdit
+
+S1-D Pavilion and stone road edge  
+
+> Original SeamEdit
+
+S2-A Upper stone platform  
+
+> Original SeamEdit
+
+S2-B Central circular path junction  
+
+> Original SeamEdit
+
+S2-C Pavilion and bamboo border  
+
+> Original SeamEdit
+
+S2-D Field, hut, and surrounding rocks  
+
+> Original SeamEdit
+
+Figure 8: Additional local zoomed qualitative comparisons. Each subfigure compares the original image and the SeamEdit output over the same local region. The selected regions cover roads, vegetation, stone platforms, pavilions, bamboo boundaries, and local object edges, illustrating SeamEdit’s effects on local texture, boundary transitions, and detail continuity. 18 A.3 Backend Failure Case: Nano Banana 2 
+
+Figure 9: Qualitative comparison of different black-box VLM backends. The three columns show the original image, the Nano Banana 2 output, and the GPT-Image-2 output. Under the current large-image tiled editing setting, Nano Banana 2 tends to produce substantial structural rewriting, content hallucination, and weak correspondence to the input; GPT-Image-2 better preserves the original spatial layout and local structures. Therefore, the final experiments in this paper use GPT-Image-2 as the main black-box backend. 19
