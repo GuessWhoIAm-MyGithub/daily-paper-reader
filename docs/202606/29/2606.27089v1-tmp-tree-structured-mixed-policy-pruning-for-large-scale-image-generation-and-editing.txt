@@ -1,0 +1,237 @@
+Title: TMP: Tree-structured Mixed-policy Pruning for Large-scale Image Generation and Editing
+
+URL Source: https://arxiv.org/pdf/2606.27089v1
+
+Published Time: Fri, 26 Jun 2026 01:22:46 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+June 26, 2026 
+
+# TMP: Tree-structured Mixed-policy Pruning for Large-scale Image Generation and Editing 
+
+Peizhen Zhang, Yang Li, Xunsong Li, Songtao Liu ∗, Zewen Liu, Qiangqiang Hu, Guotong Guo, Jupeng Ding, Yifu Sun, coopersli, Jian Zhang, Zhao Zhong †, Liefeng Bo 
+
+Multimodal Model Department, Tencent 
+
+# Abstract 
+
+Modern image generation model rapidly grows their sizes to meet high-fidelity image synthesis. However, they gradually become unaffordable for their enormous parameter consumption and computation budget that lead to massive resources requirement and gpu memory footprint. In this paper, we propose TMP , the first Tree-structured Mixed-policy Pruning framework that generalizes prevalent image tasks (T2I and TI2I) and architectures (Mixture-of-Experts (MoE) and Diffusion transformer (DiT)). It could be applied to the step-distilled models and contribute as the last stage. We perform experiments upon current open-sourced SOTA HunyuanImage-3.0 instruct and a popular efficient model Z-Image turbo. The proposed pruning framework manages to compress HunyuanImage 3.0 from 80B to 20B parameters at 75% reduction ratio, sacrificing limited generation quality. We also optimize to enable the inference of the pruned 20B version of HunyuanImage 3.0 on a single 24GB 4090 GPU by engineering skills. The inference script and model weight have been integrated into the existing HunyuanImage3.0 open-source github 1 and huggingface 2 repository. Besides, we prove the efficacy of TMP by compressing Z-Image turbo from 6B to 4B ( 33% reduction) with negligible degradation. 
+
+# 1 Introduction 
+
+In the past one year, closed-sourced commercial models like Nano-Banana (Google, 2025) and GPT-Image (OpenAI, 2025) series dominate the image synthesis scenario. Recently, excellent open-sourced models like HunyuanImage-3.0 (Cao et al., 2025) and FLUX.2 (Black Forest Labs, 2025) have been developed to catch them. However, they are normally too costly for practical usage. Typically, HunyuanImage-3.0, albeit achieve SOTA performance among open-sourced models, consume 80B parameters and is recommended to infer at the lowest requirement of 3 ×80GB GPUs, hindering its popularity in community. To this end, structured pruning is one of the most straightforward methods to alleviate the burden by compressing the original model into a smaller one and is normally hardware-friendly. However, existing structured pruning methods are customized deeply for DiT architecture whereas HunyuanImage-3.0 is built upon an MoE-based decoder-only LLM, i.e. , Hunyuan-A13B. The challenge lies in the fact that only an extremely high degree of parameter reduction can make the resulting model lightweight enough to run on low-cost devices. Existing methods could hardly achieve this (normally meet severe performance drop when reducing ratio ≥ 15% ). In this paper, we propose TMP, a structured pruning framework designed to overcome these challenges. TMP involves a joint pruning strategy, followed by a two-stage post-prune recovery training. The algorithm could be directly applied to the pruning of DiT-based architecture that we generalize to Z-Image turbo without much effort. The proposed pruning framework includes a structured pruning followed by a recovery training. The recovery training has two stages: (1) A tree-structured local feature supervision running in divide-and-conquer manner. It is instantiated as a combination of both off-policy and on-policy distillation (OPD). (2) A brief output distillation to match the flow matching velocity prediction. Normally, if network parameters have undergone pruning, each layer-wise inference would inevitably suffer from representation misalignment. In the end-to-end perspective, such errors will accumulate across layers and ultimately lead to model collapse due to cascading error propagation. Preliminary works like (Wang et al., 2021) introduce local supervision to mitigate this issue. Basically, tokens processed by a teacher layer are fed into its corresponding succeeding student layer. The supervision is imposed by matching the student outputs against the outputs of the subsequent teacher layer. Recently, some structured pruning works like FastFLUX (Cai et al., 2026) and PPCL (Ma et al., 2025) adopt the local supervision design in their algorithm. Our method, TMP-Pruner differs from theirs in two key aspects, which inspire its name: (a) 
+
+Tree-structured Merging: We maintain the intervals with a tree-structured merging. Hierarchically, two adjacent intervals (layer sequences) may be merged into a single one, in which case their separate distillation objectives are replaced by a unified loss after merging. This induces a curriculum-learning-like behavior, the model gradually 
+
+> ∗Corresponding author
+> †Project leader
+> 1https://github.com/Tencent-Hunyuan/HunyuanImage-3.0 .
+> 2https://huggingface.co/tencent/HunyuanImage-3.0 .
+
+1
+
+> arXiv:2606.27089v1 [cs.CV] 25 Jun 2026
+
+Source Image Original (80B) Pruned (20B) 
+
+> Have the man turn around to face the car, with his back to the camera.
+> Generate a young man in the reference style, wearing a purple hat and red-rimmed glasses, looking toward the left side of the frame.
+
+Figure 1: Single-reference image editing examples comparing the original HunyuanImage-3.0 80B model and our 20B pruned model. Despite a 4 × reduction in model size, the pruned model preserves editing fidelity and visual quality across diverse editing instructions. shifts toward newly formed unified objectives as the local supervision regions get progressively merged. Eventually, the objective will reduce to a single end-to-end token representation matching. (b) On-policy Distillation: We extra introduce an on-policy feature distillation and extend it to a mixed policy distillation that further align the pruned model to the original model. In short, our contributions are fourfold: • We propose a unified structured pruning framework that involves a heuristic pruning followed by a mixed policy distillation that refines the teacher-student alignment in intermediate token space. • We devise a novel tree-structured manner of curriculum learning scheme to ease the optimization. • Experiments demonstrate that our proposed framework could be applied to SOTA open-sourced text-to-image/image-editing model at a huge parameter reduction ratio, making it become affordable, with limited losses of generation quality. • Our framework is versatile towards different backbone architectures (MoE and DiT), model sizes (80B HunyuanImage-3.0 and 6B Z-Image turbo) and image tasks (image editing and text-to-image generation). 
+
+# 2 Related Work 
+
+Generative models for high-fidelity image generation have become popular in recent years. They tend to obtain better performance at the cost of increasing model capacity, typically parameter consumption. This imposes enormous memory consumption that either prohibits the model from running on a single consumer-level GPU or leads to low throughput in large-scale deployment. Structured pruning is intuitive to relieve this by slimming the network architecture to obtain a lightweight version. It involves a model pruning stage followed by a recovery training stage. 2Reference 1 Reference 2 Original (80B) Pruned (20B) 
+
+> Transform the style of a street-view image into the style of a sky image.
+> Let the two puppies run in the snow.
+
+Figure 2: Dual-reference image editing examples comparing the original HunyuanImage-3.0 80B model and our 20B pruned model. The pruned model preserves multi-image reasoning and reference-following capabilities despite substantial model compression. 
+
+2.1 Structured Pruning 
+
+The ways to determine pruned model architecture could be divided into five types: (a) Importance metric (b) Probabilistic modeling (c) NAS-based sampling (d) Cheap replacement and (e) Time-step sensitive allocation. (a) 
+
+Molchanov et al. (Molchanov et al., 2019) came up with a layer importance metric to determine which parameters to prune. Diff-Pruning (Fang et al., 2023) adopted a time-step-aware version. LD-Pruner (Castells et al., 2024) further proposed an operator-level metric. Xie et al. (Xie et al., 2025) used cosine similarity given input and output of each layer to measure the importance. OBS-DIFF (Zhu et al., 2025) invented a second-order sensitivity based on Hessian matrix computation. PPCL (Ma et al., 2025) combined linear probing with CKA-analysis to conduct contiguous layer set removal. (b) EcoDiff (Zhang et al., 2024) learned a differentiable mask for sparsification. TinyFusion (Fang et al., 2025) proposed a differentiable masked sampling that learned shallow DiT sub-networks to reduce denoising computation through adaptive depth reduction. (c) ALTER (Yang et al., 2026b) trained a supernet and used dynamic routing for block and layer pruning. E-DiT (Wang et al., 2026) trained differentiable router modules for block skipping and dimension reduction in linear layers. (d) Unlike hard pruning, some works conducted cheap substitution of existing modules. FastFLUX (Cai et al., 2026) progressively replaced the DiT blocks as linear modules that will join a sandwich training scheme. Amber-Image (Yang et al., 2026a) proposed a method that could merge two-stream architecture in MMDiT (Esser et al., 2024) into a unified stream. However, the sandwich training in FastFLUX demands constructing new local supervision datasets every time when a transformer block get replaced. The two-stream merging strategy in Amber-Image is only specialized for two-stream DiT architecture. (e) Some works introduced a time step-sensitive design related to the reverse diffusion nature during runtime. MosaicDiff (Guo et al., 2025) handcrafted a sparsity curve that set model variants with different sizes under different time steps. Diff-ES (Liu et al., 2026) automated it by setting the sparsity schedule with evolutionary search. The former requires deploying a series of pruning variants that is unfriendly towards low-memory devices. The latter attains the entire supernet during inference that demands the same memory budget as the original model in the worst-case scenarios. 32.2 Recovery Training 
+
+After architecture pruning, recovery training will transfer knowledge (KD) (Hinton et al., 2015) from the original model to the pruned model. Besides naive KD, some works emphasized on optimizing the loss design. Hierarchi-calPrune (Kwon et al., 2026) used reverse loss weighting to suppress the learning of layers with high importance. IGSM (Zheng & Shlizerman, 2025) proposed a second-order Jacobian matching loss inspired by Finite-Time Lya-punov Exponents that makes the model more robust towards input perturbation in the denoising trajectory. However, the loss weighting strategy requires human efforts for delicate adjustment. The second-order metric brings about heavy computation budget. Regardless of the choice of loss function, the optimization process is fundamentally driven by the low-level intermediate feature representations, higher-level latent or noise estimation. These methods, in principle, still exhibit off-policy behavior due to their dependence on teacher-generated trajectories. Recently, in language modeling tasks, on-policy distillation (OPD) has been shown to achieve faster and more effective distillation than off-policy distillation (Lu & Lab, 2025; Agarwal et al., 2024). The key is that student rollout affects future supervision distribution. In this paper, we devise an on-policy paradigm that constructs supervisory target given student intermediate representations. It runs in mixed mode that alternates off-and-on policy distillation. Moreover, existing structured pruning works are restricted to text-to-image task with DiT architecture, not involving architecture like MoE adopted by modern SOTA models and image editing task. Our method is able to prune HunyuanImage-3.0 at high parameter reduction ratio. 
+
+# 3 Methodology 
+
+3.1 Structured Pruning 
+
+HunyuanImage-3.0 (Cao et al., 2025) is an 80B MoE-based image editing model built upon Hunyuan-A13B (Tencent Hunyuan Team, 2025) where the MoE layers encompass 98% of the parameters. We perform a joint expert and width pruning that add up to 75% of parameter count reduction, resulting in a 20B pruned model. (1) width pruning :We apply magnitude pruning to reduce the intermediate size of the MLPs in MoE-FFN from 3072 to 2048. (2) 
+
+expert pruning : We aggregate the gating scores over a calibration set and keep only 24 out of 64 experts per layer. Z-Image turbo (Cai et al., 2025) is a 6B single-stream DiT-based image generation model. We apply width pruning to it that is highly similar to what we have done above for HunyuanImage-3.0. We reduce the expansion rate of the MLP by 37.5% and achieve an overall 33% of parameter count reduction. This results in a 4B pruned model. 
+
+3.2 Recovery Training 
+
+The recovery training runs in two-staged fashion. The first stage is about intermediate token distillation. The second stage further refines by velocity prediction distillation. We parameterize the full model as Fθ . It consists of three components: a collection of input encoders and embedders Eθ (VAE, timestep embedders and any other involved encoders), a transformer backbone πθ and two parallel prediction heads — a velocity head vθ for image latents and an autoregressive head pθ for text tokens. Across all training stages, Eθ is kept frozen. In the mixed-policy feature-distillation stage we unfreeze only πθ ; in the subsequent prediction-alignment stage we additionally unfreeze the heads vθ , pθ . We generalize πθ (with a slight abuse of notation) from the next-token distribution to the sequence of intermediate features produced by the student backbone, thereby moving the on-/off-policy distinction from the output layer down to intermediate representations. 
+
+3.2.1 Tree-Structured Mixed-policy Feature Distillation 
+
+Supposed there are total L layers in each model, we set L intervals correspondingly where each interval contains one layer at the beginning. We conduct the distillation fashion in a tree-structured, divide-and-conquer manner. 
+
+Mixed policy distillation . Supposed there are M intervals in current training iteration, we illustrate the local distillation of interval i without loss of generality. It satisfies L = ∑Mi=1 Bi where Bi denotes the number of consecutive layers covered by interval i . Supposed interval i begins at layer l, we introduce how local feature distillation is conducted between the original model Π∗ and the pruned model Πθ . In each iteration, we feed the token sequence x ∼ pdata into the teacher model to perform end-to-end forward propagation. In this procedure, we collect input tokens into layer l, said Xl−1 
+
+> ∗
+
+and the output tokens by layer l + Bi − 1, said Xl+Bi −1 
+
+> ∗
+
+≡ Π1→l+Bi −1 
+
+> ∗
+
+(x).For student, instead of regular forwarding, we feed the input tokens into interval i of teacher into that of the student to get the output tokens. We make it learn towards corresponding teacher output tokens, forming off-policy distillation: 
+
+L(i) 
+
+> off
+
+= min  
+
+> θ
+
+Ex∼pdata ,Xl−1  
+
+> ∗∼Π1→l−1
+> ∗(x)
+
+ 1
+
+N D
+
+
+
+Xl+Bi −1 
+
+> ∗
+
+, Π l→l+Bi −1 
+
+> θ
+
+(X l−1 
+
+> ∗
+
+)
+
+
+
+(1) where N is the number of tokens. D(·, ·) represents the feature discrepancy. We instantiate it as L2 distance. 4Besides the off-policy distillation, we enhance the intermediate token representation learning towards the original model by introducing on-policy distillation to the feature distillation. We instantiate the on-policy feature distillation by swapping the roles described above. The key lies in utilizing the student roll-outs to join the learning target construction. We condition on the imperfect student representation and modulate it by local original model consecutive layers to construct learning target and define the distillation as: 
+
+L(i) 
+
+> on
+
+= min  
+
+> θ
+
+Ex∼pdata ,Xl−1  
+
+> θ∼Π1→l−1
+> θ(x)
+
+ 1
+
+N D
+
+
+
+sg 
+
+h
+
+Π l→l+Bi −1 
+
+> ∗
+
+(Xl−1 
+
+> θ
+
+)
+
+i
+
+, Xl+Bi −1
+
+> θ
+
+
+
+(2) where sg [·] denotes the stop-gradient operator. We combine both mimicking loss, leading to a mixed policy distilla-tion manner. The ultimate learning objective considering all current M intervals is Lmixed = 1 
+
+> M
+
+ΣMi=1
+
+h
+
+L(i) 
+
+> o f f
+
++ L(i)
+
+> on
+
+i
+
+Tree-structured Interval Merging . To gradually mitigate the propagated error towards end-to-end optimization, we adopt a bottom-up binary tree fashion of interval merging. As every K training iterations go by, two adjacent intervals are merged into one, halving the interval number. 
+
+3.2.2 Prediction Alignment 
+
+After hierarchical mixed policy feature distillation, we use output distillation 3 to further align the original model and the pruned model. It is accomplished by distilling the velocity prediction between both models as shown in Eq. 3. 
+
+Lvelocity = Ext,t,c
+
+h
+
+∥vθ (xt, t, c) − v∗(xt, t, c)∥22
+
+i
+
+(3) 
+
+# 4 Experiments 
+
+Figure 3: Human preference comparison between pruned 20B v.s. original HunyuanImage-3.0 80B on private image editing benchmark. The evaluation shows a limited performance degradation ( −2.5% ) on human preference. 
+
+4.1 About HunyuanImage-3.0 
+
+(a) Original model v.s. pruned model Fig. 3 shows the comparison between HunyuanImage-3.0 original 80B model and its pruned 20B model by our proposed structured pruning method. Notably, there is only -2.5% of human preference dropping. The comparison is made upon private image editing dataset. Fig. 1 and Fig. 2 have shown some image editing results comparison between these two models. (b) Memory-Efficient Inference To enable deployment on consumer-grade GPUs, we develop a memory-efficient inference framework based on FP8 quantization and dynamic module offloading. The main model is quantized to FP8 precision, significantly reducing the memory footprint. To avoid memory spikes during initialization, model weights are first loaded into CPU memory and selectively transferred to the GPU according to the execution stage. In addition, several memory-intensive components, including the visual encoder and VAE, are activated on demand 
+
+> 3For HunyuanImage-3.0 which demands self-recaption capability, we extra apply a Kullback-Leibler (KL) divergence between the next-token prediction by the language modeling heads of both models
+
+5Table 1: Quantitative evaluation results on OneIG-EN. Model Alignment Text Reasoning Style Diversity Overall Qwen-Image 20B Wu et al. (2025) 0.882 0.891 0.306 0.418 0.197 0.539 Z-Image 6B Cai et al. (2025) 0.881 0.987 0.280 0.387 0.194 0.546 
+
+Z-Image-Turbo 6B Cai et al. (2025) 0.840 0.994 0.298 0.368 0.139 0.528 PPCL-OPPO-10B Ma et al. (2025) 0.839 0.860 0.249 0.359 0.121 0.485 Amber-Image-10B Yang et al. (2026a) 0.867 0.938 0.278 0.298 0.137 0.504 Amber-Image-6B Yang et al. (2026a) 0.829 0.917 0.284 0.287 0.135 0.490 Z-Image-Turbo pruned-4B (Ours) 0.840 0.980 0.305 0.364 0.161 0.530 
+
+Table 2: Quantitative evaluation results on OneIG-ZH. Model Alignment Text Reasoning Style Diversity Overall Qwen-Image 20B Wu et al. (2025) 0.825 0.963 0.267 0.405 0.279 0.548 
+
+Z-Image 6B Cai et al. (2025) 0.793 0.988 0.266 0.386 0.243 0.535 Z-Image-Turbo 6B Cai et al. (2025) 0.782 0.982 0.276 0.361 0.134 0.507 PPCL-OPPO-10B Ma et al. (2025) 0.854 0.878 0.268 0.365 0.130 0.499 Amber-Image-10B Yang et al. (2026a) 0.798 0.975 0.221 0.362 0.153 0.502 
+
+Amber-Image-6B Yang et al. (2026a) 0.779 0.953 0.208 0.345 0.143 0.486 Z-Image-Turbo pruned-4B (Ours) 0.784 0.946 0.261 0.352 0.158 0.500 Table 3: Quantitative evaluation results on LongText-Bench. Model LongText-Bench-EN LongText-Bench-ZH Qwen-Image 20B Wu et al. (2025) 0.943 0.946 
+
+Z-Image Cai et al. (2025) 0.935 0.936 Z-Image-Turbo Cai et al. (2025) 0.917 0.926 PPCL-OPPO-10B Ma et al. (2025) 0.871 0.885 Amber-Image-10B Yang et al. (2026a) 0.911 0.915 
+
+Amber-Image-6B Yang et al. (2026a) 0.870 0.876 Z-Image-Turbo pruned-4B (Ours) 0.889 0.882 and immediately offloaded after use. Intermediate activations and CUDA caches are also released between major generation stages to minimize memory fragmentation and peak allocation. With these optimizations, our model can perform 1024 ×1024 image generation with 8 sampling steps on a single NVIDIA RTX 4090 (24 GB), requiring less than 24 GB of GPU memory at peak usage. 
+
+4.2 About Z-Image turbo 
+
+Both PPCL-OPPO and Amber-Image are among the best T2I models obtained via structured pruning in recent literature. They are built upon Qwen-Image (better than our experimenting teacher Z-Image-Turbo in the metrics shown in below involved benchmarks). Table 1, Table 2 and Table 3 show the comparison of the pruned Z-Image Turbo 4B model by our method to others on OneIG-ZH/EN Chang et al. (2025) and LongText benchmarks Geng et al. (2025) respectively. Notably, the 4B-pruned model outperforms the pruned models by these methods (OneIG-EN) or is comparable (OneIG-ZH, LongText-Bench) to them despite containing 1.5 to 2.5 × fewer parameters. 
+
+# 5 Conclusion 
+
+We presented TMP, a structured pruning framework engineered to compress modern, large-scale image synthesis models. By advancing beyond standard distillation with a tree-structured merging strategy and mixed-policy feature alignment, the proposed framework effectively scales to intricate MoE-based and DiT architectures. TMP achieves an aggressive compression ratio—most notably reducing HunyuanImage-3.0 from 80B to 20B parameters—while preserving high-fidelity generation quality. This work bridges the gap between state-of-the-art generative capabilities and resource-constrained hardware deployment. Moving forward, we aim to adapt this compression paradigm to other generative modalities and investigate deeper hardware-level optimization. 6References 
+
+Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos Garea, Matthieu Geist, and Olivier Bachem. On-policy distillation of language models: Learning from self-generated mistakes. In ICLR , 2024. Black Forest Labs. Flux.2. https://bfl.ai/blog/flux-2 , 2025. Accessed: 2026-05-12. Fuhan Cai, Yong Guo, Jie Li, Wenbo Li, Jian Chen, and Xiangzhong Fang. Fastflux: Pruning flux with block-wise replacement and sandwich training. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pp. 2507–2515, 2026. Huanqia Cai, Sihan Cao, Ruoyi Du, Peng Gao, Steven Hoi, Zhaohui Hou, Shijie Huang, Dengyang Jiang, Xin Jin, Liangchen Li, et al. Z-image: An efficient image generation foundation model with single-stream diffusion transformer. arXiv preprint arXiv:2511.22699 , 2025. Siyu Cao, Hangting Chen, Peng Chen, Yiji Cheng, Yutao Cui, Xinchi Deng, Ying Dong, Kipper Gong, Tianpeng Gu, Xiusen Gu, et al. Hunyuanimage 3.0 technical report. arXiv preprint arXiv:2509.23951 , 2025. Thibault Castells, Hyoung-Kyu Song, Bo-Kyeong Kim, and Shinkook Choi. Ld-pruner: Efficient pruning of latent diffusion models using task-agnostic insights. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 821–830, 2024. Jingjing Chang, Yixiao Fang, Peng Xing, Shuhan Wu, Wei Cheng, Rui Wang, Xianfang Zeng, Gang Yu, and Hai-Bao Chen. Oneig-bench: Omni-dimensional nuanced evaluation for image generation. arXiv preprint arXiv:2506.07977 , 2025. Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas M ¨uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. Gongfan Fang, Xinyin Ma, and Xinchao Wang. Structural pruning for diffusion models, 2023. URL https://arxiv. org/abs/2305.10924 , 2023. Gongfan Fang, Kunjun Li, Xinyin Ma, and Xinchao Wang. Tinyfusion: Diffusion transformers learned shallow. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 18144–18154, 2025. Zigang Geng, Yibing Wang, Yeyao Ma, Chen Li, Yongming Rao, Shuyang Gu, Zhao Zhong, Qinglin Lu, Han Hu, Xiaosong Zhang, et al. X-omni: Reinforcement learning makes discrete autoregressive image generative models great again. arXiv preprint arXiv:2507.22058 , 2025. Google. Nano-banana. https://deepmind.google/ , 2025. Commercial image generation and editing system. Bowei Guo, Shengkun Tang, Cong Zeng, and Zhiqiang Shen. Mosaicdiff: Training-free structural pruning for diffusion model acceleration reflecting pretraining dynamics. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 1655–1664, 2025. Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531 , 2015. Young D Kwon, Rui Li, Sijia Li, Da Li, Sourav Bhattacharya, and Stylianos I Venieris. Hierarchicalprune: Position-aware compression for large-scale diffusion models. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pp. 22716–22724, 2026. Zongfang Liu, Shengkun Tang, Zongliang Wu, Xin Yuan, and Zhiqiang Shen. Diff-es: Stage-wise structural diffusion pruning via evolutionary search. arXiv preprint arXiv:2603.05105 , 2026. Kevin Lu and Thinking Machines Lab. On-policy distillation. Thinking Machines Lab: Connectionism , 2025. doi: 10.64434/tml.20251026. https://thinkingmachines.ai/blog/on-policy-distillation. Jian Ma, Qirong Peng, Xujie Zhu, Peixing Xie, Chen Chen, and Haonan Lu. Pluggable pruning with contiguous layer distillation for diffusion transformers. arXiv preprint arXiv:2511.16156 , 2025. Pavlo Molchanov, Arun Mallya, Stephen Tyree, Iuri Frosio, and Jan Kautz. Importance estimation for neural network pruning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 11264–11272, 2019. OpenAI. Gpt-image. https://openai.com , 2025. Commercial image generation model. Tencent Hunyuan Team. Hunyuan-a13b technical report. Technical report, Tencent, 2025. URL https://github. com/Tencent-Hunyuan/Hunyuan-A13B .7Jiangshan Wang, Zeqiang Lai, Jiarui Chen, Jiayi Guo, Hang Guo, Xiu Li, Xiangyu Yue, and Chunchao Guo. Elastic diffusion transformer. arXiv preprint arXiv:2602.13993 , 2026. Yulin Wang, Zanlin Ni, Shiji Song, Le Yang, and Gao Huang. Revisiting locally supervised learning: an alternative to end-to-end training. arXiv preprint arXiv:2101.10832 , 2021. Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng-ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, et al. Qwen-image technical report. arXiv preprint arXiv:2508.02324 , 2025. Enze Xie, Junsong Chen, Yuyang Zhao, Jincheng Yu, Ligeng Zhu, Chengyue Wu, Yujun Lin, Zhekai Zhang, Muyang Li, Junyu Chen, et al. Sana 1.5: Efficient scaling of training-time and inference-time compute in linear diffusion transformer. arXiv preprint arXiv:2501.18427 , 2025. Chaojie Yang, Tian Li, Yue Zhang, and Jun Gao. Amber-image: Efficient compression of large-scale diffusion transformers. arXiv preprint arXiv:2602.17047 , 2026a. Xiaomeng Yang, Lei Lu, Qihui Fan, Changdi Yang, Juyi Lin, Yanzhi Wang, Xuan Zhang, and Shangqian Gao. Alter: All-in-one layer pruning and temporal expert routing for efficient diffusion generation. Advances in Neural Information Processing Systems , 38:128571–128599, 2026b. Yang Zhang, Er Jin, Yanfei Dong, Ashkan Khakzar, Philip Torr, Johannes Stegmaier, and Kenji Kawaguchi. Effortless efficiency: Low-cost pruning of diffusion models. arXiv e-prints , pp. arXiv–2412, 2024. Caleb Zheng and Eli Shlizerman. Igsm: Improved geometric and sensitivity matching for finetuning pruned diffusion models. arXiv preprint arXiv:2506.05398 , 2025. Junhan Zhu, Hesong Wang, Mingluo Su, Zefang Wang, and Huan Wang. Obs-diff: Accurate pruning for diffusion models in one-shot. arXiv preprint arXiv:2510.06751 , 2025. 8

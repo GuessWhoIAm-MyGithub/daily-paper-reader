@@ -1,0 +1,760 @@
+Title: OSOR: One-Step Diffusion Inpainting for Effect-Aware Object Removal
+
+URL Source: https://arxiv.org/pdf/2606.28094v1
+
+Published Time: Mon, 29 Jun 2026 01:00:31 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# OSOR: O NE -S TEP DIFFUSION INPAINTING FOR EFFECT -A WARE 
+
+# OBJECT REMOVAL 
+
+Qinming Zhou 1,2,* Chenxi Sun 1,3,* Deyang Kong 1,3 Junhao He 1
+
+Xiangheng Tang 1,4 Peike Yu 1,5 Haotian Wu 1 Leilei Cao 6, † Linfeng Zhang 1, ‡
+
+> 1
+
+Shanghai Jiao Tong University 2Tsinghua University 
+
+> 4
+
+Xidian University 5Tongji University 
+
+> 3
+
+University of Electronic Science and Technology of China 6Transsion 
+
+> *
+
+Equal contribution. †Project Leader. ‡Corresponding Author. 
+
+https://github.com/Zhouqm-Git/osor 
+
+Figure 1: Comparison between OSOR and other methods. OSOR effectively removes object-associated effects, such as shadows, while running 10 .6× faster than ObjectClear. A 1024 × 1024 image can be processed in under one second on a single NVIDIA A100 GPU. The average rank is computed across six benchmarks. 
+
+## ABSTRACT 
+
+Real-world object removal is challenging due to two key difficulties: the target object’s non-local effects, such as shadows and reflections, which are difficult to model, and the fact that user-provided 
+
+> arXiv:2606.28094v1 [cs.CV] 26 Jun 2026
+
+A PREPRINT - J UNE 29, 2026 masks are often inaccurate or incomplete. With billions of parameters and tens of denoising steps, diffusion-based models achieve strong removal performance at the expense of substantial compu-tational cost, limiting their use in interactive applications and on edge devices. To address these challenges, we present OSOR (One-Step Object Removal), which simultaneously achieves efficient, effect-aware, and mask-robust object removal. Concretely, OSOR introduces: (1) an occupancy-guided discriminator for precise boundary supervision, enabling stable single-step diffusion training; (2) an alpha head that leverages knowledge from pretrained diffusion models to predict appropriate re-moval regions with minimal overhead, thereby handling imperfect masks; and (3) a semantic-anchored verification pipeline (SAVP) that filters noisy instruction-based triplets to produce effect-aware super-vision at scale. Using SAVP, we curate CORNE , which contains 280K verified removal pairs, and further annotate AnimeEraseBench and TextEraseBench to evaluate performance on more complex removal tasks. Experiments show that OSOR surpasses strong multi-step diffusion baselines in perceptual quality while achieving 4× to 30 × faster inference. Code and resources are available at 
+
+https://github.com/Zhouqm-Git/osor .
+
+Keywords Object removal · Image inpainting · Efficient diffusion 
+
+## 1 Introduction 
+
+Object removal is a fundamental image editing task that aims to eliminate a target object and its visual effects from a photograph, restoring a natural background in the affected region. Generally speaking, real-world object removal presents three major challenges as follows. 
+
+(I) Effect-awareness. Removing an object is not simply a matter of erasing the pixels within a specified mask. The target object often leaves behind persistent visual effects in the scene, including cast shadows, reflected appearances, and other environmental interactions. Eliminating these effects requires a strong semantic understanding of the scene geometry and lighting, as the model must infer what the background should look like without the object and its influence. 
+
+(II) Mask-robustness. In practical usage scenarios, the removal mask is typically provided by the user through interactive selection tools. These user-generated masks are frequently imperfect: they may be too large and cover unrelated content, or too small and fail to encompass the full extent of the object and its effects. This masks robustness issue is critical for deployment in real applications where users expect reasonable results even with careless input. 
+
+(III) Efficiency. Object removal is often performed on mobile devices in an interactive manner, introducing requirements on extremely low latency. Early approaches to object removal predominantly employed Generative Adversarial Networks (GANs) [ 7, 28 , 12 , 39 ]. These methods leveraged adversarial learning where ground-truth removal results served as real samples and model outputs as fake samples. While GANs offered computational advantages through single forward passes in lightweight networks, their limited representational capacity constrained generation quality and prevented achieving satisfactory effect-aware and mask-robust results. Recent advances in diffusion models have fundamentally transformed the landscape of image generation and editing tasks. Modern diffusion models leverage hundreds of billions of parameters and dozens of iterative denoising steps to achieve unprecedented generative capabilities. These powerful models have been successfully adapted to image inpainting and object removal tasks [ 9 , 33 , 24 , 29 , 2 ], demonstrating superior perceptual quality compared to traditional GAN-based approaches. Despite these improvements, diffusion-based methods face a critical bottleneck in computational efficiency. The multi-step denoising process requires substantial computing resources and inference time, making it impractical for deployment on edge devices or interactive applications where latency is critical. Furthermore, even with the powerful priors encoded in pretrained diffusion models, existing approaches still struggle to fully address the challenges of effect-aware and mask-robust removal [ 15 , 49 , 40 , 6, 38 , 45 ]. This indicates that simply using pretrained diffusion models is insufficient, and targeted training strategies are necessary to unlock their full potential for this specific task. To solve this problem , in this paper, we propose OSOR, a One-Step diffusion model for Object Removal that simultaneously achieves three goals: efficiency through single-step inference, effect-aware removal of shadows and reflections, and robustness to imperfect user masks. Our approach introduces three key technical contributions to address the aforementioned challenges. 
+
+Occupancy-guided discriminator for single-step diffusion. While adversarial learning based step distillation [ 43 , 36 ]has been successfully utilized in image generation, we find that applying these methods directly to object removal leads to unsatisfactory results, particularly producing blurry boundaries around the removed object. This difficulty arises because single-step diffusion lacks the iterative refinement opportunity that allows multi-step methods to gradually correct errors in the generated content [ 49 , 38 , 2]. To address this, we design an occupancy-guided discriminator that 2A PREPRINT - J UNE 29, 2026 provides precise boundary supervision by computing fractional occupancy values at multiple scales from the input mask for each patch location. Additionally, we propose formulating object removal as a latent restoration task derived from image restoration principles, where weakly noising the input image reduces training difficulty [26, 20]. 
+
+A lightweight alpha head for imperfect removal mask correction. OSOR introduces an alpha head, which is implemented as a lightweight projection appended to the diffusion backbone. Leveraging the rich semantic knowledge already present in pretrained diffusion models [ 19 , 11 , 47 ], this component can accurately recover the appropriate mask for removal with minimal additional parameters and computational overhead. Besides, we further propose a two-stage training curriculum: the model first learns the removal task with perfect masks, then adapts to handle imperfect masks to improve robustness. 
+
+Semantic-anchored verification pipeline enabling effect-aware removal data at scale. Based on existing image editing datasets, this pipeline combines semantic information with pixel-space gradient analysis to verify successful removal and detect the presence of object effects. This allows us to automatically generate substantial amounts of labeled data for training effect-aware removal models. Using this pipeline, we construct CORNE, a high-quality dataset containing 280K verified object removal pairs with effect-aware annotations [ 49 , 45 ]. Furthermore, to address the lack of comprehensive benchmarks for evaluating object removal in specific domains, we construct AnimeEraseBench and TextEraseBench, which evaluate removal capability on anime images and text overlays, respectively. In summary, our contributions are threefold. • We propose OSOR, a single-step object removal model, which introduces an occupancy-guided discriminator, a lightweight alpha head, and a semantic-anchored verification pipeline (SAVP) to achieve efficient, effect-aware, and mask-robust object removal. • Based on SAVP, we curate CORNE, a high-quality and effect-aware object removal training dataset with 280K removal pairs. Besides, we release AnimeEraseBench and TextEraseBench, two removal benchmarks for evaluation on removal in anime scenarios and text objects, respectively. • Extensive experimental results on 6 benchmarks with 7 comparison methods demonstrate the superior removal quality and efficiency. For instance, 2.24 dB higher PSNR and 27 × faster than the second-best method in AnimeEraseBench. 
+
+## 2 Related Work 
+
+2.1 Image Inpainting and Object Removal 
+
+Object removal is related to mask-conditioned inpainting, but it imposes a stricter requirement to preserve surrounding context while removing the target object and its visual effects. GAN-based inpainting enables fast inference but often struggles with boundary continuity and high-frequency realism under irregular or large masks [ 28 , 12 , 44 , 39 ]. Transformer-based inpainting improves global structure modeling for large missing regions [ 18 , 5]. Diffusion-based inpainting further boosts realism by leveraging strong generative priors [ 33 , 24 , 1, 29 , 2]. However, general inpainting backbones are optimized for generic completion rather than removal behavior, so outputs remain sensitive to mask quality when object effects extend beyond the provided spatial conditioning. 
+
+2.2 Object Removal Models and Datasets 
+
+Recent works adapt diffusion models to object removal through stronger conditioning, task-oriented guidance, or effect-aware modeling [ 15 , 49 , 40 , 22 , 6 , 38 , 45 ]. Progress is also driven by improved supervision sources, including video-derived paired frames and captured counterfactual pairs that better reflect real effects [ 34 , 41 , 40 ]. In parallel, instruction-based corpora provide abundant editing triplets but can be noisy, motivating verification and filtering to obtain reliable supervision [ 3, 16 ]. A persistent difficulty in interactive removal is that user masks often under-cover soft effects. Several methods strengthen object effect coupling in conditioning or supervision, for example via object effect attention [ 49 ]. Another direction is to predict a soft effective editing region to represent uncertain boundaries and residual effects beyond the provided mask. This view is related to alpha compositing and matting, which model soft transitions with an opacity map instead of a hard mask [ 30 , 17 , 42 ]. Recent diffusion-based matting further supports predicting alpha-like maps from diffusion priors as a representation of soft boundaries and layer uncertainty [ 19 , 11 , 47 ]. 
+
+2.3 Efficient Diffusion and One-Step Generation 
+
+Reducing diffusion inference cost has been studied through distillation and consistency training that reduces denoising steps [ 35 , 37 , 25 ]. A growing line of work targets one-step or near one-step generation, distilling pretrained diffusion 3A PREPRINT - J UNE 29, 2026 Multi -Feature                                
+
+> Difference
+> Incomplete
+> Object
+> Effects
+> Shot
+> Ground -Truth Difference Mask Difference B.Box
+> Edit Prompt: Add a
+> wooden fishing boat
+> to the right side of
+> the harbor scene.
+> Grounding DINO
+> Shot w/ B.Box
+> 𝑚 !"## 𝑏 !"##
+> 𝑏 !"## +𝑏 $%& 𝑏 $%&
+> If IoU ( ,)<𝑏 !"# 𝑏 $%&&
+> Don’t use this pair
+> Continue to
+> use SAM2 !
+> If IoU ( ,)>= 𝑏 !"# 𝑏 $%&&
+> Semantic –geometric Validation
+> Complete
+> 𝑚 '()
+> SAM2
+> Object Mask
+> Complete
+> 𝑚 *+,-=Union ( 𝑚 '() ,𝑚 !"## )𝑚 ./ =extend ( 𝑚 #0$% )
+> Object+Effect Mask 𝑚 *+,-Ground -Truth Mask
+> Effects Ratio = Area ()/ Area ()𝑚 %## 𝑚 '()
+> 𝑚 %## 𝑚 '() Effect Mask
+> log -luminance
+> chromaticity
+> gradient magnitude
+> 𝑚 ./
+> Effect s
+
+Figure 2: Overview of SAVP and CORNE. Starting from single-edit instruction triplets, SAVP verifies semantically aligned and localized differences, then fuses the validated difference region with promptable segmentation to form an effect-aware mask. It further derives object-core masks for Phase II incomplete-mask conditioning. models into single-pass generators via distribution matching and adversarial objectives [ 43 , 36 ]. Most efficient diffusion methods are developed for global generation and do not explicitly enforce the strict context preservation required by mask-conditioned editing. Single-pass editing is also more sensitive to boundary ambiguity near the mask, which motivates task-specific supervision when applying one-step inference to object removal. 
+
+## 3 Methodology 
+
+OSOR performs one-step object-and-effect removal by restoring a clean background from an intermediate noised latent. Training relies on effect-aware supervision and paired backgrounds, which we obtain with SAVP, a semantic-anchored verification pipeline over noisy instruction-based triplets, yielding the CORNE dataset with effect-aware masks. We train OSOR in two phases, as summarized in Fig. 3. Phase I focuses on boundary-consistent one-step restoration under well-localized masks using an occupancy-guided multi-scale discriminator with patch-level targets. Phase II adds a lightweight alpha head and incomplete-mask conditioning to improve robustness to conservative or misaligned user masks. Implementation details and verification thresholds are provided in the supplementary material. 
+
+3.1 SAVP and the CORNE Dataset 
+
+Effect-aware object removal requires paired backgrounds and masks that cover both the object and its visual effects such as cast shadows and reflections. We introduce SAVP, a semantic-anchored verification pipeline that extracts reliable removal supervision from noisy instruction-based triplets. We apply SAVP to the single-edit subset of NHR-Edit [16] with add or remove instructions. For add , we set (Ishot , I gt ) = ( Iedit , I orig ), and for remove we swap the order. SAVP verifies that the resulting pair exhibits localized and semantically consistent differences (Fig. 2), and outputs paired backgrounds with effect-aware masks to form CORNE. 
+
+Semantic-anchored verification. Given a single-edit instruction triplet, SAVP forms an ordered image pair (Ishot , I gt )
+
+and verifies that the visual difference is localized and semantically aligned with the instruction (Fig. 2). We compute a multi-feature difference heatmap from log-luminance, chromaticity, and gradient magnitude, then binarize and clean it to obtain a difference mask mdiff . Connected components in mdiff yield candidate boxes bdiff . We run GroundingDINO [ 21 ] with the instruction text on Ishot to obtain semantic boxes bsem . We first apply a global rejection based on the fragmentation of dominant components and the noise ratio of small components to discard pairs with dispersed artifacts. We then traverse bdiff in descending area and match each candidate to its best-overlapping semantic box in bsem . A candidate is accepted as bval only if its best IoU exceeds a threshold and its area remains within a scale ratio bound, producing a refined mask mval diff . If a candidate violates the scale bound we discard the entire pair as a collapse case, otherwise we drop the candidate and continue. We keep a triplet only if at least one validated region exists. Implementation details and thresholds are deferred to the supplementary. 
+
+Effect-aware mask synthesis. The validated difference mask mval diff localizes the edit but can be fragmented and may miss parts of the object. We therefore obtain an object-core mask mobj with SAM2 [ 32 ] on Ishot using bval as box prompts, and fuse it with the validated difference region (Fig. 2), 
+
+mfuse = mobj ∪ mval diff . (1) We optionally apply a lightweight dilation to mfuse to obtain the final effect-aware target mask mgt used in training. 4A PREPRINT - J UNE 29, 2026 U-Net              
+
+> Convout
+> LoRa
+> Transfomer Blcok
+> ResNet Blcok
+> ො𝒛 𝟎
+> 𝒛 𝒐𝒖𝒕
+> Decoder
+> U-Net
+> LoRa
+> Transfomer Blcok
+> ResNet Blcok
+> Encoder
+> ത𝒛
+> 𝒛 𝒕
+> 𝒎 𝒛
+> Downsamlpe
+> Concat
+> ො𝒛 𝟎
+> 𝒛 𝒐𝒖𝒕
+> Decoder
+> Encoder
+> ത𝒛
+> 𝒛 𝒕
+> 𝒎 𝒛
+> Weak Noise
+> Downsamlpe
+> Concat
+> Shot
+> Incomplete mask
+> Shot
+> Mask
+> 𝓛 𝒓 𝒆𝒄 𝓛 𝒑𝒆𝒓
+> 𝓛 𝜶
+> Downsamlpe
+> 𝓛 𝒓 𝒆𝒄 𝓛 𝒑𝒆𝒓
+> Mask
+> Mask
+> 𝓛 𝒂𝒅𝒗 𝓛 𝑫
+> Occupancy -Guided
+> Discriminator
+> 𝓛 𝒂𝒅𝒗 𝓛 𝑫
+> (a) Phase I: Boundary -consistent One -step Removal
+> (b) Phase II: Alpha -aware Robust Removal with Adaptive Blending
+> Convout
+> Target
+> Target
+> Weak Noise
+> Output GT
+> Output GT
+> Alpha Head
+> Occupancy -Guided
+> Discriminator
+
+Figure 3: Two-phase training curriculum. Phase I adapts a diffusion inpainting backbone with hard latent blending and occupancy-guided patch supervision for boundary-consistent one-step removal. Phase II predicts a soft alpha map under incomplete-mask conditioning and performs adaptive blending to remove residual shadows and reflections beyond the provided mask. 
+
+Effect decomposition for incomplete-mask conditioning. Phase II requires tight object-core conditioning masks to simulate conservative user inputs. We define the effect residual on the pre-expansion fused mask, 
+
+meff = mfuse \ mobj . (2) We select effect-heavy cases by an effects ratio ∥meff ∥1/∥mfuse ∥1. For effect-heavy cases, Phase II samples the conditioning mask min from a set of conservative masks that includes the tight object-core mask mobj , while supervising with the effect-aware target mgt .
+
+3.2 One-step Latent Restoration 
+
+OSOR builds on diffusion-family inpainting backbones (SDXL-Inpainting [ 29 ] and FLUX Fill [ 2]) and operates in the latent space of a pretrained VAE with encoder E(·) and decoder D(·). Given an input shot image x and a user-provided mask m, we encode ¯z = E(x) and apply forward noising at an intermediate noise level t [26], 
+
+zt = αt ¯z + σtϵ, ϵ ∼ N (0 , I ), (3) where αt and σt are schedule coefficients. The backbone is conditioned on the full input latent, the mask, and a fixed text embedding. We use the constant prompt “Remove the instance of object” , denote its embedding by e, and form 
+
+c = ⟨¯z, m, e ⟩. This exposes full scene context through ¯z while using m only to localize the intended edit. Given (zt, c, t ), the backbone predicts its native denoising output 
+
+uθ = fθ (zt, c, t ), (4) and we obtain a one-step estimate of the clean latent via the corresponding one-step mapping, 
+
+ˆz0 = zt − σt uθ
+
+αt
+
+. (5) 
+
+3.3 Phase I: Boundary-consistent One-step Removal 
+
+Phase I adapts a pretrained backbone for reliable one-step removal when the affected region is well localized. We use CORNE supervision and take the effect-aware mask mgt as the target region. In Phase I we set the conditioning mask as m = mgt . Following Sec. 3.2, we obtain zt and the one-step prediction ˆz0. To preserve non-edited content exactly, we perform hard blending in latent space (Fig. 3a), 
+
+zout = mz ⊙ ˆz0 + (1 − mz ) ⊙ ¯z, (6) 5A PREPRINT - J UNE 29, 2026 Scale2       
+
+> Scale3 Scale4
+> Hard Binary Targets
+> Mask
+> Shot
+> HM -Patch Targets
+> Scale 1Scale2
+> Scale3 Scale4
+> Gaussian Smoothed Targets
+> SM -Patch Targets
+> Scale 1Scale2
+> Scale3 Scale4
+> Exact Fractional Targets
+> OG -Patch Targets (ours)
+> Scale 1
+> Example
+
+Figure 4: Mask-derived patch targets for a four-scale discriminator. Left shows the input mask and its overlay on the shot image for visualization. Right compares three target constructions at each scale. HM uses nearest-neighbor downsampling. SM applies Gaussian smoothing after downsampling. OG uses area pooling to produce fractional occupancies. Differences grow on coarser grids. where ¯z = E(x) and mz is the backbone-specific mask representation used for latent blending. We decode ˆx = D(zout ).Hard blending keeps the unmasked region identical to the input and restricts gradients from training objectives to the edited region, which stabilizes one-step adaptation. 
+
+Occupancy-guided multi-scale discriminator. Single-step restoration can preserve global structure but often shows seams near mask boundaries, where each discriminator patch mixes preserved context and synthesized content (Fig. 4). We use a multi-scale patch discriminator in the PatchGAN family [ 13 , 39 , 46 ]. It consists of a frozen feature trunk ϕ
+
+and lightweight trainable patch heads {hkξ }k. In our implementation, ϕ is a pretrained OpenCLIP ConvNeXt [ 31 , 23 , 4]that outputs multi-resolution features fk = ϕk(x), and each head predicts a score map Dkξ (x) = σ hkξ (fk). We derive mask-based supervision targets at four scales, where target discretization becomes more pronounced at coarser heads (Fig. 4). Mapping a binary mask to a coarse logit grid is ambiguous at boundary patches. Nearest-neighbor downsampling produces hard labels and makes partially covered patches over-confident [ 39 ]. Gaussian smoothing yields soft targets but depends on the bandwidth σ, which is not tied to patch occupancy and becomes more consequential at larger downsampling factors [ 46 ]. We instead compute an occupancy map ˜wk ∈ [0 , 1] by area pooling the mask to each discriminator scale. Each value equals the masked-area fraction within the patch of a logit location, giving exact fractional targets for boundary patches. 
+
+Occupancy-guided objectives. We write the adversarial and reconstruction objectives using a spatial guidance map 
+
+w ∈ [0 , 1] H×W . In Phase I, we set w = mgt , and ˜wk is obtained by area pooling w to the k-th discriminator output resolution. Let xbg denote the paired ground-truth background. The discriminator objective is 
+
+LD (w) = X
+
+> k
+
+E− log Dkξ (xbg )
+
++ X
+
+> k
+
+E−(1 − ˜wk) ⊙ log Dkξ (ˆ x) − ˜wk ⊙ log  1 − Dkξ (ˆ x) + λr1 Rr1 . (7) We use an R1 regularizer on real samples [ 27 ] and compute it on the head inputs since ϕ is frozen (see supplementary). For the generator, we adopt the non-saturating form and normalize by the occupied area so the loss scale is insensitive to mask size, 
+
+Ladv (w) = X
+
+> k
+
+E
+
+" P  
+
+> p
+
+˜wk(p)   − log Dkξ (ˆ x)p
+
+P 
+
+> p
+
+˜wk(p) + ε
+
+#
+
+. (8) We also use a mask-normalized reconstruction term, 
+
+Lrec (w) = E
+
+" w ⊙ (ˆ x − xbg ) 1
+
+∥w∥1 + ε
+
+#
+
+, (9) together with Lper = LPIPS(ˆ x, x bg ) [48]. The generator objective is 
+
+LG(w) = λrec Lrec (w) + λper Lper + λadv Ladv (w). (10) 6A PREPRINT - J UNE 29, 2026 
+
+Figure 5: Qualitative comparison of OSOR and existing methods on CORNE-Val and AnimeEraseBench. For parameter-efficient adaptation of large pretrained backbones, we update only lightweight adapters and the terminal output projection while keeping the remaining pretrained weights frozen. Phase I solves the adversarial game with 
+
+w = mgt using 
+
+min  
+
+> θ
+
+max  
+
+> ξ
+
+LG(mgt ) − L D (mgt ), (11) which is optimized by alternating updates of θ and ξ.
+
+3.4 Phase II: Alpha-aware Robust Removal with Adaptive Blending 
+
+Phase I assumes the conditioning mask covers both the object and its effects. In practice, user masks are often conservative or misaligned and frequently miss soft shadows and reflections. Phase II therefore trains OSOR with an 
+
+incomplete conditioning mask min and predicts a soft alpha map for adaptive blending (Fig. 3b). 
+
+Alpha prediction and adaptive blending. We augment the generator with a lightweight alpha head so that a single forward pass produces both the denoising prediction and an alpha logit map [ 19 , 11 , 47 ]. Concretely, we extend the terminal output projection of the backbone to emit an additional set of logits ℓθ alongside its native denoising output. For SDXL-Inpainting, we expand the final convolutional output layer of the U-Net; for FLUX Fill, we expand the final output projection of the transformer. This design reuses all backbone computation and adds a small overhead. Given zt,
+
+c, and t, the generator predicts 
+
+(uθ , ℓ θ ) = fθ (zt, c, t ), ˆα = σ(ℓθ ), (12) where ˆα ∈ [0 , 1] is predicted at the latent resolution and estimates the effective editing region. For clarity, Fig. 3b visualizes ˆα as the alpha output of the head. We recover ˆz0 as in Sec. 3.2 and replace hard blending with alpha compositing in latent space [30, 17, 42], 
+
+zout = ˆ α ⊙ ˆz0 + (1 − ˆα) ⊙ ¯z, (13) with ¯z = E(x). Backbone-specific output parameterizations and the exact projection modifications are provided in the supplementary. Shot Image  Original  Sam  Expand  Shrink  Hole  Shift 
+
+Figure 6: Examples of incomplete conditioning masks min gener-ated from object-core segmentation and simple geometric pertur-bations. 
+
+Incomplete-mask conditioning. 
+
+In Phase II, we replace the conditioning mask in c
+
+by an incomplete mask min , using c = ⟨¯z, m in , e ⟩.We sample min from a family of conservative masks derived from mgt . This family includes tight object-core masks mobj obtained via promptable segmenta-tion, as well as simple perturbations of mgt such as dilation, erosion, translation, and random hole drop-ping, as illustrated in Fig. 6. These conditioning masks intentionally under-cover the true affected re-gion, so the model must infer missing effects from the image. 7A PREPRINT - J UNE 29, 2026 
+
+Figure 7: Qualitative comparison of OSOR and existing methods on RORD-Val, RemovalBench and TextEraseBench. 
+
+Alpha-guided training. A key design choice is that adversarial and reconstruction losses are always evaluated on the 
+
+effect-aware target region mgt , rather than on the predicted ˆα, to avoid degenerate solutions where the model reduces the loss by shrinking ˆα. Accordingly, we reuse the unified objectives in Eqs. (7) – (10) with w = mgt in Phase II as well. The predicted alpha is used only in the latent compositing of Eq. (13) and is explicitly supervised to match the effect-aware extent. Let mz 
+
+> gt
+
+denote mgt downsampled to the latent resolution (as illustrated in Fig. 3b). We add 
+
+Lα = λbce BCE( ℓθ , m z
+
+> gt
+
+) + λdice Dice(ˆ α, m z
+
+> gt
+
+). (14) This trains ˆα to recover the full effect-aware extent under incomplete conditioning, enabling removal of shadows and reflections beyond the user input. The overall Phase II objective is 
+
+min  
+
+> θ
+
+max  
+
+> ξ
+
+LG(mgt ) + Lα − L D (mgt ). (15) We initialize Phase II from the Phase I weights and maintain the same parameter-efficient adaptation strategy. LoRA updates the main blocks, while the terminal projection that emits (uθ , ℓ θ ) is fine-tuned to calibrate one-step output statistics. 
+
+## 4 Experiments 
+
+We defer full implementation details, benchmark specifications, and metric definitions to the supplementary material. Unless stated otherwise, all methods follow the same mask protocol and paired-background evaluation described there. We compare with SDXL-Inpainting [ 29 ] and FLUX Fill [ 2] and with OmniEraser [ 40 ], CLIPAway [ 6], Atten-tiveEraser [ 38 ], ObjectClear [ 49 ], and OmniPaint [ 45 ] using official code and recommended settings, and we measure latency on an NVIDIA A100. 
+
+4.1 Comparison with Previous Methods 4.1.1 Quantitative Results. 
+
+Table 1 reports paired-background results under object-only masks and effect-aware masks. OSOR runs in under one second per image. On CORNE-Val, OSOR-FLUX achieves the best scores across all reported metrics under both mask settings, while OSOR-SDXL gives the lowest CFD under the effect-aware mask. On RORD-Val, OSOR-FLUX attains the lowest CFD under both masks and remains competitive on perceptual metrics. On AnimeEraseBench, OSOR-FLUX again ranks first across fidelity and perceptual measures under both masks. The results change little when switching between the two mask settings, which matches the goal of Phase II training. Table 4 reports benchmarks evaluated under object-only masks. OSOR-FLUX performs best on TextEraseBench and OmniPaint-Bench for FID, CMMD, LPIPS, PSNR, and SSIM. On RemovalBench, OSOR-SDXL achieves the lowest CFD, and OSOR-FLUX remains competitive across the remaining metrics while retaining sub-second latency. 8A PREPRINT - J UNE 29, 2026 Table 1: Quantitative comparison on paired-background benchmarks CORNE-Val, RORD-Val, and AnimeEraseBench under object-only masks and effect-aware masks. Dataset Method Latency (s) Object Mask Object-Effect Mask FID ↓ CMMD ↓ LPIPS ↓ PSNR ↑ SSIM ↑ CFD ↓ FID ↓ CMMD ↓ LPIPS ↓ PSNR ↑ SSIM ↑ CFD ↓
+
+> CORNE-Val
+
+OmniPaint 26.12 18.6077 0.0093 0.0563 28.436 0.9166 0.1950 19.111 0.0094 0.0603 27.950 0.9119 0.2806 ObjectClear 6.44 22.0457 0.0111 0.0956 29.207 0.9191 0.2040 22.3819 0.0113 0.0976 29.012 0.9166 0.3352 AttentiveEraser 8.69 25.4818 0.0193 0.0790 25.650 0.8636 0.2244 26.3795 0.0176 0.0825 25.602 0.8584 0.3867 FLUX-Fill 25.27 59.5678 0.0285 0.0824 23.124 0.9130 0.2766 53.2040 0.0260 0.0784 23.629 0.9119 0.7265 OmniEraser 20.53 60.3871 0.1079 0.1801 21.540 0.7623 0.2091 59.3292 0.1049 0.1800 21.720 0.7604 0.3250 SDXL-INP 6.01 75.1054 0.1506 0.2338 16.203 0.7149 0.2883 63.1940 0.1357 0.2276 16.804 0.7177 0.4665 CLIPAway 5.96 68.1043 0.1740 0.1864 21.446 0.7641 0.2746 51.2921 0.1587 0.1781 22.850 0.7676 0.4661 OSOR(SDXL) 0.42 29.3846 0.0249 0.1272 27.262 0.8371 0.1608 29.2953 0.0255 0.1268 27.422 0.8376 0.2300 
+
+OSOR(FLUX) 0.80 12.3241 0.0073 0.0462 32.031 0.9373 0.1538 12.5203 0.0069 0.0460 32.189 0.9377 0.2339 RORD-Val OmniPaint 16.51 27.5658 0.0668 0.1110 23.293 0.7899 0.3707 28.1457 0.0675 0.1147 23.078 0.7848 0.3754 ObjectClear 8.69 25.4667 0.1458 0.1206 25.804 0.8500 0.3248 26.3523 0.1456 0.1234 25.633 0.8462 0.3323 AttentiveEraser 8.68 36.5740 0.1951 0.1685 22.798 0.7023 0.3608 34.9941 0.1822 0.1688 23.080 0.6995 0.3558 FLUX-Fill 24.80 118.0815 0.5883 0.1821 20.171 0.8156 0.5415 111.9136 0.5451 0.1818 20.587 0.8127 0.5607 OmniEraser 25.99 43.2935 0.2409 0.2174 21.900 0.6550 0.3788 43.4599 0.2395 0.2183 21.881 0.6537 0.3788 SDXL-INP 6.38 95.2105 0.7893 0.3247 17.155 0.6466 0.5551 88.0085 0.7111 0.3234 17.398 0.6469 0.5788 CLIPAway 4.95 89.5176 0.9300 0.2962 19.447 0.5851 0.5805 81.5943 0.9031 0.2952 19.665 0.5850 0.5662 OSOR(SDXL) 0.42 35.5989 0.1854 0.1795 23.767 0.6827 0.2644 35.6523 0.1858 0.1797 23.826 0.6823 0.2624 OSOR(FLUX) 0.62 27.3621 0.0952 0.1140 25.599 0.8175 0.2465 28.1271 0.1016 0.1154 25.613 0.8163 0.2324 
+
+> AnimeEraseBench
+
+OmniPaint 24.93 27.4034 0.0231 0.1129 25.542 0.8573 0.4369 26.8119 0.0223 0.1172 25.351 0.8515 0.4922 ObjectClear 10.18 36.6865 0.0241 0.1788 25.429 0.8409 0.3872 36.4259 0.0228 0.1800 25.530 0.8381 0.4406 AttentiveEraser 8.69 37.5448 0.0341 0.1333 22.587 0.7314 0.3802 37.7600 0.0337 0.1375 22.649 0.7259 0.4625 FLUX-Fill 25.19 76.5397 0.0558 0.1269 22.668 0.8597 0.4419 59.5985 0.0458 0.1115 23.960 0.8625 0.7075 OmniEraser 19.78 57.5116 0.1304 0.2339 19.190 0.6284 0.4249 56.6766 0.1220 0.2350 19.531 0.6232 0.4839 SDXL-INP 6.21 89.4030 0.1280 0.2754 14.827 0.6516 0.4952 70.5512 0.1081 0.2719 14.991 0.6516 0.5614 CLIPAway 5.96 88.9794 0.2142 0.3191 19.240 0.5748 0.4732 79.8083 0.2064 0.3143 19.581 0.5747 0.5293 OSOR(SDXL) 0.48 55.7614 0.0666 0.2367 23.090 0.6857 0.2820 55.4380 0.0658 0.2368 23.130 0.6858 0.3713 OSOR(FLUX) 0.89 26.8352 0.0165 0.1070 27.780 0.8859 0.2703 26.2539 0.0168 0.1077 27.871 0.8855 0.3505 
+
+Table 2: Noise-level ablation on RORD-Val with object-effect masks. Timestep FID ↓ CMMD ↓ LPIPS ↓ PSNR ↑ SSIM ↑ CFD ↓
+
+200 60.1520 0.2463 0.1926 22.232 0.6718 0.3610 400 50.0639 0.2143 0.1855 22.696 0.6741 0.3013 
+
+600 55.4021 0.2263 0.1884 22.563 0.6720 0.3418 800 51.8961 0.2505 0.1924 22.644 0.6710 0.3299 Table 3: Patch-target ablation on RORD-Val with object-effect masks. Target PSNR ↑ SSIM ↑ FID ↓ LPIPS ↓ CFD ↓
+
+Hard Mask 22.463 0.6739 56.1508 0.2007 0.3399 Gaussian Soft 21.992 0.6708 64.1290 0.2103 0.3430 Occupancy 22.696 0.6741 50.0639 0.1855 0.3013 
+
+4.1.2 Qualitative Results. 
+
+Fig. 7 and Fig. 5 highlight common failure modes in existing methods. CLIPAway often hallucinates new content inside the masked region. AttentiveEraser removes the object but leaves cast shadows and reflections beyond an object-only mask. OmniEraser, ObjectClear, and OmniPaint are generally strong on object removal and often suppress associated effects, yet occasional cases still exhibit mild residues, boundary inconsistencies, or unintended content. OSOR more consistently removes both the object and its associated effects while preserving cleaner background structure and boundaries across the shown cases. 
+
+4.2 Ablation Study 4.2.1 Noise level for one-step denoising. 
+
+We study the noise level t for one-step restoration on SDXL-Inpainting and evaluate on RORD-Val with object-effect masks. We sweep t ∈ { 200 , 400 , 600 , 800 } while keeping all other settings fixed, including the occupancy-guided multi-scale discriminator. Table 2 shows that t = 400 yields the best overall trade-off across fidelity and perceptual metrics. We use t = 400 in all subsequent experiments unless stated otherwise. 9A PREPRINT - J UNE 29, 2026 Table 4: Quantitative comparison under object-only masks on TextEraseBench, OmniPaint-Bench, and RemovalBench. Dataset Method Latency (s) FID ↓ CMMD ↓ LPIPS ↓ PSNR ↑ SSIM ↑ CFD ↓
+
+> TextEraseBench
+
+OmniPaint 24.89 29.3857 0.0348 0.1039 28.404 0.8811 0.2296 ObjectClear 10.16 29.1359 0.0293 0.1361 29.689 0.8945 0.1957 
+
+AttentiveEraser 8.69 34.6198 0.0397 0.1124 26.540 0.7974 0.1994 FLUX-Fill 25.27 85.1376 0.3464 0.1250 22.157 0.8781 0.4745 OmniEraser 19.80 53.7494 0.1129 0.2071 21.300 0.7134 0.2217 SDXL-INP 6.22 68.4836 0.1823 0.2383 19.300 0.7284 0.3422 CLIPAway 6.22 64.7926 0.3275 0.2440 23.106 0.7018 0.3011 OSOR(SDXL) 0.43 38.1242 0.0418 0.1800 27.748 0.7735 0.2128 OSOR(FLUX) 0.83 19.6169 0.0225 0.0803 31.997 0.9161 0.2066 OmniPaint-Bench  OmniPaint 34.13 50.0921 0.0808 0.1522 23.455 0.8126 0.2700 ObjectClear 8.90 58.3634 0.1353 0.2357 23.543 0.7991 0.2535 AttentiveEraser 8.68 62.1880 0.1330 0.1732 22.406 0.7762 0.3290 FLUX-Fill 25.27 124.7098 0.3085 0.2056 19.460 0.7902 0.4750 OmniEraser 14.39 75.0069 0.1743 0.2502 22.063 0.7062 0.3194 SDXL-INP 6.16 115.0825 0.3088 0.2828 18.081 0.7059 0.5792 CLIPAway 5.96 117.2142 0.5298 0.3005 19.434 0.6972 0.5457 OSOR(SDXL) 0.42 67.4797 0.1967 0.2648 23.168 0.7419 0.2104 
+
+OSOR(FLUX) 1.06 49.1927 0.0703 0.1419 24.936 0.8330 0.2303 RemovalBench OmniPaint 30.59 41.1790 0.0273 0.2135 24.599 0.7488 0.2180 ObjectClear 10.16 49.2744 0.0335 0.2871 25.884 0.7726 0.1810 AttentiveEraser 8.69 80.3447 0.1788 0.1942 23.787 0.7002 0.2094 FLUX-Fill 25.27 178.6896 0.4454 0.2695 20.277 0.7099 0.3984 OmniEraser 14.39 65.4691 0.3066 0.2929 23.030 0.6712 0.1835 SDXL-INP 6.03 165.4925 0.4756 0.3388 16.983 0.6251 0.3227 CLIPAway 5.96 169.0450 0.4072 0.3787 20.461 0.6537 0.3569 OSOR(SDXL) 0.43 63.6405 0.0709 0.3313 24.676 0.6943 0.1585 
+
+OSOR(FLUX) 0.93 43.8899 0.0300 0.1972 25.803 0.7612 0.1810 Mask & Image Removal Output Pred Alpha Map 
+
+Figure 8: Alpha compositing under imperfect masks. Table 5: Ablation of alpha compositing on RORD-Val under object-only and effect-aware conditioning masks. Conditioning mask Method PSNR ↑ SSIM ↑ FID ↓ CMMD ↓ LPIPS ↓ CFD ↓                            
+
+> Object-only mobj Phase I 21.965 0.6726 59.8017 0.2764 0.2062 0.3133 Phase II 23.767 0.6827 35.5989 0.1854 0.1795 0.2644
+> Effect-aware mgt Phase I 22.696 0.6741 50.0639 0.2143 0.1855 0.3013 Phase II 23.826 0.6823 35.6523 0.1858 0.1797 0.2624
+
+4.2.2 Occupancy-guided multi-scale discriminator. 
+
+We ablate the construction of mask-derived patch targets on SDXL-Inpainting and evaluate on RORD-Val with object-effect masks. We fix t = 400 and compare hard targets from nearest-neighbor downsampling, Gaussian-smoothed targets, and our occupancy targets from area pooling. Table 3 shows that occupancy targets improve both perceptual and full-reference metrics, supporting fractional supervision at boundary patches. 
+
+4.2.3 Alpha compositing with conservative masks. 
+
+We evaluate whether the alpha head is needed for robust removal when the conditioning mask under-covers object effects. We compare Phase I with hard latent blending in Eq. (6) and Phase II with alpha compositing in Eq. (13) on RORD-Val under two conditioning masks. The first uses the effect-aware mask mgt . The second uses an object-only mask mobj that excludes effect regions and serves as a conservative input. Table 5 shows that Phase II improves both fidelity and perceptual quality under both conditioning settings, with a clearer advantage when the conditioning mask is 10 A PREPRINT - J UNE 29, 2026 object-only. Figure 8 visualizes the mechanism. The predicted alpha extends into effect regions that are excluded from 
+
+mobj , enabling the model to modify a broader effective region than hard blending. 
+
+## 5 Conclusion 
+
+We presented OSOR, a one-step diffusion inpainting framework for effect-aware object removal. OSOR formulates removal as latent restoration from an intermediate noised latent and predicts the clean background in a single denoising pass. To improve boundary consistency in single-step training, we introduce an occupancy-guided multi-scale discrimi-nator that uses fractional mask occupancies as patch-level targets. To handle conservative or misaligned user masks, we add a lightweight alpha head and train with incomplete-mask conditioning so the model can remove effects beyond the provided boundary. We further propose SAVP to extract effect-aware supervision from noisy instruction-based triplets and curate CORNE with 280K verified removal pairs, together with AnimeEraseBench and TextEraseBench for evaluation. Experiments show that OSOR reaches strong perceptual quality while reducing inference time by 4 × to 30 ×, and it processes 1024 ×1024 images within one second on a single A100 GPU. 
+
+## Acknowledgements 
+
+This work was supported by Transsion Holdings. 
+
+## References 
+
+[1] Avrahami, O., Lischinski, D., Fried, O.: Blended diffusion for text-driven editing of natural images. In: CVPR. pp. 18187–18197 (2022) [2] Black Forest Labs: Flux. https://github.com/black-forest-labs/flux (2024) [3] Brooks, T., Holynski, A., Efros, A.A.: Instructpix2pix: Learning to follow image editing instructions. In: CVPR. pp. 18392–18402 (2023) [4] Cherti, M., Beaumont, R., Wightman, R., Wortsman, M., Ilharco, G., Gordon, C., Schuhmann, C., Schmidt, L., Jitsev, J.: Reproducible scaling laws for contrastive language-image learning. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023. pp. 2818–2829 (2023). https://doi.org/10.1109/CVPR52729.2023.00276 [5] Dong, Q., Cao, C., Fu, Y.: Incremental transformer structure enhanced image inpainting with masking positional encoding. In: CVPR. pp. 11348–11358 (2022) [6] Ekin, Y., Yildirim, A.B., Caglar, E.E., Erdem, A., Erdem, E., Dundar, A.: Clipaway: Harmonizing focused embeddings for removing objects via diffusion models. In: Globersons, A., Mackey, L., Belgrave, D., Fan, A., Paquet, U., Tomczak, J.M., Zhang, C. (eds.) Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 (2024) [7] Goodfellow, I.J., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A.C., Bengio, Y.: Generative adversarial nets. In: NeurIPS. pp. 2672–2680 (2014) [8] Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., Hochreiter, S.: Gans trained by a two time-scale update rule converge to a local nash equilibrium. In: Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017, December 4-9, 2017, Long Beach, CA, USA. pp. 6626–6637 (2017), https://proceedings.neurips.cc/paper/2017/hash/ 8a1d694707eb0fefe65871369074926d-Abstract.html 
+
+[9] Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. In: NeurIPS. pp. 6840–6851 (2020) [10] Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W.: Lora: Low-rank adaptation of large language models. In: The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 (2022), https://openreview.net/forum?id=nZeVKeeFYf9 
+
+[11] Hu, X., Peng, X., Luo, D., Ji, X., Peng, J., Jiang, Z., Zhang, J., Jin, T., Wang, C., Ji, R.: Diffumatting: Synthesizing arbitrary objects with matting-level annotation. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXVIII. vol. 15126, pp. 396–413 (2024). https://doi.org/10.1007/978-3-031-73113-6_23 [12] Iizuka, S., Simo-Serra, E., Ishikawa, H.: Globally and locally consistent image completion. ACM TOG 36 (4), 107:1–107:14 (2017) 11 A PREPRINT - J UNE 29, 2026 [13] Isola, P., Zhu, J., Zhou, T., Efros, A.A.: Image-to-image translation with conditional adversarial networks. In: 2017 IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2017, Honolulu, HI, USA, July 21-26, 2017. pp. 5967–5976 (2017). https://doi.org/10.1109/CVPR.2017.632 [14] Jayasumana, S., Ramalingam, S., Veit, A., Glasner, D., Chakrabarti, A., Kumar, S.: Rethinking FID: towards a better evaluation metric for image generation. In: IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 9307–9315 (2024). https://doi.org/10.1109/CVPR52733.2024.00889 [15] Jiang, L., Wang, Z., Bao, J., Zhou, W., Chen, D., Shi, L., Chen, D., Li, H.: Smarteraser: Remove anything from images using masked-region guidance. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025. pp. 24452–24462 (2025). https://doi.org/10.1109/CVPR52734.2025.02277 [16] Kuprashevich, M., Alekseenko, G., Tolstykh, I., Fedorov, G., Suleimanov, B., Dokholyan, V., Gordeev, A.: Nohumansrequired: Autonomous high-quality image editing triplet mining. CoRR abs/2507.14119 (2025). https://doi.org/10.48550/ARXIV.2507.14119 [17] Levin, A., Lischinski, D., Weiss, Y.: A closed-form solution to natural image matting. IEEE Trans. Pattern Anal. Mach. Intell. 30 (2), 228–242 (2008). https://doi.org/10.1109/TPAMI.2007.1177 [18] Li, W., Lin, Z., Zhou, K., Qi, L., Wang, Y., Jia, J.: Mat: Mask-aware transformer for large hole image inpainting. In: CVPR. pp. 10748–10758 (2022) [19] Li, X., Yang, Z., Quan, R., Yang, Y.: DRIP: unleashing diffusion priors for joint foreground and al-pha prediction in image matting. In: Advances in Neural Information Processing Systems 38: An-nual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 (2024), http://papers.nips.cc/paper_files/paper/2024/hash/ 91edff07232fb1b55a505a9e9f6c0ff3-Abstract-Conference.html 
+
+[20] Lin, X., Yu, F., Hu, J., You, Z., Shi, W., Ren, J.S., Gu, J., Dong, C.: Harnessing diffusion-yielded score priors for image restoration. ACM Trans. Graph. 44 (6), 208:1–208:21 (2025). https://doi.org/10.1145/3763346 [21] Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding DINO: marrying DINO with grounded pre-training for open-set object detection. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part XLVII. vol. 15105, pp. 38–55 (2024). https://doi.org/10.1007/978-3-031-72970-6_3 [22] Liu, Y., Zhou, H., Cui, B., Shang, W., Lin, R.: Erase diffusion: Empowering object removal through calibrating diffusion pathways. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025. pp. 2418–2427 (2025). https://doi.org/10.1109/CVPR52734.2025.00231 [23] Liu, Z., Mao, H., Wu, C., Feichtenhofer, C., Darrell, T., Xie, S.: A convnet for the 2020s. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022. pp. 11966–11976 (2022). https://doi.org/10.1109/CVPR52688.2022.01167 [24] Lugmayr, A., Danelljan, M., Romero, A., Yu, F., Timofte, R., Van Gool, L.: Repaint: Inpainting using denoising diffusion probabilistic models. In: CVPR. pp. 11451–11461 (2022) [25] Luo, S., Tan, Y., Huang, L., Li, J., Zhao, H.: Latent consistency models: Synthesizing high-resolution images with few-step inference. CoRR abs/2310.04378 (2023). https://doi.org/10.48550/ARXIV.2310.04378 [26] Meng, C., He, Y., Song, Y., Song, J., Wu, J., Zhu, J., Ermon, S.: Sdedit: Guided image synthesis and editing with stochastic differential equations. In: The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 (2022) [27] Mescheder, L.M., Geiger, A., Nowozin, S.: Which training methods for gans do actually converge? In: Dy, J.G., Krause, A. (eds.) Proceedings of the 35th International Conference on Machine Learning, ICML 2018, Stockholmsmässan, Stockholm, Sweden, July 10-15, 2018. vol. 80, pp. 3478–3487 (2018), http: //proceedings.mlr.press/v80/mescheder18a.html 
+
+[28] Pathak, D., Krähenbühl, P., Donahue, J., Darrell, T., Efros, A.A.: Context encoders: Feature learning by inpainting. In: CVPR. pp. 2536–2544 (2016) [29] Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: SDXL: improving latent diffusion models for high-resolution image synthesis. In: The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 (2024) [30] Porter, T.K., Duff, T.: Compositing digital images. In: Christiansen, H. (ed.) Proceedings of the 11th Annual Conference on Computer Graphics and Interactive Techniques, SIGGRAPH 1984, Minneapolis, Minnesota, USA, July 23-27, 1984. pp. 253–259 (1984). https://doi.org/10.1145/800031.808606 12 A PREPRINT - J UNE 29, 2026 [31] Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: Meila, M., Zhang, T. (eds.) Proceedings of the 38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event. vol. 139, pp. 8748–8763 (2021), http://proceedings.mlr.press/v139/ radford21a.html 
+
+[32] Ravi, N., Gabeur, V., Hu, Y., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K.V., Carion, N., Wu, C., Girshick, R.B., Dollár, P., Feichtenhofer, C.: SAM 2: Segment anything in images and videos. In: The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 (2025), https://openreview.net/forum?id=Ha6RTeWMd0 
+
+[33] Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: CVPR. pp. 10674–10685 (2022) [34] Sagong, M., Yeo, Y., Jung, S., Ko, S.: RORD: A real-world object removal dataset. In: 33rd British Machine Vision Conference 2022, BMVC 2022, London, UK, November 21-24, 2022. p. 542 (2022) [35] Salimans, T., Ho, J.: Progressive distillation for fast sampling of diffusion models. In: The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 (2022), https:// openreview.net/forum?id=TIdIXIpzhoI 
+
+[36] Sauer, A., Lorenz, D., Blattmann, A., Rombach, R.: Adversarial diffusion distillation. In: Leonardis, A., Ricci, E., Roth, S., Russakovsky, O., Sattler, T., Varol, G. (eds.) Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXXXVI. vol. 15144, pp. 87–103 (2024). https://doi.org/10.1007/978-3-031-73016-0_6 [37] Song, Y., Dhariwal, P., Chen, M., Sutskever, I.: Consistency models. In: International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA. vol. 202, pp. 32211–32252 (2023) [38] Sun, W., Dong, X., Cui, B., Tang, J.: Attentive eraser: Unleashing diffusion model’s object removal poten-tial via self-attention redirection guidance. In: AAAI-25, Sponsored by the Association for the Advancement of Artificial Intelligence, February 25 - March 4, 2025, Philadelphia, PA, USA. pp. 20734–20742 (2025). https://doi.org/10.1609/AAAI.V39I19.34285 [39] Suvorov, R., Logacheva, E., Mashikhin, A., Remizova, A., Ashukha, A., Silvestrov, A., Kong, N., Goka, H., Park, K., Lempitsky, V.: Resolution-robust large mask inpainting with fourier convolutions. In: IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2022, Waikoloa, HI, USA, January 3-8, 2022. pp. 3172–3182 (2022). https://doi.org/10.1109/WACV51458.2022.00323 [40] Wei, R., Yin, Z., Zhang, S., Zhou, L., Wang, X., Ban, C., Cao, T., Sun, H., He, Z., Liang, K., Ma, Z.: Omnieraser: Remove objects and their effects in images with paired video-frame data (2025), https://arxiv.org/abs/ 2501.07397 
+
+[41] Winter, D., Cohen, M., Fruchter, S., Pritch, Y., Rav-Acha, A., Hoshen, Y.: Objectdrop: Bootstrapping counter-factuals for photorealistic object removal and insertion. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXXVII. vol. 15135, pp. 112–129 (2024) [42] Xu, N., Price, B.L., Cohen, S., Huang, T.S.: Deep image matting. In: 2017 IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2017, Honolulu, HI, USA, July 21-26, 2017. pp. 311–320 (2017). https://doi.org/10.1109/CVPR.2017.41 [43] Yin, T., Gharbi, M., Zhang, R., Shechtman, E., Durand, F., Freeman, W.T., Park, T.: One-step diffusion with distri-bution matching distillation. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 6613–6623 (2024). https://doi.org/10.1109/CVPR52733.2024.00632 [44] Yu, J., Lin, Z., Yang, J., Shen, X., Lu, X., Huang, T.S.: Free-form image inpainting with gated convolution. In: 2019 IEEE/CVF International Conference on Computer Vision, ICCV 2019, Seoul, Korea (South), October 27 -November 2, 2019. pp. 4470–4479 (2019). https://doi.org/10.1109/ICCV.2019.00457 [45] Yu, Y., Zeng, Z., Zheng, H., Luo, J.: Omnipaint: Mastering object-oriented editing via disentangled insertion-removal inpainting. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 17324–17334 (October 2025) [46] Zeng, Y., Fu, J., Chao, H., Guo, B.: Aggregated contextual transformations for high-resolution image inpainting. IEEE Trans. Vis. Comput. Graph. 29 (7), 3266–3280 (2023). https://doi.org/10.1109/TVCG.2022.3156949 [47] Zhang, L., Agrawala, M.: Transparent image layer diffusion using latent transparency. ACM Trans. Graph. 43 (4), 100:1–100:15 (2024). https://doi.org/10.1145/3658150 13 A PREPRINT - J UNE 29, 2026 [48] Zhang, R., Isola, P., Efros, A.A., Shechtman, E., Wang, O.: The unreasonable effectiveness of deep features as a perceptual metric. In: 2018 IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2018, Salt Lake City, UT, USA, June 18-22, 2018. pp. 586–595 (2018). https://doi.org/10.1109/CVPR.2018.00068 [49] Zhao, J., Zhou, S., Wang, Z., Yang, P., Loy, C.C.: Objectclear: Complete object removal via object-effect attention. CoRR abs/2505.22636 (2025). https://doi.org/10.48550/ARXIV.2505.22636 14 A PREPRINT - J UNE 29, 2026 
+
+# Supplementary Material 
+
+## A Supplementary Details of SAVP and CORNE 
+
+This section provides additional implementation details and dataset statistics for SAVP and CORNE. We first describe semantic-anchored verification and effect-aware mask synthesis, then report aggregate statistics for CORNE and CORNE-Val, and finally present representative CORNE annotation cases. 
+
+A.1 Algorithmic Details 
+
+SAVP has two stages. The first verifies that an instruction-based edit triplet yields a localized and semantically aligned removal pair. The second synthesizes the effect-aware target mask and identifies the effect-heavy subset used in Phase II. Algorithm 1 summarizes semantic-anchored verification. Algorithm 2 summarizes effect-aware mask synthesis and effect decomposition. 
+
+Algorithm 1: Semantic-anchored verification in SAVP 
+
+Input: Single-edit instruction triplet (Iorig , I edit , p ), where p is the edit instruction 
+
+Output: Validated pair (Ishot , I gt ), validated boxes bval , and refined difference mask mval diff ; otherwise reject Determine the ordered pair (Ishot , I gt ) from the instruction type; 
+
+if p is an add instruction then 
+
+(Ishot , I gt ) ← (Iedit , I orig );
+
+else if p is a remove instruction then 
+
+(Ishot , I gt ) ← (Iorig , I edit );
+
+else 
+
+reject; Compute normalized feature differences: log-luminance ∆Llog , chromaticity ∆ab , and gradient-magnitude difference ∆Tex ;Form the difference heatmap 
+
+H = wL∆Llog + wab ∆ab + wT ∆Tex 
+
+Threshold H at τH to obtain a raw mask, then apply opening and closing with structuring radius rmorph ;Remove connected components with area smaller than Amin , and fill holes with area at most Ahole , yielding mdiff ;Split connected components in mdiff into dominant and noise components using the relative-area threshold α;Reject the pair if the number of dominant components exceeds Nmax or if the noise ratio exceeds τnoise ;Convert dominant components into candidate boxes bdiff ;Run GroundingDINO [21] on Ishot with text query p, keeping up to Ksem boxes with score at least τscore , to obtain semantic boxes bsem ;Initialize bval ← ∅;Sort bdiff by area in descending order; 
+
+foreach b ∈ bdiff do 
+
+Find the best-overlapping semantic box b⋆ ∈ bsem ;Compute 
+
+viou = IoU( b, b ⋆), R = Area( b)Area( b⋆)
+
+if viou ≥ τiou and R ≤ τscale then 
+
+accept b and append it to bval ;
+
+else if R > τ scale then 
+
+reject ; // collapse case 
+
+if bval = ∅ then 
+
+reject; Retain only connected components whose support from validated boxes exceeds τkeep to construct mval diff ;Return (Ishot , I gt ), bval , and mval diff ;
+
+A.2 Implementation Constants 
+
+Table 6 summarizes the implementation constants used in SAVP. 15 A PREPRINT - J UNE 29, 2026 
+
+Algorithm 2: Effect-aware mask synthesis and effect decomposition 
+
+Input: Validated pair (Ishot , I gt ), validated boxes bval , refined difference mask mval diff 
+
+Output: Object-core mask mobj , fused mask mfuse , effect-aware target mask mgt , effect residual meff , and a Phase II candidate flag Run SAM2 [32] on Ishot using bval as box prompts to obtain object-core proposals; Union all returned masks to form the object-core mask mobj ;Fuse the validated difference region with the object-core mask, 
+
+mfuse = mobj ∪ mval diff 
+
+Expand mfuse by distance-transform-based area growth with ratio rdilate to obtain the final effect-aware target mask mgt ;Define the effect residual on the pre-expansion fused mask, 
+
+meff = mfuse \ mobj 
+
+and compute the effects ratio 
+
+reff = ∥meff ∥1
+
+∥mfuse ∥1
+
+Mark the sample as effect-heavy if reff ≥ τeff ;For effect-heavy cases, construct conservative conditioning masks that include mobj and simple perturbations derived from mgt ;Return mobj , mfuse , mgt , meff , and the Phase II candidate flag; 
+
+Table 6: SAVP implementation con-stants. 
+
+Symbol Value Symbol Value 
+
+wL 0.6 τnoise 0.3 
+
+wab 0.3 τscore 0.3 
+
+wT 0.1 Ksem 3
+
+τH 0.07 τiou 0.3 
+
+rmorph 3 τscale 2.0 
+
+Amin 2000 τkeep 0.5 
+
+Ahole 500 rdilate 1.2 
+
+α 0.3 τeff 0.25 
+
+Nmax 4
+
+Table 7: CORNE and CORNE-Val statistics. 
+
+Statistic Count Ratio 
+
+Source corpus 
+
+Source samples 680,088 –Add-object samples 213,204 31.35% Remove-object samples 214,725 31.57% Add/remove total 427,929 62.92% 
+
+Retained training set 
+
+CORNE 287,012 42.20% of source Phase II subset 67,726 23.60% of CORNE 
+
+Held-out evaluation split 
+
+Held-out processed samples 1,500 –CORNE-Val 219 14.60% of held-out 
+
+A.3 Dataset Statistics 
+
+Table 7 reports aggregate statistics for CORNE and CORNE-Val. For training-set aggregation, we exclude part2 shards 10, 24, 30, and 31. These shards are reserved for held-out sampling. We randomly sample 1,500 pairs from the reserved shards, process them with the same pipeline, and obtain CORNE-Val with 219 samples. 
+
+A.4 Representative CORNE Annotation Cases 
+
+Figure 9 shows representative annotation cases from CORNE. Each sample contains the input image Ishot , the paired background Igt , the tight object-core mask mobj , and the effect-aware target mask mgt . Compared with mobj , the effect-aware mask mgt additionally covers visual effects induced by the object, such as cast shadows, reflections, and local residual traces. These examples illustrate the supervision structure used in Phase I and the mask relationship underlying the incomplete-mask setting in Phase II. 
+
+## B Supplementary Training and Evaluation Details 
+
+B.1 Implementation Details 
+
+We train OSOR on CORNE in two phases using two diffusion-family backbones, SDXL-Inpainting [ 29 ] and FLUX Fill [2]. 16 A PREPRINT - J UNE 29, 2026 
+
+Figure 9: Representative CORNE annotation cases. Each row shows the input image Ishot , the paired background Igt , the object-core mask mobj , and the effect-aware target mask mgt . The object-core mask provides tight object localization, while the effect-aware mask additionally covers object-induced visual effects such as cast shadows, reflections, and local residual traces. For SDXL-Inpainting, we resize each training image so that its shorter side is 512. Phase I uses LoRA [ 10 ] with rank 256 and a global batch size of 16 on four NVIDIA A100 GPUs. We train for 15K steps with a learning rate of 
+
+1 × 10 −5 for both the generator and discriminator. The loss weights are set to λadv = 0 .3, λper = 5 using LPIPS [ 48 ], 
+
+λℓ1 = 0 .25 , and λgp = 60000 . Phase II keeps the same optimization settings and continues for 5K steps, with additional alpha supervision using λbce = 1 .0 and λdice = 2 .0. The complete two-phase training takes approximately 24 hours. For FLUX Fill, inputs are resized to a multiple of 16. Phase I uses LoRA with rank 64 and a global batch size of 16 on eight NVIDIA A100 GPUs. We use the same learning rate and optimization schedule as for SDXL-Inpainting, set 
+
+λℓ1 = 0 .5 and λper = 3 , and keep the other loss weights unchanged. Phase II continues for 5K steps with the same alpha-supervision objectives. The complete two-phase training takes approximately 30 hours. Across both backbones, we update the LoRA modules and the terminal output projections, including the alpha-output channels in Phase II, while keeping the remaining pretrained backbone parameters frozen. 
+
+Real-pair refinement. Starting from the Phase-II OSOR-FLUX checkpoint, we continue training for 1K steps on the 
+
+captured subset of OBER [ 49 ]. All other settings are kept the same as in OSOR-FLUX Phase II, including the LoRA rank, trainable parameters, loss functions, loss weights, learning rate, global batch size, and hardware configuration. This additional training takes approximately 1.5 hours. The refinement reduces the RORD-Val FID from 27.4/28.1 to 23.8/23.8 under object-only/effect-aware masks. It also reduces the FID on OmniPaint-Bench from 49.2 to 44.4 and that on RemovalBench from 43.9 to 42.5. Because the refinement only updates the model parameters, it does not change the network architecture or the number of denoising steps at inference. 17 A PREPRINT - J UNE 29, 2026 
+
+B.2 Comparison Methods 
+
+We compare OSOR with the baselines reported in the main paper. We include the general diffusion inpainting backbones SDXL-Inpainting [ 29 ] and FLUX Fill [ 2]. We also evaluate the object removal methods OmniEraser [ 40 ], CLIPAway [ 6], Attentive Eraser [ 38 ], ObjectClear [ 49 ], and OmniPaint [ 45 ]. We use the official implementations and recommended settings whenever they are available. 
+
+Training requirements. The compared methods follow different training protocols. CLIPAway is training-free, while Attentive Eraser is tuning-free. ObjectClear is trained for 100K iterations with a total batch size of 32 on eight NVIDIA A100 GPUs; its wall-clock training time is not reported. OmniEraser is trained for 130K steps with a batch size of 1 on a single NVIDIA A800 GPU and reports a training time of approximately one day. For OSOR, the complete two-phase training takes approximately 24 hours for the SDXL-Inpainting backbone on four A100 GPUs and 30 hours for the FLUX Fill backbone on eight A100 GPUs. The additional 1K-step real-pair refinement takes approximately 1.5 hours. These numbers describe the reported training requirements rather than a compute-normalized comparison, since the methods differ in backbone, input resolution, batch size, hardware, training data, and trainable parameters. 
+
+Inference speed. For runtime comparison, we measure the latency of all available methods on a single NVIDIA A100 GPU using their official implementations and recommended settings. The real-pair refinement changes only the learned model parameters and therefore does not affect the one-step inference procedure of OSOR-FLUX. 
+
+B.3 Evaluation Benchmarks 
+
+We evaluate on paired-background benchmarks under two mask settings at inference, an object mask mobj and an effect-aware mask mgt that additionally covers footprints such as shadows and reflections. RORD-Val is built from RORD [ 34 ] by keeping one image per scene, yielding 343 samples, and re-annotating object and effect masks. CORNE-Val contains 219 held-out CORNE samples with both mask types. We further introduce AnimeEraseBench with 157 samples and TextEraseBench with 185 samples, covering stylized scenes and text removal with paired backgrounds and object and effect masks. We also report results on OmniPaint-Bench [45] and RemovalBench [40]. 
+
+B.4 Evaluation Metrics 
+
+We report PSNR and SSIM as reference-based fidelity measures on paired-background benchmarks. For perceptual quality, we use FID [8], CMMD [14], and LPIPS [48]. We additionally report CFD following OmniPaint [45]. 
+
+B.5 Backbone-specific Alpha Head Implementation 
+
+For both backbones, namely SDXL-Inpainting [ 29 ] and FLUX Fill [ 2], the generator predicts (uθ , ℓ θ ) = fθ (zt, c, t )
+
+and the alpha map is obtained as ˆα = σ(ℓθ ). This subsection specifies how the alpha logits ℓθ are parameterized for each backbone. 
+
+SDXL-Inpainting. For SDXL-Inpainting, we modify the terminal U-Net output layer by expanding the final convolution from 4 to 5 output channels. The first four channels retain the original denoising output and are initialized by copying the pretrained output convolution. The additional fifth channel is newly initialized and serves as the alpha logit channel. Let the modified U-Net output be 
+
+y ∈ RB×5×H×W .
+
+We split it as 
+
+uθ = y[: , :4 , :,:] , ℓθ = y[: , 4: , :,:] .
+
+The resulting ℓθ is predicted directly at the latent resolution. The modified terminal convolution is explicitly unfrozen and optimized jointly with the LoRA parameters. 
+
+FLUX Fill. For FLUX Fill, we modify the terminal transformer output layer by expanding the final projection from 64 to 68 output dimensions. The first 64 dimensions retain the original denoising output and are initialized by copying the pretrained output projection. The additional 4 dimensions are newly initialized and represent alpha logits in the packed latent representation used by FLUX. Let the modified transformer output be 
+
+ypack ∈ RN ×68 ,
+
+where N denotes the packed token dimension. We split it as 
+
+upack  
+
+> θ
+
+= ypack [: , :64] , ℓpack  
+
+> θ
+
+= ypack [: , 64:] .
+
+18 A PREPRINT - J UNE 29, 2026          
+
+> Input image
+> x∈[−1,1] B×3×H×W
+> f1
+> [384 , H/ 4, W/ 4]
+> f2
+> [768 , H/ 8, W/ 8]
+> f3
+> [1536 , H/ 16 , W/ 16]
+> f4
+> [3072 , H/ 32 , W/ 32]
+> h1
+> ξh2
+> ξh3
+> ξh4
+> ξ
+> logits 1
+> [H/ 8, W/ 8]
+> logits 2
+> [H/ 16 , W/ 16]
+> logits 3
+> [H/ 32 , W/ 32]
+> logits 4
+> [H/ 64 , W/ 64]
+> Frozen feature trunk ϕ
+> Trainable heads {hkξ}4
+> k=1
+
+Figure 10: Overall architecture of the occupancy-guided multi-scale discriminator. A frozen feature trunk ϕ extracts four intermediate feature maps fk = ϕk(x), which are processed by lightweight trainable heads hkξ to produce patch logits at four scales.                 
+
+> Input feature map
+> fk∈RB×Ck×Hk×Wk
+> SN Conv
+> 3×3
+> Ck→512
+> LeakyReLU slope 0.2
+> BlurPool stride 2
+> SN Conv
+> 1×1512 →1
+> Patch logit map
+> [B, H k/2, W k/2]
+
+Figure 11: Structure of one trainable head hkξ . Each head applies spectral-normalized convolution, LeakyReLU, BlurPool downsampling, and a final 1 × 1 convolution to produce a single-channel patch logit map. The packed alpha logits are then unpacked to the latent grid, 
+
+ℓθ = Unpack 
+
+
+
+ℓpack 
+
+> θ
+
+
+
+, ˆα = σ(ℓθ ),
+
+so that the final alpha map is also defined at the latent resolution. The modified terminal projection is explicitly unfrozen and optimized jointly with the LoRA parameters. 
+
+Parameter Overhead. This modification introduces only a negligible number of new parameters. The added alpha outputs contribute 2,881 parameters for SDXL-Inpainting and 12,292 parameters for FLUX Fill. In our implementation, the trainable terminal output layers are optimized in float32 , so the corresponding parameter memory is approximately 11.3 KiB for SDXL-Inpainting and 48.0 KiB for FLUX Fill. This overhead is negligible relative to the backbone size and does not introduce a meaningful memory burden in practice. 
+
+B.6 More Details of the Occupancy-guided Multi-scale Discriminator 
+
+Figure 10 summarizes the discriminator architecture. It consists of a frozen feature trunk ϕ and lightweight trainable heads {hkξ }4
+
+> k=1
+
+. Given an input image x ∈ [−1, 1] B×3×H×W , the image is first mapped to the CLIP image space, after which four intermediate feature maps 
+
+fk = ϕk(x), k ∈ { 1, 2, 3, 4},
+
+are extracted. In our implementation, ϕ is a pretrained OpenCLIP ConvNeXt visual encoder [ 4 , 23 ]. It produces four stages with channel dimensions [384 , 768 , 1536 , 3072] and spatial resolutions [H/ 4, W/ 4] , [H/ 8, W/ 8] , [H/ 16 , W/ 16] ,and [H/ 32 , W/ 32] , respectively. Each stage is processed by one trainable head hkξ , and the corresponding probability map is written as 
+
+Dkξ (x) = σ hkξ (fk) .
+
+In practice, the heads operate on logits, and the sigmoid is introduced only for notation. Figure 11 shows the structure of one trainable head. All four heads share the same architecture and differ only in their input channel dimension. Each head applies a spectral-normalized 3 × 3 convolution to project the incoming feature map to 512 channels, followed by a LeakyReLU activation with slope 0.2, a BlurPool layer with stride 2 for anti-aliased downsampling, and a spectral-normalized 1 × 1 convolution that produces a single-channel patch logit map. After removing the singleton channel dimension, the four heads output logit maps at resolutions [H/ 8, W/ 8] , [H/ 16 , W/ 16] ,
+
+[H/ 32 , W/ 32] , and [H/ 64 , W/ 64] .19 A PREPRINT - J UNE 29, 2026 
+
+Figure 12: User scribble-guided removal examples. For each case, we show the input image with user scribble, the removal result, and the predicted alpha map. Starting from coarse user guidance, the model expands the effective removal region to cover the target object together with associated effects such as shadows and residual traces. The feature trunk remains fixed throughout training, while only the multi-scale heads are updated. This design reuses stable pretrained visual features and keeps the trainable part of the discriminator lightweight. It also matches the objective design in the main text, where the R1 regularizer is evaluated on the head inputs because ϕ is frozen. The discriminator architecture is shared across the HM, SM, and OG variants. Their only difference lies in the construction of the supervision target ˜wk at each scale. HM uses nearest-neighbor downsampling, SM applies Gaussian smoothing after downsampling, and OG uses area pooling to produce exact fractional occupancies. Therefore, the ablation in the main paper isolates the effect of target construction rather than changing the discriminator network itself. 
+
+B.7 R1 Regularization on Head Inputs 
+
+The regularizer in Eq. (17) is the R1 regularizer [ 27 ] applied only to real samples. Because the feature trunk ϕ is frozen, we evaluate R1 on the head inputs 
+
+fk = ϕk(xbg )
+
+rather than on the input image itself. For each scale k, we compute the head logits hkξ (fk) and differentiate the summed logits over all spatial positions with respect to fk. The resulting regularizer is 
+
+Rr1 = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+Exbg 
+
+ 1
+
+|fk| ∇fk
+
+X
+
+> p
+
+hkξ (fk)p
+
+> 22
+
+ , (16) where K is the number of discriminator scales, p indexes spatial positions in the patch logit map, and |fk| is the number of elements in the feature tensor. In implementation, the real feature maps are detached from the frozen trunk and treated as leaf tensors for gradient computation. For each scale, we square and average the gradients over the full feature tensor, then average the result across scales. This regularizes only the trainable heads while keeping the pretrained feature trunk fixed, which matches our discriminator parameterization and keeps the overhead low. 
+
+## C Supplementary Details of EraseBench 
+
+C.1 Dataset Construction of TextEraseBench 
+
+The TextEraseBench dataset is constructed through a manual-to-automated pipeline designed for high-fidelity text removal. We curate a diverse collection of real-world photographs and manually annotate target text regions with fine-grained bounding boxes. These regions are then processed with Nano Banana 2 to remove the text while preserving background structure. To ensure the quality of the paired backgrounds, each sample undergoes secondary verification to filter out artifacts and semantic inconsistencies. The final benchmark contains 185 samples with paired backgrounds and both object and effect-aware masks. 20 A PREPRINT - J UNE 29, 2026 
+
+C.2 Dataset Construction of AnimeEraseBench 
+
+AnimeEraseBench is developed through a synthesis-and-extraction pipeline tailored to stylized scenes. We first generate diverse anime-style imagery and then remove selected foreground objects to obtain paired clean backgrounds. We derive effect-aware masks from the differences between the source and background images, and use SAM2[ 32 ] together with manual box annotation to obtain object-core masks. This dual-mask design enables evaluation under both object-only and effect-aware settings. The final benchmark contains 157 samples. 
+
+C.3 User Scribble-guided Removal 
+
+Figure 12 shows user-guided removal examples under free-form scribble input. For each sample, we show the input image overlaid with the user scribble, the removal result, and the predicted alpha map. Although the scribble provides only coarse guidance, the model expands the removal region to cover the target object together with associated effects such as shadows and residual traces. 
+
+C.4 Qualitative Examples 
+
+Figures 13 and 14 present additional qualitative comparisons on representative samples. These examples complement the main-paper visual results and cover diverse object categories, scene layouts, and effect types. 21 A PREPRINT - J UNE 29, 2026 
+
+Figure 13: More qualitative comparisons of OSOR and existing methods on RemovalBench and CORNE-Val. 22 A PREPRINT - J UNE 29, 2026 
+
+Figure 14: More qualitative comparisons of OSOR and existing methods on RORD-Val, AnimeEraseBench, and TextEraseBench. 23

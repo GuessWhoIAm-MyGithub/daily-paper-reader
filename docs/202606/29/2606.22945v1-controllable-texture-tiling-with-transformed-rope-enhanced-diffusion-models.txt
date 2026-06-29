@@ -1,0 +1,342 @@
+Title: Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2606.22945v1
+
+Published Time: Tue, 23 Jun 2026 03:19:08 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models 
+
+# JUNRONG HUANG, City University of Hong Kong, China 
+
+# ZHIYUAN ZHANG, City University of Hong Kong, China 
+
+# RUI TANG, Manycore Tech Inc., China 
+
+# HONGBO FU, Hong Kong University of Science and Technology, China 
+
+# JING LIAO ∗, City University of Hong Kong, China 
+
+Fig. 1. High-fidelity controllable texture transfer with novel spatial manipulation. Given a source image, reference texture, and target mask, our method generates photorealistic results with user desired texture transforms. The Source images are from © Pixabay and Conditions are from © SpatialVerse. 
+
+Realistic integration of user-specified textures into scene images is a funda-mental task in computer graphics and image editing. While existing ma-terial transfer and reference-guided inpainting methods can edit surface appearances, they often fail to address the specific requirements of tex-ture tiling. This task necessitates precisely repeating a reference pattern according to user-defined parameters such as frequency, orientation, and scale. Furthermore, current generative approaches often struggle to main-tain the structural fidelity of the reference texture, limited by either destruc-tive pixel-level resampling or the lack of fine-grained spatial information in semantic image encoders, and they frequently fail to preserve the coher-ent lighting and geometry of the original scene. In this paper, we propose a novel framework for controllable and high-fidelity texture tiling based on Diffusion Transformers. Our approach introduces two key technical in-novations to decouple spatial manipulation from content generation. First, we propose a Coordinate-Transformed Rotary Embedding mechanism. By applying 2D affine transformations directly to the relative positional embed-dings between the target latent and the image condition, we achieve precise control over tiling patterns without explicit pixel warping, thereby utilizing the full information of the reference condition without degradation. Second, 
+
+> ∗
+
+Corresponding author. Authors’ Contact Information: Junrong HUANG, City University of Hong Kong, Hong Kong, China, jrhuang8-c@my.cityu.edu.hk; Zhiyuan ZHANG, City University of Hong Kong, Hong Kong, China, zzhang452-c@my.cityu.edu.hk; Rui TANG, Many-core Tech Inc., Hang Zhou, China, ati@qunhemail.com; Hongbo FU, Hong Kong Uni-versity of Science and Technology, Hong Kong, China, fuplus@gmail.com; Jing LIAO, City University of Hong Kong, Hong Kong, China, jingliao@cityu.edu.hk. 
+
+a Disjoint Attention Mask is employed to shield reference features from se-mantic leakage. This preserves structural integrity while seamlessly blend-ing the synthesized texture with the scene’s original lighting and geometry. Extensive experiments demonstrate that our method outperforms state-of-the-art baselines in both control accuracy and texture fidelity. The code and dataset are publicly accessible at https://github.com/junrongh/ControlTile. CCS Concepts: • Computing methodologies → Image manipulation ;
+
+Neural networks ; Texturing .Additional Key Words and Phrases: Texture Tiling, Diffusion Transformers, Image Inpainting, Generative Image Editing, Reference-guided Generation 
+
+1 Introduction 
+
+Texture mapping serves as a fundamental component in realistic rendering. It aims to map a source texture onto a target region of an input scene, strictly adhering to user-defined spatial transforma-tions (e.g., rotation, scaling, and translation) while preserving the scene’s underlying illumination and geometric structure. While tra-ditional Computer Graphics (CG) workflows offer precise control via explicit UV parameterization, they are labor-intensive and de-mand significant 3D expertise. Generative AI, particularly diffusion models [Mayo et al. 2026], has reshaped this landscape. Empow-ered by frameworks like ControlNet [Zhang et al. 2023b] and T2I-Adapter [Ye et al. 2023], users can now effortlessly manipulate se-mantic layouts and scene structures while maintaining global light-ing consistency.   
+
+> arXiv:2606.22945v1 [cs.GR] 22 Jun 2026 2•Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO
+
+Despite these advancements, precise generative texture mapping remains challenging. Leading inpainting models (FLUX.1-dev-Fill, FLUX.1-dev-Kontext [Labs 2024; Labs et al. 2025]) and specialized material transfer methods (ZeST [Cheng et al. 2024], MaterialFu-sion [Garifullin et al. 2025]) primarily focus on semantic plausi-bility rather than strict geometric adherence. They tend to ”hallu-cinate” texture patterns based on learned distributions, often fail-ing to maintain the fidelity of the specific reference texture ( 𝐼 ref ). MatSwap [Lopes et al. 2025] represents the current state-of-the-art, effectively preserving the target scene’s geometry and illumi-nation while enabling basic texture scaling. However, a critical lim-itation persists: MatSwap relies on explicitly transforming the in-put texture combined with cross-attention mechanisms. This pro-cess inevitably leads to destructive downsampling and the loss of high-frequency details, while remaining constrained to simple scal-ing operations without the capability for complex spatial manipu-lations. We propose a novel framework resolving this dilemma by decou-pling spatial manipulation from visual content. Built upon the Dif-fusion Transformer (DiT) [Peebles and Xie 2023] architecture, we introduce a Pose-Aware Rotary Embedding (RoPE) [Su et al. 2024] mechanism. Our key insight is achieving spatial transformations by manipulating the attention coordinate system rather than warp-ing pixel values. Instead of physically altering the input, we apply user-defined affine transformations directly to the positional em-beddings of reference keys and values during Self-Attention, keep-ing reference pixels in their high-resolution state. Leveraging the model’s generative priors, this enables Implicit Generative Tiling from a single transformed unit. To preserve texture fidelity, we in-troduce a Disjoint Attention Mask strategy that shields the inpaint-ing region from excessive background interference, ensuring high-frequency details are derived strictly from the reference. Finally, inspired by MatSwap [Lopes et al. 2025], we augment the diffusion process via Latent Fusion, injecting explicit geometric and lighting priors from upstream estimators [Ren et al. 2026; Zeng et al. 2024] to physically modulate the tiled pattern according to the original surface normals and shading intensity. In summary, our technical contributions are as follows: 
+
+• High-Fidelity Tiling via Transformed RoPE: Enables precise spa-tial control and preserves high-frequency details by directly in-jecting 2D affine transformations into Rotary Positional Embed-dings. 
+
+• Disjoint Attention Control: Eliminates feature leakage between the reference condition and background via a dedicated mask-ing strategy, ensuring artifact-free non-edited regions. 
+
+• A Benchmark Dataset for Texture Tiling: Provides 15,000 diverse, high-quality scene-texture pairs to establish a standardized eval-uation protocol for texture editing controllability and photore-alism. 
+
+2 Related Works 2.1 Conditional Image Editing 
+
+Text-Guided Inpainting . Inpainting aims to synthesize missing regions in an image while maintaining coherence with the back-ground. Early approaches like LaMa [Suvorov et al. 2022] relied on GANs [Goodfellow et al. 2020] for structural completion. The field was revolutionized by diffusion models, with large-scale text-to-image models being adapted for inpainting tasks (e.g., Stable Dif-fusion Inpainting [Rombach et al. 2022], and more recently, FLUX.1-Fill-dev [Labs 2024]). These models demonstrate capabilities in gen-erating plausible content based on textual descriptions. Similarly, instruction-based editing models like InstructPix2Pix [Brooks et al. 2023] and MagicBrush [Zhang et al. 2023a] allow users to alter im-age appearances via conversational prompts. However, describing a specific, complex texture pattern (e.g., ”a checked fabric with 30 pixels repeat and 45-degree rotation”) via text prompts is imprecise and often results in uncontrollable variations. 
+
+Exemplar-Based Editing . To achieve higher fidelity than text-driven approaches, exemplar-based methods leverage images for guidance. Previous works like Paint-by-Example [Yang et al. 2023] and IP-Adapter [Ye et al. 2023] inject these conditions via Cross-Attention. While capturing high-level semantic attributes, they fail to reconstruct dense texture details due to the Cross-Attention in-formation bottleneck. Notably, Virtual Try-On research [Choi et al. 2024; Chong et al. 2025] demonstrates that leveraging Self-Attention mechanisms (e.g., via ReferenceNet or spatial concatenation) sub-stantially improves the preservation of intricate structural details. Inspired by this, our approach targets the self-attention layers of Diffusion Transformers (DiTs), such as FLUX.1-Kontext-dev [Labs et al. 2025]. Unlike U-Nets’ implicit grids, DiTs use explicit spatial embeddings, enabling Transformed RoPE to encode precise coor-dinates for direct geometric control and maximal high-fidelity in-formation flow. However, since spatial arrangements are implicitly inferred from learned semantic priors, these methods still lack the necessary mechanisms for explicit, user-defined texture mapping. 
+
+Attention-driven Style Transfer and Latent Tiling . Related to exemplar editing, several training-free approaches manipulate at-tention maps for style transfer. Style Injection [Chung et al. 2024] matches distributions between source and style, while 𝑍 ∗ [Deng et al. 2024] and STAM [Fahim et al. 2025] refine this via attention reweighting and high-pass filtering to better preserve the source structure. Furthermore, Eye-for-an-eye [Go et al. 2025] utilizes pre-computed dense correspondence matrices to guide attention. How-ever, these methods fundamentally rely on strong semantic corre-lations between the source and target, rendering them incapable of executing precise, coordinate-driven texture tiling where explicit geometric constraints are required. For seamless image stitching, Tiled Diffusion [Madar and Fried 2025] employs latent aggregation; however, it is restricted to cyclically stitchable latents and lacks a tractable mechanism to explicitly define the spatial logic for indi-vidual repeating units, making it impractical for complex structural mapping. 
+
+2.2 3D-Assisted Texture Synthesis 
+
+Some methods address texture mapping by leveraging explicit 3D geometry. TextureDreamer [Yeh et al. 2024] synthesizes textures onto a 3D atlas for rendering pipelines, but the limited resolution of the atlas restricts the high-frequency detail allocated to individual repeating units. NaTex [Lai et al. 2025] generates seamless textures Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 3
+
+> Fig. 2. Our system integrates two key modules into a DiT backbone to achieve precise and lossless texture synthesis. The framework accepts a source image (
+
+𝐼 src ) together with geometry and lighting constraints, a target region mask ( 𝑀 ), a reference texture ( 𝐼 ref ), and texture transformation parameters ( 𝒯 ), such as rotation and scaling. Instead of explicit pixel-space warping, we encode the transformation 𝒯 into coordinate embeddings. To ensure photorealistic integration, we employ a specialized attention mask that enforces semantic isolation between the background and the inpainting region. The 𝐼 src image is from © Pixabay and texture is from © SpatialVerse. 
+
+via latent diffusion but is highly sensitive to the input 3D mesh, de-grading significantly if the topology is flawed or UV distributions are distorted. In contrast, our approach operates directly in 2D im-age space, leveraging implicit coordinate injection to achieve ro-bust, geometry-aware tiling without relying on explicit, often error-prone 3D assets. 
+
+2.3 Material Transfer 
+
+Distinct from general inpainting, material transfer tasks impose a stricter constraint: the generated texture must conform to the tar-get surface’s underlying geometry and illumination while replacing its material properties. Approaches like ZeST [Cheng et al. 2024] leverage depth priors within a ControlNet framework to enforce geometric consistency. In contrast, MaterialFusion [Garifullin et al. 2025] adopts a Guide-and-Rescale [Titov et al. 2024] strategy to pre-serve the structural integrity of the original object during material replacement. While effective at synthesizing semantically plausible materials (e.g., turning a plaster wall into a brick wall), these meth-ods often prioritize semantic alignment over the faithful preserva-tion of the specific reference texture’s identity. Several recent works focus on the physically-based rendering (PBR) aspects of materials. Alchemist [Sharma et al. 2024] and Con-trollable Appearance Representation [Jimenez-Navarro et al. 2025] offer parametric control over intrinsic material attributes (e.g., color, roughness) but do not support explicit texture pattern mapping. In-trinsicEdit [Lyu et al. 2025] decomposes images into intrinsic buffers for high-fidelity PBR editing; however, achieving specific texture tiling requires manual manipulation of these intermediate buffers (e.g., the albedo map), lacking an automated spatial mapping mech-anism. State-of-the-art methods, such as MatSwap [Lopes et al. 2025], address this by explicitly incorporating texture transformation into the pipeline via Cross-Attention. However, while this strategy at-tempts to align the generated texture with the scene’s geometry, it frequently fails to achieve precise textural structural correspon-dence. The resulting textures often retain only a semantic resem-blance to the reference rather than a precise structural mapping, leading to a high failure rate in complex tiling scenarios. Further-more, relying on Cross-Attention for condition injection introduces a severe semantic bottleneck. This intrinsically discards high level details, yielding textures that are noticeably blurrier than the orig-inal reference. 
+
+3 Method 3.1 Preliminaries: Diffusion Transformer 
+
+Explicit spatial control requires decoupling visual features from their coordinates. While U-Nets inherently entangle them, Diffu-sion Transformers (DiTs) [Peebles and Xie 2023] process the latent 
+
+𝑧 𝑡 ∈ ℝ 𝐻 ×𝑊 ×𝐶 as a discrete token sequence 𝑍 ∈ ℝ 𝑁 ×𝐷 . This en-ables the explicit injection of spatial awareness via positional em-beddings prior to the standard self-attention mechanism, Attention (𝑄, 𝐾 , 𝑉 ) = Softmax ( 𝑄𝐾 𝑇 
+
+√𝑑 𝑘 
+
+) 𝑉 . (1) Our method intervenes specifically at this stage. Instead of using static embeddings, we introduce a coordinate-transformed relative encoding to dynamically align the reference texture with the target geometry. 4 • Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO 
+
+3.2 System Overview 
+
+Our framework reformulates texture mapping as a specialized visual-conditioned inpainting task within a Diffusion Transformer archi-tecture. The overall pipeline is illustrated in Fig. 2. Given an input image 𝐼 src , a binary mask 𝑀 (which can be user-defined or auto-extracted by segmentation models such as SAM [Kir-illov et al. 2023]) indicating the region to be edited, and a reference texture image 𝐼 ref , our objective is to synthesize a high-fidelity im-age where the masked region is filled with 𝐼 ref .To achieve intuitive and mathematically tractable spatial control, we approximate the complex 3D texture mapping process using a 2D affine matrix 𝒯 . Rather than modeling the intractable 3D surface parameterization explicitly, this affine matrix serves as an effective screen-space approximation to express the user’s intended physi-cal placement of the texture. To inject explicit physical constraints, we first extract the depth map 𝐷 and irradiance map 𝐿 using the state-of-the-art estimators [Ren et al. 2026; Zeng et al. 2024]. These auxiliary maps are normalized and encoded into the latent space using a frozen VAE encoder ℰ to obtain 𝑧 𝐷 , 𝑧 𝐿 ∈ ℝ 𝐻 ×𝑊 ×𝐶 𝑣 .Following standard DiT-based inpainting protocols, we construct the composite target latent 𝑧 tgt by channel-wise concatenating the noisy latent 𝑧 𝑡 , the VAE-encoded unedited background 𝑧 masked , the lossless downsampled binary mask 𝑀 ′ (via a space-to-depth rear-range operation) , and our explicit geometric priors ( 𝑧 𝐷 , 𝑧 𝐿 ): 
+
+𝑧 tgt = 𝑧 𝑡 ⊙ 𝑧 masked ⊙ 𝑀 ′ ⊙ 𝑧 𝐷 ⊙ 𝑧 𝐿 ∈ ℝ 𝐻 ×𝑊 ×𝐶 tgt , (2) where ⊙ denotes concatenation along the feature channel dimen-sion. Concurrently, the reference texture 𝐼 ref is encoded into a pure visual latent 𝑧 ref ∈ ℝ 𝐻 ×𝑊 ×𝐶 ref . Because 𝐶 tgt > 𝐶 ref due to the aux-iliary geometry and lighting channels and inpainting subjects, we apply zero-padding to 𝑧 ref to achieve strict channel alignment. The target and reference latents are subsequently flattened and concate-nated along the sequence dimension to form the unified input to-kens 𝑧 𝑖𝑛 :
+
+𝑧 𝑖𝑛 = 𝑧 tgt c⃝𝑧 ref ∈ ℝ (𝑁 tgt +𝑁 ref )×𝐶 tgt , (3) where c ⃝ denotes concatenation along the flattened spatial (sequence) dimension. We initialize the backbone with pre-trained weights and expand the first image embedder to accommodate the chan-nel dimension 𝐶 tgt , preserving the original channel weights to re-tain pre-trained representations while zero-initializing the newly appended channels for stable fine-tuning. Crucially, during the Self-Attention computation in each DiT block, target sequences are as-signed positional embeddings based on the standard canonical grid while the reference tokens are assigned dynamically transformed coordinates computed by applying 𝒯 to the standard grid. By treat-ing reference tokens as a single unit, tiling becomes learned extrap-olation rather than hard-coded mapping. Transformed RoPE dic-tates spatial constraints, guiding the DiT’s generative priors to ex-trapolate periodic structures. Furthermore, guided by our Disjoint Attention Mask, this allows the attention mechanism to implicitly retrieve the correct, high-fidelity texture features for each target location without explicitly warping the pixel space. 
+
+3.3 Coordinate-Transformed Rotary Embeddings 
+
+In our DiT backbone, spatial information is natively encoded using 2D Rotary Positional Embeddings (RoPE) [Su et al. 2024]. RoPE in-jects spatial awareness by applying rotational matrices to the query and key vectors in the feature space based on their absolute coordi-nates. For a token at spatial coordinate p = (𝑥, 𝑦) , the query 𝑞 and key 𝑘 are transformed such that their inner product depends exclu-sively on their relative distance. The attention score is computed as: Attn (𝑞, 𝑘) ∝ (𝑅 p𝑞 𝑞) 𝑇 (𝑅 p𝑘 𝑘) = 𝑞 𝑇 𝑅 p𝑘 −p𝑞 𝑘, (4) where 𝑅 p is a block-diagonal rotation matrix. Crucially, this prop-erty ensures that the attention mechanism is guided by the relative spatial relationship Δp = p𝑘 − p𝑞 .To achieve precise texture mapping, we conceptually project the reference texture’s coordinate system p𝑟𝑒𝑓 𝑘 with the repeat unit in target latent space. Let the user-defined spatial layout be repre-sented by an affine matrix 𝒯 , which encompasses scaling, rotation, and translation. For every token in the reference texture, we map its canonical homogeneous coordinate ̃ pref  
+
+> 𝑞,𝑘
+
+to a transformed target-space coordinate ̃ pref ′𝑞,𝑘 :̃pref ′𝑞,𝑘 = 𝒯 ⋅̃ pref  
+
+> 𝑞,𝑘
+
+. (5) We then apply RoPE to the reference keys using these trans-formed coordinates. Consequently, for a target query at position p𝑞 
+
+corresponding to the desired pattern location, the effective relative position becomes Δp = p𝑡𝑔𝑡 𝑞 − p𝑟𝑒𝑓 𝑘 ′
+
+. By minimizing this distance through coordinate alignment ( Δp ≈ 0), we force the attention mechanism to retrieve the exact high-fidelity features from the ref-erence unit without explicit resampling. 
+
+3.4 Disjoint Attention Masking 
+
+To strictly regulate the information flow within the unified token sequence, we partition the tokens into three disjoint subsets: refer-ence tokens ( 𝒮 ref ), background tokens ( 𝒮 bg ), and inpainting target tokens ( 𝒮 mask ). We construct an additive attention bias matrix M ∈ℝ𝑁 all ×𝑁 all where M𝑖𝑗 = 0 indicates visibility and M𝑖𝑗 = −∞ strictly prohibits attention weights. Integrating this with the coordinate-transformed RoPE mechanism introduced in Section 3.3, let ̃ 𝑄 and ̃ 𝐾 
+
+denote the query and key matrices after injecting the transformed relative spatial coordinates. The overall attention operation is then formulated as Attention (̃𝑄,̃ 𝐾 , 𝑉 ) = Softmax (̃ 𝑄̃𝐾 𝑇 
+
+√𝑑 𝑘 
+
++ M) 𝑉 . (6) To ensure seamless integration while maintaining the structural integrity of both the reference and the unedited scene, the visibility rules for M𝑖𝑗 are enforced as follows: 
+
+M𝑖𝑗 = { −∞, if 𝑖 ∈ 𝒮 bg and 𝑗 ∈ 𝒮 ref ,−∞, if 𝑖 ∈ 𝒮 ref and 𝑗 ∉ 𝒮 ref ,
+
+0, otherwise. (7) Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 5     
+
+> RGB Depth Irradiance Mask Texture
+> Fig. 3. Dataset examples from the Blender (top) and Adaptation (bottom) subsets. Overlaid colored bounding boxes denote the target affine trans-formation 𝒯 . Our dataset features diverse geometries, perspectives, and lighting conditions. The RGB images in the third and fourth rows, as well as all textures, are provided by © SpatialVerse.
+
+Background Preservation ( 𝑖 ∈ 𝒮 bg ): Background tokens attend only to target scene tokens ( 𝒮 bg ∪ 𝒮 mask ). Access to 𝒮 ref is strictly blocked ( M𝑖,𝑗∈ 𝒮 ref = −∞ ) to prevent the reference texture from leaking into or altering the unedited context. Target Synthesis ( 𝑖 ∈ 𝒮 mask ): Mask tokens are granted full visi-bility. They attend to 𝒮 ref to retrieve the aligned texture features via our coordinate injection mechanism, and simultaneously attend to 
+
+𝒮 bg to integrate global illumination and geometric cues. Reference Isolation ( 𝑖 ∈ 𝒮 ref ): To maintain the structural integrity and fidelity of the exemplar, tokens within 𝒮 ref are restricted to at-tend only to themselves ( M𝑖,𝑗∉ 𝒮 ref = −∞ ). This isolation ensures that the reference representation remains pristine, shielding it from any semantic interference or color bleeding from the background and the generated mask regions. 
+
+3.5 Dataset 
+
+To train our model for precise, controllable texture mapping, ac-cess to ground-truth supervision is essential, specifically the spatial transformation matrix 𝒯 and the dense semantic mask 𝑀 . Since ex-tracting such annotations from real-world photographs is computa-tionally intractable, we constructed a large-scale synthetic dataset comprising two specialized subsets. Each sample is organized as a supervised training tuple (𝑋 cond , 𝑌 gt ), where the condition 𝑋 cond ={𝐼 masked , 𝐼 ref , 𝑀, 𝒯 , 𝐷, 𝐿} and the ground truth target 𝑌 gt is the fully textured rendered image ( 𝐼 tgt ). All visual assets are standardized to a resolution of 1024×1024 . The full dataset will be publicly released upon publication. Following our definition of 𝒯 as an optimal screen-space approx-imation, we extract a repeat unit from rendered UV maps and per-form an affine transform on the reference texture to maximize IoU with this unit while maintaining U/V direction consistency. Sample visualizations are provided in Fig. 3. 
+
+Blender Subset : To enable the model to learn the fundamental me-chanics of texture tiling and geometric alignment, we generated 14,000 paired samples using Blender’s Cycle rendering engine [Com-munity 2018]. These scenes consist of randomly placed objects en-compassing a diverse geometric spectrum, including planar prim-itives, explicitly unwrapped curved primitives (e.g., cylinders and spheres), and complex arbitrary geometries. We applied random-ized spatial transformations (rotation, scaling, and translation) to the materials and utilized randomized High Dynamic Range (HDR) Image-Based Lighting (IBL) sourced from Poly Haven [Poly Haven 2025] to ensure diverse global illumination. 
+
+Adaptation Subset : To ensure robust generalization to real-world photography, we generated a high-fidelity subset of 1,300 pairs us-ing an advanced physically-based rendering (PBR) engine. Employ-ing unbiased path tracing and multi-bounce global illumination, this pipeline produces photorealistic lighting and complex mate-rial BRDFs across highly diverse environments ranging from intri-cate interiors to outdoor landscapes. By bridging the reality gap, this subset prevents our coordinate-transformed RoPE mechanism from overfitting to synthetic primitives, acting as a critical catalyst for real-world adaptation. 
+
+4 Experiments 4.1 Implementation Details 
+
+We built our method upon the Flow Matching Transformer archi-tecture of FLUX.1-Kontext-dev [Labs et al. 2025]. The training par-adigm consists of two stages: we first train the model on the Blender Subset to establish its fundamental capability for physically-accurate texture mapping; subsequently, we fine-tune it on the Adaptation Subset to facilitate robust domain generalization to real-world vi-sual distributions. Models are trained on 4x A100 GPUs using AdamW ( 𝑙𝑟 = 1×10 −4 ,batch size 32). To preserve pre-trained priors, the original DiT back-bone is frozen. We fine-tune the modified input embedder for 𝑧 tgt 
+
+and integrate LoRA [Hu et al. 2022] ( 𝑟 = 128 ) into all linear pro-jections, training the learnable parameters with a flow-matching loss. 
+
+Baselines. We evaluate against a set of state-of-the-art methods, including FLUX.1-Fill-dev [Labs 2024], FLUX.2-dev [Black Forest Labs 2025], NanoBanana [Google DeepMind 2026], ZeST [Cheng et al. 2024], MaterialFusion [Garifullin et al. 2025], and MatSwap [Lopes et al. 2025]. To rigorously isolate the source of our perfor-mance gains, we additionally introduce an augmented MatSwap w. ReferenceNet baseline, which is specifically trained on our pro-posed dataset. This U-Net+ReferenceNet architecture circumvents the typical CLIP visual encoder bottleneck, demonstrating that the detail degradation in existing methods inherently stems from ex-plicit spatial resampling rather than mere feature compression. Fur-thermore, evaluating against recent large-scale models validates that our framework’s superiority is fundamentally driven by our ar-chitectural innovation (Transformed RoPE) rather than advantages in parameter scaling. To ensure absolute fairness, we decouple our evaluation into two distinct tracks: 6 • Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO 
+
+1) Texture Fidelity: we evaluate the inherent texture synthesis quality and geometric harmonization without explicit spatial ma-nipulation. All methods receive the canonical textures. 2) Spatial Controllability: we specifically evaluate the spatial con-trol capabilities against reference-guided methods. Since these base-lines lack an explicit coordinate transformation interface ( 𝒯 ), we provide them with explicitly pre-warped reference images as con-ditions to ensure a fair comparison of their texture mapping execu-tion. 
+
+Evaluation Data . For Fidelity Comparison, we conduct a test set comprising 260 synthetic examples and 40 real-world photographs. The synthetic samples are selected from the Adaptation subset de-scribed in Section 3.5, ensuring access to pixel-perfect ground truth for texture coordinates, depth, and irradiance. The real-world sub-set consists of high-quality interior photos to evaluate domain gen-eralization in complex lighting environments introduced by Mate-rialistic evaluation set [Sharma et al. 2023]. For Functional Compar-ison, we construct 160 synthetic test cases pairing identical target scenes with diverse transform conditions ( 𝒯 ). 
+
+Metrics . On the synthetic dataset where pixel-perfect ground truth ( 𝐼 gt ) is available, we evaluate reconstruction fidelity using LPIPS ( ↓) and CLIP-Score ( ↑), computed between the inpainted re-gion and 𝐼 gt . These metrics quantify perceptual and semantic sim-ilarity, respectively. For real-world samples where ground truth is absent, the CLIP-Score often fails to capture geometric misalign-ments between the generated region and the underlying 3D sur-face. To address this limitation, we employ a VLM evaluation [Gem-ini Team 2023] and a perceptual user study (see Sec. 4.4) to evaluate the results based on their geometric alignment with the scene and texture fidelity relative to 𝐼 ref , providing a comprehensive score for real-world performance. The details of VLM evaluation and user study is provided in Supplementary. For both datasets, we calculate the Style Loss (Gram Matrix Distance ↓) between the VGG features of the inpainted region and the reference texture 𝐼 ref . Due to the sporadic inference failures inherent in generative baselines which can cause loss values to explode, we report the median Style Loss to ensure a robust comparison. 
+
+4.2 Quantitative Results 
+
+Texture Fidelity . The quantitative results for general texture map-ping without explicit spatial manipulation are summarized in Tab. 1. On the synthetic dataset, our method achieves state-of-the-art per-formance, outperforming all baselines across every perceptual and pixel-level metric. This confirms our superior ability to strictly ad-here to the underlying physics and spatial logic of the scene. On the real-world dataset, although FLUX.2-dev exhibits a lower Gram Matrix distance, visual comparisons in Fig. 5 and VLM evaluations show that it suffers from a ”copy-paste” bias, where it replicates 2D patterns verbatim without the necessary geometric distortions, resulting in a failure to align with the underlying 3D structure. 
+
+Spatial Controllability . Since baselines lack an interface for explicit coordinate control (inputting matrix 𝒯 ), we adopted a ”pre-warped” input strategy to maximize their performance: the refer-ence texture 𝐼 ref is tiled and warped according to the target 𝒯 before being fed into these models, which provides the baselines with the 
+
+> Table 1. Quantitative comparison of Texture Fidelity. We evaluate Gram Matrix Loss (
+
+↓) across all datasets, alongside LPIPS ( ↓) and CLIP Score ( ↑)for synthetic data, and VLM scores ( ↑) and User preference (%) for real-world data. Bold and underlined denote the best and second-best perfor-mance.                                                 
+
+> Method Synthesis Real LPIPS ↓CLIP ↑Gram ↓VLM ↑Gram ↓User % FLUX.2-dev 0.2927 0.8901 1.530 6.333 1.595 32.1 FLUX.1-dev-Fill 0.3191 0.8450 3.827 4.308 3.539 5.9 ZeST 0.2678 0.8894 3.053 4.000 2.895 3.9 MaterialFusion 0.4938 0.8149 3.726 3.384 2.739 6.3 MatSwap 0.2658 0.9044 2.073 5.051 1.961 9.8
+> Ours 0.2416 0.9098 1.496 6.718 1.605 42.0
+
+explicit visual layout. The comparison is reported in Tab. 2 Reference-guided Baselines . Our method demonstrates superior perceptual and semantic fidelity, reconstructing the transformed patterns with bet-ter geometric precision and strict adherence to the underlying 3D structure.      
+
+> Table 2. Quantitative spatial evaluation and ablation study on the Synthe-sis dataset. To simulate geometric control, baselines require pre-warped and tiled references, whereas our method utilizes the raw reference and transformation 𝒯 . Additionally, we ablate our coordinate injection mecha-nisms and masking strategies against explicit warping and standard mask-ing baselines. Bold and underlined highlight the best and second-best re-sults.
+
+Method LPIPS ↓ CLIP ↑ Gram ↓
+
+Reference-guided Baselines 
+
+ZeST 0.2010 0.8641 10.29 MatSwap 0.1903 0.8563 3.318 FLUX.2-dev 0.2090 0.8922 2.643 NanoBanana 0.1789 0.9263 1.439 MatSwap w. Ref-Net 0.1286 0.8941 0.936 
+
+Ours & Ablation Study 
+
+Ours 0.1143 0.9250 0.606 
+
+Global Explicit 0.1627 0.8858 1.492 Local Explicit 0.1242 0.9006 1.068 w/o Disjoint Mask 0.1337 0.9158 0.745 
+
+4.3 Qualitative Results 
+
+Texture Fidelity . Further visual inspection of Fig. 5 highlights fun-damental differences in how various architectures handle texture fidelity. As evidenced by baselines such as ZeST and MatSwap, re-lying on CLIP-based visual encoders inherently introduces a severe semantic bottleneck; compressing complex reference textures into limited feature vectors inevitably discards critical high-frequency details. In contrast, both our method and FLUX.2-dev concatenate the reference texture sequence for self-attention, which preserves the intricate details of 𝐼 ref with significantly higher fidelity. Cru-cially, while large-scale foundational models like FLUX.2-dev can Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 7
+
+retain 2D texture sharpness, our framework further leverages ex-plicit depth (𝑧 𝐷 ) and irradiance (𝑧 𝐿 ) priors. This ensures the syn-thesized texture not only preserves the reference pattern perfectly but also strictly conforms to the object’s 3D surface topology and maintains consistent environmental illumination. 
+
+Spatial Controllability. We evaluate our spatial control mecha-nism through both functional showcases and baseline comparisons. First, as demonstrated in Fig. 8, our model accurately executes di-verse rotation and scaling commands within a single scene. Because Implicit Coordinate Injection decouples visual features from spa-tial positioning, the model strictly adheres to 𝒯 , achieving pixel-perfect foreshortening and continuous surface transitions. Beyond standard parameterization, we explore robustness against out-of-distribution scenarios like severe semantic conflicts (e.g., transfer-ring a floral pattern onto an apple) and the application of distorted, non-linear coordinate grids (Fig. 7). Despite training solely on affine samples, the model generalizes impressively, aligning textures un-der semantic conflict and adapting seamlessly to non-affine injec-tions. Furthermore, Fig. 9 highlights the superiority of this implicit mechanism. All evaluated baselines conditioned on pre-warped in-puts fail to faithfully preserve precise texture transforms, strug-gling to map 2D guides onto complex 3D geometries without intro-ducing aliasing artifacts or structural degradation. Together, these results verify that our approach offers true parametric control rather than mere style transfer. 
+
+4.4 User Study 
+
+To evaluate real-world photorealism and spatial adherence, we con-ducted a perceptual study with 70 participants (including 43 profes-sional designers) against primary baselines. As reported in Tab. 1, our method achieves the highest overall Top-1 preference rate in texture fidelity ( 42.0% ). Notably, this preference is even more pro-nounced among professional designers ( 43.9% ) compared to gen-eral users ( 38.9% ). Furthermore, our approach captures an over-whelming 91% of user votes in spatial controllability, confirming its superior geometric precision. Detailed protocols and specific base-lines are introduced in the Supplementary. 
+
+4.5 Ablation 
+
+We summarize the quantitative impact of our core components in Tab. 2 Ablation Study . Our ablation focuses on two critical designs: the Implicit Coordinate Injection and the Disjoint Attention Mask. We first compared our implicit approach against two alternative strategies relying on explicit pixel-space warping, namely Global Explicit and Local Explicit. In Global Explicit setting, similar to MatSwap [Lopes et al. 2025], we pre-warp and tile the reference image 𝐼 ref according to the target transformation 𝒯 in pixel space to cover the entire canvas before feeding it into the model. In Local Explicit setting, we isolate a single texture unit but apply the affine transformation 𝒯 explicitly in pixel space. As evidenced in Fig. 4, Global Explicit suffers from severe geo-metric conflicts where the pre-tiled patterns fail to conform to the object’s surface topology. While Local Explicit offers better localiza-tion, it inevitably introduces aliasing artifacts: since the diffusion     
+
+> (a). Ours (b). Global (c). Local (d). w/o Attn Mask
+> Fig. 4. Visual ablation . Explicit warping (b, c) causes geometric misalign-ment or resampling blur, while omitting the disjoint mask (d) leads to back-ground leakage. Our method (a) achieves accurate, artifact-free synthesis.
+
+models operates on a fixed-resolution latent space, explicit warp-ing necessitates pixel-space downsampling, which irreversibly dis-cards high-frequency textures. In contrast, our Implicit Coordinate Injection performs coordinate transformations directly within the attention mechanism, preserving the full spectral fidelity of the la-tent features. Furthermore, we assessed the role of our masking strategy by comparing the full model against a variant without the disjoint attention mask. We observed that without the disjoint constraint, the unconstrained attention allows background features to inter-fere with the latent representation of the reference texture if the transformed queries have intersection with unmasked background. This spatial overlap leads to semantic contamination, causing the synthesized patterns to lose structural clarity. 
+
+5 Limitation 
+
+Despite these advancements, our approach faces several limitations. First, operating within the compressed VAE latent space introduces a resolution bottleneck, occasionally causing aliasing in dense tiling patterns. Second, lacking explicit material maps (e.g., roughness), the model relies on internal priors for surface reflectance, leading to uncontrollable specularity. Third, while robust on smoothly curved geometries, a single affine transform cannot encapsulate sharp tran-sitions (e.g., orthogonal folds). This necessitates multi-round edit-ing for multi-surface precision, which we illustrate in Fig. 6. Finally, our generation quality is bounded by upstream estimators; incom-plete decoupling of the original texture from geometry can cause ”ghosting” artifacts, where original patterns inadvertently bake into the geometric condition. Addressing these constraints remains an exciting avenue for future work. 
+
+6 Conclusion 
+
+We presented a novel framework for high-fidelity controllable tex-ture mapping that effectively bridges the gap between precise geo-metric editing and generative photorealism. Addressing the funda-mental limitations of explicit pixel-space warping such as resolu-tion bottlenecks and geometric conflicts, we proposed an Implicit Coordinate Injection mechanism via Rotary Positional Embeddings to achieve lossless texture transfer with strict spatial adherence. Ex-tensive evaluations on both synthetic and real-world benchmarks demonstrate that our method significantly outperforms existing baselines, establishing a new state-of-the-art for material transfer 8 • Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO 
+
+by offering an optimal balance of structural control, texture fidelity, and visual realism. 
+
+Acknowledgments 
+
+The work described in this paper was supported by a grant from the NSFC/RGC Collaborative Research Scheme, sponsored by the Research Grants Council of the Hong Kong Special Administra-tive Region, China and the National Natural Science Foundation of China (No. CRS_HKUST605/25), and by the Key R&D Program of Zhejiang Province (No. 2026SDXT005). 
+
+References 
+
+Black Forest Labs. 2025. FLUX.2: Frontier Visual Intelligence. Tim Brooks, Aleksander Holynski, and Alexei A. Efros. 2023. InstructPix2Pix: Learning to Follow Image Editing Instructions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 18392–18402. doi:10.1109/ cvpr52729.2023.01764 Ta Ying Cheng, Prafull Sharma, Andrew Markham, Niki Trigoni, and Varun Jampani. 2024. ZeST: Zero-Shot Material Transfer from a Single Image. In Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part I (Lecture Notes in Computer Science) , Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and Gül Varol (Eds.). Springer, 370– 386. doi:10.1007/978-3-031-73232-4_21 Yisol Choi, Sangkyung Kwak, Kyungmin Lee, Hyungwon Choi, and Jinwoo Shin. 2024. Improving Diffusion Models for Authentic Virtual Try-on in the Wild. arXiv preprint arXiv:2403.05139 (2024). Zheng Chong, Xiao Dong, Haoxiang Li, Shiyue Zhang, Wenqing Zhang, Xujie Zhang, Hanqing Zhao, Dongmei Jiang, and Xiaodan Liang. 2025. CatVTON: Concatenation Is All You Need for Virtual Try-On with Diffusion Models. arXiv:2407.15886 [cs.CV] Jiwoo Chung, Sangeek Hyun, and Jae-Pil Heo. 2024. Style Injection in Diffusion: A Training-Free Approach for Adapting Large-Scale Diffusion Models for Style Trans-fer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition (CVPR) . IEEE, 8795–8805. doi:10.1109/cvpr52733.2024.00840 Blender Online Community. 2018. Blender - a 3D modelling and rendering pack-age . Blender Foundation, Stichting Blender Foundation, Amsterdam. http://www. blender.org Yingying Deng, Xiangyu He, Fan Tang, and Weiming Dong. 2024. Z*: Zero-shot Style Transfer via Attention Reweighting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 6934–6944. doi:10.1109/ cvpr52733.2024.00662 Masud An-Nur Islam Fahim, Nazmus Saqib, and Jani Boutellier. 2025. STAM: Zero-Shot Style Transfer Using Diffusion Model via Attention Modulation. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) . IEEE, 6323–6333. doi:10.1109/cvprw67362.2025.00629 Kamil Garifullin, Maxim Nikolaev, Andrey Kuznetsov, and Aibek Alanov. 2025. Mate-rialFusion: High-Quality, Zero-Shot, and Controllable Material Transfer with Dif-fusion Models. CoRR abs/2502.06606 (2025). arXiv:2502.06606 doi:10.48550/ARXIV. 2502.06606 Google Gemini Team. 2023. Gemini: A Family of Highly Capable Multimodal Models. 
+
+arXiv preprint arXiv:2312.11805 (2023). https://arxiv.org/abs/2312.11805 Sooyeon Go, Kyungmook Choi, Minjung Shin, and Youngjung Uh. 2025. Eye-for-an-eye: Appearance Transfer with Semantic Correspondence in Diffusion Models. arXiv:2406.07008 [cs.CV] https://arxiv.org/abs/2406.07008 Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sher-jil Ozair, Aaron Courville, and Yoshua Bengio. 2020. Generative adversarial net-works. Commun. ACM 63, 11 (Oct. 2020), 139–144. doi:10.1145/3422622 Google DeepMind. 2026. Nano Banana Pro (Gemini 3 Pro Image). https://deepmind. google/models/gemini-image/. Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-Rank Adaptation of Large Lan-guage Models. In International Conference on Learning Representations . https: //openreview.net/forum?id=nZeVKeeFYf9 Santiago Jimenez-Navarro, Julia Guerrero-Viu, and Belen Masia. 2025. A Controllable Appearance Representation for Flexible Transfer and Editing. In Eurographics Sym-posium on Rendering , Beibei Wang and Alexander Wilkie (Eds.). The Eurographics Association. doi:10.2312/sr.20251187 Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, and Ross Girshick. 2023. Segment Anything. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE, 3992–4003. doi:10.1109/iccv51070. 2023.00371 Black Forest Labs. 2024. FLUX. https://github.com/black-forest-labs/flux. Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Con-sul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, Sumith Kulal, Kyle Lacey, Yam Levi, Cheng Li, Dominik Lorenz, Jonas Müller, Dustin Podell, Robin Rombach, Harry Saini, Axel Sauer, and Luke Smith. 2025. FLUX.1 Kontext: Flow Matching for In-Context Image Generation and Editing in Latent Space. CoRR 
+
+abs/2506.15742 (2025). arXiv:2506.15742 doi:10.48550/ARXIV.2506.15742 Zeqiang Lai, Yunfei Zhao, Zibo Zhao, Xin Yang, Xin Huang, Jingwei Huang, Xiangyu Yue, and Chunchao Guo. 2025. NaTex: Seamless Texture Generation as Latent Color Diffusion. arXiv:2511.16317 [cs.CV] https://arxiv.org/abs/2511.16317 I. Lopes, V. Deschaintre, Y. Hold‐Geoffroy, and R. de Charette. 2025. MatSwap: Light‐aware material transfers in images. Computer Graphics Forum 44, 4 (July 2025). doi:10.1111/cgf.70168 Linjie Lyu, Valentin Deschaintre, Yannick Hold-Geoffroy, Miloš Hašan, Jae Shin Yoon, Thomas Leimküehler, Christian Theobalt, and Iliyan Georgiev. 2025. IntrinsicEdit: Precise generative image manipulation in intrinsic space. ACM Transactions on Graphics 44, 4 (2025). Or Madar and Ohad Fried. 2025. Tiled Diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 7795–7804. doi:10.1109/cvpr52734.2025.00730 Perla Mayo, Carolin M. Pirkl, Alin M. Achim, Bjoern H. Menze, and Mohammad Gol-babaee. 2026. Denoising Diffusion Probabilistic Models for Magnetic Resonance Fingerprinting. IEEE Access 14 (2026), 48198–48211. doi:10.1109/ACCESS.2026. 3674726 William Peebles and Saining Xie. 2023. Scalable Diffusion Models with Transformers. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE, 4172– 4182. doi:10.1109/iccv51070.2023.00387 Poly Haven. 2025. Poly Haven. https://polyhaven.com/. Zeyu Ren, Zeyu Zhang, Wukai Li, Qingxiang Liu, and Hao Tang. 2026. AnyDepth: Depth Estimation Made Easy. arXiv preprint arXiv:2601.02760 (2026). Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bjorn Om-mer. 2022. High-Resolution Image Synthesis with Latent Diffusion Models. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 10674–10685. doi:10.1109/cvpr52688.2022.01042 Prafull Sharma, Varun Jampani, Yuanzhen Li, Xuhui Jia, Dmitry Lagun, Fredo Durand, Bill Freeman, and Mark Matthews. 2024. Alchemist: Parametric Control of Mate-rial Properties with Diffusion Models . In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE Computer Society, Los Alamitos, CA, USA, 24130–24141. doi:10.1109/CVPR52733.2024.02278 Prafull Sharma, Julien Philip, Michaël Gharbi, Bill Freeman, Fredo Durand, and Valentin Deschaintre. 2023. Materialistic: Selecting Similar Materials in Images. 
+
+ACM Transactions on Graphics 42, 4 (July 2023), 1–14. doi:10.1145/3592390 Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. 2024. RoFormer: Enhanced transformer with Rotary Position Embedding. Neurocomput-ing 568 (Feb. 2024), 127063. doi:10.1016/j.neucom.2023.127063 Roman Suvorov, Elizaveta Logacheva, Anton Mashikhin, Anastasia Remizova, Arsenii Ashukha, Aleksei Silvestrov, Naejin Kong, Harshith Goka, Kiwoong Park, and Vic-tor Lempitsky. 2022. Resolution-robust Large Mask Inpainting with Fourier Con-volutions. In 2022 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) . IEEE, 3172–3182. doi:10.1109/wacv51458.2022.00323 Vadim Titov, Madina Khalmatova, Alexandra Ivanova, Dmitry Vetrov, and Aibek Alanov. 2024. Guide-and-Rescale: Self-guidance Mechanism for&nbsp;Effective Tuning-Free Real Image Editing. In Computer Vision – ECCV 2024: 18th European Conference, Milan, Italy, September 29–October 4, 2024, Proceedings, Part LXXI (Mi-lan, Italy). Springer-Verlag, Berlin, Heidelberg, 235–251. doi:10.1007/978-3-031-73209-6_14 Binxin Yang, Shuyang Gu, Bo Zhang, Ting Zhang, Xuejin Chen, Xiaoyan Sun, Dong Chen, and Fang Wen. 2023. Paint by Example: Exemplar-based Image Editing with Diffusion Models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 18381–18391. doi:10.1109/cvpr52729.2023.01763 Hu Ye, Jun Zhang, Sibo Liu, Xiao Han, and Wei Yang. 2023. IP-Adapter: Text Compatible Image Prompt Adapter for Text-to-Image Diffusion Models. CoRR 
+
+abs/2308.06721 (2023). arXiv:2308.06721 doi:10.48550/ARXIV.2308.06721 Yu-Ying Yeh, Jia-Bin Huang, Changil Kim, Lei Xiao, Thu Nguyen-Phuoc, Numair Khan, Cheng Zhang, Manmohan Chandraker, Carl S Marshall, Zhao Dong, and Zhengqin Li. 2024. TextureDreamer: Image-Guided Texture Synthesis through Geometry-Aware Diffusion . In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE Computer Society, Los Alamitos, CA, USA, 4304–4314. doi:10.1109/CVPR52733.2024.00412 Zheng Zeng, Valentin Deschaintre, Iliyan Georgiev, Yannick Hold-Geoffroy, Yiwei Hu, Fujun Luan, Ling-Qi Yan, and Milos Hasan. 2024. RGB ↔X: Image decomposition and synthesis using material- and lighting-aware diffusion models. In ACM SIG-GRAPH 2024 Conference Papers, SIGGRAPH 2024, Denver, CO, USA, 27 July 2024- 1 August 2024 , Andres Burbano, Denis Zorin, and Wojciech Jarosz (Eds.). ACM, 75. doi:10.1145/3641519.3657445 Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. 2023a. MagicBrush: A Manually Annotated Dataset for Instruction-Guided Image Editing. In Advances in Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 9
+
+Neural Information Processing Systems . Curran Associates, Inc. Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2023b. Adding Conditional Con-trol to Text-to-Image Diffusion Models. In IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023 . IEEE, 3813–3824. doi:10.1109/ICCV51070.2023.00355 10 • Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO        
+
+> Source Image Cond. Ours FLUX.2-dev FLUX.1-Fill-dev MatSwap ZeST MatFusion
+
+Fig. 5. Qualitative comparison of texture fidelity. The second column displays the reference texture and the target binary mask. For text-guided inpainting baselines, we provide descriptive prompts derived from the reference texture. As shown, our method maintains high texture fidelity while strictly preserving the underlying geometry and lighting conditions. The source images in the second and third rows are provided by © Pixabay. Other source images and all conditions are provided by © SpatialVerse. 
+
+Source Round 1 Round 2 
+
+Fig. 6. Multi-round editing example. To overcome the limitations of a sin-gle affine transform on sharp structural transitions (e.g., orthogonal folds), we utilize a multi-round editing approach. By applying sequential transfor-mations to individual surfaces, this strategy ensures precise texture align-ment across complex, multi-planar geometries. The source images are pro-vided by © SpatialVerse. 
+
+Source Cond. Result Twisting 
+
+Fig. 7. Generalization to semantic conflicts and non-affine deforma-tions. We test transferring textures that rarely appear in the target region, alongside injecting non-affine RoPE conditions such twisting effects. Our framework robustly handles these challenging settings, precisely executing complex, non-linear spatial distortions and resolving semantic mismatches. Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 11 
+
+Cond. Rotate 0 Rotate −𝜋/3 Rotate 𝜋/3 Cond. Rotate 0 Rotate −𝜋/3 Rotate 𝜋/6 
+
+Cond. Scale ×1 Scale ×0.5 Scale ×0.25 Cond. Scale ×1 Scale ×2 Scale ×4 
+
+Fig. 8. Functional demonstration of spatial controllability . Our model accurately responds to diverse rotation and scaling commands within a single scene. It preserves texture integrity without aliasing, verifying that our Implicit Coordinate Injection effectively captures continuous spatial variations and ensures precise alignment with parametric inputs. The conditions are provided by © SpatialVerse. 
+
+GT Cond. Ours FLUX.2 NanoBanana MatSwap w. RefNet MatSwap ZeST 
+
+Fig. 9. Qualitative comparison of spatial controllability . For each comparison case, the second column (Cond.) illustrates the disparate input conditions: (top) for our method, a mask with a colored bounding box indicates the target affine transformation; (bottom) for baselines, a pre-warped and tiled texture is provided as an explicit spatial guide to compensate for their lack of native control interfaces. Despite receiving significantly less structural guidance, our framework achieves superior geometric adherence and seamless blending compared to the heavily-assisted baselines. The GT images and conditions are provided by © SpatialVerse. 12 • Junrong HUANG, Zhiyuan ZHANG, Rui TANG, Hongbo FU, and Jing LIAO 
+
+A Vision-Language Model (VLM) Evaluation Protocol 
+
+Evaluating generative texture mapping on real-world, in-the-wild images is challenging due to the absence of ground-truth refer-ences, rendering standard pixel-level metrics (e.g., PSNR, SSIM) in-applicable. To address this, we introduce an automated evaluation protocol leveraging a state-of-the-art Vision-Language Model (VLM), specifically Gemini-2.5-Pro. This model serves as an impartial zero-shot judge to assess generation quality based on physical plausibil-ity and visual coherence. To ensure the VLM evaluates the outputs with rigorous, human-aligned criteria, our protocol integrates In-Context Learning (ICL) 
+
+and Chain-of-Thought (CoT) reasoning: 
+
+• In-Context Learning: We prepend the prompt with carefully curated few-shot examples (both successful texture applications and failed cases exhibiting geometric distortion or lighting degra-dation). This grounds the VLM’s understanding of our specific task definitions. 
+
+• Chain-of-Thought Prompting: Rather than directly outputting a score, the prompt explicitly instructs the VLM to sequentially analyze two physical aspects: (1) whether the texture logically follows the underlying 3D surface normals and whether the orig-inal environmental shading and shadows are preserved; and (2) whether the identity of the reference texture is maintained. Only after generating this step-by-step reasoning does the model out-put the final evaluation verdict. The exact prompt template utilized for our Gemini-2.5-Pro eval-uation is provided below: 
+
+[System Prompt & Instruction Setup] 
+
+You are an expert computer graphics evaluator. Your task is to objectively assess the quality of an AI-generated image where a new material texture has been mapped onto a specific target region of a source image. You will receive 3 images, check images first, these images should follow the naming criteria: 
+
+rgb.png , condition.png , edit.png 
+
+Consider rgb.png as ORIGINAL, condition.png as REFERENCE, and edit.png as EDITED RESULTS. For each EDITED RESULT, You should first compare the ORIG-INAL and EDITED RESULT to find the difference as the EDITED AREA. 
+
+[Chain-of-Thought Guidelines] 
+
+Before providing your final score/preference, you must explicitly reason through the following three dimensions step-by-step: 
+
+Step 1: Physical Plausibility (Geometry & Illumination): An-alyze how naturally the generated texture integrates into the ORIG-INAL. First, check if the REFERENCE logically unfolds along the underlying 3D geometry in the EDITED AREA (e.g., correct fore-shortening, perspective distortion, and natural deformations along curved or folded surfaces). Second, evaluate whether the environ-mental lighting conditions of the ORIGINAL (e.g., ambient occlusion, cast shadows, and specular highlights) are faithfully preserved. The EDITED RESULTS should interact accurately with the scene’s light and volume, rather than looking like a flat, unlit sticker. 
+
+Step 2: Texture Fidelity & Identity: Compare the EDITED AREA against the REFERENCE. Check if the high-frequency structural de-tails, color distribution, and intrinsic structural patterns (e.g., tile rep-etition, grain, fabric weave) are perfectly preserved. Penalize any re-sults that exhibit severe blurring, cross-attention artifacts, semantic hallucination, or a loss of the original texture’s identity. 
+
+Step 3: Final Scoring: Based on the detailed analysis above, pro-vide two distinct scores on a scale of 1 to 5 (where 1 indicates com-plete failure and 5 indicates perfect accuracy and photorealism) to-gether with a comprehensive summary: Geometry & Lighting: [1-5] Texture Fidelity: [1-5] 
+
+[In-Context Examples] 
+
+[Positive Example]: 
+
+Input: 
+
+ORIGINAL REFERENCE EDITED Reasoning: 
+
+Step 1: The texture logically unfolds along the geometric surface with accurate perspective distortion. The original lighting and shading conditions are flawlessly preserved, matching the ORIGINAL image perfectly and maintaining the object’s physical volume. Step 2: The overall color distribution and primary texture structures correctly match the REFERENCE. However, while the main identity is preserved, there are some minor inconsistencies and slight blur-ring in the fine, high-frequency details. 
+
+Geometry & Lighting Score: 5
+
+Texture Fidelity Score: 4
+
+[Negative Example]: 
+
+Input: 
+
+ORIGINAL REFERENCE EDITED Reasoning: 
+
+Step 1: The texture appears as a flat, 2D copy-paste overlay on the wall, completely failing to adhere to the underlying perspective or geometric surface. Furthermore, it entirely lacks environmental illu-mination, wiping out the original shading and making it look like an unlit sticker. Step 2: The generated texture matches the REFERENCE perfectly. All high-frequency structural details, color distributions, and intrinsic patterns are strictly preserved without any blurring or semantic al-teration. 
+
+Geometry & Lighting Score: 1
+
+Texture Fidelity Score: 5Controllable Texture Tiling with Transformed RoPE-Enhanced Diffusion Models • 13 
+
+To provide a holistic quantitative measure of generative qual-ity, the final VLM evaluation score is defined as the direct sum of the two independent dimensions assessed during the Chain-of-Thought process: Total Score = Geometry & Lighting + Texture Fidelity . (8) As shown in Tab. 3, we aggregated VLM scores with Top-1 pref-erence rates from our professional user study (Pro, 6AFC), demon-strating a strong correlation between automated assessments and expert preferences. Our method achieves the highest Total Score (6.718), driven by a significant lead in Geometry & Lighting (3.923), perfectly aligning with its dominant user preference. While FLUX.2-dev scores marginally higher in pure texture details, its inferior geo-metric adherence yields a lower overall preference.                         
+
+> Table 3. Quantitative VLM Evaluation Results. The Total Score is the sum of the Geometry & Lighting and Texture Fidelity scores. We also present the professional User Study preference rate for correlation. Best results are highlighted in bold , and the second best are underlined.
+> Method Geometry & Lighting Texture Fidelity Total Score Ours 3.923 2.795 6.718
+> FLUX.2-dev 3.128 3.205 6.333 MatSwap 2.923 2.128 5.051 FLUX.1-Fill-dev 2.744 1.564 4.308 ZeST 1.667 2.333 4.000 MaterialFusion 1.949 1.436 3.384
+
+B User Study Setup and Interfaces 
+
+To comprehensively evaluate real-world photorealism and spatial adherence, we designed a rigorous Multi-Alternative Forced Choice (MAFC) user study. As reported in the main text, the study involved 70 participants, carefully composed of 43 professional designers (e.g., UI/UX, 3D artists) and 27 general users, ensuring our results reflect both expert scrutiny and general perceptual preferences. The study was divided into two independent tasks: Texture Fidelity and Spatial Controllability. 
+
+B.1 Task 1: Texture Fidelity 
+
+This task aims to evaluate the overall visual realism and texture preservation capabilities. We curated 40 independent trials. In each trial, participants were presented with a 9-image interface, which included: 
+
+• Inputs (3 images): The original source image, the target binary mask indicating the replacement region, and the reference ma-terial texture. 
+
+• Generated Results (6 images): The outputs generated by our method and five baselines (FLUX.2-dev, FLUX.1-Fill-dev, MatSwap, ZeST, and MaterialFusion). The order of these 6 results was strictly randomized for each trial. 
+
+Evaluation Criteria: Participants were instructed to select the sin-gle best result (Top-1 preference) based on their perceptual first im-pression. They were explicitly asked to consider three factors: (1) alignment of the generated texture with the original geometry and lighting; (2) realistic unfolding of the texture along the 3D surface; and (3) strict consistency with the provided reference material. 
+
+B.2 Task 2: Spatial Controllability 
+
+This task focuses specifically on evaluating the precision of user-defined geometric transformations. We designed 24 independent trials for this objective. The interface for each trial displayed 6 im-ages: 
+
+• Inputs (3 images): The original source image, the target mask, and a spatially-conditioned reference texture. This conditioned reference explicitly visualizes the intended transformation pa-rameters (e.g., a specific rotation angle, scaling factor, or trans-lation shift) to be applied to the target region. 
+
+• Generated Results (3 images): The outputs from our method and the two state-of-the-art baselines capable of spatial control (MatSwap and ZeST), again presented in a randomized order. 
+
+Evaluation Criteria: Participants were asked to evaluate the 3 candidates and select the one that most accurately executed the ex-plicit spatial instructions (rotation/scaling/translation) while main-taining visual realism.                          
+
+> Table 4. User Study Results: Texture Fidelity (6AFC) . We report the Top-1 Preference Rate (%) evaluating overall visual realism and texture preser-vation. Our method significantly outperforms all baselines. Best results are highlighted in bold , and the second best are underlined.
+> Method Fidelity Preference Rate (%) Overall General Users Professional Designers Ours 42.0 38.9 43.9
+> FLUX.2-dev 32.1 34.6 30.8 MatSwap 9.8 10.6 9.1 MaterialFusion 6.3 6.1 6.3 FLUX.1-Fill-dev 5.9 5.3 6.3 ZeST 3.9 4.4 3.6
+> Table 5. User Study Results: Spatial Controllability (3AFC) . We report the Top-1 Preference Rate (%) for accurately executing explicit spatial trans-formations. Baselines incapable of explicit spatial control were excluded. Best results are highlighted in bold , and the second best are underlined.
+
+Method Functional Preference Rate (%) Overall General Users Professional Designers Ours 91.9 91.2 92.2 
+
+ZeST 4.3 5.4 3.7 MatSwap 3.8 3.4 4.2 
+
+B.3 Detailed Results 
+
+To provide a granular view of the perceptual evaluation, we present the complete statistics of our user study in Tabs. 4 and 5. These tables detail the Top-1 preference rates across the texture fidelity and spatial controllability tasks, respectively, explicitly stratifying the responses from professional designers and general participants. As demonstrated, our approach maintains a dominant preference across all demographic groups in both fidelity and functional con-trollability.

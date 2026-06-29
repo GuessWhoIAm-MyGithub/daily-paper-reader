@@ -1,0 +1,845 @@
+Title: What Do Deepfake Benchmarks Measure? An Audit Using Frozen Self-Supervised Representations
+
+URL Source: https://arxiv.org/pdf/2606.26384v1
+
+Published Time: Fri, 26 Jun 2026 00:14:39 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# What Do Deepfake Benchmarks Measure? An Audit Using Frozen Self-Supervised Representations 
+
+Samuel Pagon 1 Yixuan Shen 1 Vishal Asnani 2 Feng Liu 11 Department of Computer Science, Drexel University  
+
+> 2
+
+Adobe Research 
+
+vasnani@adobe.com, {sp3692,ys844,fl397}@drexel.edu 
+
+Abstract 
+
+As deepfake generators approach perceptual indistinguishability, reliable detection becomes critical. Yet, detectors that score well on benchmarks routinely fail in the wild. A concerning feedback loop has emerged: benchmarks drive increasingly complex, engineered detectors, yet if those benchmarks do not reflect real-world deepfakes, this complexity may be solving the wrong problem entirely. This raises a prior question: what are these benchmarks actually measuring? We conduct an audit of video, image, and audio deepfake benchmarks using a deliberately simple diagnostic. If a linear probe on frozen, general-purpose self-supervised representations can approximate the performance of a bespoke detector, the bench-mark is largely rewarding general modality understanding rather than forensic understanding. This has two implications: the benchmark may not reflect realistic threat models, and it raises the question of whether the bespoke detectors the probe approaches are truly learning forensic understanding. We observe, across three modalities, linear probes on general-purpose self-supervised representations closely approach the performance of bespoke detectors. We further show that generator-level difficulty is partly explained by Fréchet geometry in the same representation space. Together, these results support a benchmark-audit view of deepfake de-tection: before high scores are read as evidence of forensic understanding, it is worth asking how much of the benchmark is already solved by general-purpose representations. 
+
+1 Introduction 
+
+Deepfakes are now a routine vector for fraud and political manipulation. Recent 2026 incidents include synthetic videos impersonating the Governor of the Bank of Italy in investment scams [ 45 ], deepfake celebrity endorsements driving crypto schemes flagged by state attorneys general [ 31 , 30 ], and AI-generated political ads in the U.S. midterm cycle [ 3]. Reliable detection is what current deepfake benchmarks are meant to produce, but the gap between benchmark and deployed performance is well-documented. Deepfake-Eval-2024 [6 ] and the SAFE Challenge [ 37 ] show that detectors strong on standard splits collapse on in-the-wild content, and recent cross-benchmark analysis attributes much of the apparent progress to shortcut learning rather than forensic understanding [ 44 ]. Benchmark performance keeps climbing, but generalization to the deepfakes that actually matter does not follow. This raises a prior question: what are these benchmarks actually measuring? 
+
+To find out we audit the benchmarks themselves rather than propose another detector. For each modal-ity we fit a linear classifier on layer-wise representations from a frozen pretrained self-supervised model, trained for general modality understanding. This ensures the probe can only exploit structure that a general-purpose representation of the modality already encodes. Its performance then reveals 
+
+> arXiv:2606.26384v1 [cs.CV] 24 Jun 2026
+
+how much of a benchmark is solvable without any forensic understanding. We complement the probe with a representation-space geometry analysis that asks why some target generators are harder than others, using each generator’s position relative to source-real and source-fake distributions in the same frozen representation space. Our contributions are: • A benchmark-audit framework applicable across image, audio, and video, built around pretrained frozen self-supervised models and linear probes. • Empirical evidence that across three contemporary generator-diverse benchmarks (AIGVDBench, Celeb-DF++, MLAAD v9 English, validated on ASVspoof2019 LA), frozen-SSL probes approach the performance of specialized detectors. Showing substantial real-versus-fake signal is already linearly accessible in representation spaces never learned for deepfake detection. • A geometric account of generator-level difficulty showing that the relative Fréchet margin between source-real and source-fake regions is the most consistent predictor of which target generators are easy or hard for the probe, surfacing a structural concern that some generators in current test sets sit close to already-seen spoof structure rather than testing genuinely novel generators. 
+
+2 Related Work 
+
+Deepfake Benchmarks and the Generalization Gap. Deepfake benchmarks have evolved along two axes: broader scope and more transfer-oriented evaluation. Early face benchmarks like FaceForen-sics++ gave way to larger, more realistic datasets such as Celeb-DF , DFDC , and DeeperForensics-1.0 [ 34 , 22 , 12 , 19 ], while in speech ASVspoof 2019 established the canonical logical-access anti-spoofing protocol [ 27 ]. Recent resources emphasize generator coverage at contemporary scale, spanning standardized cross-dataset protocols ( DeepfakeBench ), multilingual and multi-generator audio ( MLAAD ), expanded face-video scenarios across face-swap, face-reenactment, and talking-face (Celeb-DF++ ), and large-scale AI-video suites ( GenVidBench , AIGVDBench ) [ 43 , 26 , 23 , 29 , 24 ]. A recurring theme is that strong in-distribution performance fails to translate into real-world ro-bustness: Deepfake-Eval-2024 reports large AUC drops for open-source detectors on in-the-wild content [ 6 ], and the SAFE Challenge shows audio detectors degrade sharply under post-processing and laundering [37]. 
+
+Self-supervised representations in deepfake detection. Self-supervised and foundation-model representations are increasingly central to deepfake detection. RealForensics demonstrated that SSL pretraining on real talking faces improves robustness to unseen manipulations [ 16 ]; UnivFD showed that simple nearest-neighbor and linear-probe baselines on CLIP features generalize well to unseen diffusion and autoregressive models [ 32 ]; subsequent work reinforces this finding for CLIP-based and SSL-pretrained ViT detectors [ 10 , 28 , 11 ]. The same pattern holds in audio: Spoof-SUPERB evaluates twenty SSL speech models for anti-spoofing and finds that large discriminative encoders such as XLS-R, UniSpeech-SAT, and WavLM Large transfer best [ 1]. Across modalities, generic pretrained representation spaces already contain substantial fake/real signal, as defined by the benchmarks. Our work builds on this insight by using frozen SSL representations not primarily as better detectors, but as benchmark diagnostics .
+
+Distributional geometry and benchmark analysis. Fréchet-style distances motivate representation-space distribution comparison. Fréchet Inception Distance (FID) compares Gaussian approximations of real and generated image embeddings [ 17 ], with related variants FAD [20 ] and FVD [38 ] for audio and video, and nonparametric alternatives such as MMD [ 15 ]. Recent work also clarifies the limits of geometry-based evaluation: On the Content Bias in Fréchet Video Distance shows that FVD can be biased toward per-frame quality and that SSL video representations reduce this bias [ 14 ]. In deepfake detection, recent cross-benchmark analysis points to shortcut learning and training-set composition as major drivers of apparent generalization, rather than simple chronological benchmark difficulty [ 44 ]. Together, these works motivate our use of SSL representation-space geometry as a benchmark-audit tool: if generator difficulty is predictable from where a target generator distribution lies relative to source-real and source-fake regions, then benchmark scores partly reflect representation-space coverage rather than detector-specific forensic understanding. 23 Audit Protocol 
+
+Our audit framework has two stages applied uniformly across modalities. First, we use a frozen transformer-based SSL to convert each input into layer-wise pooled representations. Second, we train simple linear probes on those representations and analyze the geometry of the same frozen SSL representation space. By keeping the backbone fixed and the head linear, we test whether strong benchmark performance is already accessible in generic pretrained representation spaces, rather than arising from task-specific detector engineering. 
+
+3.1 Benchmarks 
+
+We evaluate three benchmarks, each chosen due to their advertised coverage of generators, spanning from legacy to recent state-of-the-art image, audio, and video generation quality. Table 1 summarizes the protocols. In each case the source domain is held fixed for training, and the target domain is held fixed for evaluation, so that any reported gap reflects generator and dataset transfer rather than within-dataset memorization. Table 1: Source–target benchmark pairs used in the audit. Sample counts and protocol details follow the original benchmark releases. MLAAD evaluation is restricted to the English split because ASVspoof2019 LA is English-only; this isolates generator shift from cross-lingual mismatch.                        
+
+> Modality Source →Target Backbone Key protocol details Metric
+> Audio ASVspoof2019 LA →
+> MLAAD v9 (English)
+> XLS-R 300M [4]
+> ASVspoof2019 LA: 2,580 / 22,800 (bona fide / spoof) train, 2,548 / 22,296 dev, 7,355 / 63,882 eval. MLAAD v9: 687.4 hrs, 140 TTS systems, 51 languages; English split has 84 generators in our experiments. EER (LA), spoof-only generator accuracy (MLAAD v9) Image Celeb-DF v2 →Celeb-DF++
+> DINOv3 ViT-L [35]
+> Celeb-DF v2: 590 real, 5,639 fake, 59 celebrities, >2M frames. Celeb-DF++: 53,196 fakes from 22 methods across face-swap, face-reenactment, talking-face. Target test split uses 178 reals; 200 fakes per FS method, 200 per FR method, 300 per TF method. Per-generator AUC vs. shared real pool Video AIGVDBench V-JEPA2 ViT-G [2]
+> AIGVDBench: >440,000 videos from 31 methods (20 open-source, 11 closed-source). Open-source: 14k/3k/3k train/val/test per generator with matched reals. Closed-source: 2,000 test videos per generator. Training uses real videos plus Open-Sora
+> fakes; evaluation uses the full generator-diverse test split. Per-generator AUC vs. shared real pool
+
+To make the source–target splits visually inspectable, we also provide an interactive benchmark viewer in Appendix, which samples real and fake examples from the training splits and one example per target generator across video, image, and audio. 
+
+3.2 Layer-wise representation extraction and linear probes 
+
+Let fθ denote a pretrained transformer encoder with parameters θ and let ℓ ∈ { 1, . . . , L } index its hidden layers. For an input xi, the encoder returns a sequence of hidden tokens H(ℓ) 
+
+> i
+
+=[h(ℓ) 
+
+> i, 1
+
+, . . . , h (ℓ) 
+
+> i,T ℓ
+
+] ∈ RTℓ×dℓ , where Tℓ is the number of tokens and dℓ the hidden dimensionality. Tokens correspond to time steps for audio and to image patches or video tokens for the visual modalities. We obtain a fixed-dimensional vector by global mean pooling: 
+
+z(ℓ) 
+
+> i
+
+= 1
+
+TℓTℓX
+
+> t=1
+
+h(ℓ) 
+
+> i,t
+
+∈ Rdℓ . (1) 3Each layer’s source-domain training representations are then standardized via z-score normalization, and the same statistics are applied to target representations. 
+
+Probes. We fit two linear probes independently at every layer: L2-regularized Logistic Regression and an L2-regularized Ridge classifier. For AUC and EER computation, we use the logistic probability for Logistic Regression and the raw linear decision score for Ridge. Both probes are deliberately low-capacity, restricting them from learning new deep representations. If such probes achieve performance close to specialized detectors, the benchmark is at least partly solvable through linearly accessible structure already present in the frozen SSL representation space. 
+
+Modality-specific implementation. Audio waveforms are downmixed to mono, resampled to 16 kHz, and trimmed or zero-padded to 64,000 samples; MLAAD items are assigned the spoof label, so MLAAD performance is reported as per-generator spoof recall. Image representations are extracted from aligned face crops at 224 ×224 : Celeb-DF v2 uses keyframes, Celeb-DF++ uses 32 deterministically sampled frames per video, and both pipelines run a YuNet-based [ 40 ] eye-keypoint alignment. Video representations use a fixed sequence of 8 frames per clip (the final 8 frames if available, cycled otherwise). Probes are fit on source-domain labels and evaluated on the target test split. For the video benchmark, source training is restricted to real videos plus Open-Sora [47 ] fakes; all other generators are excluded from the source split. 
+
+3.3 Representation-space geometry 
+
+To analyze why some target generators are easier than others, we model each generator group as a Gaussian in SSL representation space. For group g at layer ℓ, with members Gg ,
+
+μ(ℓ) 
+
+> g
+
+= 1
+
+|Gg |
+
+X
+
+> i∈Gg
+
+z(ℓ) 
+
+> i
+
+, Σ(ℓ) 
+
+> g
+
+= Cov 
+
+
+
+{z(ℓ) 
+
+> i
+
+}i∈Gg
+
+
+
+. (2) Group definitions are benchmark-specific. For audio, the source domain has one real group and multiple spoof groups (with no target real group, since MLAAD is spoof-only); for image, the source domain has one real and one aggregated fake group, while the target domain has reals plus a fake group per scenario/method; for video, the source domain has only real and Open-Sora , and target groups are defined per generator. For two groups with parameters (μ1, Σ1) and (μ2, Σ2), the Fréchet distance is 
+
+dF
+
+ (μ1, Σ1), (μ2, Σ2) = ∥μ1 − μ2∥22 + tr(Σ 1) + tr(Σ 2) − 2 tr 
+
+h
+
+(Σ 1Σ2)1/2i
+
+. (3) For each layer, we compute the full source-by-target distance matrix and derive three summaries per target group g:
+
+dreal (g, ℓ ), dspoof (g, ℓ ) = min 
+
+> h∈S train
+
+dF
+
+ (μ(ℓ) 
+
+> h
+
+, Σ(ℓ) 
+
+> h
+
+), (μ(ℓ) 
+
+> g
+
+, Σ(ℓ) 
+
+> g
+
+), ∆( g, ℓ ) = dreal (g, ℓ )−dspoof (g, ℓ ),
+
+(4) where Strain is the set of source-domain spoof groups. Intuitively, ∆ measures whether a target group lies closer to the source real region or to the source fake region. We test whether geometry explains performance by correlating each measure with per-generator probe performance using both Pearson r
+
+and Spearman ρ, computed independently per layer and per probe. We treat ∆ as a relative-position diagnostic , not as a causal account of detection. 
+
+4 Results 
+
+We organize the results around the two claims of the audit. Section 4.1 reports linear-probe perfor-mance across benchmarks, showing that frozen-SSL representations expose substantial real-versus-fake structure and approach reported specialized detectors. Section 4.2 then asks why some target generators are harder than others, and shows that the relative Fréchet margin ∆ is the most consistent geometric predictor of difficulty across all three modalities. 41 5 9 13 17 21 25 29 33 37 40  
+
+> Layer
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> 95
+> 100
+> Average AUC
+> Logistic Regression Ridge Classifier
+
+Detector AUC 
+
+AIGVDBench top-10 
+
+X3D [13] 77.67 UnivFD [32] 78.44 DeCoF [25] 79.13 CNNSpot [39] 80.28 D3 [46] 80.39 TimeSformer [5] 83.27 UniFormerV2 [21] 84.62 ForgeLens3 [7] 85.08 ForgeLens1 [7] 89.41 
+
+Effort [41] 89.82 
+
+Our top LR/Ridge probes 
+
+LR L37 84.56 
+
+Ridge L22 88.51 
+
+Figure 1: AIGVDBench. (a) Macro-average per-generator AUC on the full test split as a function of V-JEPA2 layer for logistic regression (LR) and ridge probes. (b) Reported overall average AUC across 20 open-source and 11 closed-source generators for the top-10 detectors in the AIGVDBench paper and our top LR/Ridge probes. 
+
+4.1 Linear probes reveal strong benchmark separability 4.1.1 Video: AIGVDBench 
+
+The strongest frozen-SSL probe on AIGVDBench is the layer-22 ridge classifier, which reaches 88.51 
+
+macro-average per-generator AUC (Figure 1a). This is close to the strongest reported detectors in the benchmark paper, ForgeLens1 (89.41) and Effort (89.82), and exceeds every other detector listed (Figure 1b). The probe uses no benchmark-specific architecture, no fine-tuning, and no temporal reasoning module beyond what V-JEPA2 itself provides; it is a single linear classifier on layer-pooled representations. Layer depth matters. At layer 1, logistic regression and ridge start at 62.16 and 65.10 AUC respectively. Ridge improves rapidly and peaks at 88.51 at layer 22, while logistic regression continues to improve more gradually and peaks later, at layer 37, with 84.56 AUC. Real-versus-fake structure is therefore not uniformly distributed across the V-JEPA2 hierarchy, but becomes much more linearly accessible in higher-level representations. The aggregate is not driven by a few easy generators (Figure 7). At the layer-22 ridge configuration, the median per-generator AUC is 92.50 and the range is 63.00 to 100.00. The highest values are 
+
+Open-Sora (100.0, the source generator), SEINE (99.98), and Pyramid-Flow (99.98); the lowest are wan (63.00), pika (66.00), and Luma (69.60). The full per-generator breakdown is shown in Appendix Figure 7. 
+
+4.1.2 Image: Celeb-DF++ 
+
+On Celeb-DF++ (Figure 2a), the strongest frozen-SSL probe is logistic regression at layer 6, reaching 
+
+79.72 AUC; ridge peaks later, at layer 19, with 78.34. This trails the strongest reported detector, Effort (83.0), but is competitive with or above the other listed baselines (Xception 72.3, RFM 71.0, CLIP 69.1, SIA 70.3, UCF 67.5, IID 68.7, ProDet 71.4). The layer profile is markedly non-monotonic, in contrast with the AIGVDBench setting. Both probes start in the low 70s, rise sharply in the shallow layers, collapse in the middle of the network, and recover later. Logistic regression drops from 79.72 at layer 6 to 48.29 at layer 11; ridge drops from 76.45 at layer 5 to 51.14 at layer 11. The most useful DINOv3 representations for this benchmark are therefore not the deepest ones; separability varies substantially across the SSL hierarchy. At the best configuration the median per-generator AUC is 82.22, slightly above the 79.72 macro-average, and per-generator AUC ranges from 60.45 to 94.81 (Figure 8). The benchmark is broadly separable but with substantial diversity across the FS/FR/TF scenarios. The full per-generator breakdown is shown in Appendix Figure 8. 51 5 9 13 17 21 24  
+
+> Layer
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Average AUC
+> Logistic Regression Ridge Classifier
+
+Detector AUC 
+
+Celeb-DF++ reported detectors 
+
+Xception [9] 72.3 RFM [39] 71.0 CLIP [33] 69.1 SIA [36] 70.3 UCF [42] 67.5 IID [18] 68.7 ProDet [8] 71.4 
+
+Effort [41] 83.0 
+
+Our top LR/Ridge probes 
+
+LR L6 79.72 
+
+Ridge L19 78.34 
+
+Figure 2: Celeb-DF++. (a) Layer-wise macro-average per-generator AUC on the Celeb-DF++ GF-eval test split for logistic regression (LR) and ridge probes on DINOv3 representations. (b) Reported frame-level average AUC from Celeb-DF++ paper for detectors trained on Celeb-DF and evaluated on Celeb-DF++; and our top LR/Ridge probes. 
+
+4.1.3 Audio: ASVspoof2019 LA and English MLAAD 
+
+The audio setting requires a slightly different framing. The original MLAAD evaluation numbers are reported on MLAAD v1, which is now two years old and substantially smaller than MLAAD v9, and our evaluation is restricted to English (since ASVspoof2019 LA is English-only). A like-for-like comparison with the original MLAAD numbers is therefore not available. We instead validate the probe on ASVspoof2019 LA evaluation protocol as a sanity check, then transfer to the MLAAD v9 English split. 
+
+ASVspoof2019 LA evaluation protocol sanity check. The best logistic-regression probe (layer 6) reaches 4.78% EER , and the best ridge probe (layer 11) reaches 5.70% EER. The top reported single systems on ASVspoof2019 LA are T24 (4.04), T45 (5.06), T04 (5.74), T01 (5.97), and T39 (7.01) [ 27 ]. The layer-6 logistic-regression probe is worse than only the strongest reported single system and outperforms the other four listed systems; the best ridge probe falls within the same range. This confirms that frozen XLS-R representations paired with a linear probe are competitive on the canonical source benchmark, not just on transfer. 1 5 9 13 17 21 24  
+
+> Layer
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Average Accuracy
+> Logistic Regression Ridge Classifier
+
+Detector EER 
+
+ASVspoof2019 LA top-5 
+
+T39 7.01 T01 5.97 T04 5.74 T45 5.06 
+
+T24 4.04 
+
+Our top-5 probes (LA) 
+
+Ridge L11 5.70 LR L19 5.28 LR L8 5.19 LR L7 4.92 
+
+LR L6 4.78 
+
+Figure 3: Audio. (a) Layer-wise macro-average per-generator spoof accuracy on the MLAAD v9 English split (84 generators) for logistic regression (LR) and ridge probes on XLS-R representations. (b) Top-5 single systems on ASVspoof2019 LA by EER, alongside the top-5 of our probes on the same LA evaluation split. 
+
+Transfer to English MLAAD. On the current English MLAAD split (84 target generators), logistic regression peaks at layer 9 with 86.83% mean per-generator accuracy, and ridge peaks at layer 18 with 88.84% , the best overall audio-transfer result (Figure 3a). The layer profile is non-monotonic: 6ridge dominates through much of the network, especially in shallow and late-middle layers, while logistic regression is most competitive around layers 9–14. At the layer-18 ridge configuration (Figure 9), the median per-generator accuracy is 93.1% and the range is 39.2% to 100.0%. Several systems are detected perfectly, including WhisperSpeech ,
+
+tts_models_en_sam_tacotron-DDC , e2-tts , Indri-TTS-0.1 , and facebook_mms-tts-eng .Harder systems include DeepGram (39.2%), Kyutai-TTS (48.2%), and Microsoft VibeVoice 1.5B (52.0%). The full per-generator breakdown is shown in Appendix Figure 9. 
+
+Takeaway. Across all evaluated settings, frozen modality-specific SSL representations paired with a linear probe recover most of the reported detector signal. Specifically, within ∼1.3 AUC of the strongest reported detector on video (exceeding eight of the top-10), between the strongest detector and the rest of the leaderboard on image, and competitive with top single systems on ASVspoof2019 LA while reaching 88 .84% spoof-only generator accuracy on MLAAD v9 English. None of these probes uses task-specific architecture or fine-tuning beyond what the SSL backbone provides. These benchmarks already contain substantial linearly accessible signal in generic pretrained representation spaces. We next ask why generator-level difficulty varies the way it does. 
+
+4.2 Feature-space geometry 
+
+We now correlate per-generator probe performance with the three Fréchet-distance summaries from Section 3: dreal , dspoof , and ∆ = dreal − dspoof . The analysis is performed independently at each SSL layer; we report Pearson r and Spearman ρ.
+
+4.2.1 Video: AIGVDBench −1.0                                    
+
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Logistic Regression AUC
+> correlation
+> Distance to Real Distance to Spoof Delta
+> 15913 17 21 25 29 33 37 40
+> Layer
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Ridge AUC
+> correlation
+> 15913 17 21 25 29 33 37 40
+> Layer
+> 15913 17 21 25 29 33 37 40
+> Layer
+> Pearson rSpearman ρ
+
+Figure 4: AIGVDBench: layer-wise Pearson and Spearman correlations between per-generator AUC and the three Fréchet-distance summaries dreal , dspoof , ∆ for logistic regression (LR) and ridge probes on V-JEPA2 representations. 
+
+Across most layers, dspoof is negatively correlated with performance and ∆ is positively correlated with performance, while dreal is weaker and less stable (Figure 4). Generators that lie closer to the source fake region (low dspoof , high ∆) tend to be easier to detect. The strongest ∆ correlations reach approximately r ≈ 0.74 and ρ ≈ 0.94 for logistic regression, and r ≈ 0.70 and ρ ≈ 0.89 for ridge. These are the most consistent positive associations in the figure. The strongest geometry–performance relationships occur in the same middle-to-late region of the network where the layer-22 ridge probe reaches its peak. 
+
+4.2.2 Image: Celeb-DF++ 
+
+On Celeb-DF++ (Figure 5), ∆ again provides the strongest overall explanation, but the pattern is more nuanced than in the video setting. For logistic regression, the strongest Pearson correlation is 7−1.0                        
+
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Logistic Regression AUC
+> correlation
+> Distance to Real Distance to Spoof Delta
+> 15913 17 21 24
+> Layer
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Ridge AUC
+> correlation
+> 15913 17 21 24
+> Layer
+> 15913 17 21 24
+> Layer
+> Pearson rSpearman ρ
+
+Figure 5: Celeb-DF++: layer-wise Pearson and Spearman correlations between per-generator AUC and the three Fréchet-distance summaries for logistic regression (LR) and ridge probes on DINOv3 representations. 
+
+r = 0 .630 at layer 18 and the strongest Spearman is ρ = 0 .689 at layer 15; for ridge, r = 0 .629 at layer 18 and ρ = 0 .728 at layer 14. The absolute distance to source real is informative but weaker, peaking at r = 0 .576 , ρ = 0 .589 for logistic regression and r = 0 .572 , ρ = 0 .593 for ridge. The strongest negative dspoof correlations are weaker still ( ∼− 0.43 for both probes). A noteworthy observation: at the best probe layer (layer 6, logistic regression), ∆ is only moderately associated with performance ( r = 0 .384 , ρ = 0 .274 for LR; r = 0 .402 , ρ = 0 .362 for ridge). The strongest-performing layer is therefore not the most geometrically interpretable layer; the recovery phase later in the DINOv3 hierarchy is where generator position becomes most predictive of detection difficulty. This dissociation suggests that, in the image setting, shallow layers can support strong probe performance for reasons not fully captured by second-order distributional summaries. 
+
+4.2.3 Audio: English MLAAD −1.0                        
+
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Logistic Regression Accuracy
+> correlation
+> Distance to Real Distance to Spoof Delta
+> 15913 17 21 24
+> Layer
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Ridge Accuracy
+> correlation
+> 15913 17 21 24
+> Layer
+> 15913 17 21 24
+> Layer
+> Pearson rSpearman ρ
+
+Figure 6: English MLAAD: layer-wise Pearson and Spearman correlations between per-generator spoof accuracy and the three Fréchet-distance summaries for logistic regression (LR) and ridge probes on XLS-R representations. 
+
+On MLAAD (Figure 6), ∆ again gives the strongest geometry–performance relationship. For logistic regression, ∆ peaks at layer 16 with r = 0 .668 and ρ = 0 .678 ; for ridge, ∆ peaks at layer 21 with 
+
+r = 0 .698 and ρ = 0 .779 . These are the strongest associations observed in the audio setting. The 8absolute distance to source real is much weaker (peaking at r = 0 .297 , ρ = 0 .298 for LR; r = 0 .360 ,
+
+ρ = 0 .466 for ridge), and the strongest negative dspoof correlations are intermediate ( r = −0.507 ,
+
+ρ = −0.398 for LR; r = −0.430 , ρ = −0.354 for ridge). The layers with the strongest geometry–performance relationships also align with the strongest probe region: the best probe is layer-18 ridge, and the strongest ∆ correlations occur at layers 16 (LR) and 21 (ridge). As in the video setting, the upper-level XLS-R representations that make the benchmark most linearly separable are also the ones in which generator position best explains detection difficulty. 
+
+Takeaway. Across all three modalities, the most consistent geometry signal is the relative margin 
+
+∆ = dreal − dspoof , not the absolute distance to either region. Target generators are easier when they lie closer to source fake structure and harder when they lie closer to source real structure. This carries a structural implication for benchmark composition: target generators with large positive ∆ recapture structure already present in the source spoof distribution, and their contribution to aggregate scores is partly redundant with generators the probe has effectively already seen. The image benchmark is a partial exception: its best probe performance occurs in shallow DINOv3 layers, while ∆ explains generator-level difficulty most strongly in later layers. This suggests that feature-space geometry should be interpreted layer-wise rather than reduced to a single benchmark-level score. 
+
+5 Discussion 
+
+Limitations. The geometry should not be overclaimed. It is a diagnostic, not a complete causal theory of detection. It uses the same feature space as the probes; it models generator groups as Gaussians; and it summarizes each group with second-order statistics. Some generators may be easy or hard for reasons not captured by these summaries. The audio result also requires careful framing: ASVspoof2019 LA validates that the XLS-R probe is competitive on a canonical source benchmark, but the MLAAD evaluation is spoof-only, which means our MLAAD number is best described as generator-level spoof recall rather than full target-domain real-versus-fake detection. We restrict MLAAD to English to isolate generator shift from cross-lingual mismatch; multilingual MLAAD evaluation would require a multilingual source benchmark and is outside the scope of this audit. Finally, our audit covers one contemporary, generator-diverse benchmark per modality. Whether the same patterns generalize to other deepfake benchmarks, we leave to future work. 
+
+Summary and broader impact. The central result is not that linear probes are the best deepfake detectors; it is that a surprising amount of benchmark performance is already accessible from frozen general-purpose SSL representations and a linear classifier. The SSLs we use were trained on large amounts of unlabeled natural data for general modality understanding, with no deepfake supervision and no exposure to generator outputs as a distinct class. The fact that real-versus-fake is nonetheless linearly accessible in their feature spaces means the benchmarks’ fakes are separable from reals along directions a representation of natural data already encodes for other reasons. This supports the two implications raised earlier. First, a benchmark whose labels are linearly accessible from a generic representation is rewarding general modality understanding more than forensic understanding, and is unlikely to reflect realistic threat models in which adversaries continue to iterate generators and post-processing toward natural data. Second, when bespoke detectors only marginally exceed such a probe on aggregate scores, the gap does not establish that they have learned forensic structure; the burden of evidence shifts to showing performance precisely where generic separability fails. The practical recommendation that follows is that a frozen-SSL linear probe should be a standard san-ity check during benchmark construction: a benchmark that a probe can already solve to some degree has, by construction, real and fake samples that are not entangled in general-purpose representation space, and strong scores on it should be read as evidence about the benchmark distribution as much as about the detector. The geometry analysis plays a supporting role here, not a prescriptive one. We do not recommend ∆ as a design target, because an ideal benchmark would be one in which ∆ is uninformative because reals and fakes are not cleanly separable to begin with. Its value in this paper is diagnostic: it explains why some generators are easier than others for the probe, and it surfaces a structural concern about current test sets, where some generators are effectively redundant because they sit close to already-seen spoof structure rather than testing genuinely novel generators. 9References 
+
+[1] Hashim Ali, Nithin Sai Adupa, Surya Subramani, and Hafiz Malik. A superb-style benchmark of self-supervised speech models for audio deepfake detection. In ICASSP , 2026. [2] Mido Assran, Adrien Bardes, David Fan, Quentin Garrido, Russell Howes, Matthew Muckley, Ammar Rizvi, Claire Roberts, Koustuv Sinha, Artem Zholus, et al. V-jepa 2: Self-supervised video models enable understanding, prediction and planning. arXiv preprint arXiv:2506.09985 ,2025. [3] Joseph Ax and Helen Coster. AI deepfakes blur reality in 2026 US midterm campaigns. Reuters, March 2026. [4] Arun Babu, Changhan Wang, Andros Tjandra, Kushal Lakhotia, Qiantong Xu, Naman Goyal, Kritika Singh, Patrick Von Platen, Yatharth Saraf, Juan Pino, et al. Xls-r: Self-supervised cross-lingual speech representation learning at scale. arXiv preprint arXiv:2111.09296 , 2021. [5] Gedas Bertasius, Heng Wang, and Lorenzo Torresani. Is space-time attention all you need for video understanding? In ICML , 2021. [6] Nuria Alina Chandra, Ryan Murtfeldt, Lin Qiu, Arnab Karmakar, Hannah Lee, Emmanuel Tanumihardja, Kevin Farhat, Ben Caffee, Sejin Paik, Changyeon Lee, et al. Deepfake-eval-2024: A multi-modal in-the-wild benchmark of deepfakes circulated in 2024. arXiv preprint arXiv:2503.02857 , 2025. [7] Yingjian Chen, Lei Zhang, and Yakun Niu. Forgelens: Data-efficient forgery focus for general-izable forgery image detection. In ICCV , 2025. [8] Jikang Cheng, Zhiyuan Yan, Ying Zhang, Yuhao Luo, Zhongyuan Wang, and Chen Li. Can we leave deepfake data behind in training deepfake detector? In NeurIPS , 2024. [9] François Chollet. Xception: Deep learning with depthwise separable convolutions. In CVPR ,2017. [10] Davide Cozzolino, Giovanni Poggi, Riccardo Corvi, Matthias Nießner, and Luisa Verdoliva. Raising the bar of ai-generated image detection with clip. In CVPR , 2024. [11] Xinjie Cui, Yuezun Li, Ao Luo, Jiaran Zhou, and Junyu Dong. Forensics adapter: Adapting clip for generalizable face forgery detection. In CVPR , 2025. [12] Brian Dolhansky, Joanna Bitton, Ben Pflaum, Jikuo Lu, Russ Howes, Menglin Wang, and Cristian Canton Ferrer. The deepfake detection challenge (dfdc) dataset. arXiv preprint arXiv:2006.07397 , 2020. [13] Christoph Feichtenhofer. X3d: Expanding architectures for efficient video recognition. In 
+
+CVPR , 2020. [14] Songwei Ge, Aniruddha Mahapatra, Gaurav Parmar, Jun-Yan Zhu, and Jia-Bin Huang. On the content bias in fréchet video distance. In CVPR , 2024. [15] Arthur Gretton, Karsten M Borgwardt, Malte J Rasch, Bernhard Schölkopf, and Alexander Smola. A kernel two-sample test. The Journal of Machine Learning Research , 13(1):723–773, 2012. [16] Alexandros Haliassos, Rodrigo Mira, Stavros Petridis, and Maja Pantic. Leveraging real talking faces via self-supervision for robust forgery detection. In CVPR , 2022. [17] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In NeurIPS ,2017. [18] Baojin Huang, Zhongyuan Wang, Jifan Yang, Jiaxin Ai, Qin Zou, Qian Wang, and Dengpan Ye. Implicit identity driven deepfake face swapping detection. In CVPR , 2023. 10 [19] Liming Jiang, Ren Li, Wayne Wu, Chen Qian, and Chen Change Loy. Deeperforensics-1.0: A large-scale dataset for real-world face forgery detection. In CVPR , 2020. [20] Kevin Kilgour, Mauricio Zuluaga, Dominik Roblek, and Matthew Sharifi. Fr \’echet audio dis-tance: A metric for evaluating music enhancement algorithms. arXiv preprint arXiv:1812.08466 ,2018. [21] Kunchang Li, Yali Wang, Yinan He, Yizhuo Li, Yi Wang, Limin Wang, and Yu Qiao. Uni-formerv2: Unlocking the potential of image vits for video understanding. In ICCV , 2023. [22] Yuezun Li, Xin Yang, Pu Sun, Honggang Qi, and Siwei Lyu. Celeb-df: A large-scale challenging dataset for deepfake forensics. In CVPR , 2020. [23] Yuezun Li, Delong Zhu, Xinjie Cui, and Siwei Lyu. Celeb-df++: A large-scale challenging video deepfake benchmark for generalizable forensics. arXiv preprint arXiv:2507.18015 , 2025. [24] Long Ma, Zihao Xue, Yan Wang, Zhiyuan Yan, Jin Xu, Xiaorui Jiang, Haiyang Yu, Yong Liao, and Zhen Bi. Your one-stop solution for ai-generated video detection. arXiv preprint arXiv:2601.11035 , 2026. [25] Long Ma, Zhiyuan Yan, Qinglang Guo, Yong Liao, Haiyang Yu, and Pengyuan Zhou. Detecting ai-generated video via frame consistency. In ICME , 2025. [26] Nicolas M Müller, Piotr Kawa, Wei Herng Choong, Edresson Casanova, Eren Gölge, Thorsten Müller, Piotr Syga, Philip Sperl, and Konstantin Böttinger. Mlaad: The multi-language audio anti-spoofing dataset. In IJCNN , 2024. [27] Andreas Nautsch, Xin Wang, Nicholas Evans, Tomi H Kinnunen, Ville Vestman, Massimiliano Todisco, Héctor Delgado, Md Sahidullah, Junichi Yamagishi, and Kong Aik Lee. Asvspoof 2019: Spoofing countermeasures for the detection of synthesized, converted and replayed speech. IEEE Transactions on Biometrics, Behavior, and Identity Science , 3(2):252–265, 2021. [28] Huy H Nguyen, Junichi Yamagishi, and Isao Echizen. Exploring self-supervised vision trans-formers for deepfake detection: A comparative analysis. In IJCB , 2024. [29] Zhenliang Ni, Qiangyu Yan, Mouxiao Huang, Tianning Yuan, Yehui Tang, Hailin Hu, Xinghao Chen, and Yunhe Wang. Genvidbench: A 6-million benchmark for ai-generated video detection. In AAAI , 2026. [30] North Carolina Department of Justice. Attorney general jeff jackson warns north carolinians of investment scams on meta platforms. Press Release, April 2026. [31] Office of the New York State Attorney General. INVESTOR ALERT: Attorney general james warns new yorkers of investment scams on meta platforms. Press Release, April 2026. [32] Utkarsh Ojha, Yuheng Li, and Yong Jae Lee. Towards universal fake image detectors that generalize across generative models. In CVPR , 2023. [33] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In ICML , 2021. [34] Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. Faceforensics++: Learning to detect manipulated facial images. In ICCV , 2019. [35] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. 
+
+arXiv preprint arXiv:2508.10104 , 2025. [36] Ke Sun, Hong Liu, Taiping Yao, Xiaoshuai Sun, Shen Chen, Shouhong Ding, and Rongrong Ji. An information theoretic approach for attention-driven face forgery detection. In ECCV , 2022. [37] Kirill Trapeznikov, Paul Cummer, Pranay Pherwani, Jai Aslam, Michael S Davinroy, Peter Bautista, Laura Cassani, Matthew Stamm, and Jill Crisman. Synthetic audio forensics evaluation (safe) challenge. arXiv preprint arXiv:2510.03387 , 2025. 11 [38] Thomas Unterthiner, Sjoerd Van Steenkiste, Karol Kurach, Raphael Marinier, Marcin Michalski, and Sylvain Gelly. Towards accurate generative models of video: A new metric & challenges. 
+
+arXiv preprint arXiv:1812.01717 , 2018. [39] Sheng-Yu Wang, Oliver Wang, Richard Zhang, Andrew Owens, and Alexei A Efros. Cnn-generated images are surprisingly easy to spot... for now. In CVPR , 2020. [40] Wei Wu, Hanyang Peng, and Shiqi Yu. Yunet: A tiny millisecond-level face detector. Machine Intelligence Research , 2023. [41] Zhiyuan Yan, Jiangming Wang, Zhendong Wang, Peng Jin, Ke-Yue Zhang, Shen Chen, Taiping Yao, Shouhong Ding, Baoyuan Wu, and Li Yuan. Effort: Efficient orthogonal modeling for generalizable ai-generated image detection. arXiv preprint arXiv:2411.15633 , 2024. [42] Zhiyuan Yan, Yong Zhang, Yanbo Fan, and Baoyuan Wu. Ucf: Uncovering common features for generalizable deepfake detection. In ICCV , 2023. [43] Zhiyuan Yan, Yong Zhang, Xinhang Yuan, Siwei Lyu, and Baoyuan Wu. Deepfakebench: A comprehensive benchmark of deepfake detection. arXiv preprint arXiv:2307.01426 , 2023. [44] Andrii Yermakov, Jan Cech, Jiri Matas, and Mario Fritz. Deepfake detection that generalizes across benchmarks. In WACV , 2026. [45] Valentina Za. Bank of italy warns over deepfake video scams using governor panetta. Reuters, February 2026. [46] Chende Zheng, Ruiqi Suo, Chenhao Lin, Zhengyu Zhao, Le Yang, Shuai Liu, Minghui Yang, Cong Wang, and Chao Shen. D3: Training-free ai-generated video detection using second-order features. In ICCV , 2025. [47] Zangwei Zheng, Xiangyu Peng, Tianji Yang, Chenhui Shen, Shenggui Li, Hongxin Liu, Yukun Zhou, Tianyi Li, and Yang You. Open-sora: Democratizing efficient video production for all. 
+
+arXiv preprint arXiv:2412.20404 , 2024. 12 A Appendix Open-Sora 
+
+> Pyramid-Flow
+> SEINE
+> IPOC
+> SVD
+> LTX
+> Cogvideox1.5
+> VideoCrafter
+> RepVideo
+> EasyAnimate
+> HunyuanVideo
+> AccVideo
+> Opensora
+> causvid_24fps
+> vidu
+> AnimateDiff
+> pika
+> Wan2.1
+> kling
+> Luma
+> wan
+> Sora
+> Gen3
+> Jimeng
+> Gen2
+> Generator
+> 0
+> 25
+> 50
+> 75
+> 100
+> AUC
+> 100.0
+> 99.9
+> 99.8
+> 99.6
+> 99.4
+> 99.1
+> 98.0
+> 97.2
+> 96.1
+> 94.7
+> 92.4
+> 92.3
+> 90.8
+> 90.4
+> 86.8
+> 83.1
+> 74.7
+> 70.0
+> 65.2
+> 59.4
+> 56.6
+> 55.4
+> 55.1
+> 31.2
+> 22.5
+> 100.0
+> 100.0
+> 100.0
+> 99.1
+> 99.8
+> 99.3
+> 97.6
+> 98.7
+> 95.5
+> 98.0
+> 92.1
+> 91.3
+> 92.8
+> 93.2
+> 90.1
+> 92.5
+> 66.0
+> 78.0
+> 77.8
+> 69.6
+> 63.0
+> 73.8
+> 77.1
+> 90.1
+> 77.2
+> Logistic Regression
+> Ridge
+
+Figure 7: AIGVDBench: per-generator AUC at the strongest probe configuration (V-JEPA2 layer 22, ridge). Macro-average 88.51, median 92.50, range 63.00–100.00. Strong performance is broadly distributed; a small number of generators ( wan , pika , Luma ) remain meaningfully harder. Open-Sora and Opensora are distinct AIGVDBench generator labels: Open-Sora denotes the open-source generator used for source training, while 
+
+Opensora denotes the separately listed generator from the benchmark’s closed-source directory. TF/Real3DPortrait 
+
+> FS/Celeb-DF-v2
+> FS/InSwapper
+> FS/BlendFace
+> TF/EchoMimic
+> TF/EDTalk
+> FS/HifiFace
+> FR/TPSMM
+> FR/FSRT
+> FR/MCNET
+> FR/HyperReenact
+> FR/LIA
+> TF/IP_LAP
+> FS/UniFace
+> FR/DaGAN
+> FS/SimSwap
+> FR/LivePortrait
+> TF/AniTalker
+> FS/MobileFaceSwap
+> TF/SadTalker
+> FS/GHOST
+> TF/FLOAT
+
+Generator 
+
+> 0
+> 50
+> 100
+> AUC
+> 94.8
+> 90.3
+> 89.8
+> 87.3
+> 86.8
+> 86.4
+> 85.4
+> 84.4
+> 84.3
+> 83.6
+> 82.3
+> 82.2
+> 79.1
+> 79.0
+> 76.0
+> 74.3
+> 72.8
+> 72.4
+> 72.3
+> 69.3
+> 60.5
+> 60.4
+> 89.1
+> 90.4
+> 84.7
+> 79.3
+> 84.6
+> 81.0
+> 76.3
+> 77.5
+> 75.7
+> 76.3
+> 84.9
+> 76.7
+> 75.6
+> 68.9
+> 68.4
+> 69.3
+> 64.7
+> 67.0
+> 72.7
+> 61.8
+> 49.7
+> 49.0  Logistic Regression
+> Ridge
+
+Figure 8: Celeb-DF++: per-generator AUC at the strongest probe configuration (DINOv3 layer 6, logistic regression). Macro-average 79.72, median 82.22, range 60.45–94.81 across face-swap, face-reenactment, and talking-face methods. 
+
+Compute resources. All experiments used frozen pretrained backbones; we did not fine-tune V-JEPA2, DINOv3, or XLS-R. The main computational cost was one-time feature extraction, followed by substantially cheaper linear probing and representation-space geometry analysis. Feature extraction was performed on a single NVIDIA A100 GPU with 80GB of VRAM. The extraction pipeline processed inputs in batches, saved pooled hidden-layer representations to chunked Parquet files, and supported resuming from already written chunks. The probing and geometry analyses were then run on the saved representations and did not require GPU training. The raw datasets, downloaded archives, extracted files, cached pretrained model weights, intermediate files, and processed layer-wise representations require at least 1TB of disk storage. Storage is a significant practical requirement because the pipeline saves representations for each example and each hidden layer before running the linear probes and Fréchet-geometry analysis. We did not keep exact wall-clock logs for all runs, so we report only the hardware class and storage requirement rather than precise runtimes. In our runs, feature extraction was the dominant cost, especially for the video benchmark, while fitting the linear probes and computing generator-level geometry summaries were comparatively lightweight once the representations had been written to disk. 13 Metavoice-1B 
+
+> e2-tts
+> tts_models_en_ljspeech_ta...
+> griffin_lim
+> tts_models_en_sam_tacotro...
+> facebook_mms-tts-eng
+> WhisperSpeech
+> f5-tts
+> OpenVoiceV2
+> microsoft_speecht5_tts
+> Kitten-TTS-Nano-0.1
+> tts_models_en_blizzard201...
+> FishTTS
+> vixTTS
+> ZipVoice
+> tts_models_en_multi-datas...
+> Indri-TTS-0.1
+> RVC
+> Kitten-TTS-Nano-0.2
+> Nari Dia2
+> Index-TTS-2.0
+> Veena
+> tts_models_en_ljspeech_ne...
+> tts_models_en_ljspeech_sp...
+> MiniCPM-o-2.6
+> tts_models_en_ek1_tacotro...
+> MeloTTS
+> Ringg Squirrel TTS v1.0
+> suno_bark-small
+> tts_models_en_ljspeech_gl...
+> suno_bark
+> Chatterbox
+> Voxtream
+> tts_models_multilingual_m...
+> Step-Audio-EditX
+> parler_tts_mini_v0.1
+> Cartesia.ai (Sonic-3)
+> Edge-TTS
+> parler_tts_large_v1
+> tts_models_multilingual_m...
+> Mars5
+> OuteTTS
+
+0
+
+25 
+
+50 
+
+75 
+
+100 
+
+> ACC
+> 100.0
+> 100.0
+> 100.0
+> 100.0
+> 100.0
+> 100.0
+> 99.8
+> 99.8
+> 99.5
+> 99.2
+> 99.2
+> 99.1
+> 99.0
+> 98.9
+> 98.9
+> 98.4
+> 98.2
+> 97.8
+> 97.7
+> 96.4
+> 95.8
+> 94.8
+> 93.2
+> 93.2
+> 92.9
+> 92.4
+> 92.3
+> 92.2
+> 91.4
+> 91.0
+> 91.0
+> 90.1
+> 89.0
+> 88.8
+> 88.1
+> 86.9
+> 86.8
+> 86.7
+> 86.0
+> 85.8
+> 85.5
+> 85.0
+> 99.9
+> 100.0
+> 100.0
+> 99.9
+> 100.0
+> 100.0
+> 100.0
+> 99.7
+> 99.7
+> 99.8
+> 100.0
+> 99.0
+> 99.7
+> 99.8
+> 98.5
+> 99.0
+> 100.0
+> 99.9
+> 100.0
+> 98.6
+> 99.8
+> 98.5
+> 99.4
+> 100.0
+> 99.3
+> 98.0
+> 96.4
+> 96.6
+> 93.1
+> 100.0
+> 93.1
+> 96.6
+> 95.2
+> 96.3
+> 92.3
+> 90.3
+> 93.8
+> 95.9
+> 90.8
+> 89.1
+> 92.4
+> 94.0
+> parler_tts_mini_v1
+> MegaTTS3
+> Nari Dia-1.6B
+> kokoro
+> FireRedTTS-2.0
+> VoxCPM-1.5
+> tts_models_multilingual_m...
+> Marvis-TTS
+> tts_models_en_ljspeech_ta...
+> VoxCPM-0.5B
+> tts_models_en_jenny_jenny
+> Qwen2.5-Omni
+> Resemble.ai (April 12th, ...
+> SoulX-Podcast
+> Maya1 TTS
+> tts_models_en_ljspeech_fa...
+> NeuTTS-Air
+> minimax_speech-02-turbo
+> Llasa-8B
+> optispeech
+> orpheus-tts-0.1-finetune
+> Llasa-3B
+> Supertonic
+> sesame_csm
+> minimax_speech-2.6-hd
+> zonosTTS-v0.1
+> Llasa-1B
+> Kani-TTS-370M
+> Higgs-Audio-V2
+> Spark-TTS-0.5B
+> Llasa-1B-Multilingual
+> tts_models_en_ljspeech_ta...
+> tts_models_en_ljspeech_ov...
+> MatchaTTS
+> Index-TTS-1.5
+> tts_models_en_ljspeech_vi...
+> Openaudio-S1-Mini
+> Kyutai-TTS
+> Microsoft VibeVoice Large
+> tts_models_en_ljspeech_vi...
+> Microsoft VibeVoice 1.5B
+> DeepGram
+
+Generator 
+
+0
+
+25 
+
+50 
+
+75 
+
+100 
+
+> ACC
+> 84.8
+> 84.7
+> 84.4
+> 80.4
+> 79.8
+> 79.7
+> 78.2
+> 77.1
+> 76.9
+> 72.7
+> 72.6
+> 71.4
+> 66.2
+> 63.8
+> 62.2
+> 61.5
+> 60.9
+> 60.9
+> 60.8
+> 60.5
+> 59.2
+> 58.4
+> 57.9
+> 57.6
+> 57.2
+> 56.2
+> 51.6
+> 50.3
+> 48.9
+> 45.7
+> 44.2
+> 42.6
+> 39.5
+> 36.6
+> 35.7
+> 35.1
+> 33.8
+> 33.7
+> 33.3
+> 30.8
+> 30.6
+> 28.5
+> 90.6
+> 92.9
+> 94.3
+> 84.0
+> 90.3
+> 89.7
+> 91.5
+> 85.2
+> 98.4
+> 89.7
+> 88.1
+> 84.5
+> 92.2
+> 84.2
+> 85.1
+> 98.3
+> 82.7
+> 80.9
+> 89.6
+> 82.8
+> 73.5
+> 86.0
+> 85.4
+> 65.1
+> 73.6
+> 66.5
+> 80.4
+> 67.8
+> 73.3
+> 67.9
+> 82.1
+> 93.0
+> 97.3
+> 59.7
+> 63.9
+> 96.5
+> 70.7
+> 48.2
+> 56.1
+> 95.1
+> 52.0
+> 39.2
+
+Logistic Regression Ridge Figure 9: English MLAAD: per-generator spoof accuracy at the strongest probe configuration (XLS-R layer 18, ridge). Macro-average 88.84%, median 93.1%, range 39.2–100.0% across 84 TTS systems. 
+
+14

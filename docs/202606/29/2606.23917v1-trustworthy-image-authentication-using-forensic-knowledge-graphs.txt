@@ -1,0 +1,1556 @@
+Title: Trustworthy Image Authentication using Forensic Knowledge Graphs
+
+URL Source: https://arxiv.org/pdf/2606.23917v1
+
+Published Time: Wed, 24 Jun 2026 00:18:47 GMT
+
+Number of Pages: 74
+
+Markdown Content:
+# Trustworthy Image Authentication using Forensic Knowledge Graphs 
+
+Tai D. Nguyen 1 and Matthew C. Stamm 1
+
+Drexel University, Philadelphia, PA 19104, USA 
+
+Fig. 1: Unlike existing systems that miss forgeries or hallucinate evidence, our FKG framework delivers trustworthy authentication grounded in real forensic traces. 
+
+Abstract. Advances in generative AI have made image falsification highly realistic, demanding trustworthy authentication systems. Existing forensic detectors can target certain forgery types but lack interpretabil-ity, while vision-language models (VLMs) provide explanations but can-not exploit forensic traces for reliable detection. We propose Forensic Knowledge Graphs (FKGs), a unified framework that integrates forensic evidence extraction, structured reasoning, and human-interpretable ex-planation. Our FKG structure encodes forensic traces along with their causal dependencies and links to scene content. To generate accurate FKGs, we introduce a novel forensic authentication network and an Iter-ative Context Refinement strategy that guides VLMs to produce faithful, grounded explanations. We also present FKG-50K, a dataset of 50,000 realistic forgeries with ground-truth FKGs. Experiments demonstrate that FKG outperforms both forensic detectors and VLMs in detection, forgery identification and localization, and forensic justification. 
+
+Keywords: Image Forensics · Knowledge Graphs · Trustworthy AI 
+
+## 1 Introduction 
+
+Recent advances in generative AI [32, 71] and modern AI image editors [8, 12, 29, 63, 69] have dramatically expanded the ways images can be falsified. Hyper-realistic forgeries can now be produced through fully AI-generated imagery [43, 67, 70], content splicing, localized editing, and AI-based modifications [84]. As  
+
+> arXiv:2606.23917v1 [cs.CV] 22 Jun 2026 2T. Nguyen et al.
+
+these capabilities improve, distinguishing authentic images from falsified ones has become increasingly challenging, even for expert analysts [34, 58, 59]. To protect against these threats, there is a significant need for media au-thentication systems [84]. However, for these systems to be effective in practice, users must be able to trust them [47]. Specifically, users require interpretable and explainable outputs to establish trust in automated decision-making sys-tems [7, 24, 37], no matter how accurate they are. Therefore, a trustworthy au-thentication system must: (1) provide accurate, general-purpose detection 
+
+regardless of forgery type, (2) produce human-interpretable explanations 
+
+describing what was falsified and how, and (3) provide justification of foren-sic reasoning that grounds every claim in verifiable evidence. Current authentication systems only partially satisfy these requirements. While numerous specialized systems have been developed, such as synthetic image detectors [78, 86], manipulation classifiers [10, 38], and splicing localiz-ers [19, 36], each method only targets a narrow family of forgeries and fails to generalize beyond it. For example, a splicing detector may achieve high accuracy on spliced images but miss AI-generated edits entirely [1, 53], while a synthetic image detector may flag fully generated content but overlook traditional manip-ulations [20,53]. At the moment, no single system can accurately detect a broad spectrum of forgery types [72,84]. Furthermore, their outputs are often confined to binary “real/fake” labels or heatmaps of suspicious areas [19, 36], with no ad-ditional explanation of what content is falsified, how it was manipulated, or why the system believes a particular region is inauthentic [50, 88]. At the opposite extreme, vision-language models (VLMs) [30,49,61] can pro-duce natural language justifications, but utilize visual or semantic inconsisten-cies [42, 85] such as unnatural lighting, cues rapidly disappearing as AI genera-tors produce increasingly realistic outputs [89,93]. More critically, VLMs cannot leverage the invisible statistical traces ( i.e ., forensic microstructures such as sen-sor noise, compression artifacts, and demosaicing residuals) that reliable forensic techniques rely on [21,74]. Recent benchmarks confirm that even the best VLMs barely exceed chance-level accuracy on forgery detection tasks [42, 79, 85], and in real-world incidents, chatbots have confidently declared AI-generated images authentic [25, 28], eroding public trust in digital media and AI verification [26]. To address these challenges, we introduce Forensic Knowledge Graphs (FKGs), a unified framework for trustworthy image authentication that integrates foren-sic evidence, structured reasoning, and interpretable explanation within a sin-gle system. FKGs capture forensic analyses as a structured graph representa-tion, linking image regions with their sources, manipulation histories, and rel-evant scene content. This representation allows the system to analyze multiple forgery types simultaneously, preserve dependencies among forensic traces, link evidence to scene regions, and generate grounded natural-language explanations. We perform comprehensive experimental analysis of our framework using multi-ple datasets, demonstrating that FKG outperforms both existing forensic detec-tors and VLMs in detection, forgery identification and localization, and forensic justification. Our contributions are summarized as follows: Forensic Knowledge Graphs 3
+
+1. We introduce Forensic Knowledge Graphs , a novel information structure that encodes forensic evidence, causal dependencies among analyses, and links findings to semantic scene content. 2. We propose a unified forensic authentication network composed of a novel self-supervised trace extraction backbone, a novel hybrid region proposal network, and a transformer-based reasoner that can detect multiple differ-ent forgery types and construct accurate FKGs from input images. 3. We propose Iterative Context Refinement (ICR) , a novel prompting strategy that enables vision-language models to generate faithful, forensic-evidence-grounded summaries and justifications from FKGs. 4. We release FKG-50K , a dataset of 50,000 images with ground-truth FKGs covering multiple forgery types, and demonstrate state-of-the-art performance across all three dimensions of trustworthy authentication. 
+
+## 2 Background & Related Work 
+
+Forensic Microstructures. These are subtle, content-independent pixel corre-lations imprinted by an image’s acquisition and processing history [74,76]. They arise from sensor noise [52], demosaicing [92], and compression [65, 75], collec-tively forming a statistical “fingerprint” unique to each imaging pipeline [54]. Unlike semantic cues, these traces persist across diverse content, enabling foren-sic systems to infer an image’s origin [9, 10], detect inconsistencies among re-gions [19, 21], and distinguish camera artifacts from AI-generated ones [20, 86]. 
+
+VLMs for Image Authentication. As AI-generated imagery proliferates on-line [26], users and journalists increasingly turn to VLMs such as ChatGPT and Gemini to verify image authenticity [18,25]. However, as discussed in Sec. 1, even the best VLMs barely exceed chance-level accuracy on forensic tasks [42, 79, 85], and fact-checking investigations confirm that VLMs and detection tools fail un-der simple perturbations like cropping or rescaling [2, 25]. Even forensic VLMs like FakeShield [88], ForgeryGPT [50], SIDA [41], and recent reasoning-oriented detectors [4,14,77] rely on visible cues rather than forensic microstructures, and cover only narrow forgery families (ForgeryGPT handles only faces). 
+
+Forensic Systems. Modern forensic systems exploit these microstructures but vary in scope and design [84]. Traditional detectors like CAT-Net [46], HiFi-IFDL [38], and TruFor [36] focus on specific manipulation families such as splic-ing and compression inconsistencies, while newer approaches target AI-generated content by modeling generator-specific artifacts ( e.g ., NPR [78], DE-FAKE [73], UFD [60], FSD [57]). However, these systems operate as binary detectors that cannot reason about causal relationships between multiple forensic cues [1, 84] struggling with forgeries that blend real and synthetic content [53]. 
+
+## 3 Forensic Knowledge Graphs 
+
+We introduce Forensic Knowledge Graphs (FKGs) - a hierarchical structure whose nodes represent forensic entities and edges encode labeled relations cap-turing how findings are interconnected and why they support a particular au-thenticity conclusion. The FKG’s structure and semantics are defined by an 4 T. Nguyen et al. 
+
+ontology that specifies entity classes and their permissible relationships [35]. An overview follows with formal definitions in Appendix A.  
+
+> Fig. 2: FKG for the AI-edited image in Fig. 1.
+
+Entity Classes and Relations. The ontology defines six core entity classes and their typed re-lations: (1) Image - the root node representing the analyzed image; (2) Region - a pixel sub-set sharing common forensic traces, serving as the central entity from which all relations orig-inate; (3) Source - the origin of pixels, with subclasses for Camera Model and AI Genera-tor ; (4) Post-Processing - operations applied after generation, e.g . resampling, blur, noise; (5) Compression - compression artifacts, with subclasses tracking whether a region is uncom-pressed, its last compression parameters, and whether recompression occurred; and (6) Con-tent - semantic scene elements characterized by objectedness and object description. Relations encode dependencies among en-tity classes as ontology object properties. Each Region is linked to its parent Image via contained_in , to its origin via 
+
+produced_by , to post-processing and compression nodes via modified_by and 
+
+compress_by , and to semantic content via depict . Additional datatype prop-erties (Appendix A) associate entities with descriptive literals like probabilities, model IDs, and post-processing parameters. These typed edges are instantiated deterministically from our system’s per-region predictions, not inferred by a VLM, so every relation is grounded in an explicit forensic prediction. 
+
+Illustrative FKG Example. Fig. 2 shows the FKG for an AI-edited image where a truck was added to a real photo. The graph contains two Region nodes: one linked to Nikon Coolpix S33 and another to FLUX generator. Compression evidence reinforces this split: the camera region shows multiple recompressions while the FLUX region shows only one, indicating post-hoc content insertion. 
+
+## 4 FKG Generation System 
+
+Overview. Our framework (Fig. 3) unifies forensic evidence extraction, struc-tured reasoning, and interpretable explanation in a single pipeline. Given an input image, the FKG Generation System (Fig. 4) divides it into patches and ex-tracts forensic fingerprints via a Forensic Backbone Network. A Forensic Region Proposal Network (FRPN) then clusters patches with similar fingerprints into forensic regions. Finally, Task Expert Networks and a Transformer Reasoning Module infer each region’s forensic attributes and map them to the FKG ontol-ogy. A VLM then translates the resulting FKG into a human-interpretable foren-sic explanation, guided by our Iterative Context Refinement strategy (Sec. 5). Full architectural and training details are in Appendix B–D. Forensic Knowledge Graphs 5
+
+Forensic Backbone Network. Generating an FKG first requires a backbone network that captures forensic microstructures, statistical fingerprints left by an image’s source and processing history [21,74]. These general-purpose embeddings are the foundation of our system: the FRPN relies on them to partition the image into forensic regions, and the task experts rely on them to infer forensic attributes. Prior methods learn these through task-specific supervision ( e.g ., camera model classification) [9, 10, 19, 38, 46], tying the backbone to specific sources and limiting generalization [1, 53, 84].  
+
+> Fig. 3: Overview of our full FKG framework.
+
+Rather than learning from task-specific labels, we exploit a fundamental yet surprisingly sim-ple property of imaging pipelines: 
+
+local patches from the same im-age share a common forensic fin-gerprint, while patches from dif-ferent images do not . This ob-servation alone turns every un-labeled image into a free train-ing sample, enabling the backbone to learn general forensic finger-prints at scale without forgery la-bels or source annotations. To pre-vent the network from learning content-dependent shortcuts ( e.g ., mapping semantically similar patches to the same image), we first process each patch using a learned high-pass filter [9,10] to suppress image content. We then enforce self-supervision through two comple-mentary objectives: a pairwise similarity term enforcing same-image alignment and cross-image separation, and a contrastive term sharpening per-patch dis-crimination. Given a set of patches X , the backbone is trained with: 
+
+LB = 1
+
+|X | 2
+
+X
+
+> i,j
+
+wij (Yij − z⊤ 
+
+> i
+
+zj )2 − λ X
+
+> i
+
+log ecos( zi,z i+ )/τ 
+
+P 
+
+> j
+
+ecos( zi,z j )/τ , (1) where zi are ℓ2-normalized patch embeddings, Yij ∈ { 0, 1} is a same-image indicator, zi+ is the positive pair of zi, wij balance positive and negative pairs, and τ is a temperature. These embeddings encode each patch’s forensic identity and serve as input to the FRPN. 
+
+Forensic Region Proposal Network. Given the backbone’s forensic embed-dings, the next step is partitioning the image into regions that share a common forensic trace. Existing visual segmentation and region proposal methods [39,45] cannot accomplish this because they operate on visual features, whereas foren-sic regions are defined by invisible statistical properties: a spliced region may appear visually seamless yet carry an entirely different forensic fingerprint. To address this, we introduce a Forensic Region Proposal Network (FRPN) based on the following observation: partitioning an image into forensically ho-mogeneous regions requires comparing every patch against every other — the 6 T. Nguyen et al. 
+
+all-pairs operation that transformer self-attention naturally computes . However, global self-attention suffers from attention dilution [82]: accumulated contribu-tions from distant, unrelated patches cause forensically distinct regions to ap-pear connected, leading to false alarms and misclassified clusters. To mitigate this, we propose a novel Hybrid Graph Attention Transformer that takes the backbone embeddings Z = [ z1, . . . , z |P| ] as input tokens and alternates global self-attention with local graph attention. Local graph attention suppresses false alarms by restricting aggregation to each token’s k-nearest neighbors using an additive scoring mechanism [83]. The attention weights under each mode are:                     
+
+> αglobal
+> ij =exp( w⊤
+> qi wkj /√d)
+> P|P|
+> m=1 exp( w⊤
+> qi wkm /√d)
+> ,αlocal
+> ij =exp  σ(a⊤
+> swgi +a⊤
+> dwgj )P
+> m∈N (i)exp  σ(a⊤
+> swgi +a⊤
+> dwgm ),(2)
+
+Fig. 4: Overview of our system which generates a FKG for an input image. 
+
+where wni = Wnzi ∈ Rd are learned pro-jections of token i, σ is the LeakyReLU activation, as, ad are learned score vec-tors, and N (i) are the dynamic k-nearest neighbors of i by cosine sim-ilarity. Stacking L alternating layers yields: ˜Z = Attn (L) 
+
+> g
+
+◦ Attn (L) 
+
+> ℓ
+
+◦ · · · ◦ 
+
+Attn (1)  
+
+> g
+
+◦ Attn (1)  
+
+> ℓ
+
+(Z), where Attn g and Attn ℓ denote global self-attention and lo-cal graph attention layers. The output 
+
+˜Z = [˜ z1, . . . , ˜z|P| ] are refined embeddings from which a classification head predicts a cluster assignment ˆci for each patch. To train cluster assignments against ground-truth forensic regions ( e.g ., from known tampering masks), we must ac-count for the fact that predicted cluster IDs are arbitrary and do not correspond to ground-truth region labels. We use Hungarian matching [16] to find the op-timal assignment, and define a loss by combining it with a pairwise similarity term that preserves embedding structure: 
+
+LF = 1
+
+|P| 2
+
+X
+
+> i,j
+
+wij (Yij − ˜z⊤ 
+
+> i
+
+˜zj )2 + α
+
+> |P|
+
+X
+
+> i=1
+
+ℓCE 
+
+ yi, ˆσ(ˆ ci), (3) where ˜zi are ℓ2-normalized, Yij = 1[yi = yj ] is a same-region indicator, ℓCE is the cross-entropy loss, ˆσ is the optimal Hungarian matching from predicted to ground-truth labels [16], and α balances the two terms. Patches sharing the same predicted cluster form a forensic region, serving as Region nodes in the FKG. 
+
+Forensic Task and Decision Making. Given the forensic regions produced by the FRPN, this stage determines what happened to each region and assem-bles the final FKG. Each region’s refined patch embeddings {˜zi} are average-pooled into a region-level vector ψk, then processed by Forensic Task Expert Networks - MLPs specializing in source identification, post-processing classifica-tion, and compression analysis - each producing a task-specific embedding ξ(t) 
+
+> k
+
+.Forensic Knowledge Graphs 7
+
+A Transformer Reasoning Module refines these by modeling cross-task depen-dencies ( e.g ., compression artifacts informing source identification) to produce updated features ˜ξ(t) 
+
+> k
+
+, from which task-specific heads predict binary, categorical, or continuous outputs under: LT = P 
+
+> t∈T
+
+λtLt, where T is the set of forensic tasks, λt are task-specific weights, and Lt is cross-entropy or mean-squared error between predictions from ˜ξ(t) 
+
+> k
+
+and ground-truth labels. These predictions are mapped to the FKG ontology: each region becomes a Region node whose predicted attributes instantiate entity nodes and edges via 
+
+produced_by , modified_by , and compress_by relations. When different regions link to different sources, the graph directly reveals manipulation. The backbone, FRPN, and task networks are trained sequentially (details in Appendix D). 
+
+## 5 Interpreting and Reasoning over FKGs 
+
+Given an FKG, we use a vision-language model (VLM) to produce forensic deci-sions from its region-level evidence, including image authenticity, manipulation localization, and whether content is spliced, AI-edited, or fully synthetic, along with justifications grounding each decision in FKG evidence. This requires addressing two challenges. First, the FKG combines symbolic attributes with references to spatial visual content, making it inherently multi-modal, and standard VLMs cannot consume graph structures directly. Second, even with a serialized FKG, current VLMs lack forensic domain knowledge and tend to fabricate or omit evidence, yielding untrustworthy justifications.  
+
+> Fig. 5: ICR improves forensic justifi-cations by refining VLM’s context.
+
+We serialize the FKG F into subject-predicate-object triplets F = {(si, p i, o i)}.However, triplets alone cannot convey what each region depicts. We therefore use Set-of-Mark (SoM) prompting [90], overlaying each Region with a numbered mark on the image and referencing it symbolically in the triplets (Fig. 5, top). This visual grounding enables the VLM to recognize the scene content ( e.g ., a spliced object or background) and link it to forensic evidence. These, along with task instructions and a re-sponse schema (Appendix F), form the in-put prompt to the VLM. 
+
+Iterative Context Refinement. A naive approach to the second challenge is in-context learning [13]. However, manual cu-ration of good FKG-report pairs is infeasible given FKG diversity, and existing prompt optimization methods [44, 48, 68, 91] optimize for producing correct an-swers ( e.g ., to a math problem), not for faithfulness to structured evidence. We therefore propose Iterative Context Refinement (ICR), a novel optimiza-tion strategy that automatically curates in-context examples to maximize re-port faithfulness and completeness. To measure these quantities, we treat each 8 T. Nguyen et al. 
+
+triplet mj ∈ F as an atomic fact and define two indicators: τ (mj , R ) ∈ { 0, 1}
+
+for whether mj is mentioned in report R, and Q(mj , R ) ∈ { 0, 1} for whether it is correctly stated. Then, we define completeness and correctness, as:                
+
+> Mcomp =1
+> |F|
+> X
+> j
+> τ(mj, R ),Mcorr =1
+> P
+> jτ(mj, R )
+> X
+> j
+> Q(mj, R )τ(mj, R ).(4)
+
+The key idea behind ICR is to identify and correct the VLM’s failure modes. Starting from C = ∅ (Fig. 3), a judge LM [94] evaluates Mcomp and Mcorr for each FKG in a training set of N authentic and manipulated images. The FKGs where the VLM most severely fabricates or omits evidence are paired with their errors as corrective demonstrations and appended to C, forming an updated context set 
+
+C′ that is prepended to the VLM’s prompt in the next round. By focusing on the VLM’s blind spots, ICR progressively drives faithfulness toward convergence: 
+
+1
+
+N
+
+X
+
+> i
+
+ |M (t) 
+
+> corr ,i
+
+− M (t−1)  
+
+> corr ,i
+
+| + |M (t) 
+
+> comp ,i
+
+− M (t−1) 
+
+> comp ,i
+
+| < ϵ.  (5) As shown in Fig. 5 (bottom), this ensures every forensic claim is backed by verifiable graph evidence and every piece of evidence is accounted for. 
+
+## 6 Datasets 
+
+Evaluating an image authentication system requires ground-truth data whose provenance is fully known, accurately labeled, and completely captured .Existing forensic datasets provide at most binary real/fake labels or tampering masks, which is insufficient for evaluating systems that reason over structured forensic evidence such as source identity, compression history, and modification lineage. To address this, we curate FKG-50K , a dataset of 50,000 images with complete provenance and manipulation histories, built from a corpus of pris-tine, camera-original photographs sourced from Unsplash [81], Pexels [66], and crowdsourcing. We filtered for images with rich EXIF metadata (camera model, processing parameters, color pipeline), as these define the source-level forensic fingerprint the FKG ontology captures. Details are provided in Appendix E. From these originals, we generated realistic manipulated counterparts span-ning splicing, local retouching, and AI-based editing (FLUX-Kontex-1 [8], SDXL-Inpaint [67]), recording each manipulation as a structured operation encoded into its corresponding FKG. We also generated photo-realistic fully synthetic counter-parts from originals using SDXL [67], FLUX [11], Midjourney v6 [56], & GPT-Image-1 [63]. The dataset includes 40K training and 10K evaluation samples. We also benchmark on out-of-distribution public datasets such as DSO-1 [17], CASIAv2 [23], GenImage [95], Synthbuster [6]. 
+
+## 7 Experiments 
+
+We evaluate our FKG framework & others on three dimensions of trustworthy image authentication: (1) detecting falsified images, (2) identifying how & where manipulations occur, (3) providing interpretable, evidence-based justifications. Forensic Knowledge Graphs 9
+
+Table 1: Fake & manipulated image detection on FKG-50K and other datasets. Each cell shows ACC / AUC. [I] = Instruct, [T] = Thinking.                                                                                                                                                                               
+
+> Method FKG-50K Out of Distribution Datasets Splice & Edit Fully AI-Gen AI-Edit Full AI Splicing Trad-Edit Overall DSO-1 CASIAv2 GenImage Synthbuster
+> GPT-5 0.59 / 0.60 0.68 / 0.82 0.81 / 0.84 0.55 / 0.61 0.66 / 0.72 0.59 / 0.61 0.74 / 0.75 0.93 / 0.88 0.90 / 0.86 Sonnet 4 0.55 / 0.52 0.72 / 0.75 0.54 / 0.53 0.51 / 0.51 0.58 / 0.58 0.50 / 0.53 0.56 / 0.62 0.85 / 0.66 0.91 / 0.78 Gemini 2.0 0.53 / 0.51 0.64 / 0.62 0.71 / 0.72 0.55 / 0.59 0.60 / 0.61 0.52 / 0.53 0.66 / 0.65 0.90 / 0.75 0.91 / 0.78 Qwen3 VL [I] 0.53 / 0.53 0.72 / 0.71 0.63 / 0.63 0.54 / 0.54 0.60 / 0.60 0.50 / 0.51 0.59 / 0.59 0.89 / 0.73 0.92 / 0.81 Qwen3 VL [T] 0.57 / 0.57 0.69 / 0.80 0.68 / 0.72 0.54 / 0.53 0.62 / 0.66 0.52 / 0.53 0.57 / 0.61 0.61 / 0.84 0.60 / 0.84 Gemma 3 0.56 / 0.58 0.69 / 0.76 0.65 / 0.68 0.50 / 0.52 0.60 / 0.64 0.57 / 0.57 0.52 / 0.55 0.69 / 0.75 0.69 / 0.79 Llama 4 S. 0.52 / 0.52 0.64 / 0.65 0.52 / 0.50 0.50 / 0.52 0.54 / 0.55 0.48 / 0.51 0.56 / 0.57 0.73 / 0.68 0.71 / 0.58 Nemotron N. 0.52 / 0.52 0.48 / 0.48 0.58 / 0.56 0.53 / 0.50 0.53 / 0.51 0.37 / 0.48 0.45 / 0.53 0.72 / 0.61 0.64 / 0.59 TruFor 0.53 / 0.76 0.74 / 0.81 0.88 / 0.96 0.65 / 0.72 0.70 / 0.81 0.94 / 0.99 0.89 / 0.95 0.84 / 0.82 0.81 / 0.73 MVSS-Net 0.48 / 0.48 0.47 / 0.46 0.56 / 0.65 0.53 / 0.55 0.51 / 0.54 0.46 / 0.47 0.88 /0.97 0.26 / 0.33 0.29 / 0.45 CAT-Net 0.57 / 0.52 0.46 / 0.37 0.85 / 0.91 0.85 / 0.91 0.68 / 0.68 0.99 /1.00 0.72 / 0.83 0.76 / 0.49 0.73 / 0.41 HiFi-IFDL 0.50 / 0.50 0.47 / 0.35 0.51 / 0.52 0.51 / 0.53 0.49 / 0.47 0.50 / 0.51 0.50 / 0.55 0.21 / 0.33 0.21 / 0.54 NPR 0.50 / 0.51 0.90 / 0.98 0.50 / 0.50 0.52 / 0.52 0.60 / 0.63 0.50 / 0.49 0.51 / 0.52 0.92 / 0.97 0.94 /0.98
+> UFD 0.51 / 0.54 0.71 / 0.73 0.56 / 0.65 0.51 / 0.53 0.57 / 0.61 0.47 / 0.48 0.49 / 0.50 0.79 / 0.74 0.79 / 0.57 DE-FAKE 0.51 / 0.52 0.88 / 0.95 0.51 / 0.53 0.51 / 0.57 0.60 / 0.64 0.52 / 0.56 0.49 / 0.55 0.86 / 0.98 0.83 / 0.92
+> Ours 0.86 /0.88 0.93 /0.94 0.95 /0.99 0.93 /0.97 0.92 /0.94 0.92 / 0.96 0.85 / 0.93 0.92 / 0.96 0.94 / 0.96
+
+7.1 Fake & Manipulated Image Detection Setup. We benchmark our FKG system and competing approaches, including both forensic systems and modern vision-language models (VLMs), on our FKG-50K test set and four public datasets: DSO-1 [17], CASIA-v2 [23], GenImage [95], and Synthbuster [6]. We report overall and category-wise performance across forgery types: splicing, traditional editing, AI-editing, and fully AI-generated. VLM prompt templates and protocols are detailed in the appendix. 
+
+Metrics. We report detection accuracy and area under the ROC curve (AUC). 
+
+Competing Methods. We compare against forensic systems purpose-built for forgery detection (TruFor [36], MVSS-Net [19], CAT-Net [46], HiFi-IFDL [38] for traditional manipulations; NPR [78], UFD [60], DE-FAKE [73] for AI-generated detection) and powerful SOTA vision-language models (VLMs) including GPT-5 [64], Sonnet 4 [3], Gemini 2.0 Flash [33], Qwen3 VL [5], Gemma 3 [31], Llama 4 Scout [55], and Nemotron Nano [22]. 
+
+Results. Tab. 1 reports detection accuracy and AUC across forgery types and datasets. On FKG-50K, we achieve the best overall accuracy (0.92) and AUC (0.94) with consistently strong per-category performance ( ≥ 0.94 AUC except AI-edits at 0.88). On OOD datasets, we generalize well and remain competitive with the best specialized systems (DSO-1: 0.96, Synthbuster: 0.96). Forensic systems only perform well on the specific forgery type they were trained for. Splicing detectors such as CAT-Net excel on their target domain (1.00 AUC on DSO-1) but fail on AI-generated content (0.37 AUC on Full AI), while AI-generation detectors like NPR show the opposite pattern (0.98 AUC on Synthbuster but 0.50 AUC on splicing). No single forensic system covers all forgery types. Conversely, VLMs can detect fully AI-generated images (GPT-5: 0.93 accuracy on GenImage, Qwen3 VL: 0.92 on Synthbuster) but fail on local manipulations (GPT-5: 0.59 on AI-edits, 0.55 on traditional edits). This suggests VLMs identify wholesale generation via image-wide artifacts such as 10 T. Nguyen et al. 
+
+Table 2: Forgery type identification accuracy on FKG-50K and OOD datasets. VLMs show both real-world and oracle-assisted (in parentheses) scenarios. [I] = Instruct, [T] = Thinking.                                                                                              
+
+> Method FKG-50K Out of Distribution Datasets Splice & Edit Fully AI-Gen AI-Edit Full AI Splicing Trad-Edit Overall DSO-1 CASIAv2 GenImage Synthbuster VLM
+> GPT-5 0.03 (0.02) 0.29 (0.39) 0.49 (0.75) 0.12 (0.56) 0.23 (0.43) 0.00 (0.79) 0.39 (0.81) 0.62 (0.54) 0.56 (0.57) Sonnet 4 0.04 (0.10) 0.44 (0.80) 0.04 (0.32) 0.02 (0.71) 0.14 (0.48) 0.00 (0.26) 0.03 (0.32) 0.26 (0.72) 0.55 (0.86) Gemini 2.0 0.03 (0.01) 0.23 (0.40) 0.40 (0.54) 0.04 (0.91) 0.18 (0.47) 0.04 (0.09) 0.22 (0.34) 0.52 (0.66) 0.54 (0.61) Qwen3 VL [I] 0.03 (0.37) 0.19 (0.13) 0.10 (0.16) 0.02 (0.77) 0.09 (0.36) 0.00 (0.00) 0.01 (0.00) 0.24 (0.09) 0.51 (0.39) Qwen3 VL [T] 0.45 (0.49) 0.45 (0.40) 0.29 (0.34) 0.05 (0.28) 0.31 (0.38) 0.00 (0.70) 0.06 (0.23) 0.38 (0.37) 0.65 (0.63) Gemma 3 0.13 (0.95) 0.28 (0.35) 0.25 (0.10) 0.21 (0.05) 0.22 (0.36) 0.07 (0.14) 0.25 (0.38) 0.38 (0.51) 0.50 (0.72) Llama 4 S. 0.04 (0.06) 0.15 (0.91) 0.02 (0.01) 0.16 (0.01) 0.09 (0.25) 0.00 (0.00) 0.05 (0.20) 0.16 (0.09) 0.21 (0.08) Nemotron N. 0.17 (0.25) 0.06 (0.33) 0.12 (0.40) 0.11 (0.43) 0.12 (0.35) 0.14 (0.56) 0.30 (0.31) 0.06 (0.20) 0.05 (0.21)
+> FKG Ours 0.81 0.84 0.92 0.89 0.87 0.67 0.71 0.91 0.94
+
+texture regularity or lighting inconsistencies [79, 85], but cannot detect localized manipulations that preserve overall visual coherence. In contrast, our FKG generalizes across all forgery types because our back-bone’s novel self-supervised learning approach learns intrinsic forensic finger-prints of any imaging pipeline, AI generators included. This empowers the FRPN to detect any manipulation by identifying regions with differing forensic finger-prints, and task experts to detect fully AI-generated images via fingerprints distinct from any camera source. AI-edits are the hardest because AI editors condition on real pixels, generating content that partially inherits the original’s forensic properties. Despite this, our FKG achieves 0.88 AUC, substantially out-performing the best forensic system (TruFor, 0.76) and best VLM (GPT-5, 0.60). 
+
+7.2 Forgery Type & Location Identification Setup. This experiment tests forgery type identification and localization under two settings. Scenario 1 simulates real-world use, requiring simultaneous detec-tion, classification, and localization, with missed detections penalized. Scenario 2 gives competitors a perfect oracle detector, while our FKG operates identically in both . All methods are evaluated on FKG-50K and public OOD datasets. 
+
+Metrics. We report forgery-type classification accuracy and localization F1 (pre-dicted vs. ground-truth mask), following prior practices [19, 36]. VLM descrip-tions are converted to masks using Grounding Dino [51]. 
+
+Competing Methods. Same as Sec. 7.1, excluding synthetic image detectors from Tabs. 2 and 3 (not designed to classify or localize forgeries), and forensic systems from Tab. 2 (not designed to classify forgery types). 
+
+Forgery Type Classification Results. Tab. 2 reports forgery type classifi-cation accuracy under real-world and oracle-assisted scenarios, where our FKG uses no oracle. On FKG-50K, we achieve the best overall type acc. (0.87) with strong per-category performance (0.81–0.92 across all forgery types). On OOD datasets, we maintain strong generalization (Synthbuster: 0.94, CASIAv2: 0.71). VLMs fail at this task even under favorable conditions. On FKG-50K without oracle, the best VLM achieves only 0.31 type acc. (Qwen3 VL). With oracle, the best improves to just 0.48 (Sonnet 4), far below our 0.87. In rare instances, VLMs achieved strong performance with an oracle (GPT-5: 0.75 on splicing), though these gains are inconsistent and oracle access can even hurt (GPT-5: 0.62 →Forensic Knowledge Graphs 11 
+
+Table 3: Forgery localization F1 on FKG-50K and OOD datasets. VLMs show both real-world and oracle-assisted (in parentheses) scenarios. [I] = Instruct, [T] = Thinking.                                                                                       
+
+> Method FKG-50K OOD Splice & Edit AI-Edit Splicing Trad-Edit Overall DSO-1 CASIAv2 VLM
+> GPT-5 0.17 (0.66) 0.59 (0.84) 0.10 (0.56) 0.29 (0.69) 0.00 (0.63) 0.43 (0.77) Sonnet 4 0.09 (0.46) 0.08 (0.47) 0.02 (0.53) 0.06 (0.49) 0.00 (0.43) 0.07 (0.47) Gemini 2.0 0.05 (0.50) 0.40 (0.72) 0.07 (0.45) 0.17 (0.56) 0.02 (0.34) 0.28 (0.65) Qwen3 VL [I] 0.05 (0.65) 0.25 (0.71) 0.05 (0.56) 0.12 (0.64) 0.00 (0.39) 0.25 (0.78) Qwen3 VL [T] 0.30 (0.50) 0.58 (0.69) 0.30 (0.50) 0.39 (0.56) 0.00 (0.34) 0.40 (0.61) Gemma 3 0.20 (0.36) 0.28 (0.48) 0.22 (0.48) 0.23 (0.44) 0.12 (0.22) 0.22 (0.40) Llama 4 S. 0.03 (0.02) 0.01 (0.03) 0.01 (0.03) 0.02 (0.03) 0.00 (0.10) 0.00 (0.05) Nemotron N. 0.17 (0.39) 0.18 (0.40) 0.13 (0.34) 0.16 (0.38) 0.15 (0.60) 0.22 (0.49)
+> Forensic Systems
+> TruFor 0.27 0.81 0.29 0.46 0.93 0.83
+> MVSS-Net 0.32 0.59 0.22 0.38 0.25 0.63 CAT-Net 0.38 0.64 0.40 0.47 0.59 0.66 HiFi-IFDL 0.10 0.18 0.12 0.13 0.27 0.26
+> FKG Ours 0.93 0.98 0.91 0.94 0.95 0.73
+
+0.54 on GenImage). On OOD datasets, oracle-assisted VLMs show competitive numbers (GPT-5: 0.79 on DSO-1, 0.81 on CASIAv2). Without oracle, they score near zero while our FKG achieves its OOD performance unaided. 
+
+Localization Results. Tab. 3 reports forgery localization F1. On FKG-50K, we achieve the best overall F1 (0.94) with consistent per-category performance (0.91–0.98). On OOD data, we achieve 0.95 F1 on DSO-1. Similar to Sec. 7.1, forensic systems only perform well on the forgery types they were trained for. For instance, TruFor excels on splicing (CASIAv2: 0.83 vs. our 0.73, DSO-1: 0.93 vs. our 0.95) but fails on AI-edits (0.27) and traditional edits (0.29). Similarly, VLMs without oracle cannot localize forgeries (best: 0.39). With oracle, some show reasonable results on specific categories (GPT-5: 0.84 on splicing, Qwen3 VL: 0.78 on CASIAv2). However, these gains are inconsistent and oracle access is unavailable in practice. Two factors drive our strong performance across both tasks. First, accurate localization is enabled by the FRPN’s novel Hybrid Graph Attention Trans-former, which combines global self-attention to capture long-range forensic simi-larities with local graph attention to suppress false alarms from distant patches, yielding precise region boundaries. Second, accurate type classification is enabled by the task expert networks and the FKG ontology, which enables reasoning over cross-region relations: differing camera sources reveal splicing, absent sources re-veal full synthesis, and mixed real/synthetic traces reveal AI-editing. 
+
+7.3 Forensic Decision Justification Setup. This experiment measures each system’s ability to generate forensic jus-tifications that accurately and completely reference supporting evidence. Our FKG operates under real-world conditions, performing all tasks end-to-end, while competing VLMs are tested with oracle access to perfect ground-truth labels, isolating their reasoning abilities. All methods are evaluated on FKG-50K, which provides reference FKGs with full provenance histories. 
+
+Metrics. We assess justification quality with two metrics: correctness (whether forensic facts are described accurately) and completeness (whether all facts from the ground-truth FKG appear in the justification), averaged per image (Eq. (4)). 12 T. Nguyen et al. 
+
+Fig. 6: Qualitative comparison of image forgery localization results. 
+
+Competing Methods. Because classical forensic models do not produce textual explanations, we compare only against the list of advanced VLMs capable of multimodal reasoning in Secs. 7.1 and 7.2. 
+
+Results. Tab. 4 reports forensic justification correctness and completeness on FKG-50K. Our FKG achieves the best overall correctness (0.75) and complete-ness (0.85), outperforming all VLMs despite operating without oracle access. Even with oracle access, VLMs reach only 0.16–0.24 correctness and 0.06–0.10 completeness. Per-category, we are strongest on full synthesis (0.86/0.96) and splicing (0.81/0.92), and lowest on traditional edits (0.65/0.75). 
+
+Table 4: Forensic justification correctness (COR) and completeness (COM) on FKG-50K.                                                                                                          
+
+> Method AI-Edit Full AI Splice Trad Overall
+> COR COM COR COM COR COM COR COM COR COM
+> VLM
+> GPT-5 0.15 0.05 0.28 0.16 0.33 0.12 0.08 0.03 0.21 0.09 Sonnet 4 0.17 0.05 0.37 0.27 0.16 0.05 0.05 0.03 0.19 0.10 Gemini 2.0 0.17 0.02 0.30 0.14 0.38 0.06 0.10 0.03 0.24 0.06 Qwen3 VL [I] 0.25 0.08 0.05 0.05 0.26 0.08 0.15 0.06 0.18 0.07 Qwen3 VL [T] 0.28 0.09 0.20 0.14 0.30 0.09 0.11 0.04 0.22 0.09 Gemma 3 0.36 0.10 0.28 0.14 0.24 0.07 0.06 0.02 0.23 0.08 Llama 4 S. 0.05 0.01 0.62 0.28 0.03 0.01 0.00 0.00 0.17 0.08 Nemotron N. 0.21 0.08 0.18 0.13 0.18 0.08 0.07 0.03 0.16 0.08
+> FKG Ours 0.69 0.77 0.86 0.96 0.81 0.92 0.65 0.75 0.75 0.85
+
+These results extend the findings from Secs. 7.1 and 7.2: even when given the forgery type and ex-act location, VLMs can-not explain the forensic ev-idence behind a manipu-lation. The completeness gap is particularly reveal-ing: VLMs cover at most 10% of forensic facts (Sonnet 4: 0.10), compared to our 85%. Their justifica-tions rely on visual speculation (“the lighting looks inconsistent”) rather than verifiable forensic traces such as camera model discrepancies, compression in-consistencies, or modification lineage. Our FKG produces faithful justifications because the FKG ontology encodes each region’s source identity, compression history, and modification lineage as structured triplets, giving the VLM (Sec. 5) concrete facts to report rather than requiring it to infer forensic conclusions from pixels. Iterative Context Refine-ment then optimizes the VLM’s in-context examples to maximize both correct-ness and completeness without fine-tuning. 
+
+## 8 Discussion 
+
+Effects of Iterative Context Refinement. We compare the forensic justifi-cation quality of different prompting strategies (Tab. 5) on identical FKG inputs Forensic Knowledge Graphs 13 
+
+from FKG-50K. The results show that our ICR protocol achieves the highest cor-rectness (0.75) and completeness (0.85). Without any context, the VLM covers only 32% of forensic facts. Random in-context examples improve completeness to 0.51 by demonstrating the expected output format, and adding CoT [87] further improves correctness to 0.70. However, the largest gain comes from ICR, which nearly doubles completeness from 0.55 to 0.85 by iteratively selecting demon-strations that target the VLM’s specific failure patterns. Crucially, ICR achieves this without any VLM fine-tuning, operating purely at the prompt level. 
+
+FKG Accuracy and Failure Modes. Beyond the correctness and complete-ness reported in Sec. 7.3, we evaluate FKG generation accuracy using perfect match , which requires every fact in the predicted FKG to exactly match the ground truth. Our system achieves 0.65 perfect match overall, with the highest accuracy on full synthesis (0.81) and splicing (0.68), and the lowest on AI-edits (0.58) and traditional edits (0.52).                 
+
+> Table 5: Effect of optimization strategies on forensic justification quality.
+> Opt. Strategy CoT Correctness Completeness
+> None X0.64 0.32 Random X0.63 0.51 Random ✓0.70 0.55 ICR protocol ✓0.75 0.85
+
+The gap between correctness (0.75) and perfect match (0.65) reveals that most errors are in fine-grained param-eters ( e.g ., generator model, compres-sion quality) rather than structural re-lationships, which the system consis-tently recovers. Full synthesis achieves the highest perfect match (0.81) because its FKGs are structurally simple: one region, one AI source, with fewer param-eters to predict. Splicing follows (0.68) due to sharp boundaries between clearly distinct sources. Traditional edits are hardest (0.52) because operations like blur and resampling leave subtle traces that make exact parameter recovery difficult. AI-edits present a different challenge (0.58): some AI generators produce similar forensic fingerprints, making exact source attribution difficult for the current task expert. Fig. 6 shows representative success and failure cases. Despite these parameter-level errors, authentication performance remains strong (Sec. 7) because correct graph topology suffices for detection, localization, and justification. This structural robustness also explains out-of-distribution gen-eralization: the self-supervised backbone learns forensic fingerprints from imag-ing pipeline properties rather than image content, and the ontology structures evidence as universal forensic properties rather than forgery-specific features. 
+
+Human Trust Evaluation. A core premise of our framework is that grounding authentication in structured forensic evidence makes its decisions more trustwor-thy to users. To test this directly, 30 participants rated their trust (1 to 5) in our system’s output across 5 images, each shown both as a bare verdict and with its accompanying forensic graph explanation. Presenting the graph raised average trust from 3.39 to 4.53, confirming that auditable, evidence-grounded explanations substantially increase user trust over a verdict alone. 
+
+Limitations. While our framework provides a strong foundation for trustwor-thy image authentication, fine-grained parameter prediction and error propaga-tion from imperfect region proposals remain the primary bottlenecks for perfect FKG reconstruction. Importantly, both are addressable through the framework’s 14 T. Nguyen et al. 
+
+modular design: more accurate task experts or region proposal methods can be integrated without modifying the ontology, the reasoning pipeline, or ICR. Ex-tended analysis, including computational costs, is provided in the appendix. 
+
+## 9 Ablation 
+
+We conduct comprehensive ablation studies of each major system component on FKG-50K, shown in Tab. 6. 
+
+No self-supervision. Without self-supervised fingerprint learning, the back-bone relies only on task labels and loses its ability to encode generalizable foren-sic microstructures, causing all metrics to drop sharply. 
+
+Table 6: Ablation study of system components on FKG-50K.                                
+
+> Stage Variant Detect AUC Type ACC Loc F1
+> –Ours 0.94 0.87 0.94 Backbone No self-supervision 0.72 (-0.22) 0.66 (-0.21) 0.44 (-0.50) No pairwise similarity 0.90 (-0.04) 0.63 (-0.24) 0.86 (-0.08)
+> FRPN
+> Only local graph-attention 0.85 (-0.09) 0.57 (-0.30) 0.93 (-0.01) Only full self-attention 0.92 (-0.02) 0.55 (-0.32) 0.93 (-0.01) Only contrastive loss 0.89 (-0.05) 0.52 (-0.35) 0.72 (-0.22) Only Hungarian loss 0.81 (-0.13) 0.45 (-0.42) 0.59 (-0.35)
+> Attr. Infer No transformer reasoner 0.94 ( ±0.00) 0.69 (-0.18) 0.94 ( ±0.00)
+
+No pairwise similarity. Keeping only the contrastive loss removes the pairwise similarity constraint, weakening structural alignment, reducing type and localization ac-curacy. Contrastive learning alone fails to capture relational consis-tency among patches. 
+
+Only local graph-attention. Disabling global self-attention limits reasoning to local neighborhoods, causing large drops in type accuracy. Long-range depen-dencies are essential to model global forgery context. 
+
+Only full self-attention. Removing local graph attention breaks spatial co-herence, sharply degrading type accuracy. Local connectivity is necessary to preserve region homogeneity and prevent attention dilution. 
+
+Only contrastive loss. Training with only contrastive loss omits Hungarian matching, yielding unstable and inconsistent region assignments. Contrastive learning alone cannot form discrete, semantically aligned regions. 
+
+Only Hungarian loss. Eliminating the contrastive term leaves only discrete alignment, reducing detection and classification accuracy. Continuous similarity constraints are crucial for coherent region grouping. 
+
+No transformer reasoner. Replacing the transformer reasoner with linear classifiers drops type accuracy by 0.18. The reasoning module is essential for integrating cross-region evidence to infer manipulation semantics. 
+
+## 10 Conclusion 
+
+We introduced Forensic Knowledge Graphs, a unified framework for trustworthy image authentication that integrates forensic evidence extraction, structured rea-soning, and interpretable explanation. By modeling images as structured graphs linking regions, sources, and manipulations, our system delivers accurate, local-ized, and explainable authenticity judgments across diverse forgery types. Forensic Knowledge Graphs 15 
+
+## References 
+
+1. Amerini, I., Barni, M., Battiato, S., Bestagini, P., Boato, G., Bonaventura, T.S., Bruni, V., Caldelli, R., De Natale, F., De Nicola, R., et al.: Deepfake media foren-sics: State of the art and challenges ahead. arXiv preprint arXiv:2408.00388 (2024) 2. Anlen, L., Vazquez Llorente, R.: Spotting the deepfakes: how AI detection tools work and where they fail. https://reutersinstitute.politics.ox.ac.uk/news/ spotting- deepfakes- year- elections- how- ai- detection- tools- work- and-where-they-fail (2024), reuters Institute / WITNESS 3. Anthropic: System card: Claude Opus 4 & Claude Sonnet 4. https://www. anthropic.com/claude-4-system-card (2025) 4. Bagaria, A.: INSIGHT: An interpretable neural vision-language framework for rea-soning of generative artifacts. arXiv preprint arXiv:2511.22351 (2025) 5. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., et al.: Qwen3-VL technical report. arXiv preprint arXiv:2511.21631 (2025) 6. Bammey, Q.: Synthbuster: Towards detection of diffusion model generated images. IEEE Open Journal of Signal Processing 5, 1–9 (2024) 7. Barredo Arrieta, A., Díaz-Rodríguez, N., Del Ser, J., Bennetot, A., Tabik, S., Bar-bado, A., García, S., Gil-López, S., Molina, D., Benjamins, R., Chatila, R., Herrera, F.: Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI. Information Fusion 58 , 82–115 (2020) 8. Batifol, S., Blattmann, A., Boesel, F., Consul, S., Diagne, C., Dockhorn, T., En-glish, J., English, Z., Esser, P., Kulal, S., Lacey, K., Levi, Y., Li, C., Lorenz, D., Müller, J., Podell, D., Rombach, R., Saini, H., Sauer, A., Smith, L.: FLUX.1 kon-text: Flow matching for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 (2025) 9. Bayar, B., Stamm, M.C.: A deep learning approach to universal image manipula-tion detection using a new convolutional layer. In: Proceedings of the 4th ACM Workshop on Information Hiding and Multimedia Security. pp. 5–10 (2016) 10. Bayar, B., Stamm, M.C.: Constrained convolutional neural networks: A new ap-proach towards general purpose image manipulation detection. IEEE Transactions on Information Forensics and Security 13 (11), 2691–2706 (2018) 11. Black Forest Labs: FLUX.1: A suite of text-to-image generation models. https: //blackforestlabs.ai (2024) 12. Brooks, T., Holynski, A., Efros, A.A.: InstructPix2Pix: Learning to follow image editing instructions. In: CVPR. pp. 18392–18402 (2023) 13. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J.D., Dhariwal, P., Nee-lakantan, A., Shyam, P., Sastry, G., Askell, A., et al.: Language models are few-shot learners. In: NeurIPS. vol. 33, pp. 1877–1901 (2020) 14. Cao, H., Mei, Q., Li, Z., Li, Y., Meng, Z., Zhang, Y., Li, C., Zhang, Z., Ding, X., Wang, Y., Lyu, J., Wu, F.: REVEAL: Reasoning-enhanced forensic evidence analy-sis for explainable AI-generated image detection. arXiv preprint arXiv:2511.23158 (2025) 15. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., et al.: Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 (2025) 16. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., Zagoruyko, S.: End-to-end object detection with transformers. In: ECCV. pp. 213–229 (2020) 17. de Carvalho, T.J., Riess, C., Angelopoulou, E., Pedrini, H., de Rezende Rocha, A.: Exposing digital image forgeries by illumination color classification. IEEE Trans-actions on Information Forensics and Security 8(7), 1182–1194 (2013) 16 T. Nguyen et al. 18. Caulfield, M.: How to use ChatGPT to detect AI (and otherwise digitally al-tered) photos. https://mikecaulfield.substack.com/p/how-to-use-chatgpt-to-detect-ai-and (2025) 19. Chen, X., Dong, C., Ji, J., Cao, J., Li, X.: Image manipulation detection by multi-view multi-scale supervision. In: ICCV. pp. 14185–14193 (2021) 20. Corvi, R., Cozzolino, D., Zingarini, G., Poggi, G., Nagano, K., Verdoliva, L.: On the detection of synthetic images generated by diffusion models. In: ICASSP. pp. 1–5 (2023) 21. Cozzolino, D., Verdoliva, L.: Noiseprint: A CNN-based camera model fingerprint. IEEE Transactions on Information Forensics and Security 15 , 144–159 (2020) 22. Deshmukh, A.S., Chumachenko, K., Rintamaki, T., Le, M., Poon, T., et al.: NVIDIA Nemotron Nano V2 VL. arXiv preprint arXiv:2511.03929 (2025) 23. Dong, J., Wang, W., Tan, T.: CASIA image tampering detection evaluation database. In: IEEE China Summit and International Conference on Signal and Information Processing. pp. 422–426 (2013) 24. Doshi-Velez, F., Kim, B.: Towards a rigorous science of interpretable machine learn-ing. arXiv preprint arXiv:1702.08608 (2017) 25. Edwards, L., Wojciak, T., Anlen, L.: AI is undermining OSINT’s core as-sumptions: here’s how journalists should adapt. https://reutersinstitute. politics.ox.ac.uk/news/ai-undermining-osints-core-assumptions-heres-how-journalists-should-adapt (2025), reuters Institute / WITNESS 26. Europol Innovation Lab: Facing reality? Law enforcement and the challenge of deepfakes. Tech. rep., Europol (2022) 27. Fedus, W., Zoph, B., Shazeer, N.: Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Research 
+
+23 (120), 1–40 (2022) 28. Full Fact: Grok and Google Lens AI overviews claim fake imagery shows Hunt-ingdon train attack. https://fullfact.org/crime/grok- google- lens- ai-imagery-train-attack/ (2025), accessed: 2026 29. Gemini Team: Gemini 2.5: Pushing the frontier with advanced reasoning, multi-modality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 (2025) 30. Gemini Team, Anil, R., Borgeaud, S., Wu, Y., Alayrac, J.B., Yu, J., Soricut, R., Schalkwyk, J., Dai, A.M., Hauth, A., et al.: Gemini: A family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 (2023) 31. Gemma Team, Kamath, A., Ferret, J., Pathak, S., et al.: Gemma 3 technical report. arXiv preprint arXiv:2503.19786 (2025) 32. Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., Bengio, Y.: Generative adversarial networks. Communications of the ACM 63 (11), 139–144 (2020) 33. Google DeepMind: Gemini 2.0 Flash model card. https://storage.googleapis. com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Model-Card.pdf (2025) 34. Groh, M., Epstein, Z., Firestone, C., Picard, R.: Deepfake detection by human crowds, machines, and machine-informed crowds. Proceedings of the National Academy of Sciences 119 (1), e2110013119 (2022) 35. Gruber, T.R.: A translation approach to portable ontology specifications. Knowl-edge Acquisition 5(2), 199–220 (1993) 36. Guillaro, F., Cozzolino, D., Sud, A., Dufour, N., Verdoliva, L.: TruFor: Leveraging all-round clues for trustworthy image forgery detection and localization. In: CVPR. pp. 20606–20615 (2023) Forensic Knowledge Graphs 17 37. Gunning, D., Aha, D.W.: DARPA’s explainable artificial intelligence (XAI) pro-gram. AI Magazine 40 (2), 44–58 (2019) 38. Guo, X., Liu, X., Ren, Z., Grosz, S., Masi, I., Liu, X.: Hierarchical fine-grained image forgery detection and localization. In: CVPR. pp. 3155–3165 (2023) 39. He, K., Gkioxari, G., Dollár, P., Girshick, R.: Mask R-CNN. In: ICCV. pp. 2961– 2969 (2017) 40. Hogan, A., Blomqvist, E., Cochez, M., d’Amato, C., de Melo, G., Gutierrez, C., Kirrane, S., Gayo, J.E.L., Navigli, R., Neumaier, S., et al.: Knowledge graphs. ACM Computing Surveys 54 (4), 1–37 (2021) 41. Huang, Z., Hu, J., Li, X., He, Y., Zhao, X., Peng, B., Wu, B., Huang, X., Cheng, G.: SIDA: Social media image deepfake detection, localization and explanation with large multimodal model. In: CVPR (2025) 42. Jia, S., Lyu, R., Zhao, K., Chen, Y., Yan, Z., Ju, Y., Hu, C., Li, X., Wu, B., Lyu, S.: Can ChatGPT detect DeepFakes? A study of using multimodal large language models for media forensics. In: CVPRW. pp. 4324–4333 (2024) 43. Karras, T., Laine, S., Aittala, M., Hellsten, J., Lehtinen, J., Aila, T.: Analyzing and improving the image quality of StyleGAN. In: CVPR. pp. 8110–8119 (2020) 44. Khattab, O., Singhvi, A., Maheshwari, P., Zhang, Z., Santhanam, K., Vard-hamanan, S., Haq, S., Sharma, A., Joshi, T.T., Mober, H., et al.: DSPy: Compiling declarative language model calls into state-of-the-art pipelines. In: ICLR (2024) 45. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., Dollár, P., Girshick, R.: Segment anything. In: ICCV. pp. 4015–4026 (2023) 46. Kwon, M.J., Yu, I.J., Nam, S.H., Lee, H.K.: CAT-Net: Compression artifact tracing network for detection and localization of image splicing. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 375–384 (2021) 47. Li, B., Qi, P., Liu, B., Di, S., Liu, J., Pei, J., Yi, J., Zhou, B.: Trustworthy AI: From principles to practices. ACM Computing Surveys 55 (9), 1–46 (2023) 48. Li, X., Lv, K., Yan, H., Lin, T., Zhu, W., Ni, Y., Xie, G., Wang, X., Qiu, X.: Unified demonstration retriever for in-context learning. In: ACL. pp. 4644–4668 (2023) 49. Liu, H., Li, C., Wu, Q., Lee, Y.J.: Visual instruction tuning. In: NeurIPS (2023) 50. Liu, J., Zhang, F., Zhu, J., Sun, E., Zhang, Q., Zha, Z.J.: ForgeryGPT: Multi-modal large language model for explainable image forgery detection and localiza-tion. arXiv preprint arXiv:2410.10238 (2024) 51. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection. In: ECCV (2024) 52. Lukas, J., Fridrich, J., Goljan, M.: Digital camera identification from sensor pattern noise. IEEE Transactions on Information Forensics and Security 1(2), 205–214 (2006) 53. Mareen, H., Karageorgiou, D., Van Wallendael, G., Lambert, P., Papadopoulos, S.: TGIF: Text-guided inpainting forgery dataset. In: IEEE International Workshop on Information Forensics and Security (WIFS). pp. 1–6 (2024) 54. Mayer, O., Stamm, M.C.: Forensic similarity for digital images. IEEE Transactions on Information Forensics and Security 15 , 1331–1346 (2020) 55. Meta AI: The Llama 4 herd: The beginning of a new era of natively multimodal AI innovation. https://ai.meta.com/blog/llama-4-multimodal-intelligence/ 
+
+(2025) 18 T. Nguyen et al. 56. Midjourney: Midjourney. https://www.midjourney.com , accessed: 2025 57. Nguyen, T.D., Azizpour, A., Stamm, M.C.: Forensic self-descriptions are all you need for zero-shot detection, open-set source attribution, and clustering of AI-generated images. In: CVPR. pp. 3040–3050 (2025) 58. Nightingale, S.J., Farid, H.: AI-synthesized faces are indistinguishable from real faces and more trustworthy. Proceedings of the National Academy of Sciences 
+
+119 (8), e2120481119 (2022) 59. Nightingale, S.J., Wade, K.A., Watson, D.G.: Can people identify original and manipulated photos of real-world scenes? Cognitive Research: Principles and Im-plications 2(1), 30 (2017) 60. Ojha, U., Li, Y., Lee, Y.J.: Towards universal fake image detectors that generalize across generative models. In: CVPR. pp. 24480–24489 (2023) 61. OpenAI: GPT-4 technical report. arXiv preprint arXiv:2303.08774 (2023) 62. OpenAI: GPT-4o system card. https://openai.com/index/gpt- 4o- system-card/ (2024) 63. OpenAI: GPT-Image-1: Native image generation in ChatGPT. https://openai. com/index/introducing-4o-image-generation/ (2025) 64. OpenAI: OpenAI GPT-5 system card. arXiv preprint arXiv:2601.03267 (2025) 65. Pevny, T., Fridrich, J.: Detection of double-compression in JPEG images for appli-cations in steganography. IEEE Transactions on Information Forensics and Security 
+
+3(2), 247–258 (2008) 66. Pexels: Pexels: Free stock photos, royalty free images and videos. https://www. pexels.com , accessed: 2025 67. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: SDXL: Improving latent diffusion models for high-resolution im-age synthesis. arXiv preprint arXiv:2307.01952 (2023) 68. Pryzant, R., Iter, D., Li, J., Lee, Y.T., Zhu, C., Zeng, M.: Automatic prompt optimization with “gradient descent” and beam search. In: EMNLP. pp. 7957–7968 (2023) 69. Qwen Team: Qwen-image technical report. arXiv preprint arXiv:2508.02324 (2025) 70. Ramesh, A., Dhariwal, P., Nichol, A., Chu, C., Chen, M.: Hierarchical text-conditional image generation with clip latents. arXiv preprint arXiv:2204.06125 (2022) 71. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: CVPR. pp. 10684–10695 (2022) 72. Rössler, A., Cozzolino, D., Verdoliva, L., Riess, C., Thies, J., Nießner, M.: Face-Forensics++: Learning to detect manipulated facial images. In: ICCV. pp. 1–11 (2019) 73. Sha, Z., Li, Z., Yu, N., Zhang, Y.: DE-FAKE: Detection and attribution of fake images generated by text-to-image generation models. In: Proceedings of the ACM SIGSAC Conference on Computer and Communications Security. pp. 3418–3432 (2023) 74. Stamm, M.C., Liu, K.J.R.: Forensic detection of image manipulation using statisti-cal intrinsic fingerprints. IEEE Transactions on Information Forensics and Security 
+
+5(3), 492–506 (2010) 75. Stamm, M.C., Liu, K.J.R.: Anti-forensics of digital image compression. IEEE Transactions on Information Forensics and Security 6(3), 1050–1065 (2011) 76. Stamm, M.C., Wu, M., Liu, K.J.R.: Information forensics: An overview of the first decade. IEEE Access 1, 167–200 (2013) Forensic Knowledge Graphs 19 77. Tan, C., Wang, J., Ming, X., Tao, R., Wei, Y., Zhao, Y., Lu, Y.: ForenX: Towards explainable AI-generated image detection with multimodal large language models. arXiv preprint arXiv:2508.01402 (2025) 78. Tan, C., Zhao, Y., Wei, S., Gu, G., Liu, P., Wei, Y.: Rethinking the up-sampling operations in CNN-based generative network for generalizable deepfake detection. In: CVPR. pp. 28130–28139 (2024) 79. Tariq, S., Kim, S., Woo, S.S.: LLMs are not yet ready for deepfake image detection. arXiv preprint arXiv:2506.10474 (2025) 80. Touvron, H., Cord, M., Sablayrolles, A., Synnaeve, G., Jégou, H.: Going deeper with image transformers. In: ICCV (2021) 81. Unsplash: Unsplash: Beautiful free images and pictures. https://unsplash.com ,accessed: 2025 82. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł., Polosukhin, I.: Attention is all you need. Advances in Neural Information Pro-cessing Systems 30 (2017) 83. Veličković, P., Cucurull, G., Casanova, A., Romero, A., Liò, P., Bengio, Y.: Graph attention networks. In: ICLR (2018) 84. Verdoliva, L.: Media forensics and deepfakes: an overview. IEEE Journal of Selected Topics in Signal Processing 14 (5), 910–932 (2020) 85. Wang, J., Lv, C., Li, X., Dong, S., Li, H., Yao, K., Li, C., Shao, W., Luo, P.: Forensics-Bench: A comprehensive forgery detection benchmark suite for large vi-sion language models. In: CVPR (2025) 86. Wang, S.Y., Wang, O., Zhang, R., Owens, A., Efros, A.A.: CNN-generated images are surprisingly easy to spot... for now. In: CVPR (2020) 87. Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E., Le, Q.V., Zhou, D.: Chain-of-thought prompting elicits reasoning in large language models. In: NeurIPS (2022) 88. Xu, Z., Zhang, X., Li, R., Tang, Z., Huang, Q., Zhang, J.: FakeShield: Explainable image forgery detection and localization via multi-modal large language models. In: ICLR (2025) 89. Yan, S., Li, O., Cai, J., Hao, Y., Jiang, X., Hu, Y., Xie, W.: A sanity check for AI-generated image detection. In: ICLR (2025) 90. Yang, J., Zhang, H., Li, F., Zou, X., Li, C., Gao, J.: Set-of-mark prompt-ing unleashes extraordinary visual grounding in GPT-4V. arXiv preprint arXiv:2310.11441 (2023) 91. Ye, J., Wu, Z., Feng, J., Yu, T., Kong, L.: Compositional exemplars for in-context learning. In: ICML. pp. 39818–39833 (2023) 92. Zhao, X., Stamm, M.C.: Computationally efficient demosaicing filter estimation for forensic camera model identification. In: ICIP. pp. 151–155 (2016) 93. Zheng, C., Lin, C., Zhao, Z., Wang, H., Guo, X., Liu, S., Shen, C.: Breaking semantic artifacts for generalized AI-generated image detection. In: NeurIPS (2024) 94. Zheng, L., Chiang, W.L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Lin, Z., Li, Z., Li, D., Xing, E.P., et al.: Judging LLM-as-a-judge with MT-Bench and chatbot arena. In: NeurIPS (2023) 95. Zhu, M., Chen, H., Yan, Q., Huang, X., Lin, G., Li, W., Chen, Z., Hu, H., Hu, J., Wang, Y.: GenImage: A million-scale benchmark for detecting AI-generated image. In: NeurIPS (2023) Forensic Knowledge Graphs 1
+
+# Trustworthy Image Authentication using Forensic Knowledge Graphs 
+
+## Supplementary Material 
+
+Page Appendix Title 
+
+1 – Taxonomy of Competing Approaches 1 A Formal Ontology Definitions 6 B Backbone Architecture Details 9 C FRPN Architecture Details 13 D Forensic Task Expert Reasoner 16 E FKG-50K Dataset Details 19 F VLM Prompts & Response Schema 22 G Computational Costs & ICR Convergence 24 H Qualitative Examples 
+
+## Taxonomy of Competing Approaches 
+
+Tab. 7 categorizes the competing methods evaluated in the main paper by their authentication capabilities, forgery-type coverage, and whether they leverage signal-level forensic evidence. Our FKG is the only system that combines all four authentication capabilities, generalizes across all forgery types, and grounds its decisions in forensic microstructures rather than visual heuristics. 
+
+## A Formal Ontology Definitions 
+
+This appendix provides the complete formal specification of the Forensic Knowl-edge Graph (FKG) ontology introduced in Sec. 3. The ontology follows standard knowledge-graph design principles [40] and specifies the classes, object proper-ties, datatype properties, and structural axioms governing valid forensic reason-ing structures. The ontology adopts open-world semantics (OWA) and a non-unique-name assumption (NUNA): unobserved relations are treated as unknown rather than false, and distinct nodes may refer to the same real-world entity. 
+
+A.1 Class Hierarchy 
+
+The FKG defines a set of disjoint and hierarchically organized classes. Each class may have subclasses and individuals (entities). Each Image must contain at least one Region, and all regions belonging to an image must together cover its entire pixel domain without overlap. 2 T. Nguyen et al. 
+
+Table 7: Categorization of image authentication approaches by capabilities, forgery coverage, and evidence type. é = no ability or poor performance, è = partial or limited, Ë = capable. 
+
+Method Authentication Capabilities Properties 
+
+Approach 
+
+Detect Forgery Type ID Localize Explain All Forg. Types Forensic Evidence 
+
+Splicing/Editing Detection & Localization Systems 
+
+CAT-Net [46] Ë é Ë é é Ë
+
+JPEG artifact (DCT) dual-stream. No type classification, no explanation, splicing only TruFor [36] Ë é Ë é é Ë
+
+Noiseprint++ noise-RGB transformer. No type classification, no explanation, no AI-generated MVSS-Net [19] Ë é Ë é é Ë
+
+Multi-scale noise + boundary supervision. No type classification, no explanation, no AI-generated HiFi-IFDL [38] Ë é Ë é é Ë
+
+Hierarchical multi-branch learning. No type classification, no explanation, no AI-generated 
+
+AI-Generated Image Detection Systems 
+
+NPR [78] Ë é é é é Ë
+
+Neighboring pixel relationships. Binary only, no localization, no explanation, AI-generated only UFD [60] Ë é é é é é
+
+CLIP embedding distances. Binary only, no localization, no explanation, no forensic features DE-FAKE [73] Ë é é é é é
+
+CLIP + BLIP embeddings. Binary only, no localization, no explanation, no forensic features 
+
+Fine-tuned Vision-Language Models 
+
+FakeShield [88] Ë é è è é é
+
+Forgery-tuned VLM. Visual heuristics, not forensic microstructures ForgeryGPT [50] Ë é è è é é Face-forgery-tuned VLM. Visual cues only, limited to face domain 
+
+General-Purpose Vision-Language Models 
+
+GPT-5 [64] è è è è è é
+
+Visual/semantic reasoning only. No forensic training, no signal-level evidence. Justifications are visual speculation, not verifiable forensic facts Sonnet 4 [3] è è è è è é
+
+Gemini 2.0 [33] è è è è è é
+
+Qwen3 VL [5] è è è è è é
+
+Gemma 3 [31] è è è è è é
+
+Llama 4 Scout [55] è è è è è é
+
+Nemotron Nano [22] è è è è è é
+
+FKG (Ours) Ë Ë Ë Ë Ë Ë
+
+Self-supervised backbone, FRPN, MoE task experts, ontology reasoning, ICR-optimized VLM justification 
+
+A.2 Object Properties 
+
+Object properties define typed relations between classes. Each property has a domain, range, and optional cardinality constraint. All object properties are functional in the forward direction unless otherwise stated. 
+
+A.3 Datatype Properties 
+
+Datatype properties assign scalar, string, or structured values to class instances. Forensic Knowledge Graphs 3
+
+Table 8: FKG ontology class hierarchy.                        
+
+> Superclass Subclass Description
+> Image –Top-level container for the image under analysis. Region –Non-overlapping pixel subset; atomic unit of forensic reasoning. Source RealSource, SyntheticSource Origin of pixel generation. RealSource CameraModel Physical capture device ( e.g ., DSLR, phone). SyntheticSource AIGenerator AI model producing the region ( e.g ., diffusion, GAN). Post-Processing NoPostProc, Resampling, Gaus-sianBlur, GaussianNoise, Sharpen-ing Non-semantic transformations applied after generation. Parameter –Stores an operation’s estimated param-eter(s) as key-value nodes. Compression Uncompressed, LastCompressed, ReCompressed Compression or recompression arti-facts. Content –Semantic scene elements: objectedness and object description.
+
+A.4 Structural Axioms 
+
+The ontology enforces structural axioms that guarantee internal consistency and encode known causal relationships in image formation. 
+
+Axiom 1 — Region Partition Constraint. Every image is decomposed into a finite, non-overlapping set of regions whose union covers the entire pixel lat-tice. This enforces that forensic reasoning operates on complete, non-redundant spatial partitions. 
+
+∀I, [
+
+> r∈Regions (I)
+
+Pixels (r) = Pixels (I), ∀i̸ = j, Pixels (ri) ∩ Pixels (rj ) = ∅.
+
+Axiom 2 — Functional Source Attribution. Each region is generated by exactly one source, ensuring that every pixel subset has a unique origin hypoth-esis. 
+
+∀r : Region , ∃! s : Source , produced_by (r, s ).
+
+Axiom 3 — Mutual Exclusivity of Source Types. A region cannot simul-taneously originate from both a real and synthetic source. 
+
+∀s : Source , ¬ instanceOf (s, RealSource ) ∧ instanceOf (s, SyntheticSource ).
+
+Axiom 4 — Causal Ordering. Post-processing and compression follow the causal direction of real imaging processes. Compression is modeled as the final operation in the chain. 4 T. Nguyen et al. 
+
+Table 9: FKG ontology object properties. 
+
+Property Domain Range Cardinality / Semantics 
+
+contained_in Region Image Each region belongs to exactly one im-age. 
+
+produced_by Region Source Each region is generated by exactly one source. 
+
+modified_by Region Post-Processing Optional; a region may have 0 or ≥1post-processing ops. 
+
+compress_by Region Compression Optional; a region may have 0 or 1 com-pression node. 
+
+depict Region Content Each region depicts exactly one content node. 
+
+hasParameter Post-Processing Parameter One-to-many; connects an operation to its parameters. 
+
+hasNext Post-Processing Post-Processing Optional; defines ordering for sequen-tial operations. 
+
+Table 10: FKG ontology datatype properties.                                  
+
+> Property Domain Type Example / Semantics
+> hasConfidence Source float ∈[0 ,1] Confidence of source attribution
+> hasCameraModel CameraModel string e.g ., “Canon EOS R6”
+> hasGeneratorModel AIGenerator string e.g ., “Stable Diffusion XL”
+> hasParameterName Parameter string e.g ., “sigma”, “scaleFactor”
+> hasParameterValue Parameter float / structured Numeric or tuple value
+> hasCompressionAlgorithm LastCompressed string e.g ., “JPEG”, “WebP”
+> hasCompressionFactor LastCompressed float e.g ., JPEG quality factor
+> hasReCompressed ReCompressed boolean True if recompression detected
+> hasObjectedness Content boolean True if region contains a salient object
+> hasObjectDescription Content string e.g ., “truck”, “person”
+
+∀r, s, m, c : produced_by (r, s ) ∧ modified_by (r, m )
+
+∧ compress_by (r, c ) ⇒ s ≺ m ≺ c. 
+
+A.5 Example Subgraph Schemas 
+
+We present three canonical instantiations of the ontology corresponding to dis-tinct forensic scenarios. 
+
+1. Authentic (Camera-Captured) Image. 
+
+r1 : Region |-- produced_by -> s1 : RealSource | \-- hasCameraModel = "Canon EOS R6" |-- modified_by -> m1 : NoPostProc Forensic Knowledge Graphs 5
+
+|-- compress_by -> c1 : LastCompressed | |-- hasCompressionAlgorithm = "JPEG" | \-- hasCompressionFactor = 0.9 |-- depict -> d1 : Content | |-- hasObjectedness = True | \-- hasObjectDescription = "landscape" \-- contained_in -> I : Image 
+
+2. Fully Synthetic Image. 
+
+r1 : Region |-- produced_by -> s1 : SyntheticSource | \-- hasGeneratorModel = "SDXL" |-- modified_by -> m1 : NoPostProc |-- compress_by -> c1 : LastCompressed | |-- hasCompressionAlgorithm = "WebP" | \-- hasCompressionFactor = 0.8 |-- depict -> d1 : Content | |-- hasObjectedness = True | \-- hasObjectDescription = "person" \-- contained_in -> I : Image 
+
+3. Locally Manipulated Image (AI-editing + Blur). 
+
+r1 : Region (authentic background) |-- produced_by -> s1 : RealSource | \-- hasCameraModel = "Nikon Coolpix S33" |-- modified_by -> m1 : NoPostProc |-- compress_by -> c1 : ReCompressed | \-- hasReCompressed = True |-- depict -> d1 : Content | |-- hasObjectedness = False | \-- hasObjectDescription = "background" \-- contained_in -> I : Image r2 : Region (AI-edited object) |-- produced_by -> s2 : SyntheticSource | \-- hasGeneratorModel = "FLUX" |-- modified_by -> m2 : GaussianBlur | \-- hasParameter -> p1 : Parameter | |-- hasParameterName = "sigma" | \-- hasParameterValue = 2.0 |-- compress_by -> c2 : LastCompressed | \-- hasCompressionAlgorithm = "JPEG" |-- depict -> d2 : Content | |-- hasObjectedness = True | \-- hasObjectDescription = "truck" \-- contained_in -> I : Image 6 T. Nguyen et al.  
+
+> Fig. 7: Lightweight Forensic Backbone Network architecture.
+
+## B Backbone Architecture Details 
+
+This appendix provides the full architecture and training details of the Forensic Backbone Network described in Sec. 4. The backbone introduces two key contri-butions over prior forensic CNNs: (1) a fully differentiable constrained convolu-tional layer with depthwise grouped convolution, and (2) auxiliary regularization losses that improve forensic residual quality and filter diversity. 
+
+B.1 Differentiable Constrained Convolution 
+
+Prior forensic CNNs [9, 10] use a constrained convolutional layer to suppress image content and isolate forensic residuals. The original formulation applies the constraint as a post-hoc weight projection after each gradient step, breaking the computational graph and preventing gradient flow through the constraint itself. We reformulate this as a fully differentiable operation applied within the forward pass, enabling end-to-end training with proper gradient propagation through the constraint. Our constrained layer uses depthwise grouped convolution with M filters per input channel ( 3M total for RGB), each with a K ×K kernel subject to two con-straints: (1) the center weight is always zero, and (2) all non-center weights sum to one. These constraints force each filter to predict a pixel from its neighbors, and the forensic residual is the difference between the input and this prediction. The full procedure is described in Algorithm 1. Because all operations in Algorithm 1 (centering, scaling, zeroing) are alge-braic and differentiable, gradients flow through the constraint during backpropa-gation. The depthwise grouped structure is also forensically motivated: different color channels carry different forensic traces ( e.g ., the green channel in Bayer-pattern sensors has twice the spatial sampling density, producing distinct noise characteristics from red and blue), and depthwise convolution preserves these channel-specific signatures rather than mixing them prematurely. With M = 4 
+
+and K = 5 , this produces 12 residual feature maps from an RGB input. 
+
+B.2 Full Architecture Forensic Knowledge Graphs 7
+
+Algorithm 1 Differentiable Constrained Convolution (Forward Pass) 
+
+Require: Input image x ∈ RC×H×W , learnable weights W ∈ RCM ×1×K×K
+
+Ensure: Forensic residual r ∈ RCM ×H×W
+
+1: // Apply constraints (differentiable) 
+
+2: Reshape W to W′ ∈ RCM ×K2
+
+3: Center and normalize: w′ 
+
+> ij
+
+← w′ 
+
+> ij
+
+− ¯w′ 
+
+> i
+
++ 1
+
+> K2−1
+
+4: Compute scaling: si ← P  
+
+> j̸=center
+
+w′
+
+> ij
+
+5: Normalize non-center: w′ 
+
+> ij
+
+← w′ 
+
+> ij
+
+/s i
+
+6: Zero center: w′ 
+
+> i, center
+
+← 0
+
+7: Reshape back to ˆW ∈ RCM ×1×K×K
+
+8: // Depthwise grouped convolution 
+
+9: xpad ← ReflectPad (x, K// 2) 
+
+10: ˆx ← Conv2d (xpad , ˆW, groups = C) // content prediction 
+
+11: // Compute forensic residual 
+
+12: xrep ← RepeatInterleave (x, M, dim = 1) 
+
+13: r ← xrep − ˆx // residual = input − prediction 
+
+14: return r
+
+Table 11: Backbone architecture (128 ×128 RGB input).                                         
+
+> Stage Layer Channels Kernel Notes
+> 1ConstrainedConv2d 3→12 5×5depthwise, M=4 2a Conv+BN+SiLU+Pool 12 →96 7×7stride 2, valid 2b Conv+BN+SiLU+Pool 96 →64 5×5stride 1, same 2c Conv+BN+SiLU+Pool 64 →64 5×5stride 1, same 2d Conv+BN+SiLU+Pool 64 →128 1×1stride 1, same 3a Linear+GELU 512 →256 ––3b Linear+GELU 256 →512 ––3c Linear+GELU 512 →512 ––4ℓ2norm 512 –unit embedding
+
+The backbone takes 128 ×128 RGB patches and produces ℓ2-normalized 512-dimensional em-beddings (Tab. 11). The con-strained layer produces 12 foren-sic residual maps (Stage 1), which are processed by four convolu-tional blocks each consisting of Conv2d, BatchNorm2d, SiLU ac-tivation, and MaxPool2d(3, 2) (Stage 2). After the final block, features are flattened (2 ×2×128 = 512) and passed through three FC layers with GELU activations (Stage 3). The output is 
+
+ℓ2-normalized to produce zi ∈ R512 .
+
+B.3 Auxiliary Training Losses 
+
+In addition to the pairwise similarity and contrastive losses described in Sec. 4, we introduce two optional auxiliary regularization terms that improve training convergence and forensic residual quality. The backbone can be trained without these terms, but we find they accelerate convergence and produce higher-quality forensic residuals. 
+
+Residual RMSE Loss. This term regularizes the constrained convolutional layer by encouraging each filter to accurately predict image content from its neighbors. Minimizing the RMSE between the input and the constrained pre-diction pushes the filters toward better content estimation, so that the resulting 8 T. Nguyen et al. 
+
+residual isolates forensic microstructures rather than retaining image content. Without this term, the constrained filters can converge to poor predictions whose residuals are dominated by edges and texture rather than forensic traces. The loss is: 
+
+Lres = γres · RMSE (xrep , ˆx)
+
+where γres controls the regularization strength. 
+
+Table 12: Backbone training hy-perparameters.                          
+
+> Hyperparameter Value
+> Optimizer AdamW Learning rate 1×10 −3
+> Weight decay 1×10 −2
+> LR schedule 0.8 / 2 ep Minimum LR 1×10 −6
+> Batch size 64 images Epochs 30
+> Loss weights
+> Pairwise α, β 10.0, 10.0 Contrastive λ0.1 Temperature τ0.07 Residual γres 25.5 Spectral γdet 0.1 Spectral γsv 0.05
+
+Spectral Diversity Loss. This term encour-ages the learned constrained filters to capture diverse forensic features by penalizing singu-lar value concentration in the filter weight matrix. Forensic fingerprints comprise mul-tiple independent components (sensor noise patterns, demosaicing artifacts, compression traces), and each constrained filter should spe-cialize in a different component. Without this term, multiple filters can converge to simi-lar solutions, reducing the effective number of independent forensic features. The loss com-bines a log-determinant term (encouraging spread across all singular values) with a sin-gular value penalty (discouraging any single dominant direction): 
+
+Lspec = −γdet · log det( W⊤W + ϵI) + γsv · ∥ σ1(W)∥
+
+where σ1 is the largest singular value. The full backbone training loss is: 
+
+LB = Lpairwise + λLcontrastive + Lres + Lspec 
+
+B.4 Pretraining Dataset 
+
+The backbone is pretrained exclusively on authentic, camera-captured photographs with no synthetic or manipulated images. The training corpus, MIDB–Unsplash– Pexels (MUP), is assembled from three sources: 
+
+Table 13: Pretraining corpus (au-thentic images only). 
+
+Source Images 
+
+MIDB 21,605 Pexels [66] 86,309 Unsplash [81] 202,312 
+
+Total 310,226 
+
+All images are filtered to ensure they are camera-original with reliable EXIF metadata (camera make/model, color pipeline, compres-sion parameters). The final corpus spans over 350 unique camera models across 20 manu-facturers. FKG-50K (Sec. E) is built from a curated 72-model subset of this corpus with fully trusted provenance, while the backbone trains on the full corpus to maximize forensic fingerprint diversity. No forgery labels, source annotations, or data augmentation are used during pretraining, as common augmentations ( e.g ., cropping, resizing, Forensic Knowledge Graphs 9 
+
+> Fig. 8: Forensic Region Proposal Network (FRPN) architecture.
+
+recompression) can destroy or alter the forensic traces the backbone aims to capture. 
+
+B.5 Patch Sampling 
+
+Each training image is cropped to at most 1920 ×1920 pixels (aligned to 16px boundaries) and sampled into 128 ×128 patches using a center-neighbor strategy: 56 center locations are randomly selected per image, and for each center, 3 neighboring patches are sampled from the 8 adjacent positions (up, down, left, right, and four diagonals) at a one-patch-size offset. This yields 168 patches per image. Patches from the same image share a forensic fingerprint ( Yij = 1 ), while patches from different images do not ( Yij = 0 ), providing the self-supervised training signal. The pairwise weights wij in the backbone loss (Sec. 4) are set using α and β: positive pairs are weighted by α and negative pairs by β. All training hyperparameters are listed in Tab. 12. 
+
+## C FRPN Architecture Details 
+
+This appendix provides the full architecture and training details of the Forensic Region Proposal Network (FRPN) described in Sec. 4. The FRPN addresses a fundamental challenge unique to image forensics: partitioning an image into regions defined not by visual boundaries but by invisible statistical properties. Existing region proposal and segmentation methods [39, 45] operate on visual features and cannot detect forensic region boundaries, because a spliced region may appear visually seamless yet carry an entirely different forensic fingerprint. We introduce three novel design choices to solve this: (1) a Hybrid Graph Atten-tion Transformer that alternates global self-attention with local graph attention for robust forensic clustering, (2) a suite of training stability mechanisms (Lay-erScale, output-level residual blend, near-identity initialization) that preserve the pretrained backbone signal while the FRPN learns to refine it, and (3) a multi-objective loss combining focal weighting, residual regularization, and hard boundary cropping for precise forensic region discovery. 10 T. Nguyen et al. 
+
+Algorithm 2 Hybrid Graph Attention Transformer (FRPN Forward Pass) 
+
+Require: Backbone embeddings Z ∈ RN ×d, patch coordinates p ∈ [0 , 1] N ×2
+
+Ensure: Refined embeddings ˜Z, similarity S, cluster logits C
+
+1: Z(0) ← ℓ2-normalize (Z); Zinput ← Z(0) 
+
+2: for l = 1 to L do 
+
+3: // Local graph attention — suppress false alarms 
+
+4: Ni ← k-NN (Z(2 l−2) ) for each patch i // dynamic neighborhood 
+
+5: Z(2 l−1) ← GAT (Z(2 l−2) , N ) // additive-score, 4 heads 
+
+6: // Global self-attention — capture long-range forensic consistency 
+
+7: Z(2 l) ← MHA (Z(2 l−1) , p) // 2D RoPE on Q, K 
+
+8: end for 
+
+9: // Output-level residual blend — preserve backbone signal 
+
+10: ˜Z ← Zinput + γ · (Z(2 L) − Zinput ) // γ learnable, init 0.01 
+
+11: ˜Z ← ℓ2-normalize ( ˜Z)
+
+12: S ← ˜Z ˜Z⊤ // pairwise cosine similarity 
+
+13: C ← Linear ( ˜Z) // cluster assignment logits 
+
+14: return ˜Z, S, C 
+
+C.1 Hybrid Graph Attention Transformer 
+
+Table 14: FRPN architecture summary. 
+
+Parameter Value 
+
+Embedding dim 512 Alternating layers L 8 (16 blocks total) Global attention heads 8 Local attention heads 4MLP ratio 0.5 (hidden = 256) 
+
+k-NN ratio ρ 0.1 LayerScale init 1 × 10 −2
+
+Output blend γ0 0.01 Max regions 2Patch size / stride 128 / 64 
+
+The core insight behind the FRPN is that partitioning an image into foren-sically homogeneous regions requires comparing every patch against every other, the all-pairs operation that self-attention naturally computes. How-ever, as discussed in Sec. 4, global self-attention suffers from attention dilution: accumulated contributions from distant, unrelated patches cause forensically distinct regions to appear connected. We address this with anovel hybrid architecture that alternates two complementary attention mecha-nisms in L layer pairs, each serving a distinct forensic purpose. The full forward pass is described in Algorithm 2. 
+
+Global Self-Attention with 2D RoPE. The global attention layers use stan-dard multi-head self-attention (8 heads, head dimension 64) augmented with 2D Rotary Position Embeddings (RoPE). Given normalized patch coordinates 
+
+(y, x ) ∈ [0 , 1] 2, the RoPE module computes sinusoidal frequencies along each spatial axis and applies rotary transforms to the query and key vectors. Un-like learned position embeddings, RoPE naturally generalizes to variable-sized images at inference time without retraining. This is forensically motivated: ma-nipulation boundaries are inherently spatial, and encoding spatial relationships directly into attention allows the model to distinguish between “same fingerprint, Forensic Knowledge Graphs 11 
+
+same location” (strong evidence of a common region) and “same fingerprint, dis-tant location” (weaker but still informative). 
+
+Local Graph Attention with Dynamic k-NN. The local attention layers implement additive-score GAT [83] with dynamic k-nearest neighbors (4 heads, head dimension 128). This mechanism directly addresses the attention dilution problem: by restricting each patch’s attention to its k most forensically similar neighbors, irrelevant contributions from distant patches are eliminated rather than merely downweighted. The neighborhood size is k = max(8 , ⌊ρ · N ⌋) with 
+
+ρ = 0 .1, ensuring a minimum of 8 neighbors regardless of image size. Critically, neighbors are recomputed at each forward pass based on cosine similarity of the current embeddings, making the graph structure adaptive: as the embed-dings evolve through the layers and forensic clusters become more distinct, the neighborhoods tighten around true forensic neighbors. Self-loops are excluded to prevent trivial self-reinforcement. 
+
+Why Alternating Attention. The alternation of local and global layers is not arbitrary but follows a specific forensic reasoning pattern. Local graph attention first refines each patch’s representation using only its most forensically simi-lar neighbors, suppressing noise from unrelated patches and sharpening cluster boundaries. Global self-attention then propagates this refined information across the entire image, connecting distant patches that belong to the same forensic re-gion ( e.g ., two halves of an authentic background separated by a spliced object). This local-then-global pattern repeats L = 8 times, progressively building foren-sic consensus from local evidence to global structure. 
+
+Cluster Assignment Head. The refined, ℓ2-normalized embeddings are passed through a single linear layer that outputs logits over Rmax clusters. Currently 
+
+Rmax = 2 (authentic region vs. manipulated region), though the architecture supports any value. Pairwise cosine similarity is also computed from the refined embeddings for the pairwise similarity loss. 
+
+C.2 Training Stability 
+
+The FRPN operates on top of pretrained backbone embeddings that already carry forensic signal. A naive transformer could overwhelm this signal in early training, before meaningful attention patterns have been learned. We introduce three mechanisms to ensure the FRPN begins as a near-identity function and gradually learns to refine the backbone’s output. 
+
+LayerScale Attention Block. Each attention block follows the pre-norm trans-former design with LayerScale [80]. Given input x, one block computes: 
+
+x ← x + γattn ⊙ Attn (LN (x)) , x ← x + γmlp ⊙ MLP (LN (x)) ,
+
+where γattn , γmlp ∈ Rd are learnable per-channel scaling vectors initialized to 
+
+10 −2, and LN is LayerNorm. This prevents the skip connection from being over-whelmed early in training, when attention weights are essentially random. The MLP uses a single hidden layer with GELU activation and a hidden dimension 12 T. Nguyen et al. 
+
+of 0.5 × 512 = 256 . The last MLP layer is initialized with small weights (Xavier gain = 0 .01 ), further ensuring each block is near-identity at initialization. 
+
+Output-Level Residual Blend. After all attention blocks, the FRPN blends its output with the original backbone embeddings via a learnable scalar γ (ini-tialized to 0.01, clamped to [0 , 1] ): 
+
+˜Z = ℓ2-norm  Zinput + γ · (ZFRPN − Zinput )
+
+At initialization γ = 0 .01 , so downstream components operate on essentially the raw backbone embeddings. As training progresses, γ increases to allow the FRPN to contribute more strongly. Unlike standard per-block residual connections, this operates at the output level of the entire network, providing a global safety valve that preserves the backbone’s forensic signal. 
+
+C.3 Training Losses 
+
+The FRPN loss extends the pairwise + Hungarian formulation from Sec. 4 with two optional auxiliary terms designed for forensic region discovery. The core focal MSE and Hungarian losses are sufficient for training, but we find these additional terms improve boundary precision and training stability: 
+
+LF = LMSE + λHLHungarian + λres Lres + λcrop Lcrop 
+
+– Focal MSE (LMSE ): The pairwise similarity loss from the main paper, en-hanced with focal weighting: 
+
+LMSE = 1
+
+|P| 2
+
+X
+
+> i,j
+
+wij · | Yij − ˜z⊤ 
+
+> i
+
+˜zj |γij · (Yij − ˜z⊤ 
+
+> i
+
+˜zj )2
+
+where γij = γpos if Yij = 1 and γneg otherwise. We use γpos = 1 .0 and γneg =2.0, assigning higher weight to negative pairs. This addresses class imbalance in forensic clustering, where manipulated regions are typically small relative to the authentic background. Focal weighting forces the model to focus on hard negative pairs where forensically distinct patches appear similar. 
+
+– Hungarian matching (LHungarian ): Combines dice and binary cross-entropy losses between predicted cluster assignments and ground-truth region labels after optimal Hungarian matching, as described in Sec. 4. Hungarian match-ing is necessary because predicted cluster IDs are arbitrary and do not cor-respond to ground-truth labels. 
+
+– Residual regularization (Lres ): Constrains the FRPN’s output embeddings to remain close to the backbone embeddings, providing a continuous gradi-ent signal that complements the output-level residual blend and prevents catastrophic drift from the pretrained representations. 
+
+– Hard boundary crop (Lcrop ): Applies an additional loss on 512 ×512 crops centered on manipulation boundaries, forcing the model to resolve fine-grained boundary transitions at a scale where they are not diluted by the overwhelm-ing majority of authentic patches. Forensic Knowledge Graphs 13  
+
+> Fig. 9: Forensic Task Expert Reasoner (FTER) architecture.
+
+C.4 Training Configuration  
+
+> Table 15: FRPN training hyperparams.
+
+Hyperparameter Value 
+
+Optimizer AdamW Learning rate 2 × 10 −4
+
+Weight decay 1 × 10 −2
+
+LR schedule 0.8 / 2 ep Batch size 16 images Epochs 30 Backbone Frozen 
+
+Loss weights 
+
+Focal MSE 1.0 Hungarian λH 0.05 Residual λres 0.1 Crop λcrop 1.0 The FRPN is trained on manipulated images from FKG-50K with known ground-truth tampering masks. The backbone is frozen during FRPN train-ing, ensuring the pretrained forensic em-beddings remain fixed while the FRPN learns to cluster them. This sequen-tial training strategy (backbone first, then FRPN) is deliberate: the back-bone’s self-supervised forensic finger-prints provide a stable foundation, and the FRPN’s role is to discover structure within these embeddings rather than to alter them. Images are divided into 128 ×128 patches with stride 64 (50% overlap), and all patches from a single image form one training sample. All hyperparameters are listed in Tab. 15. 
+
+## D Forensic Task Expert Reasoner 
+
+This appendix provides the full architecture and training details of the com-ponent referred to as “Forensic Task Expert Networks” and “Transformer Rea-soning Module” in Sec. 4. We collectively name this component the Forensic Task Expert Reasoner (FTER). Given the FRPN’s forensic regions, the FTER determines what happened to each region by jointly predicting source identity, post-processing operations, and compression history. Rather than using inde-pendent MLPs per task, we introduce a Sparse Mixture of Experts (MoE) ar-chitecture that allows the model to dynamically allocate capacity across forensic tasks, combined with a transformer reasoning module that models cross-task dependencies. 14 T. Nguyen et al. 
+
+D.1 Architecture           
+
+> Table 16: FTER architecture summary.
+> Parameter Value
+> Input dim 512 Routed experts 24 Active experts (top-K) 6 Expert hidden dim 256 Shared expert 1 (always-on) Reasoning layers 2Reasoning heads 8Task head hidden dim 128 Task heads 14
+
+The FTER takes region-level embed-dings ψk (average-pooled from the FRPN’s refined patch embeddings for each region k) and produces foren-sic attribute predictions that populate the FKG. The architecture has four stages (Tab. 16). 
+
+Sparse Mixture of Experts. The core of the FTER is a Sparse MoE block with 24 routed experts and one shared always-on expert. Each expert is a SwiGLU MLP (gate projection, up projection, then down projection with SiLU gating). A learned router selects the top-K = 6 experts per region embedding via softmax gating, and routing weights are renormalized to sum to one. The shared expert processes every region regardless of routing decisions, with its contribution modulated by a learned sigmoid gate. The final output combines the routed expert outputs, the shared expert output, and a residual connection from the input. Given a region embedding ψk, the router produces softmax probabilities over all M experts and selects the top-K. Let gi denote the renormalized routing weight for selected expert Ei, Es the shared expert, and σs its learned sigmoid gate. The MoE output is: 
+
+ˆψk = ψk + X
+
+> i∈top-K
+
+gi · Ei(ψk) + σs(ψk) · Es(ψk)
+
+This design is forensically motivated: different forensic tasks require different feature transformations (detecting camera sensor noise is fundamentally different from identifying AI generation artifacts), and sparse routing allows each region to activate only the experts relevant to its forensic profile. The shared expert captures common forensic knowledge that applies across all tasks, such as general compression artifact patterns. 
+
+Task Projection. The shared MoE output ˆψk is projected into T = 14 task-specific embeddings ξ(t) 
+
+> k
+
+= Wt ˆψk, one per forensic task. This projection allows each task to extract the features most relevant to its prediction from the shared MoE representation. 
+
+Transformer Reasoning Module. The T task-specific embeddings are pro-cessed by 2 transformer self-attention layers (8 heads each) that model cross-task dependencies. Each task embedding attends to all other task embeddings, allow-ing forensic attributes to inform one another: compression artifacts inform source identification (recompression suggests manipulation), post-processing traces con-strain the set of plausible sources, and the presence of AI-generated content changes the interpretation of all other attributes. The reasoning module allows Forensic Knowledge Graphs 15 
+
+these dependencies to be learned jointly rather than requiring explicit hand-crafted rules, producing refined task embeddings ˜ξ(t) 
+
+> k
+
+.
+
+Task Heads. The refined task embeddings ˜ξ(t) 
+
+> k
+
+are fed to task-specific heads, each a two-layer MLP (hidden dimension 128) producing either classification logits or regression outputs. The 14 tasks are organized by the FKG ontology relations they populate: 
+
+– produced_by : AI generation detector (binary), camera model ID (classifica-tion over ∼100 models), AI generator ID (classification over 24 generators) 
+
+– modified_by : blur, resize, Gaussian noise, and sharpening detectors (binary each) with corresponding parameter regressors (blur σ, scale factor, noise σ,sharpening percent) 
+
+– compress_by : compression detector (binary), JPEG quality regressor, recom-pression detector (binary) 
+
+D.2 Training  
+
+> Table 17: FTER training hyperparam-eters.
+
+Hyperparameter Value 
+
+Optimizer AdamW Learning rate 1 × 10 −3
+
+Weight decay 1 × 10 −2
+
+LR schedule 0.8 / 4 ep Minimum LR 1 × 10 −6
+
+Batch size 256 patches Epochs 100 Backbone, FRPN Frozen 
+
+Loss weights 
+
+Load balancing 0.001 The FTER is trained on the full MUP corpus (real images) combined with synthetic images, with the backbone and FRPN frozen. Each task head is trained with cross-entropy (classifica-tion) or MSE (regression). A key design choice handles the asymmetry between real and synthetic samples: real images have camera model labels but no gener-ator labels, while synthetic images have generator labels but no camera labels. Rather than training separate models, we use NaN-padding: missing labels are set to NaN, and the per-task loss ignores NaN entries. This allows mixed batches of real and synthetic samples, enabling the shared MoE experts and reasoning module to learn joint representations across both domains. An auxiliary load balancing loss [27] encourages balanced expert utilization, preventing expert collapse. Let fj be the fraction of tokens routed to expert j
+
+and pj the mean router probability assigned to expert j, both computed over a batch. The loss is: 
+
+Lbal = M ·
+
+> M
+
+X
+
+> j=1
+
+fj · pj
+
+where M is the number of routed experts. This product is minimized when both token assignments and routing probabilities are uniform across experts. All hyperparameters are listed in Tab. 17. The complete training pipeline is sequential: backbone (Sec. B) → FRPN (Sec. C) → FTER. Each stage freezes the preceding components, ensuring that downstream learning does not corrupt the representations learned upstream. 16 T. Nguyen et al. 
+
+## E FKG-50K Dataset Details 
+
+This appendix provides the full construction details of the FKG-50K dataset introduced in Sec. 6. FKG-50K contains 50,000 images with complete provenance and manipulation histories encoded as ground-truth Forensic Knowledge Graphs. The dataset is constructed through an automated data engine that generates four major classes of inauthentic imagery, each paired with its pristine camera-original counterpart and a fully annotated FKG. 
+
+E.1 Source Corpus and Metadata Extraction 
+
+The data engine begins with a media pool of pristine, unedited photographs captured by real cameras. Images are sourced from Unsplash [81], Pexels [66], and crowdsourced collections, filtered to ensure they are camera-original ( i.e ., not previously edited or recompressed by social media platforms). Each image is required to contain reliable EXIF fields describing: 
+
+– Camera make and model ( e.g ., Nikon Coolpix S33, Canon EOS R6) 
+
+– Color pipeline and white balance parameters 
+
+– Compression format and quality factor 
+
+– Image dimensions and orientation Images lacking any of these fields are discarded, as they cannot provide the source-level forensic fingerprint the FKG ontology requires. FKG-50K is built from a curated subset of a larger pretraining corpus (described in Sec. B) that contains over 350 camera models. For FKG-50K, we select images from 72 cam-era models across 17 manufacturers whose provenance is fully trusted, including smartphones (Apple, Samsung, LG, HTC, Huawei, Motorola, Nokia, OnePlus, Xiaomi, BlackBerry), DSLRs and mirrorless cameras (Canon, Nikon, Sony, Fu-jifilm, Olympus), and compact cameras (Kodak, Panasonic, Pentax). Each re-tained image is additionally processed to extract a detailed scene caption using a VLM, specifying all objects, attributes, and spatial relationships present. This caption guides subsequent manipulation proposals to ensure semantic coherence. 
+
+E.2 Edit Proposal Generation 
+
+The core of the data engine is a proposal module that, given a target forgery type, samples a structured set of attributes describing how the forgery should be created. Proposals are generated in XML format by a VLM so they can be deterministically parsed and validated. Below we describe the proposal structure for each forgery type. 
+
+Splicing Proposals. For spliced images, the proposal specifies: (1) a host image, (2) a donor image from a different camera source, (3) the donor object to extract, and (4) the target location in the host image. The VLM is prompted with both images to select plausible objects and placements consistent with scene geometry. Using donors from different cameras ensures that the spliced region carries a distinct forensic fingerprint from the host. Forensic Knowledge Graphs 17 
+
+Traditional Editing Proposals. For traditional editing operations (blur, noise addition, sharpening, resampling), the proposal specifies: (1) the source image, (2) the object or region to edit, and (3) the editing operation type with param-eters. Semantic regions are selected by prompting the VLM with queries about salient objects, and operation types and parameters are sampled from a prede-fined library covering GaussianBlur ( σ ∈ [0 .5, 5.0] ), GaussianNoise ( σ ∈ [1 , 25] ), Sharpening (strength ∈ [0 .5, 3.0] ), and Resampling (scale ∈ [0 .5, 2.0] ). 
+
+Fully Synthetic Proposals. For fully synthetic images, the engine generates: (1) the original real image as reference, (2) the generation method (SDXL [67], FLUX [11], Midjourney v6 [56], or GPT-Image-1 [63]), and (3) positive and negative prompts derived from the detailed caption of the original image. This ensures the synthetic variant is semantically aligned with its real counterpart, making the detection task realistic. 
+
+AI-Editing Proposals. For AI-based editing, the proposal specifies: (1) the source image, (2) the editing model (FLUX-Kontex-1 [8] or SDXL-Inpaint [67]), (3) the object or region to edit, and (4) positive and negative editing prompts describing the intended modification (object replacement, insertion, or removal). 
+
+E.3 Mask Generation 
+
+For splicing, traditional editing, and AI-editing, the proposal is accompanied by a pixel-level mask specifying the edited region. The mask is generated by feeding the VLM-supplied region description into SAM 3 [15], which accepts text prompts directly and produces a segmentation mask aligned with the described object or region. Fully synthetic images do not require a mask because their entire content originates from a non-camera source. 
+
+E.4 Edit Execution 
+
+Given the proposal and editing mask, the engine constructs a complete edit specification and executes it: 
+
+– Splicing : The donor region is extracted from the donor image using the mask and composited into the host image at the specified location using Poisson blending for seamless boundaries. 
+
+– Traditional editing : The specified operation is applied to the masked region with the sampled parameters. 
+
+– Fully synthetic generation : The AI model generates a full-frame image conditioned on the prompts derived from the real image. 
+
+– AI editing : The masked region is modified via the specified AI inpaint-ing/editing model conditioned on the proposed prompts. Each output image is saved alongside its proposal metadata, mask, and com-pression parameters. 18 T. Nguyen et al. 
+
+E.5 Automated Verification 
+
+The engine performs a verification pass using a VLM to ensure that each gen-erated image is consistent with its proposal. For splicing, traditional editing, and AI-editing, the VLM checks that the edited region corresponds to the in-tended object and that the visual effect matches the specified operation. For fully synthetic images, the VLM verifies that the generated content is semantically aligned with the prompts. If verification fails, the proposal is discarded and a new one is automatically sampled. 
+
+E.6 Ground-Truth FKG Construction 
+
+For each image, the engine emits a complete ground-truth FKG conforming to the ontology defined in Sec. 3 and Sec. A. The FKG is constructed determinis-tically from the pipeline metadata: 
+
+– Region nodes : derived from the editing mask (manipulated vs. authentic regions). Authentic images have a single region. 
+
+– Source attribution : each region’s produced_by is set to the camera model (from EXIF) or AI generator (from the proposal). 
+
+– Post-processing : each region’s modified_by records the applied operation and parameters, or NoPostProc if unmodified. 
+
+– Compression : each region’s compress_by is set based on the image’s com-pression history. Authentic regions from previously compressed sources are marked as ReCompressed after manipulation. 
+
+– Content : each region’s depict records objectedness and object description from the VLM caption. This deterministic construction ensures that every ground-truth FKG is com-plete, machine-verifiable, and directly usable for evaluating FKG prediction ac-curacy ( e.g ., the perfect match metric in Sec. 8). 
+
+E.7 Dataset Composition               
+
+> Table 18: FKG-50K dataset com-position.
+> Category Train Test
+> Authentic 8,000 2,000 Splicing 8,000 2,000 Traditional Editing 8,000 2,000 AI Editing 8,000 2,000 Full Synthesis 8,000 2,000
+> Total 40,000 10,000
+
+The dataset is split into 40,000 training and 10,000 evaluation samples (Tab. 18), with each forgery type equally represented. The authentic subset serves as the negative class across all experiments. Each sample in-cludes the image, its ground-truth FKG, and the pixel-level manipulation mask (for non-authentic images). 
+
+Evaluation Protocol. Our system emits an FKG for any input image, so FKG-style ground-truth annotations are never required at test time. On out-of-distribution datasets, which provide only conventional labels, we simply score the predicted FKG attributes against whatever each dataset provides, such as tampering masks (for localization F1) or real/AI labels (for detection ACC/AUC). Forensic Knowledge Graphs 19 
+
+The fully synthetic subset draws from 24 AI generators spanning GANs (Pro-GAN, StyleGAN, StyleGAN2, StyleGAN3, BigGAN, CycleGAN, StarGAN, Pro-jectedGAN, GigaGAN, EG3D), diffusion models (Guided Diffusion, Latent Dif-fusion, Stable Diffusion 1.5, Stable Diffusion 3 Medium, SDXL, FLUX, GLIDE), and commercial systems (DALL-E 2, DALL-E 3, DALL-E Mini, Midjourney v6, GPT-Image-1). The AI-editing subset uses FLUX-Kontex-1 and SDXL-Inpaint. This diversity ensures that the dataset covers a broad range of generation archi-tectures and forensic fingerprint characteristics. 
+
+## F VLM Prompts & Response Schema 
+
+This appendix provides the full prompt templates and response schema refer-enced in Sec. 5 and Sec. 7. 
+
+F.1 FKG Interpretation Prompt 
+
+The following prompt is used to instruct the VLM to interpret a serialized FKG and produce a forensic report. The prompt consists of three components: task instructions, the serialized FKG triplets with Set-of-Mark references, and the response schema. 
+
+> You are a forensic image analyst. You are given an image with numbered region marks overlaid, along with a set of forensic analysis results encoded as subject-predicate-object triplets. Your task is to: 1. Determine whether the image is AUTHENTIC or MANIPULATED. 2. If manipulated, identify the type of manipulation (SPLICING, AI_EDITING, TRADITIONAL_EDITING, or FULL_SYNTHESIS). 3. Identify which regions are manipulated and what they depict. 4. Provide a forensic justification grounded ONLY in the provided triplets. Do NOT speculate beyond the evidence. Forensic evidence triplets: {serialized_fkg_triplets} Respond using the following XML schema EXACTLY.
+
+F.2 Response Schema 
+
+The VLM must produce its output in the following structured XML format, ensuring consistency and machine readability. 20 T. Nguyen et al. 
+
+<report> <summary> [1-2 sentence summary of the forensic findings.] </summary> <decision>AUTHENTIC | MANIPULATED</decision> <manipulation> <!-- Omitted if decision = AUTHENTIC --> <type>SPLICING | AI_EDITING | TRADITIONAL_EDITING | FULL_SYNTHESIS</type> <instances> <instance> <region>[Region mark number]</region> <object>[What the region depicts]</object> <source>[Source attribution, e.g., camera model or AI generator]</source> </instance> <!-- Additional instances as needed --> </instances> </manipulation> <justification> [Detailed forensic justification referencing specific triplets from the provided evidence. Each claim must cite the supporting triplet.] </justification> </report> 
+
+F.3 VLM Evaluation Prompts 
+
+For the competing VLM evaluations in Secs. 7.1 to 7.3, we use standardized prompts for each experiment to ensure fair comparison. All VLMs receive the same image and prompt. No forensic evidence or FKG triplets are provided to competing VLMs. 
+
+Experiment 1 — Detection. 
+
+Examine this image carefully. Is this image authentic (unaltered) or has it been manipulated/falsified in any way? This includes AI-generated content, splicing, editing, or any form of digital manipulation. Respond using the following XML schema EXACTLY: <report> <decision>AUTHENTIC | MANIPULATED</decision> </report> 
+
+Experiment 2 — Type Classification & Localization. 
+
+Without oracle access: Forensic Knowledge Graphs 21 
+
+Examine this image carefully. Determine: 1. Whether this image is authentic or manipulated. 2. If manipulated, classify the type as one of: SPLICING, AI_EDITING, TRADITIONAL_EDITING, FULL_SYNTHESIS. 3. Describe the location and content of any manipulated regions. Respond using the following XML schema EXACTLY: <report> <decision>AUTHENTIC | MANIPULATED</decision> <manipulation> <!-- Omit if AUTHENTIC --> <type>SPLICING | AI_EDITING | TRADITIONAL_EDITING | FULL_SYNTHESIS</type> <regions>[description of manipulated regions]</regions> </manipulation> </report> 
+
+With oracle access: 
+
+This image has been confirmed as MANIPULATED. Determine: 1. The type of manipulation: SPLICING, AI_EDITING, TRADITIONAL_EDITING, FULL_SYNTHESIS. 2. The location and content of the manipulated regions. Respond using the following XML schema EXACTLY: <report> <type>SPLICING | AI_EDITING | TRADITIONAL_EDITING | FULL_SYNTHESIS</type> <regions>[description of manipulated regions]</regions> </report> 
+
+Experiment 3 — Forensic Justification. 
+
+With oracle access (ground-truth labels provided): 
+
+This image has been confirmed as MANIPULATED. Manipulation type: {ground_truth_type} Manipulated regions: {ground_truth_regions} Provide a detailed forensic justification explaining what forensic evidence supports this conclusion, how the manipulated regions differ from authentic regions, and any compression, source, or processing inconsistencies. Be specific and reference concrete forensic traces. Respond using the following XML schema EXACTLY: <report> <justification> 22 T. Nguyen et al. 
+
+[Detailed forensic justification referencing specific evidence. Each claim must cite supporting traces.] </justification> </report> 
+
+## G Computational Costs & ICR Convergence 
+
+This appendix details the computational requirements for training and inference, and provides a convergence analysis for Iterative Context Refinement (ICR). 
+
+G.1 Model Sizes 
+
+Table 19: Parameter counts by component.       
+
+> Component Parameters
+> Backbone (MISLNet) 0.8M FRPN 7.4M FTER (MoE + task heads) 16.1M of which MoE 9.8M
+> Total (trainable) 24.3M
+
+Tab. 19 summarizes the parameter counts for each component of the FKG generation sys-tem. The backbone is deliberately lightweight (848K parameters), consisting of a constrained convolutional layer followed by four convolu-tional blocks and three fully connected layers. Despite its small size, it produces expressive 512-dimensional forensic embeddings because it learns from imaging pipeline properties rather than semantic content. The FRPN accounts for 7.4M parameters from 16 alternating attention blocks (8 global self-attention + 8 local graph attention), each with pre-norm residual connections, LayerScale, and a compact MLP (ratio 0.5). The FTER contains 16.1M parameters, of which 9.8M reside in the sparse MoE block (24 routed experts + 1 shared expert). The remainder covers 14 task projection layers, a 2-layer Transformer reasoning module, and 14 task-specific prediction heads. The VLM used for justification is Qwen3-VL-8B [5] in a 4-bit quantized con-figuration, adding approximately 4GB of memory. This compact VLM can run on consumer GPUs and edge devices, including smartphones, making the full FKG pipeline deployable without cloud infrastructure. The total trainable pa-rameter count of 24.3M (excluding the frozen VLM) remains compact compared to end-to-end forensic models that rely on large pretrained vision encoders ( e.g ., HiFi-IFDL uses a multi-branch HRNet with over 60M parameters). 
+
+G.2 Inference Costs 
+
+Table 20: Per-image inference la-tency.          
+
+> Stage Latency
+> Patch extraction ∼30ms Backbone embedding ∼120ms FRPN clustering ∼220ms FTER task prediction ∼70ms FKG construction ∼10ms
+> FKG generation total ∼0.45s
+> VLM justification ∼0.7–1.2s
+> End-to-end total ∼1.2–1.7s
+
+Tab. 20 reports per-image inference latency on a single NVIDIA A100 GPU for a 3840 ×
+
+2160 (4K) input image. The FKG genera-tion pipeline (backbone through FKG con-struction) completes in approximately 0.45 seconds, with FRPN clustering as the pri-mary bottleneck due to the O(N 2) pairwise similarity computation over N patches. Forensic Knowledge Graphs 23 
+
+The VLM justification step adds 0.7–1.2 seconds using Qwen3-VL-8B (4-bit), requir-ing a forward pass with the SoM-annotated image and serialized FKG triplets. The to-tal end-to-end pipeline, from raw image to justified forensic report, completes in under 2 seconds on a single GPU. Because the quantized VLM requires only 4GB of memory, the entire pipeline can run on consumer hardware or edge devices without cloud dependencies. For applica-tions that need only detection, localization, or type classification, the sub-second FKG generation is sufficient without invoking the VLM. 
+
+G.3 ICR Convergence Analysis Judge LM Specification. ICR requires a judge LM to evaluate the complete-ness and correctness metrics defined in Eq. (4). The judge receives the ground-truth FKG triplets and the VLM-generated report, then evaluates each triplet for mention ( τ ) and correctness ( Q). We evaluated four judge LMs: GPT-4o [62], GPT-5 [64], Qwen3-VL-8B [5], and Gemma 3 [31]. All four produce highly sim-ilar sets of corrective examples, indicating that the ICR outcome is robust to judge choice and not an artifact of any particular model’s biases. We default to GPT-4o for its balance of cost and reliability. 
+
+Convergence Behavior. We run ICR on a training set of N = 1 ,000 FKG ex-amples (100 authentic + 900 manipulated). Tab. 21 shows how the metrics evolve across iterations on this training set. ICR converges to near-perfect correctness and completeness within 5 iterations, accumulating 50 corrective demonstrations in C (8 authentic + 42 manipulated). The largest gains occur in the first two iterations, where ICR identifies the VLM’s most severe failure modes: omitting compression and post-processing evidence (iteration 1) and fabricating source attributions for AI-edited content (iteration 2). Subsequent iterations address progressively rarer edge cases until both metrics saturate.                                 
+
+> Table 21: ICR convergence across iterations on the training set ( N= 1 ,000 ,ϵ= 0 .01 ).
+> Iteration Correctness Completeness ∆(avg) Examples in C
+> 0 (no context) 0.64 0.32 –010.78 0.65 0.235 12 20.89 0.84 0.150 25 30.96 0.95 0.090 38 40.99 0.99 0.035 47 51.00 1.00 0.005 50
+
+At convergence, C contains 50 corrective demonstrations (8 authentic, 42 manipulated) covering the full range of VLM failure modes encountered on the 24 T. Nguyen et al. 
+
+training set. Note that these metrics measure how faithfully the VLM reports ground-truth FKG evidence, whereas the correctness and completeness in Tab. 5 are evaluated on predicted FKGs, making the two sets of numbers not directly comparable. Completeness improves more dramatically than correctness because the VLM’s primary failure mode is omission rather than fabrication: without corrective examples, it reports only the most visually salient evidence and ignores subtle forensic properties like compression history and post-processing traces. 
+
+## H Qualitative Examples 
+
+This appendix presents qualitative examples from each manipulation category in FKG-50K, as well as examples from two external datasets (DSO-1 and CASIAv2). Each table shows the input image, predicted localization mask, the forensic de-cision produced by the FKG, and the VLM-generated justification. For splicing, traditional editing, and AI editing, the ground-truth mask is also shown. Incor-rect decisions are highlighted in red. All predictions are from our full system with ICR-optimized prompts. 
+
+Contents: – Authentic (FKG-50K) — Tab. 22 
+
+– Splicing (FKG-50K) — Tab. 27 
+
+– Traditional Editing (FKG-50K) — Tab. 32 
+
+– AI Editing (FKG-50K) — Tab. 37 
+
+– Full Synthesis (FKG-50K) — Tab. 42 
+
+– DSO-1 (external) — Tab. 47 
+
+– CASIAv2 (external) — Tab. 52 Forensic Knowledge Graphs 25 
+
+Table 22: Qualitative examples from FKG-50K: Authentic . These are unmanipu-lated camera-original photographs. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout. 
+
+Image Pred Mask Decision Justification 
+
+This image is authen-tic , no signs of tam-pering were found. Forensic examination finds a single, uniform re-gion across the image, showing no signs of splic-ing, editing, or AI generation. The image traces back to a Canon EOS M50, the image has been JPEG compressed at quality 91. 
+
+Forensic analysis confirms this image is genuine and has not been tampered with. The image presents a single coherent forensic pro-file throughout, ruling out splicing or partial edit-ing. It was identified as having been taken with a iPhone X. The image has been JPEG compressed at quality 90. 
+
+The image shows no evidence of forgery or manipulation. The entire image exhibits consistent forensic characteristics throughout, with no detectable boundaries or inconsistencies that would suggest tampering. The forensic signature is consistent with a Canon EOS 5D Mark II, and the image has been JPEG compressed at quality 92. 
+
+Analysis indicates this image is a gen-uine, untampered photograph. All parts of the image share the same forensic fin-gerprint, with no discontinuities that would indi-cate manipulation. The content is consistent with having been captured by a iPhone X. The image has been JPEG compressed at quality 94. 
+
+No manipulation de-tected. This image appears to be an un-altered photograph. No forensic anomalies were detected anywhere in the image. The uniform characteristics point to a Nikon D3300 as the source device. The image has been JPEG compressed at quality 92. 
+
+This is an authen-tic, unmodified pho-tograph. Forensic examination finds a single, uniform re-gion across the image, showing no signs of splic-ing, editing, or AI generation. The image traces back to a iPhone 5s, the image has been JPEG compressed at quality 94. 26 T. Nguyen et al. 
+
+Table 23: Qualitative examples from FKG-50K: Authentic . These are unmanipu-lated camera-original photographs. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+This photograph has not been altered , it is authentic. The image presents a single coherent forensic pro-file throughout, ruling out splicing or partial edit-ing. It was identified as having been taken with a iPhone 5s. The image has been JPEG compressed at quality 94. 
+
+This image is authen-tic , no signs of tam-pering were found. The entire image exhibits consistent forensic characteristics throughout, with no detectable boundaries or inconsistencies that would suggest tampering. The forensic signature is consistent with a iPhone 5s, and the image has been JPEG compressed at quality 94. 
+
+Forensic analysis confirms this image is genuine and has not been tampered with. All parts of the image share the same forensic fingerprint, with no discontinuities that would in-dicate manipulation. The image has been JPEG compressed at quality 94. 
+
+The image shows no evidence of forgery or manipulation. No forensic anomalies were detected anywhere in the image. The uniform characteristics point to a Nikon D3300 as the source device. The image has been JPEG compressed at quality 91. 
+
+Analysis indicates this image is a gen-uine, untampered photograph. Forensic examination finds a single, uniform re-gion across the image, showing no signs of splic-ing, editing, or AI generation. The image traces back to a Canon EOS 80D, the image has been JPEG compressed at quality 94. 
+
+No manipulation de-tected. This image appears to be an un-altered photograph. The image presents a single coherent forensic pro-file throughout, ruling out splicing or partial edit-ing. It was identified as having been taken with a iPhone 5. The image has been JPEG compressed at quality 94. Forensic Knowledge Graphs 27 
+
+Table 24: Qualitative examples from FKG-50K: Authentic . These are unmanipu-lated camera-original photographs. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+This is an authen-tic, unmodified pho-tograph. The entire image exhibits consistent forensic characteristics throughout, with no detectable boundaries or inconsistencies that would suggest tampering. The forensic signature is consistent with a Canon EOS M50, and the image has been JPEG compressed at quality 87. 
+
+This photograph has not been altered , it is authentic. All parts of the image share the same forensic fin-gerprint, with no discontinuities that would indi-cate manipulation. The content is consistent with having been captured by a iPhone 5s. The image has been JPEG compressed at quality 94. 
+
+This image is authen-tic , no signs of tam-pering were found. No forensic anomalies were detected anywhere in the image. The uniform characteristics point to a iPhone 5s as the source device. The image has been JPEG compressed at quality 89. 
+
+Forensic analysis confirms this image is genuine and has not been tampered with. Forensic examination finds a single, uniform re-gion across the image, showing no signs of splic-ing, editing, or AI generation. The image traces back to a iPhone 5s, the image has been JPEG compressed at quality 91. 
+
+The image shows no evidence of forgery or manipulation. The image presents a single coherent forensic pro-file throughout, ruling out splicing or partial edit-ing. The image has been JPEG compressed at quality 89. 
+
+Analysis indicates this image is a gen-uine, untampered photograph. The entire image exhibits consistent forensic characteristics throughout, with no detectable boundaries or inconsistencies that would suggest tampering. The forensic signature is consistent with a iPhone 5s, and the image has been JPEG compressed at quality 94. 28 T. Nguyen et al. 
+
+Table 25: Qualitative examples from FKG-50K: Authentic . These are unmanipu-lated camera-original photographs. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+No manipulation de-tected. This image appears to be an un-altered photograph. All parts of the image share the same forensic fin-gerprint, with no discontinuities that would indi-cate manipulation. The content is consistent with having been captured by a Sony A6000. The im-age has been JPEG compressed at quality 90. 
+
+This is an authen-tic, unmodified pho-tograph. No forensic anomalies were detected anywhere in the image. The uniform characteristics point to a iPhone 5s as the source device. The image has been JPEG compressed at quality 90. 
+
+This photograph has not been altered , it is authentic. Forensic examination finds a single, uniform re-gion across the image, showing no signs of splic-ing, editing, or AI generation. The image traces back to a Canon EOS M50, the image has been JPEG compressed at quality 92. 
+
+This image is authen-tic , no signs of tam-pering were found. The image presents a single coherent forensic pro-file throughout, ruling out splicing or partial edit-ing. It was identified as having been taken with a iPhone 6. The image has been JPEG compressed at quality 93. 
+
+Forensic analysis confirms this image is genuine and has not been tampered with. The entire image exhibits consistent forensic characteristics throughout, with no detectable boundaries or inconsistencies that would suggest tampering. The forensic signature is consistent with a iPhone 6, and the image has been JPEG compressed at quality 93. 
+
+The image shows no evidence of forgery or manipulation. All parts of the image share the same forensic fin-gerprint, with no discontinuities that would indi-cate manipulation. The content is consistent with having been captured by a Nikon D3200. The im-age has been JPEG compressed at quality 88. 
+
+Table 26: Qualitative examples from FKG-50K: Authentic . These are unmanipu-lated camera-original photographs. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+Analysis indicates this image is a gen-uine, untampered photograph. No forensic anomalies were detected anywhere in the image. The uniform characteristics point to a iPhone 6 as the source device. The image has been JPEG compressed at quality 93. Forensic Knowledge Graphs 29 
+
+Table 27: Qualitative examples from FKG-50K: Splicing . The ground-truth mask marks the donor region composited from a different camera source. 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was cap-tured by a Sony A6000, while the other originates from a Canon EOS 600D. The Canon EOS 600D region shows signs of downscaled to approximately 58% of its original resolution. The fact that two dif-ferent cameras produced content within the same image is strong evidence of splic-ing. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. The image shows strong signs of ma-nipulation, with the content separating into two forensically different regions. The first identified region is consistent with a iPhone 6, and the second region traces back to a Sony A6000. The iPhone 6 re-gion shows signs of downscaled to approxi-mately 75% of its original resolution. Find-ing content from two separate cameras within a single image confirms that splic-ing has occurred. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Analysis of the image reveals two regions with markedly different forensic character-istics. Part of the image matches the foren-sic signature of a Canon EOS 5D Mark II, whereas the remaining region was cap-tured by a iPhone 6s. Since different cam-era sensors leave distinct forensic finger-prints, their co-occurrence within one im-age is a clear indicator of splicing. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Examination of this image uncovers two ar-eas with distinctly different origins. One portion of the image was taken with aiPhone 6, while the rest matches a Nikon D3300. The presence of two camera-specific forensic signatures in different parts of the image is a hallmark of image splicing. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. The forensic evidence clearly indicates that this image is not uniform , two separate regions were detected. Analysis identifies one region as originating from a iPhone 6, and the other portion is attributed to a Nikon D90. The iPhone 6 region shows signs of downscaled to approximately 52% of its original resolution. Distinct camera traces in separate spatial regions leave lit-tle doubt that this image was assembled from multiple photographs. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was cap-tured by a iPhone 6s, while the other orig-inates from a iPhone X. The fact that two different cameras produced content within the same image is strong evidence of splic-ing. 30 T. Nguyen et al. 
+
+Table 28: Qualitative examples from FKG-50K: Splicing . The ground-truth mask marks the donor region composited from a different camera source. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. The image shows strong signs of ma-nipulation, with the content separating into two forensically different regions. The first identified region is consistent with a iPhone 5, and the second region traces back to a iPhone 6. Finding content from two separate cameras within a single image confirms that splicing has occurred. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Analysis of the image reveals two regions with markedly different forensic charac-teristics. Part of the image matches the forensic signature of a iPhone X, whereas the remaining region was captured by aiPhone 6s. Since different camera sensors leave distinct forensic fingerprints, their co-occurrence within one image is a clear indicator of splicing. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Examination of this image uncovers two ar-eas with distinctly different origins. One portion of the image was taken with aiPhone 5, while the rest matches a Sony A6000. The presence of two camera-specific forensic signatures in different parts of the image is a hallmark of image splicing. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. The forensic evidence clearly indicates that this image is not uniform , two separate re-gions were detected. Analysis identifies one region as originating from a Nikon D3300, and the other portion is attributed to aiPhone 6s. Distinct camera traces in sep-arate spatial regions leave little doubt that this image was assembled from multiple photographs. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was cap-tured by a Nikon D3300, while the other originates from a iPhone X. The fact that two different cameras produced content within the same image is strong evidence of splicing. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. The image shows strong signs of ma-nipulation, with the content separating into two forensically different regions. The first identified region is consistent with a iPhone 5s, and the second region traces back to a Nikon D3300. Finding content from two separate cameras within a single image confirms that splicing has occurred. Forensic Knowledge Graphs 31 
+
+Table 29: Qualitative examples from FKG-50K: Splicing . The ground-truth mask marks the donor region composited from a different camera source. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image is a composite, combining pho-tographs from two different camera sources. Analysis of the image reveals two regions with markedly different forensic character-istics. Part of the image matches the foren-sic signature of a Nikon D3300, whereas the remaining region was captured by aiPhone 6. Since different camera sensors leave distinct forensic fingerprints, their co-occurrence within one image is a clear indicator of splicing. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Examination of this image uncovers two ar-eas with distinctly different origins. One portion of the image was taken with a Ap-ple Iphone 7 Plus, while the rest matches a Nikon D7000. The presence of two camera-specific forensic signatures in dif-ferent parts of the image is a hallmark of image splicing. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. The forensic evidence clearly indicates that this image is not uniform , two separate re-gions were detected. Analysis identifies one region as originating from a Nikon D3300, and the other portion is attributed to aSony A7 III. Distinct camera traces in sep-arate spatial regions leave little doubt that this image was assembled from multiple photographs. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was cap-tured by a iPhone 5s, while the other orig-inates from a Sony A7 III. The Sony A7 III region shows signs of downscaled to ap-proximately 50% of its original resolution. The fact that two different cameras pro-duced content within the same image is strong evidence of splicing. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The first identified region is consistent with a Nikon D90, and the second region traces back to a Sony A7 III. Finding content from two sep-arate cameras within a single image con-firms that splicing has occurred. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Analysis of the image reveals two regions with markedly different forensic character-istics. Part of the image matches the foren-sic signature of a Nikon D7000, whereas the remaining region was captured by aiPhone 5s. Since different camera sensors leave distinct forensic fingerprints, their co-occurrence within one image is a clear indicator of splicing. 32 T. Nguyen et al. 
+
+Table 30: Qualitative examples from FKG-50K: Splicing . The ground-truth mask marks the donor region composited from a different camera source. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Examination of this image uncovers two ar-eas with distinctly different origins. One portion of the image was taken with aiPhone X, while the rest matches a Sony A7 III. The Sony A7 III region shows signs of upscaled to approximately 131% of its original resolution. The presence of two camera-specific forensic signatures in dif-ferent parts of the image is a hallmark of image splicing. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. The forensic evidence clearly indicates that this image is not uniform , two separate re-gions were detected. Analysis identifies one region as originating from a Sony A6000, and the other portion is attributed to aiPhone 6. Distinct camera traces in sepa-rate spatial regions leave little doubt that this image was assembled from multiple photographs. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was cap-tured by a iPhone X, while the other orig-inates from a iPhone 5s. The iPhone X re-gion shows signs of upscaled to approxi-mately 127% of its original resolution. The fact that two different cameras produced content within the same image is strong ev-idence of splicing. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The first identified region is consistent with a Ap-ple Iphone 7, and the second region traces back to a Nikon D3300. The Apple Iphone 7 region shows signs of upscaled to ap-proximately 120% of its original resolution. Finding content from two separate cameras within a single image confirms that splic-ing has occurred. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Analysis of the image reveals two regions with markedly different forensic character-istics. Part of the image matches the foren-sic signature of a iPhone X, whereas the remaining region was captured by a Sony A7 III. The iPhone X region shows signs of upscaled to approximately 122% of its original resolution. Since different camera sensors leave distinct forensic fingerprints, their co-occurrence within one image is a clear indicator of splicing. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Examination of this image uncovers two ar-eas with distinctly different origins. One portion of the image was taken with aiPhone X, while the rest matches a iPhone 5s. The presence of two camera-specific forensic signatures in different parts of the image is a hallmark of image splicing. Forensic Knowledge Graphs 33 
+
+Table 31: Qualitative examples from FKG-50K: Splicing . The ground-truth mask marks the donor region composited from a different camera source. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. The forensic evidence clearly indicates that this image is not uniform , two separate re-gions were detected. Analysis identifies one region as originating from a iPhone 5s, and the other portion is attributed to a iPhone X. The iPhone X region shows signs of up-scaled to approximately 122% of its orig-inal resolution. Distinct camera traces in separate spatial regions leave little doubt that this image was assembled from multi-ple photographs. 34 T. Nguyen et al. 
+
+Table 32: Qualitative examples from FKG-50K: Traditional Editing (blur, noise, sharpening, resampling). The ground-truth mask marks the locally edited region. 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been locally edited , the same camera captured it, but part of the image was post-processed differently. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. Both regions originate from the same camera, a Sony A6000. How-ever, the regions differ in their compression characteristics (quality approximately 90 vs. 92). Both regions share the same cam-era source but exhibit different processing traces, which is characteristic of traditional image editing. 
+
+Traditional edit-ing detected: aregion of this image shows dif-ferent processing characteristics than the rest. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The en-tire image was captured by a single device, a iPhone 5s. However, one region shows signs of sharpening, while the other ap-pears unprocessed. The divergent forensic signatures across regions from the same camera are consistent with localized con-tent manipulation. 
+
+This image has undergone local-ized manipulation , while it origi-nates from a sin-gle camera, part of it has been al-tered. Analysis of the image reveals two regions with markedly different forensic character-istics. Both portions of the image trace back to the same iPhone 5s. However, the forensic traces in each region show subtle but measurable differences. When different parts of a single-camera image show incon-sistent processing artifacts, it typically in-dicates that selective edits were applied. 
+
+Local content manipulation found: forensic traces differ across regions despite sharing the same camera source. Examination of this image uncovers two ar-eas with distinctly different origins. Foren-sic analysis attributes the full image to one camera source, a Sony A7 III. However, the regions differ in their compression charac-teristics (quality approximately 92 vs. 68). Matching camera sources with mismatched processing characteristics point to tradi-tional editing operations applied to a spe-cific area. 
+
+Part of this im-age has been traditionally edited, intro-ducing forensic inconsistencies within an oth-erwise uniform photograph. The forensic evidence clearly indicates that this image is not uniform , two separate regions were detected. The underlying im-age was uniformly captured by a iPhone 6s. However, the regions differ in their com-pression characteristics (quality approxi-mately 94 vs. 91). The forensic inconsis-tency between regions , despite originating from the same device , is a telltale sign of localized image manipulation. 
+
+This image has been locally edited , the same camera captured it, but part of the image was post-processed differently. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. Both regions originate from the same camera, a Nikon D3200. However, the regions differ in their com-pression characteristics (quality approxi-mately 82 vs. 90). Both regions share the same camera source but exhibit different processing traces, which is characteristic of traditional image editing. Forensic Knowledge Graphs 35 
+
+Table 33: Qualitative examples from FKG-50K: Traditional Editing (blur, noise, sharpening, resampling). The ground-truth mask marks the locally edited region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Traditional edit-ing detected: aregion of this image shows dif-ferent processing characteristics than the rest. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The en-tire image was captured by a single device, a Sony A7 III. However, the forensic traces in each region show subtle but measurable differences. The divergent forensic signa-tures across regions from the same camera are consistent with localized content ma-nipulation. 
+
+This image has undergone local-ized manipulation , while it origi-nates from a sin-gle camera, part of it has been al-tered. Analysis of the image reveals two regions with markedly different forensic character-istics. Both portions of the image trace back to the same iPhone 6. However, the forensic traces in each region show subtle but measurable differences. When different parts of a single-camera image show incon-sistent processing artifacts, it typically in-dicates that selective edits were applied. 
+
+Local content manipulation found: forensic traces differ across regions despite sharing the same camera source. Examination of this image uncovers two ar-eas with distinctly different origins. Foren-sic analysis attributes the full image to one camera source, a iPhone 6s. However, the regions differ in their compression charac-teristics (quality approximately 92 vs. 88). Matching camera sources with mismatched processing characteristics point to tradi-tional editing operations applied to a spe-cific area. 
+
+Part of this im-age has been traditionally edited, intro-ducing forensic inconsistencies within an oth-erwise uniform photograph. The forensic evidence clearly indicates that this image is not uniform , two separate regions were detected. The underlying im-age was uniformly captured by a iPhone 5. However, the regions differ in their com-pression characteristics (quality approxi-mately 88 vs. 91). The forensic inconsis-tency between regions , despite originating from the same device , is a telltale sign of localized image manipulation. 
+
+This image has been locally edited , the same camera captured it, but part of the image was post-processed differently. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. Both regions originate from the same camera, a Sony A7 III. How-ever, the regions differ in their compression characteristics (quality approximately 58 vs. 95). Both regions share the same cam-era source but exhibit different processing traces, which is characteristic of traditional image editing. 
+
+Traditional edit-ing detected: aregion of this image shows dif-ferent processing characteristics than the rest. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The en-tire image was captured by a single device, a iPhone X. However, the forensic traces in each region show subtle but measurable differences. The divergent forensic signa-tures across regions from the same camera are consistent with localized content ma-nipulation. 36 T. Nguyen et al. 
+
+Table 34: Qualitative examples from FKG-50K: Traditional Editing (blur, noise, sharpening, resampling). The ground-truth mask marks the locally edited region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has undergone local-ized manipulation , while it origi-nates from a sin-gle camera, part of it has been al-tered. Analysis of the image reveals two regions with markedly different forensic character-istics. Both portions of the image trace back to the same iPhone 6s. However, one region shows signs of sharpening, while the other appears unprocessed. When different parts of a single-camera image show incon-sistent processing artifacts, it typically in-dicates that selective edits were applied. 
+
+Local content manipulation found: forensic traces differ across regions despite sharing the same camera source. Examination of this image uncovers two ar-eas with distinctly different origins. Foren-sic analysis attributes the full image to one camera source, a iPhone 5s. However, the forensic traces in each region show subtle but measurable differences. Matching cam-era sources with mismatched processing characteristics point to traditional editing operations applied to a specific area. 
+
+Part of this im-age has been traditionally edited, intro-ducing forensic inconsistencies within an oth-erwise uniform photograph. The forensic evidence clearly indicates that this image is not uniform , two separate regions were detected. The underlying im-age was uniformly captured by a iPhone 5s. However, the forensic traces in each region show subtle but measurable differ-ences. The forensic inconsistency between regions , despite originating from the same device , is a telltale sign of localized image manipulation. 
+
+This image has been locally edited , the same camera captured it, but part of the image was post-processed differently. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. Both regions originate from the same camera, a Sony A7 III. How-ever, the regions differ in their compression characteristics (quality approximately 90 vs. 87). Both regions share the same cam-era source but exhibit different processing traces, which is characteristic of traditional image editing. 
+
+Traditional edit-ing detected: aregion of this image shows dif-ferent processing characteristics than the rest. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. The en-tire image was captured by a single device, a Sony A6000. However, the forensic traces in each region show subtle but measurable differences. The divergent forensic signa-tures across regions from the same camera are consistent with localized content ma-nipulation. 
+
+This image has undergone local-ized manipulation , while it origi-nates from a sin-gle camera, part of it has been al-tered. Analysis of the image reveals two regions with markedly different forensic character-istics. Both portions of the image trace back to the same Sony A7 III. However, one region shows signs of additive noise, while the other does not. When different parts of a single-camera image show inconsistent processing artifacts, it typically indicates that selective edits were applied. Forensic Knowledge Graphs 37 
+
+Table 35: Qualitative examples from FKG-50K: Traditional Editing (blur, noise, sharpening, resampling). The ground-truth mask marks the locally edited region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Local content manipulation found: forensic traces differ across regions despite sharing the same camera source. Examination of this image uncovers two ar-eas with distinctly different origins. Foren-sic analysis attributes the full image to one camera source, a iPhone 5. However, the regions differ in their compression charac-teristics (quality approximately 92 vs. 94). Matching camera sources with mismatched processing characteristics point to tradi-tional editing operations applied to a spe-cific area. 
+
+Part of this im-age has been traditionally edited, intro-ducing forensic inconsistencies within an oth-erwise uniform photograph. The forensic evidence clearly indicates that this image is not uniform , two separate re-gions were detected. The underlying image was uniformly captured by a Sony A7 III. However, the regions differ in their com-pression characteristics (quality approxi-mately 91 vs. 71). The forensic inconsis-tency between regions , despite originating from the same device , is a telltale sign of localized image manipulation. 
+
+This image has been partially edited using AI , a portion was generated by StyleGAN while the rest is an authentic photo-graph. Forensic analysis reveals clear evidence of tampering, with two distinct regions iden-tified in the image. One region was pro-duced by the StyleGAN AI model with moderate confidence, while the rest is an authentic photograph from a Nikon D3200. JPEG quality ranges from approximately 87 to 89 across regions. The mixture of AI-generated and camera-captured content within the same image indicates localized AI inpainting or editing. 
+
+This image has been spliced , it contains content from two different cameras. The image shows strong signs of manip-ulation, with the content separating into two forensically different regions. One re-gion was captured by a iPhone 5s, while the other originates from a Sony A7 III. The Sony A7 III region shows signs of additive noise. The fact that two different cameras produced content within the same image is strong evidence of splicing. 
+
+This image has been locally edited , the same camera captured it, but part of the image was post-processed differently. Analysis of the image reveals two regions with markedly different forensic character-istics. Both regions originate from the same camera, a iPhone 5s. However, the forensic traces in each region show subtle but mea-surable differences. Both regions share the same camera source but exhibit different processing traces, which is characteristic of traditional image editing. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Examination of this image uncovers two ar-eas with distinctly different origins. The first identified region is consistent with a Apple Iphone 7 Plus, and the second re-gion traces back to a Nikon D3400. Finding content from two separate cameras within a single image confirms that splicing has occurred. 38 T. Nguyen et al. 
+
+Table 36: Qualitative examples from FKG-50K: Traditional Editing (blur, noise, sharpening, resampling). The ground-truth mask marks the locally edited region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image is a composite, combining pho-tographs from two different camera sources. The forensic evidence clearly indicates that this image is not uniform , two separate regions were detected. Part of the image matches the forensic signature of a Sony A6000, whereas the remaining region was captured by a Sony A7 III. Since differ-ent camera sensors leave distinct forensic fingerprints, their co-occurrence within one image is a clear indicator of splicing. Forensic Knowledge Graphs 39 
+
+Table 37: Qualitative examples from FKG-50K: AI Editing (inpainting-based object replacement, insertion, and removal). The ground-truth mask marks the AI-modified region. 
+
+Image GT Mask Pred Mask Decision Justification 
+
+AI-assisted edit-ing detected: part of this image was created by FLUX.1, inserted into a real photo-graph. Forensic analysis reveals two distinct re-gions. Part was generated by FLUX.1 (high confidence), while the rest is a genuine photo from a Sony A7 III. The Sony A7 III region was downscaled to ∼ 50% of origi-nal size. JPEG quality ranges from ∼92 to 94. Both synthetic and authentic traces in different regions point to targeted AI ma-nipulation. 
+
+This image combines AI-generated content from Stable Dif-fusion XL with an authentic photograph. The image separates into two forensically different regions. The manipulated region was synthesized by Stable Diffusion XL (moderate confidence), while the host was captured by a iPhone 6s. The AI-generated region was downscaled to ∼ 56% of original size. JPEG quality ranges from ∼92 to 93. The coexistence of machine-generated and camera-originated content is characteristic of AI-assisted editing. 
+
+Localized AI edit-ing found , Mid-journey v6 was used to generate or modify a por-tion of this oth-erwise authentic image. Two regions with markedly different foren-sic characteristics were found. A portion was created using Midjourney v6 (moder-ate confidence), while the surrounding con-tent originates from a Sony A6000. JPEG quality ranges from ∼91 to 93. This com-bination of artificial and natural signatures is typical of AI inpainting. 
+
+Part of this image has been synthe-sized by FLUX.1 and blended into a genuine photo-graph. Two areas with distinctly different origins were found. One exhibits FLUX.1-generated content (high confidence), whereas the unaltered portion was pho-tographed with a iPhone 6. The iPhone 6 region was downscaled to ∼ 52% of origi-nal size. JPEG quality ranges from ∼92 to 95. The contrast between AI-synthesized and naturally captured regions reveals generative editing was applied. 
+
+This image has been partially edited using AI , a portion was generated by FLUX.1 while the rest is an authentic photo-graph. Two separate regions were detected. One was produced by FLUX.1 (high), while the rest is an authentic photograph from aiPhone 6. The iPhone 6 region was down-scaled to ∼ 57% of original size. JPEG quality ranges from ∼90 to 91. The mix-ture of AI-generated and camera-captured content indicates localized AI editing. 
+
+AI-assisted edit-ing detected: part of this image was created by FLUX.1, inserted into a real photo-graph. Forensic analysis reveals two distinct re-gions. Part was generated by FLUX.1 (high confidence), while the rest is a genuine photo from a Sony A7 III. The Sony A7 III region was downscaled to ∼ 52% of origi-nal size. JPEG quality ranges from ∼90 to 93. Both synthetic and authentic traces in different regions point to targeted AI ma-nipulation. 40 T. Nguyen et al. 
+
+Table 38: Qualitative examples from FKG-50K: AI Editing (inpainting-based object replacement, insertion, and removal). The ground-truth mask marks the AI-modified region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image combines AI-generated content from FLUX.1 with an authentic photograph. The image separates into two forensically different regions. The manipulated region was synthesized by FLUX.1 (high confi-dence), while the host was captured by a Sony A7 III. JPEG quality ranges from 
+
+∼90 to 92. The coexistence of machine-generated and camera-originated content is characteristic of AI-assisted editing. 
+
+Localized AI editing found ,FLUX.1 was used to generate or modify a portion of this otherwise authentic image. Two regions with markedly different foren-sic characteristics were found. A portion was created using FLUX.1 (high confi-dence), while the surrounding content orig-inates from a iPhone 6. The iPhone 6 re-gion was downscaled to ∼ 51% of original size. JPEG quality ranges from ∼91 to 92. This combination of artificial and natural signatures is typical of AI inpainting. 
+
+Part of this im-age has been synthesized by Midjourney v6 and blended into a genuine photo-graph. Two areas with distinctly different ori-gins were found. One exhibits Midjour-ney v6-generated content (low confidence), whereas the unaltered portion was pho-tographed with a Sony A7 III. The Sony A7 III region was downscaled to ∼ 51% of orig-inal size. JPEG quality ranges from ∼89 to 91. The contrast between AI-synthesized and naturally captured regions reveals gen-erative editing was applied. 
+
+This image has been partially edited using AI , a portion was generated by FLUX.1 while the rest is an authentic photo-graph. Two separate regions were detected. One was produced by FLUX.1 (high), while the rest is an authentic photograph from aiPhone 6. The iPhone 6 region was down-scaled to ∼ 51% of original size. JPEG quality ranges from ∼91 to 93. The mix-ture of AI-generated and camera-captured content indicates localized AI editing. 
+
+AI-assisted edit-ing detected: part of this image was created by FLUX.1, inserted into a real photo-graph. Forensic analysis reveals two distinct re-gions. Part was generated by FLUX.1 (high confidence), while the rest is a genuine photo from a iPhone 6. The iPhone 6 re-gion was downscaled to ∼ 52% of original size. JPEG quality ranges from ∼91 to 92. Both synthetic and authentic traces in dif-ferent regions point to targeted AI manip-ulation. 
+
+This image combines AI-generated content from FLUX.1 with an authentic photograph. The image separates into two forensically different regions. The manipulated region was synthesized by FLUX.1 (moderate con-fidence), while the host was captured by a iPhone 6. The iPhone 6 region was down-scaled to ∼ 51% of original size. JPEG quality ranges from ∼90 to 92. The coex-istence of machine-generated and camera-originated content is characteristic of AI-assisted editing. Forensic Knowledge Graphs 41 
+
+Table 39: Qualitative examples from FKG-50K: AI Editing (inpainting-based object replacement, insertion, and removal). The ground-truth mask marks the AI-modified region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Localized AI edit-ing found , Sta-ble Diffusion XL was used to gen-erate or modify a portion of this otherwise authen-tic image. Two regions with markedly different foren-sic characteristics were found. A portion was created using Stable Diffusion XL (moderate confidence), while the surround-ing content originates from a Canon Eos 6d. JPEG quality ranges from ∼91 to 93. This combination of artificial and natural signatures is typical of AI inpainting. 
+
+Part of this im-age has been synthesized by Stable Diffusion 3 Medium and blended into agenuine photo-graph. Two areas with distinctly different origins were found. One exhibits Stable Diffusion 3 Medium-generated content (high confi-dence), whereas the unaltered portion was photographed with a Canon EOS 5D Mark III. JPEG quality ranges from ∼90 to 92. The contrast between AI-synthesized and naturally captured regions reveals genera-tive editing was applied. 
+
+This image has been partially edited using AI , a portion was generated by FLUX.1 while the rest is an authentic photo-graph. Two separate regions were detected. One was produced by FLUX.1 (moderate), while the rest is an authentic photograph from a Sony A7 III. The Sony A7 III re-gion was downscaled to ∼ 54% of origi-nal size. Both regions share JPEG qual-ity ∼ 92. The mixture of AI-generated and camera-captured content indicates local-ized AI editing. 
+
+AI-assisted edit-ing detected: part of this image was created by FLUX.1, inserted into a real photo-graph. Forensic analysis reveals two distinct re-gions. Part was generated by FLUX.1 (high confidence), while the rest is a genuine photo from a iPhone 5s. The iPhone 5s re-gion was downscaled to ∼ 59% of original size. JPEG quality ranges from ∼90 to 92. Both synthetic and authentic traces in dif-ferent regions point to targeted AI manip-ulation. 
+
+This image combines AI-generated content from Stable Dif-fusion XL with an authentic photograph. The image separates into two forensically different regions. The manipulated region was synthesized by Stable Diffusion XL (high confidence), while the host was cap-tured by a iPhone 5s. The iPhone 5s re-gion was downscaled to ∼ 57% of original size. Both regions share JPEG quality ∼
+
+92. The coexistence of machine-generated and camera-originated content is charac-teristic of AI-assisted editing. 
+
+Localized AI edit-ing found , Pro-GAN was used to generate or mod-ify a portion of this otherwise au-thentic image. Two regions with markedly different foren-sic characteristics were found. A portion was created using ProGAN (moderate con-fidence), while the surrounding content originates from a Sony A7 III. JPEG qual-ity ranges from ∼91 to 94. This combina-tion of artificial and natural signatures is typical of AI inpainting. 42 T. Nguyen et al. 
+
+Table 40: Qualitative examples from FKG-50K: AI Editing (inpainting-based object replacement, insertion, and removal). The ground-truth mask marks the AI-modified region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Part of this image has been synthe-sized by FLUX.1 and blended into a genuine photo-graph. Two areas with distinctly different origins were found. One exhibits FLUX.1-generated content (high confidence), whereas the unaltered portion was pho-tographed with a Sony A7 III. The Sony A7 III region was downscaled to ∼ 54% of original size. JPEG quality ranges from ∼91 to 92. The contrast between AI-synthesized and naturally captured regions reveals generative editing was applied. 
+
+This image has been partially edited using AI , a portion was generated by FLUX.1 while the rest is an authentic photo-graph. Two separate regions were detected. One was produced by FLUX.1 (high), while the rest is an authentic photograph from a Sony A7 III. Both regions share JPEG quality ∼ 92. The mixture of AI-generated and camera-captured content indicates lo-calized AI editing. 
+
+AI-assisted edit-ing detected: part of this image was created by Mid-journey v6, in-serted into a real photograph. Forensic analysis reveals two distinct re-gions. Part was generated by Midjourney v6 (low confidence), while the rest is a gen-uine photo from a Sony A7 III. Both re-gions share JPEG quality ∼ 93. Both syn-thetic and authentic traces in different re-gions point to targeted AI manipulation. 
+
+This image is entirely AI-generated, most likely produced by Stable Diffu-sion XL. Although two regions were identified, both exhibit AI-generated characteristics rather than natural camera traces. The content is attributed to Stable Diffusion XL (high confidence). Saved at JPEG quality ∼ 92. No authentic camera-captured content was found. 
+
+This image is entirely AI-generated, most likely produced by FLUX.1. Although two regions were identified, both exhibit AI-generated characteristics rather than natural camera traces. The content is attributed to FLUX.1 (high confidence). Saved at JPEG quality ∼ 93. No authentic camera-captured content was found. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. The image separates into two forensically different regions. One portion was taken with a iPhone 6, while the rest matches a iPhone 5s. The iPhone 6 region was downscaled to ∼ 51% of original size. Two camera-specific forensic signatures in dif-ferent parts is a hallmark of splicing. Forensic Knowledge Graphs 43 
+
+Table 41: Qualitative examples from FKG-50K: AI Editing (inpainting-based object replacement, insertion, and removal). The ground-truth mask marks the AI-modified region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image is entirely AI-generated, most likely produced by Stable Diffu-sion XL. Although two regions were identified, both exhibit AI-generated characteristics rather than natural camera traces. The content is attributed to Stable Diffusion XL (high confidence). Saved at JPEG quality ∼ 90. No authentic camera-captured content was found. 
+
+Table 42: Qualitative examples from FKG-50K: Full Synthesis . These images are entirely AI-generated. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout, rather than multiple regions with differing sources. 
+
+Image Pred Mask Decision Justification 
+
+This is a fully synthetic image produced by an AI model. Forensic analysis reveals no camera-specific traces anywhere in the image. Instead, the char-acteristics are consistent with FLUX.1 (high con-fidence), indicating the entire image is syntheti-cally generated. No JPEG compression was de-tected. 
+
+Forensic analysis identifies this as an AI-generated image, not a real photo-graph. The image lacks the forensic fingerprints left by physical camera sensors. Analysis points to Sta-ble Diffusion XL as the source (high confidence), confirming full synthesis. No JPEG compression was detected. 
+
+The image is syn-thetic , it was pro-duced entirely by ar-tificial intelligence. The entire image carries forensic characteristics typical of AI-generated content rather than real photography. With high confidence, the image was produced by Stable Diffusion XL. No JPEG compression was detected. 
+
+This image is entirely AI-generated. Every region of the image exhibits patterns as-sociated with AI generation rather than optical capture. The content is attributed to FLUX.1 with high confidence. No JPEG compression was detected. 
+
+No real camera cap-tured this image , it was generated by AI. Rather than the sensor noise and optical artifacts typical of real photographs, this image displays the hallmarks of AI generation. It is identified as having been created by FLUX.1 with high confi-dence. No JPEG compression was detected. 
+
+This image was cre-ated by an AI image generator, not cap-tured by a camera. Forensic analysis reveals no camera-specific traces anywhere in the image. Instead, the char-acteristics are consistent with FLUX.1 (high con-fidence), indicating the entire image is syntheti-cally generated. No JPEG compression was de-tected. 44 T. Nguyen et al. 
+
+Table 43: Qualitative examples from FKG-50K: Full Synthesis . These images are entirely AI-generated. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout, rather than multiple regions with differing sources. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+Analysis confirms this image is AI-generated rather than photographed. The image lacks the forensic fingerprints left by physical camera sensors. Analysis points to FLUX.1 as the source (high confidence), confirm-ing full synthesis. No JPEG compression was de-tected. 
+
+This is a fully synthetic image produced by an AI model. The entire image carries forensic characteristics typical of AI-generated content rather than real photography. With high confidence, the image was produced by Midjourney v6. No JPEG com-pression was detected. 
+
+Forensic analysis identifies this as an AI-generated image, not a real photo-graph. Every region of the image exhibits patterns as-sociated with AI generation rather than optical capture. The content is attributed to Stable Dif-fusion XL with high confidence. No JPEG com-pression was detected. 
+
+The image is syn-thetic , it was pro-duced entirely by ar-tificial intelligence. Rather than the sensor noise and optical artifacts typical of real photographs, this image displays the hallmarks of AI generation. It is identified as having been created by FLUX.1 with high confi-dence. No JPEG compression was detected. 
+
+This image is entirely AI-generated. Forensic analysis reveals no camera-specific traces anywhere in the image. Instead, the char-acteristics are consistent with FLUX.1 (high con-fidence), indicating the entire image is syntheti-cally generated. No JPEG compression was de-tected. 
+
+No real camera cap-tured this image , it was generated by AI. The image lacks the forensic fingerprints left by physical camera sensors. Analysis points to Mid-journey v6 as the source (high confidence), con-firming full synthesis. No JPEG compression was detected. Forensic Knowledge Graphs 45 
+
+Table 44: Qualitative examples from FKG-50K: Full Synthesis . These images are entirely AI-generated. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout, rather than multiple regions with differing sources. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+This image was cre-ated by an AI image generator, not cap-tured by a camera. The entire image carries forensic characteristics typical of AI-generated content rather than real photography. With high confidence, the image was produced by Stable Diffusion XL. No JPEG compression was detected. 
+
+Analysis confirms this image is AI-generated rather than photographed. Every region of the image exhibits patterns as-sociated with AI generation rather than optical capture. The content is attributed to Stable Dif-fusion XL with high confidence. No JPEG com-pression was detected. 
+
+This is a fully synthetic image produced by an AI model. Rather than the sensor noise and optical artifacts typical of real photographs, this image displays the hallmarks of AI generation. It is identified as having been created by Stable Diffusion XL with high confidence. No JPEG compression was detected. 
+
+Forensic analysis identifies this as an AI-generated image, not a real photo-graph. Forensic analysis reveals no camera-specific traces anywhere in the image. Instead, the char-acteristics are consistent with FLUX.1 (high con-fidence), indicating the entire image is syntheti-cally generated. No JPEG compression was de-tected. 
+
+The image is syn-thetic , it was pro-duced entirely by ar-tificial intelligence. The image lacks the forensic fingerprints left by physical camera sensors. Analysis points to FLUX.1 as the source (high confidence), confirm-ing full synthesis. No JPEG compression was de-tected. 
+
+This image is entirely AI-generated. The entire image carries forensic characteristics typical of AI-generated content rather than real photography. With high confidence, the image was produced by FLUX.1. No JPEG compression was detected. 46 T. Nguyen et al. 
+
+Table 45: Qualitative examples from FKG-50K: Full Synthesis . These images are entirely AI-generated. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout, rather than multiple regions with differing sources. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+No real camera cap-tured this image , it was generated by AI. Every region of the image exhibits patterns as-sociated with AI generation rather than optical capture. The content is attributed to Stable Dif-fusion XL with high confidence. No JPEG com-pression was detected. 
+
+This image was cre-ated by an AI image generator, not cap-tured by a camera. Rather than the sensor noise and optical artifacts typical of real photographs, this image displays the hallmarks of AI generation. It is identified as having been created by Midjourney v6 with high confidence. No JPEG compression was detected. 
+
+Analysis confirms this image is AI-generated rather than photographed. Forensic analysis reveals no camera-specific traces anywhere in the image. Instead, the char-acteristics are consistent with Stable Diffusion 3 (high confidence), indicating the entire image is synthetically generated. No JPEG compression was detected. 
+
+This is a fully synthetic image produced by an AI model. The image lacks the forensic fingerprints left by physical camera sensors. Analysis points to Mid-journey v6 as the source (high confidence), con-firming full synthesis. No JPEG compression was detected. 
+
+Forensic analysis identifies this as an AI-generated image, not a real photo-graph. The entire image carries forensic characteristics typical of AI-generated content rather than real photography. With high confidence, the image was produced by Stable Diffusion XL. No JPEG compression was detected. 
+
+The image is syn-thetic , it was pro-duced entirely by ar-tificial intelligence. Every region of the image exhibits patterns as-sociated with AI generation rather than optical capture. The content is attributed to FLUX.1 with high confidence. No JPEG compression was detected. 
+
+Table 46: Qualitative examples from FKG-50K: Full Synthesis . These images are entirely AI-generated. The predicted mask is blank (all zeros) because the system correctly identifies a single region with consistent source and processing throughout, rather than multiple regions with differing sources. (cont.) 
+
+Image Pred Mask Decision Justification 
+
+This image is entirely AI-generated. Rather than the sensor noise and optical artifacts typical of real photographs, this image displays the hallmarks of AI generation. It is identified as having been created by FLUX.1 with high confi-dence. No JPEG compression was detected. Forensic Knowledge Graphs 47 
+
+Table 47: Qualitative examples from DSO-1 (external dataset). DSO-1 contains splic-ing forgeries created by compositing regions from different camera sources. The ground-truth mask marks the spliced region. 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other traces back to a Hasselblad L1D-20c. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 89. 
+
+Image tampering detected: part of this image has been altered through tradi-tional editing techniques. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. The dominant region is con-sistent with a Sony A6000. The edited area shows altered forensic characteristics com-pared to the rest of the image. This region also shows signs of being resized to approx-imately 114% of its original resolution. The image has been JPEG compressed at qual-ity 86. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS Rebel T3i, while the other originates from a different cam-era. The presence of two different cam-era signatures within one image is strong evidence of splicing. The image has been JPEG compressed at quality 90. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other traces back to a Hasselblad L1D-20c. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 87. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other traces back to a Hasselblad L1D-20c. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 77% of its original resolution. The image has been JPEG compressed at quality 89. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a Canon EOS 5D Mark IV. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 86. 48 T. Nguyen et al. 
+
+Table 48: Qualitative examples from DSO-1 (external dataset). DSO-1 contains splic-ing forgeries created by compositing regions from different camera sources. The ground-truth mask marks the spliced region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS 5D Mark IV, while the other originates from a different cam-era. The presence of two different cam-era signatures within one image is strong evidence of splicing. The image has been JPEG compressed at quality 92. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 80% of its original resolution. The image has been JPEG compressed at quality 92. 
+
+This image shows signs of manipu-lation , local edits have been applied to alter the origi-nal content. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. Both regions are attributed to a Sony A6000, but they exhibit different forensic characteristics, consistent with lo-cal editing or retouching. This region also shows signs of being resized to approxi-mately 114% of its original resolution. The image has been JPEG compressed at qual-ity 88. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a Hasselblad L1D-20c. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 63% of its original resolution. The image has been JPEG compressed at quality 92. 
+
+This image has been locally edited , forensic analysis detects manipulation within the image. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. Both regions are attributed to a Sony A6000, but they exhibit different forensic characteristics, consistent with lo-cal editing or retouching. The image has been JPEG compressed at quality 89. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS 5D Mark IV, while the other originates from a different cam-era. The presence of two different cam-era signatures within one image is strong evidence of splicing. The image has been JPEG compressed at quality 91. Forensic Knowledge Graphs 49 
+
+Table 49: Qualitative examples from DSO-1 (external dataset). DSO-1 contains splic-ing forgeries created by compositing regions from different camera sources. The ground-truth mask marks the spliced region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 91% of its original resolution. The image has been JPEG compressed at quality 86. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 67% of its original resolution. The image has been JPEG compressed at quality 88. 
+
+Tampering de-tected: the image has been mod-ified through localized editing operations. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. Both regions are attributed to a Sony A6000, but they exhibit different forensic characteristics, consistent with lo-cal editing or retouching. The image has been JPEG compressed at quality 87. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 88. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a Sony A6000. The presence of two different camera signatures within one image is strong evidence of splicing. This region also shows signs of being re-sized to approximately 114% of its original resolution. The image has been JPEG com-pressed at quality 89. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a Canon EOS 5D Mark IV. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 89. 50 T. Nguyen et al. 
+
+Table 50: Qualitative examples from DSO-1 (external dataset). DSO-1 contains splic-ing forgeries created by compositing regions from different camera sources. The ground-truth mask marks the spliced region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 123% of its original resolution. The image has been JPEG compressed at quality 88. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region is con-sistent with a iPhone 5s, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 58% of its original resolution. The image has been JPEG compressed at quality 93. 
+
+This image has been locally edited , forensic analysis detects manipulation within the image. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. Part of the image is consis-tent with a Sony A6000. The other area shows altered forensic characteristics, indi-cating local manipulation. The image has been JPEG compressed at quality 91. 
+
+Image tampering detected: part of this image has been altered through tradi-tional editing techniques. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. Both regions are attributed to a Sony A6000, but they exhibit different forensic characteristics, consistent with lo-cal editing or retouching. The image has been JPEG compressed at quality 90. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 109% of its original resolution. The image has been JPEG compressed at quality 94. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 60% of its original resolution. The image has been JPEG compressed at quality 89. Forensic Knowledge Graphs 51 
+
+Table 51: Qualitative examples from DSO-1 (external dataset). DSO-1 contains splic-ing forgeries created by compositing regions from different camera sources. The ground-truth mask marks the spliced region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a Canon EOS 600D. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 84. 52 T. Nguyen et al. 
+
+Table 52: Qualitative examples from CASIAv2 (external dataset). CASIAv2 con-tains splicing and copy-move forgeries. The ground-truth mask marks the manipulated region. 
+
+Image GT Mask Pred Mask Decision Justification 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 92. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region is con-sistent with a DJI Mavic Pro, while the other traces back to a Nikon D3300. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 92. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 129% of its original resolution. The image has been JPEG compressed at quality 72. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS Rebel T3i, while the other originates from a different cam-era. The presence of two different cam-era signatures within one image is strong evidence of splicing. The image has been JPEG compressed at quality 88. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Nikon D3400, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. This region also shows signs of being resized to approximately 75% of its original resolution. The image has been JPEG compressed at quality 93. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other traces back to a Nikon D7500. The pres-ence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 84. Forensic Knowledge Graphs 53 
+
+Table 53: Qualitative examples from CASIAv2 (external dataset). CASIAv2 con-tains splicing and copy-move forgeries. The ground-truth mask marks the manipulated region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 90. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 92. 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other originates from a different camera. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 84. 
+
+Forensic analysis reveals that this image blends authentic camera content with AI-generated regions. Forensic analysis reveals two distinct re-gions in this image. One region appears to be a real photograph from a digital camera. The other region shows characteristics of AI-generated content, attributed to Giga-GAN with moderate confidence. The com-bination of real and AI-generated content indicates AI-based editing. The image has been JPEG compressed at quality 87. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 91. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS Rebel T3i, while the other traces back to a Sony A6000. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 84. 54 T. Nguyen et al. 
+
+Table 54: Qualitative examples from CASIAv2 (external dataset). CASIAv2 con-tains splicing and copy-move forgeries. The ground-truth mask marks the manipulated region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Forensic analysis reveals localized editing in this image, though both regions originate from the same type of camera. Forensic analysis detects two distinct re-gions in this image, suggesting localized manipulation. The dominant region is con-sistent with a Canon EOS Rebel T3i. The edited area shows altered forensic charac-teristics compared to the rest of the image. The image has been JPEG compressed at quality 89. 
+
+Part of this image has been altered with AI genera-tion tools while the rest remains from the original photograph. Forensic analysis reveals two distinct re-gions in this image. One region is consis-tent with a real photograph taken by aDJI Mavic Pro. The other region shows characteristics of AI-generated content, at-tributed to Tam Trans with moderate con-fidence. The combination of real and AI-generated content indicates AI-based edit-ing. The image has been JPEG compressed at quality 86. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS 5D Mark II, while the other originates from a different cam-era. The presence of two different cam-era signatures within one image is strong evidence of splicing. The image has been JPEG compressed at quality 90. 
+
+This image has been spliced , it contains content from two different cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS Rebel T3i, while the other traces back to a Sony A6000. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 87. 
+
+Image splicing detected: por-tions of this image originate from two separate cameras. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Canon EOS Rebel T3i, while the other traces back to a Sony A6000. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 88. 
+
+This image is a composite, combining pho-tographs from two different camera sources. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other traces back to a Canon EOS 5D Mark II. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 91. Forensic Knowledge Graphs 55 
+
+Table 55: Qualitative examples from CASIAv2 (external dataset). CASIAv2 con-tains splicing and copy-move forgeries. The ground-truth mask marks the manipulated region. (cont.) 
+
+Image GT Mask Pred Mask Decision Justification 
+
+Splicing is present in this image , two foren-sically distinct camera sources were identified. Forensic analysis identifies two distinct re-gions in this image. One region is consis-tent with a Sony A6000, while the other originates from a different camera. The presence of two different camera signatures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 88. 
+
+This image has been manipulated through splicing, merging content captured by dif-ferent devices. Forensic analysis identifies two distinct re-gions in this image. One region appears to come from a digital camera, while the other traces back to a DJI Mavic Pro. The presence of two different camera signa-tures within one image is strong evidence of splicing. The image has been JPEG com-pressed at quality 89.

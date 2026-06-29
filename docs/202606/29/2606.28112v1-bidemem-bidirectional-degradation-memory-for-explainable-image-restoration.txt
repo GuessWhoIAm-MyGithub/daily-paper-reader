@@ -1,0 +1,225 @@
+Title: BiDeMem: Bidirectional Degradation Memory for Explainable Image Restoration
+
+URL Source: https://arxiv.org/pdf/2606.28112v1
+
+Published Time: Mon, 29 Jun 2026 01:09:35 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# BiDeMem: Bidirectional Degradation Memory for Explainable Image Restoration 
+
+# Xinrui Wu 1* , Lichen Huang 1* 1University of Electronic Science and Technology of China 
+
+> *
+
+# Equal contribution. 
+
+# Email: xinruiwu.wxr@gmail.com, xhghlc@gmail.com 
+
+# Abstract 
+
+Degradation-aware prompts, conditions, and latent priors are increasingly used in image restoration, yet they are usu-ally judged by a single endpoint: whether the restored im-age obtains higher PSNR. This is a weak test of seman-tics. A condition can help by adding capacity, acting as a global correction bias, or exploiting dataset shortcuts, with-out becoming an interpretable degradation prior. We pro-pose BiDeMem, a bidirectional degradation memory for ex-plainable image restoration. A query built from restoration features and input statistics retrieves a compact top-k sub-set of memory slots. The same selected slot identity supports the restoration path at inference time and a training-only forward-degradation explanation path. The study centers on verifiability in a controlled multi-degradation NAFNet setting. New controls separate the gain from a correction head alone, a dense query prior, and a static global prior: these variants are 0.2588, 0.2586, and 0.2839 dB below Bi-Rank, respectively. Strong residual supervision and a wider degradation head also remain below the full bidirectional memory model. Intervention probes show that BiRank preserves restoration quality while increasing wrong-prior and native-prior sensitivity, framing degradation memory as both a restoration module and a falsifiable explanation mechanism. 
+
+# 1. Introduction 
+
+Image restoration aims to recover a clean image from ob-servations degraded by noise, haze, rain, compression, blur, or their mixtures. It is a central low-level vision problem because restoration quality directly affects both human per-ception and downstream visual systems. Modern restora-tion networks have achieved strong progress by improv-ing backbone architectures, enlarging receptive fields, and learning restoration operators that generalize across a range of corruptions [1–6]. Recent blind and multi-degradation systems further introduce degradation-aware conditions, in-cluding prompts, latent representations, contrastive codes, and memory states, so that one model can adapt its restora-tion behavior to different input degradations [7–9]. These degradation-aware conditions are useful, but their semantic role is often evaluated indirectly. In many restora-tion papers, a condition is treated as meaningful when the final restored image obtains higher PSNR or SSIM. Such endpoint evaluation leaves several alternatives unresolved. A condition may encode degradation evidence, yet it may also act as extra model capacity, a global correction bias, a dense prompt vector, or a dataset-specific shortcut. For an explainable degradation prior, a stronger evaluation should ask whether the prior is input-aligned, whether a wrong prior damages restoration, whether only the selected mem-ory slots matter, and whether the same route can support a training signal in the reverse direction from clean target to degraded observation. We propose BiDeMem, a bidirectional degradation memory for explainable image restoration. The method builds an evidence-guided query from restoration bottle-neck features and simple input statistics, retrieves a com-pact top-k subset of memory slots, and uses the selected slot identity to condition restoration. During inference, the selected slots modulate the restoration decoder and a slot-routed correction head. During training, the same se-lected slot identity also conditions a forward-degradation consistency branch that reconstructs the degraded observa-tion from the clean target. This bidirectional design turns the retrieved slot identity into an auditable object: the active slots can be masked, replaced, shuffled, compared against non-native priors, and tested under uniform or zero-memory interventions. We evaluate BiDeMem in a controlled multi-degradation setting built on NAFNet. The goal is to test whether compact degradation memory is useful and verifiable un-der clear controls. BiRank Memory obtains 29.7529 dB / 0.8865 average PSNR/SSIM over eight seen benchmarks, while correction-head-only, dense-prior, and static/global-1   
+
+> arXiv:2606.28112v1 [cs.CV] 26 Jun 2026 Figure 1. Overview of BiDeMem. A degraded image is encoded by a restoration backbone. Evidence from the bottleneck feature and input statistics forms a query that retrieves a compact top-ksubset from a degradation memory. The same selected slot identity conditions the restoration decoder during inference and, during training only, drives a forward degradation explanation branch. The figure emphasizes the paper’s central claim: a degradation prior should be useful for restoration and falsifiable through reverse degradation and counterfactual interventions.
+
+prior controls are 0.2588, 0.2586, and 0.2839 dB lower, respectively. More importantly, bidirectional training in-creases intervention sensitivity: the wrong-prior drop rises from 0.2365 dB for Rank Memory to 1.0430 dB for Bi-Rank Memory, and the native/non-native prior gap rises from 0.3484 dB to 0.6134 dB. Additional unseen/mixed tests, low-data adaptation, efficiency measurements, and external-backbone checks define the useful scope and cur-rent limitations of the method. Overall, the contributions of this paper are as follows: • We formulate degradation memory as a verifiable prior whose value should be assessed by restoration utility, in-tervention sensitivity, and route consistency. • We propose a compact top-k bidirectional memory whose selected slot identity is shared by restoration and a training-only forward-degradation consistency branch. • We introduce a control suite that separates memory be-havior from extra backbone capacity, residual correc-tion heads, dense prompt-like priors, static global priors, degradation supervision, and head capacity. • We show in a controlled NAFNet study that bidirectional memory preserves restoration quality while making the retrieved prior more sensitive to wrong-prior, native-prior, and active-slot interventions, with supportive but setting-dependent external backbone checks. 
+
+# 2. Related Work 
+
+Task-specific restoration models. Deep image restoration first made rapid progress in task-specific settings. For Gaus-sian denoising, DnCNN [1] learned to predict residual noise instead of the clean image, making residual learning a stan-dard design. FFDNet [10] further introduced a noise-level map, which allowed one denoiser to handle multiple noise strengths. CBDNet [11] moved toward real photographs by modeling signal-dependent noise. Self-supervised denois-ers such as Noise2Noise [12] and Noise2Void [13] relaxed the need for clean targets, but they mainly addressed super-vision rather than degradation-prior verifiability. Similar task-specific progress appears in dehazing, de-raining, deblurring, and super-resolution. The Dark Chan-nel Prior [14] estimated haze from hand-crafted image statistics, while DehazeNet [15] learned transmission maps end to end. AOD-Net [16] folded the atmospheric scat-tering model into a compact restoration network, and RE-SIDE [2] provided a widely used dehazing benchmark. In deraining, JORDER [3] jointly detected and removed rain streaks, DID-MDN [17] used density-aware multi-stream prediction, DDN [18] separated image detail from rain structure, RESCAN [19] aggregated recurrent context, and 
+
+SPANet [20] used spatial attention for real rain. Deblur-GAN [21] and DeblurGAN-v2 [22] introduced adversarial deblurring pipelines, while EDSR [23] and RCAN [24] im-proved super-resolution through residual scaling and chan-nel attention. These models define strong restoration opera-2Figure 2. Qualitative restoration examples. Each row compares the low-quality input, ground truth, NAFNet, NAFNet-wide, Rank Memory, and BiRank Memory. Yellow boxes highlight local regions where the memory variants better recover contrast and structure. The numbers in the headers are per-example PSNR. 
+
+tors, but their priors are usually tied to a specific degradation or evaluated mainly through endpoint quality. 
+
+General restoration backbones. Recent work has shifted from task-specific modules to general restoration backbones. MPRNet [4] uses multi-stage progressive re-finement, allowing earlier stages to guide later restora-tion. MIRNet [25] learns enriched multi-scale features for real image restoration and enhancement. Transformer-based designs then introduced stronger long-range model-ing. SwinIR [26] adapts shifted-window attention to restora-tion, Uformer [27] builds a U-shaped Transformer, and 
+
+Restormer [5] improves high-resolution restoration with ef-ficient attention. NAFNet [6] shows that a simplified convo-lutional backbone can be highly competitive without com-plex nonlinear activations. BiDeMem uses NAFNet as a controlled backbone because it is strong, simple, and does not already contain a specialized degradation-memory mechanism. 
+
+Blind and multi-degradation restoration. Blind restoration methods ask one model to handle unknown or mixed corruptions. AirNet [7] learns a degradation repre-sentation and uses it to guide an all-in-one restoration net-work. TransWeather [8] targets adverse-weather restoration with a Transformer-based shared model. PromptIR [9] in-troduces learnable prompts that adapt the restoration net-work to different degradations. Low-light systems such as SID [28] and Zero-DCE [29] show another form of degradation-aware enhancement, where the restoration be-havior is shaped by image-specific exposure or curve pa-rameters. These methods demonstrate that degradation con-ditioning can improve a shared model. BiDeMem focuses on the next question: whether the selected condition can be treated as an input-aligned and intervention-sensitive prior. 
+
+Prompts, modulation, and memory mechanisms. 
+
+Conditioning modules provide the architectural tools for in-jecting task information into a network. FiLM [30] mod-3ulates features by learned scale and shift parameters, and language-conditioned modulation [31] shows how external evidence can change visual computation. Dynamic Fil-ter Networks [32] generate filters conditioned on the in-put, while PromptIR [9] uses prompt tokens as restoration-specific conditions. These designs motivate the FiLM-style conditioning in BiDeMem, but they usually produce dense conditions rather than a small active route. Memory models make the route more explicit. Mem-ory Networks [33] and End-to-End Memory Networks [34] store information in addressable slots. Neural Turing Ma-chines [35] and the Differentiable Neural Computer [36] ex-tend this idea to differentiable external memory. Slot Atten-tion [37] learns object-centric slots, and Product-Key Mem-ory [38] scales retrieval to large memory tables. BiDeMem adapts this slot view to image degradation priors: the mem-ory is compact, top-k retrieval exposes an active subset, and the same selected slot identity is reused across restoration and forward-degradation consistency. 
+
+Explainability and counterfactual evaluation. Ex-plainability methods test whether a prediction depends on meaningful evidence. Grad-CAM [39] localizes discrimi-native image regions, Integrated Gradients [40] attributes predictions to input features, and TCAV [41] measures sen-sitivity to human-defined concepts. LIME [42] fits local sur-rogate explanations, while SHAP [43] assigns feature con-tributions through a game-theoretic formulation. Counter-factual explanations [44] and contrastive explanations [45] ask how predictions change when evidence is modified or removed. In restoration, such tests are less commonly ap-plied to the degradation prior itself. BiDeMem therefore evaluates the memory route through prior shuffling, wrong-prior replacement, native/non-native comparison, uniform attention, zero memory, and active/inactive slot masking. 
+
+# 3. Method 
+
+3.1. Problem Setup 
+
+Given a degraded image x ∈ R3×H×W and clean target y, a restoration model predicts ˆy = f (x). Standard degradation-conditioned restoration asks whether a condition improves 
+
+ˆy. BiDeMem asks a stronger question: can the same condi-tion be made useful for restoration, identifiable under inter-ventions, and explanatory of the forward degradation pro-cess? The deployed path remains a normal restoration path from x to ˆy. The bidirectional path is used only during train-ing. 
+
+3.2. Verification Logic 
+
+The method is designed to be tested by controls. We use NAFNet-wide to control parameter count, NAFNet + correction head to control the residual correction module, 
+
+dense query-FiLM to control dense prompt-like condition-ing without slots, and static/global prior to remove input-conditioned retrieval. These controls target the main alter-native explanations for a memory-related gain: extra back-bone capacity, an additional residual head, dense condition-ing, and an input-independent global prior.           
+
+> Table 1. Baseline map. Each control blocks one alternative expla-nation for why memory-like conditioning may help. Question Control Is this just more backbone capacity? NAFNet-wide Is this just a residual head? NAFNet +correction head Is a dense condition enough? Dense query-FiLM prior Is top-kretrieval necessary? Static/global prior Does auxiliary degradation supervi-sion alone close the gap? Strong residual supervi-sion
+
+3.3. Evidence-Guided Query 
+
+Let E denote the NAFNet feature extractor. From the de-graded input we obtain a bottleneck feature z = Ebn (x)
+
+and cached skip features. The memory query combines two forms of evidence. First, z is summarized by spa-tial and frequency-band descriptors, including low-, mid-, and high-frequency FFT statistics. Second, the input image contributes a 22-dimensional observation vector containing RGB statistics, luminance statistics, gradient magnitudes, FFT band energies, and high/low-frequency ratios. The two sources are mapped to a shared 128-dimensional query: 
+
+q = norm ( gz (z) + λg s(s(x))) , λ = 0 .25 . (1) The query is deliberately tied to observable degradation ev-idence; it is not a free image identifier. 
+
+3.4. Compact Top-k Memory 
+
+The memory has N = 12 slots with dimension d = 128 .A key table K ∈ RN ×d is used for addressing, and value tables provide conditioning vectors for the restoration and degradation-explanation heads. Slot scores are normalized dot products with temperature τ = 0 .2:
+
+ri = ⟨q, K i⟩
+
+τ , S = TopK( r, k = 4) . (2) Only the selected slots are active: 
+
+ai =
+
+(
+
+softmax( rS )i, i ∈ S ,
+
+0, otherwise . (3) The active set S is the object we test. A useful memory should not distribute its effect uniformly over all slots, nor should it collapse into a static global vector. 43.5. Restoration Path 
+
+The restoration value read from the active slots produces a prior pr . This prior modulates the NAFNet decoder by FiLM at all decoder stages, while the decoder still receives the bottleneck and skip features from the image. Thus mem-ory conditions the restoration process but does not replace image evidence. The decoder output is a base restoration b.We then use a slot-routed correction head. It receives 
+
+concat( x, b, x − b) and predicts a global correction cg and slot-indexed basis corrections Bi. The final image is 
+
+ˆy = b + cg +
+
+> N
+
+X
+
+> i=1
+
+wiBi, (4) where w = softmax(log( a+ϵ)/0.5) . This makes the output explicitly depend on the retrieved active slots. 
+
+3.6. Bidirectional Explanation Path 
+
+BiRank Memory adds a training-only path that uses the same selected slot identity S to explain degradation. Adegradation value read from the selected slots gives pd. A forward degradation head receives the clean target y and pd
+
+and predicts 
+
+ˆx = y + hd(y, p d). (5) An explanation correction head and consistency gate refine this prediction. The branch is supervised so that ˆx matches 
+
+x in pixel, frequency, low-frequency, and statistic spaces. The important constraint is identity sharing: the slots used to help restoration must also support a plausible forward degradation explanation. 
+
+3.7. Objectives 
+
+All variants use a restoration loss 
+
+Lpix = ∥ˆy − y∥1. (6) We also use a prior ranking loss comparing the native prior to wrong priors from a cross-degradation queue: 
+
+Lrank = max(0 , e native + m − ewrong ), (7) with margin m = 0 .001 . Rank Memory uses the restoration path and ranking loss. BiRank Memory adds degradation and explanation terms: 
+
+LBiRank = Lpix + αLrank + βLdeg + γLexplain . (8) 
+
+# 4. Experiments 
+
+4.1. Protocol 
+
+We use a controlled multi-degradation setting with denois-ing, deraining, and dehazing. Denoising uses BSD400 [46] and WED images with Gaussian noise levels σ ∈{15 , 25 , 50 }; deraining uses 5,200 paired samples; dehaz-ing uses 5,500 synthetic/clean pairs following common de-hazing benchmarks [2]. Testing uses BSD68 [46], Ur-ban100 [47], Rain100L [3], and Haze4K. Unless stated oth-erwise, training uses 30k iterations, AdamW, learning rate 
+
+10 −4 cosine-decayed to 10 −7, weight decay 10 −3, 192 ×
+
+192 patches, global batch size 4, and seeds(42/123/2026). The controlled backbone is NAFNet [6] with width 32 and block layout [1 , 1, 1, 28] encoder, one middle block, and 
+
+[1 , 1, 1, 1] decoder. NAFNet-wide uses width 40. Memory variants use 12 slots, top-4 retrieval, 128-dimensional val-ues, and train the query, memory, correction, degradation, explanation, and gate modules while keeping the backbone restoration parameters frozen. The experimental logic follows Table 1. We first es-tablish controlled restoration utility, then test supporting generalization, low-data memory reuse, and efficiency, be-fore turning to the mechanism controls and intervention ev-idence that form the main explanation claim.                    
+
+> Table 2. Controlled restoration context. Average over eight seen tests. Main rows use the three-seed protocol. Method Params PSNR/SSIM Role NAFNet 17.11M 29.4909 / 0.8757 Backbone NAFNet-wide 26.65M 29.5962 / 0.8783 Capacity Rank Memory 18.02M 29.7467 / 0.8861 Slot memory BiRank Memory 18.02M 29.7529 /0.8865 Bidirectional
+
+4.2. Controlled Restoration Utility 
+
+Table 2 gives the controlled restoration context. This is the entry point rather than the final claim: the memory must be useful enough to matter, but restoration accuracy alone cannot prove that the slots encode a meaningful degradation prior. In this controlled NAFNet setting, BiRank Memory is slightly above Rank Memory in average restoration quality while also adding bidirectional explanation. The aggregate seen-benchmark result should be read as controlled restoration utility rather than as a claim of uni-form dominance on every degradation. The purpose of this experiment is to establish that the memory route is use-ful enough to study; the following controls and interven-tions then test whether this route behaves like a meaningful degradation prior. Figure 2 provides qualitative examples. The memory variants generally restore sharper local contrast and clearer structures than the controlled NAFNet baselines, while the remaining failure modes motivate the more cautious positioning of BiDeMem as an explainable degradation-memory study. 
+
+4.3. Supporting Generalization and Reuse 
+
+5Table 3. Generalization summary. Average over ten un-seen/mixed tests. Method PSNR/SSIM ∆ PSNR NAFNet 24.7557 / 0.7926 –NAFNet-wide 24.7365 / 0.7926 -0.0192 Rank Memory 24.9539 / 0.8053 +0.1982 BiRank Memory 24.9556 / 0.8056 +0.1999 
+
+We use unseen and mixed corruptions as supporting ev-idence that the memory extends beyond seen benchmark labels. Across ten tests including JPEG compression, un-seen noise levels, and haze/rain mixtures, Rank Memory improves the NAFNet average by +0.1982 dB and BiRank Memory by +0.1999 dB, with wins on seven of ten tests. These gains remain secondary to the intervention evidence, and Table 3 reports the compact summary. 
+
+Table 4. Low-data adaptation. Average PSNR/SSIM over eight seen benchmarks.                     
+
+> Data NAFNet Rank Memory BiRank Memory Rank gain BiRank gain 10% 28.9354 / 0.8669 29.7159 / 0.8855 29.7309 / 0.8858 +0.7805 +0.7954 25% 29.0327 / 0.8696 29.7308 / 0.8857 29.7387 / 0.8859 +0.6981 +0.7060 50% 28.7756 / 0.8640 29.7371 / 0.8858 29.7462 / 0.8861 +0.9615 +0.9706
+
+With a pretrained compact memory, low-data adapta-tion at 10%, 25%, and 50% training data improves over same-protocol NAFNet trained from scratch by +0.7805, +0.6981, and +0.9615 dB for Rank Memory, and by +0.7954, +0.7060, and +0.9706 dB for BiRank Memory. Table 4 reports the full summary. This comparison mea-sures memory reuse under limited training data. 
+
+4.4. Cost 
+
+Table 5. Efficiency on 256 × 256 inputs. BiDeMem is compact in parameters but not faster. Method Params FLOPs Latency NAFNet 17.11M 31.91G 26.56 ms NAFNet-wide 26.65M 49.62G 39.46 ms Rank Memory 18.02M 45.88G 41.77 ms BiRank Memory 18.02M 45.88G 41.90 ms 
+
+Table 5 reports cost: BiDeMem is compact in parameters but not faster. 
+
+4.5. Memory Design Controls 
+
+Table 6 isolates the memory mechanism under the follow-up protocol. The correction-head-only and dense-prior vari-ants are almost identical, and both are about 0.26 dB below BiRank. Thus, the result is not explained by simply adding the residual correction head or by replacing slots with a dense query-conditioned FiLM prior. Static/global prior is still weaker, showing that input-conditioned retrieval is nec-essary. The two strongest negative controls are the correction-only and dense-prior variants. They are nearly tied with each other and far below BiRank, which is exactly the pat-tern expected if the useful component is not the correction head itself and not a generic dense prompt. The strong-residual and wide-degradation variants are also informative: both recover part of the gap relative to the weakest controls, but remain about 0.19 dB below BiRank. This suggests that degradation supervision or head capacity alone is insuffi-cient without the full bidirectional memory route. 
+
+4.6. Bidirectional Intervention Evidence 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> Intervention gap/drop in PSNR (dB)
+> Wrong-prior
+> swap
+> Native/non-native
+> prior gap
+> Shuffle
+> prior
+> Active-slot
+> mask
+> 0.24
+> 1.04
+> 0.35
+> 0.61
+> 0.36
+> 0.40
+> 0.28
+> 0.30
+> BiRank increases intervention sensitivity
+> Rank BiRank
+
+Figure 3. Intervention evidence. The bars summarize counterfac-tual prior tests. Larger gaps or drops mean that the output depends more strongly on the correct retrieved prior. BiRank Memory especially increases wrong-prior sensitivity and the native/non-native prior gap while preserving restoration accuracy. 
+
+Table 6 and Table 7 answer different questions. Table 6 asks whether the restoration gain can be explained away by capacity, correction heads, dense priors, or static pri-ors. Table 7 asks whether the retrieved prior behaves like the claimed degradation evidence under interventions. This is the central table for the paper: the small average-PSNR difference is less important than whether the prior fails un-der counterfactual use. Compared with Rank Memory, Bi-Rank Memory raises the wrong-prior drop from 0.2365 dB to 1.0430 dB and the native-prior gap from 0.3484 dB to 0.6134 dB. The active/inactive masking results support compact re-liance. Masking active slots reduces performance, whereas masking inactive slots has essentially no effect. This is the behavior expected from a top-k memory and would be dif-ficult to interpret for an unconstrained dense condition. 
+
+4.7. External Backbone Checks 
+
+We also test transfer to stronger degradation-aware back-bones. Table 8 reports matched fine-tuned and from-scratch 6Table 6. Memory design controls on NAFNet, seed 42. These rows are mechanism tests, not benchmark comparisons. Variant Avg. PSNR/SSIM ∆ PSNR vs. BiRank Memory Main conclusion BiRank Memory 29.7529 / 0.8865 – Reference Correction head only 29.4941 / 0.8792 -0.2588 Head alone insufficient Dense query prior 29.4943 / 0.8796 -0.2586 Dense prior insufficient Static/global prior 29.4690 / 0.8738 -0.2839 Retrieval matters Strong residual supervision 29.5637 / 0.8806 -0.1892 Supervision alone insufficient Wide degradation head 29.5583 / 0.8814 -0.1946 Capacity is secondary Table 7. Bidirectional and intervention controls. Larger gaps/drops indicate stronger dependence on the correct prior. Method Avg. PSNR Shuffle gap Wrong-prior drop Native gap Active-mask drop Inactive-mask drop Rank Memory 29.7467 0.3570 0.2365 0.3484 0.2764 -0.0004 BiRank Memory 29.7529 0.4013 1.0430 0.6134 0.3008 -0.0004 Table 8. External backbone reality checks. Average PSNR/SSIM over the seen benchmark suite. “Ctrl.” denotes the available parame-ter/capacity control. The results provide supportive but setting-dependent evidence beyond the controlled NAFNet backbone. Backbone setting Base Ctrl. Rank Memory BiRank Memory AirNet [7] fine-tuned 29.8895 / 0.8974 30.3699 / 0.8957 30.3368 / 0.8975 30.4178 / 0.8988                   
+
+> AirNet [7] from scratch 28.4939 / 0.8681 28.6705 / 0.8709 28.7314 / 0.8708 28.7459 /0.8730
+> PromptIR [9] fine-tuned 29.3825 / 0.9024 29.9118 / 0.9005 30.1703 / 0.9039 30.6290 / 0.9032 PromptIR [9] from scratch 28.4866 / 0.8564 28.7411 / 0.8618 28.5491 / 0.8585 28.7767 /0.8626
+
+variants for AirNet [7] and PromptIR [9]. BiRank Mem-ory gives the best PSNR in all four settings, improving the matched bases by +0.5283/+0.2520 dB on AirNet and +1.2465/+0.2901 dB on PromptIR. Since controls remain competitive and PromptIR fine-tuning gives Rank Memory slightly higher SSIM, we treat this as supportive, setting-dependent evidence. 
+
+# 5. Discussion and Limitations 
+
+BiDeMem studies degradation memory from the perspec-tive of verification rather than endpoint restoration quality alone. The controlled NAFNet results show that a compact top-k memory can provide a useful restoration prior, while the intervention results show that the retrieved route is mea-surably sensitive to wrong, shuffled, and non-native priors. This combination is important for explainable restoration: the memory is not only a conditioning vector that improves an output image, but also an addressable route whose be-havior can be tested. The bidirectional design adds an interpretability con-straint to this route. By asking the same selected slot iden-tity to support restoration and a training-only forward degra-dation explanation, BiRank Memory makes the memory pathway more auditable. This constraint is not intended to maximize PSNR in every setting; decoupling restora-tion and degradation slots may be useful for supplemen-tary analysis or task-specific optimization. The advantage of the shared identity is that counterfactual probes evaluate the same route used by restoration, making the learned prior easier to inspect. The current design also has clear limitations. BiDe-Mem is parameter-compact but not compute-efficient: the memory and correction heads add latency relative to the base network. In addition, the compact global slot design may not be the best form for every restoration backbone or degradation mixture. These limitations indicate that the present model should be viewed as a verification-oriented degradation-memory design, not as a universal restoration operator. The AirNet and PromptIR checks provide encouraging but still setting-dependent external evidence. BiRank Mem-ory improves PSNR over the matched base and capacity-control variants in all four external settings, suggesting that bidirectional memory can transfer beyond NAFNet when jointly adapted. At the same time, the gains vary across backbones and training settings, scratch controls remain competitive, and SSIM is not always maximized by BiRank Memory. Future work should therefore study backbone-aware memory size, insertion points, and training objectives that preserve verifiability while improving efficiency. 
+
+# 6. Conclusion 
+
+We introduced BiDeMem, a bidirectional degradation memory for explainable image restoration. The method re-7trieves compact top-k memory slots from observable degra-dation evidence and uses the same selected slot identity to condition restoration and a training-only forward degra-dation explanation branch. Across controlled restoration, mechanism controls, intervention probes, low-data adapta-tion, and external backbone checks, the results support a verification-oriented view of degradation priors: a useful prior should improve restoration, remain aligned with the input degradation, and respond predictably under counter-factual interventions. BiDeMem is not intended as a final all-purpose restoration backbone; rather, it provides a con-crete design and evaluation protocol for making degradation memory auditable. We hope this perspective encourages future restoration models to treat learned degradation con-ditions as testable objects, not only as latent variables that improve endpoint image quality. 
+
+# References 
+
+[1] Kai Zhang, Wangmeng Zuo, Yunjin Chen, Deyu Meng, and Lei Zhang. Beyond a gaussian denoiser: Residual learning of deep cnn for image denoising. IEEE transactions on image processing , 26(7):3142–3155, 2017. 1, 2 [2] Boyi Li, Wenqi Ren, Dengpan Fu, Dacheng Tao, Dan Feng, Wenjun Zeng, and Zhangyang Wang. Benchmarking single-image dehazing and beyond. IEEE transactions on image processing , 28(1):492–505, 2018. 2, 5 [3] Wenhan Yang, Robby T Tan, Jiashi Feng, Jiaying Liu, Zong-ming Guo, and Shuicheng Yan. Deep joint rain detection and removal from a single image. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 1357–1366, 2017. 2, 5 [4] Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, Ming-Hsuan Yang, and Ling Shao. Multi-stage progressive image restoration. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 14821–14831, 2021. 3 [5] Syed Waqas Zamir, Aditya Arora, Salman Khan, Mu-nawar Hayat, Fahad Shahbaz Khan, and Ming-Hsuan Yang. Restormer: Efficient transformer for high-resolution image restoration. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5728–5739, 2022. 3 [6] Liangyu Chen, Xiaojie Chu, Xiangyu Zhang, and Jian Sun. Simple baselines for image restoration. In European confer-ence on computer vision , pages 17–33. Springer, 2022. 1, 3, 5[7] Boyun Li, Xiao Liu, Peng Hu, Zhongqin Wu, Jiancheng Lv, and Xi Peng. All-in-one image restoration for unknown corruption. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17452– 17462, 2022. 1, 3, 7 [8] Jeya Maria Jose Valanarasu, Rajeev Yasarla, and Vishal M Patel. Transweather: Transformer-based restoration of im-ages degraded by adverse weather conditions. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 2353–2363, 2022. 3 [9] Vaishnav Potlapalli, Syed Waqas Zamir, Salman H Khan, and Fahad Shahbaz Khan. Promptir: Prompting for all-in-one image restoration. Advances in neural information pro-cessing systems , 36:71275–71293, 2023. 1, 3, 4, 7 [10] Kai Zhang, Wangmeng Zuo, and Lei Zhang. Ffdnet: Toward a fast and flexible solution for cnn-based image denoising. 
+
+IEEE Transactions on Image Processing , 27(9):4608–4622, 2018. 2 [11] Shi Guo, Zifei Yan, Kai Zhang, Wangmeng Zuo, and Lei Zhang. Toward convolutional blind denoising of real pho-tographs. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 1712–1722, 2019. 2 [12] Jaakko Lehtinen, Jacob Munkberg, Jon Hasselgren, Samuli Laine, Tero Karras, Miika Aittala, and Timo Aila. Noise2noise: Learning image restoration without clean data. 
+
+arXiv preprint arXiv:1803.04189 , 2018. 2 [13] Alexander Krull, Tim-Oliver Buchholz, and Florian Jug. Noise2void-learning denoising from single noisy images. In 
+
+Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 2129–2137, 2019. 2 [14] Kaiming He, Jian Sun, and Xiaoou Tang. Single image haze removal using dark channel prior. IEEE transactions on pat-tern analysis and machine intelligence , 33(12):2341–2353, 2010. 2 [15] Bolun Cai, Xiangmin Xu, Kui Jia, Chunmei Qing, and Dacheng Tao. Dehazenet: An end-to-end system for single image haze removal. IEEE transactions on image process-ing , 25(11):5187–5198, 2016. 2 [16] Boyi Li, Xiulian Peng, Zhangyang Wang, Jizheng Xu, and Dan Feng. Aod-net: All-in-one dehazing network. In Pro-ceedings of the IEEE international conference on computer vision , pages 4770–4778, 2017. 2 [17] He Zhang and Vishal M Patel. Density-aware single image de-raining using a multi-stream dense network. In Proceed-ings of the IEEE conference on computer vision and pattern recognition , pages 695–704, 2018. 2 [18] Xueyang Fu, Jiabin Huang, Delu Zeng, Yue Huang, Xinghao Ding, and John Paisley. Removing rain from single images via a deep detail network. In Proceedings of the IEEE con-ference on computer vision and pattern recognition , pages 3855–3863, 2017. 2 [19] Xia Li, Jianlong Wu, Zhouchen Lin, Hong Liu, and Hongbin Zha. Recurrent squeeze-and-excitation context aggregation net for single image deraining. In Proceedings of the Eu-ropean conference on computer vision (ECCV) , pages 254– 269, 2018. 2 [20] Tianyu Wang, Xin Yang, Ke Xu, Shaozhe Chen, Qiang Zhang, and Rynson WH Lau. Spatial attentive single-image deraining with a high quality real rain dataset. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12270–12279, 2019. 2 [21] Orest Kupyn, Volodymyr Budzan, Mykola Mykhailych, Dmytro Mishkin, and Jiˇ r´ ı Matas. Deblurgan: Blind mo-tion deblurring using conditional adversarial networks. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 8183–8192, 2018. 2 
+
+8[22] Orest Kupyn, Tetiana Martyniuk, Junru Wu, and Zhangyang Wang. Deblurgan-v2: Deblurring (orders-of-magnitude) faster and better. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 8878–8887, 2019. 2 [23] Bee Lim, Sanghyun Son, Heewon Kim, Seungjun Nah, and Kyoung Mu Lee. Enhanced deep residual networks for single image super-resolution. In Proceedings of the IEEE confer-ence on computer vision and pattern recognition workshops ,pages 136–144, 2017. 2 [24] Yulun Zhang, Kunpeng Li, Kai Li, Lichen Wang, Bineng Zhong, and Yun Fu. Image super-resolution using very deep residual channel attention networks. In Proceedings of the European conference on computer vision (ECCV) , pages 286–301, 2018. 2 [25] Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, Ming-Hsuan Yang, and Ling Shao. Learning enriched features for real image restoration and enhancement. In European conference on computer vi-sion , pages 492–511. Springer, 2020. 3 [26] Jingyun Liang, Jiezhang Cao, Guolei Sun, Kai Zhang, Luc Van Gool, and Radu Timofte. Swinir: Image restoration us-ing swin transformer. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 1833–1844, 2021. 3 [27] Zhendong Wang, Xiaodong Cun, Jianmin Bao, Wengang Zhou, Jianzhuang Liu, and Houqiang Li. Uformer: A general u-shaped transformer for image restoration. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17683–17693, 2022. 3 [28] Chen Chen, Qifeng Chen, Jia Xu, and Vladlen Koltun. Learning to see in the dark. In Proceedings of the IEEE con-ference on computer vision and pattern recognition , pages 3291–3300, 2018. 3 [29] Chunle Guo, Chongyi Li, Jichang Guo, Chen Change Loy, Junhui Hou, Sam Kwong, and Runmin Cong. Zero-reference deep curve estimation for low-light image enhancement. In 
+
+Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 1780–1789, 2020. 3 [30] Ethan Perez, Florian Strub, Harm De Vries, Vincent Du-moulin, and Aaron Courville. Film: Visual reasoning with a general conditioning layer. In Proceedings of the AAAI con-ference on artificial intelligence , 2018. 3 [31] Harm De Vries, Florian Strub, J´ er´ emie Mary, Hugo Larochelle, Olivier Pietquin, and Aaron C Courville. Mod-ulating early visual processing by language. Advances in neural information processing systems , 30, 2017. 4 [32] Xu Jia, Bert De Brabandere, Tinne Tuytelaars, and Luc V Gool. Dynamic filter networks. Advances in neural informa-tion processing systems , 29, 2016. 4 [33] Jason Weston, Sumit Chopra, and Antoine Bordes. Memory networks. arXiv preprint arXiv:1410.3916 , 2014. 4 [34] Sainbayar Sukhbaatar, Jason Weston, Rob Fergus, et al. End-to-end memory networks. Advances in neural information processing systems , 28, 2015. 4 [35] Alex Graves, Greg Wayne, and Ivo Danihelka. Neural turing machines. arXiv preprint arXiv:1410.5401 , 2014. 4 [36] Alex Graves, Greg Wayne, Malcolm Reynolds, Tim Harley, Ivo Danihelka, Agnieszka Grabska-Barwi´ nska, Ser-gio G´ omez Colmenarejo, Edward Grefenstette, Tiago Ra-malho, John Agapiou, et al. Hybrid computing using a neural network with dynamic external memory. Nature , 538(7626): 471–476, 2016. 4 [37] Francesco Locatello, Dirk Weissenborn, Thomas Un-terthiner, Aravindh Mahendran, Georg Heigold, Jakob Uszkoreit, Alexey Dosovitskiy, and Thomas Kipf. Object-centric learning with slot attention. Advances in neural in-formation processing systems , 33:11525–11538, 2020. 4 [38] Guillaume Lample, Alexandre Sablayrolles, Marc’Aurelio Ranzato, Ludovic Denoyer, and Herv´ e J´ egou. Large memory layers with product keys. Advances in Neural Information Processing Systems , 32, 2019. 4 [39] Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv Ba-tra. Grad-cam: visual explanations from deep networks via gradient-based localization. International journal of com-puter vision , 128(2):336–359, 2020. 4 [40] Mukund Sundararajan, Ankur Taly, and Qiqi Yan. Axiomatic attribution for deep networks. In International conference on machine learning , pages 3319–3328. PMLR, 2017. 4 [41] Been Kim, Martin Wattenberg, Justin Gilmer, Carrie Cai, James Wexler, Fernanda Viegas, et al. Interpretability be-yond feature attribution: Quantitative testing with concept activation vectors (tcav). In International conference on ma-chine learning , pages 2668–2677. PMLR, 2018. 4 [42] Marco Tulio Ribeiro, Sameer Singh, and Carlos Guestrin. ” why should i trust you?” explaining the predictions of any classifier. In Proceedings of the 22nd ACM SIGKDD interna-tional conference on knowledge discovery and data mining ,pages 1135–1144, 2016. 4 [43] Scott M Lundberg and Su-In Lee. A unified approach to interpreting model predictions. Advances in neural informa-tion processing systems , 30, 2017. 4 [44] Sandra Wachter, Brent Mittelstadt, and Chris Russell. Counterfactual explanations without opening the black box: Automated decisions and the gdpr. arXiv preprint arXiv:1711.00399 , 2017. 4 [45] Amit Dhurandhar, Pin-Yu Chen, Ronny Luss, Chun-Chen Tu, Paishun Ting, Karthikeyan Shanmugam, and Payel Das. Explanations based on the missing: Towards contrastive ex-planations with pertinent negatives. Advances in neural in-formation processing systems , 31, 2018. 4 [46] David Martin, Charless Fowlkes, Doron Tal, and Jitendra Malik. A database of human segmented natural images and its application to evaluating segmentation algorithms and measuring ecological statistics. In Proceedings of the IEEE International Conference on Computer Vision , pages 416– 423, 2001. 5 [47] Jia-Bin Huang, Abhishek Singh, and Narendra Ahuja. Sin-gle image super-resolution from transformed self-exemplars. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 5197–5206, 2015. 5 
+
+9

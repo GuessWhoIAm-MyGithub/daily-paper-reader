@@ -1,0 +1,618 @@
+Title: SpatialFlow-GRPO: Where Spatial Credit Drives Image Editing
+
+URL Source: https://arxiv.org/pdf/2606.26872v2
+
+Published Time: Mon, 29 Jun 2026 01:06:34 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# SpatialFlow-GRPO: Where Spatial Credit Drives Image Editing 
+
+Yankai Yang * 1,2 Yancheng Long * 1,2 Wei Chen 2 Xingyu Lu 2 Hongyang Wei 2
+
+Bin Wen † B 2 Fan Yang 2 Tingting Gao 2 Han Li 2 Shuo Yang B 1
+
+## Abstract 
+
+Recent online reinforcement learning has substantially improved image editing quality. However, existing Flow-GRPO-style methods usually rely on a single whole-image reward, which makes fine-grained editing optimization difficult. We observe that a key obstacle in image editing is this spatial uniformity assump-tion: a whole-image reward cannot distinguish how different spatial regions con-tribute to image quality. To address this issue, we propose SpatialFlow-GRPO, a training framework that introduces spatially fine-grained reward feedback. The framework converts region-aware rewards into semantic-region-level optimiza-tion signals and aligns region advantages with the corresponding latent posi-tions during policy updates. We also train a region-aware reward model, SFRe-ward, construct SFReward-14K with region-annotated editing samples, and in-troduce MultiEditBench to evaluate multi-region editing ability. On OmniGen2 and FLUX.2-klein-4B, SpatialFlow-GRPO outperforms Flow-GRPO on GEdit-Bench, ImgEdit-Bench, and MultiEditBench. The results show that SpatialFlow-GRPO converts local feedback into spatially aligned update signals and improves editing quality. 
+
+## 1 Introduction 
+
+Diffusion models have made rapid progress in image generation and editing [13, 39, 33, 6]. Image editing has therefore become a core ability of visual generative models [4, 30, 5, 12, 8]. Unlike open-ended text-to-image generation, editing quality is often spatially non-uniform. Different regions in the same output may show different degrees of completion, failure, or quality degradation. Thus, post-training for image editing needs more than a global preference signal. It also needs fine-grained feedback that can indicate quality differences across spatial regions. Recent work has introduced online reinforcement learning (RL) into diffusion model post-training. Reward models provide preference, aesthetic, or editing-quality feedback to improve generation quality and instruction alignment [2, 7, 11]. However, methods such as Flow-GRPO [25] and Dance-GRPO [46] usually treat an edited image as a single outcome. They use one whole-image reward to compute a sample-level advantage and apply the same advantage to all latent positions. This design implies a spatial uniformity assumption : different regions in the image share the same credit sig-nal. This assumption limits fine-grained optimization in editing tasks, because a single whole-image score cannot determine which target region accounts for editing success or failure, or whether the change reflects preservation quality in unedited regions. Figure 1 shows a multi-region editing example: the instruction modifies the skirt, adds a dog, re-places a wall symbol with the letter V, and removes a person from the doorway. Flow-GRPO receives only one scalar reward for the whole result, so local successes and failures are collapsed into the      
+
+> *Equal contribution. †Project leader. BCorresponding authors.
+> 1Harbin Institute of Technology, Shenzhen. 2Kuaishou Technology. Correspondence to: Shuo Yang <shuoyang@hit.edu.cn >, Bin Wen <wenbin@kuaishou.com >.
+> arXiv:2606.26872v2 [cs.CV] 26 Jun 2026
+
+Figure 1: Motivation. In multi-region editing, different regions may have different quality out-comes. Flow-GRPO collapses them into one scalar reward, while SpatialFlow-GRPO attaches re-ward feedback to semantic regions and enables spatially localized credit assignment. same feedback. Region-level feedback can instead assign separate scores to the affected semantic regions, making the update signal spatially localizable. We call this the spatial credit assignment dilemma : quality differences in image editing have spatial structure, but the RL supervision signal and update rule lack matching spatial resolution. This problem is closely related to credit assignment and reward design in reinforcement learning [35]. Based on this observation, we propose SpatialFlow-GRPO, which extends the sample-level relative optimization of Flow-GRPO to spatially structured region-level optimization. The framework uses SFReward to produce quality feedback tied to semantic regions. It compares semantically corre-sponding regions among candidates sampled for the same instruction, producing localized region advantages. SpatialFlow-GRPO further preserves this spatial correspondence in the policy objec-tive. Region advantages are applied to the corresponding latent positions, and region-consistent policy ratios with region-weighted aggregation reduce the dilution of local signals by whole-image averaging. As a result, RL post-training no longer updates the model only according to whole-image quality. It can use region-level quality differences for more precise spatial credit assignment. The main contributions are summarized as follows: 1. Identifying the spatial uniformity limitation. We identify that whole-image rewards in Flow-GRPO-style methods force different spatial regions to share the same credit signal. This is a key factor that limits fine-grained optimization for image editing. 2. Region-level RL training framework. We propose SpatialFlow-GRPO, which integrates region-aware rewards, semantic-group advantage estimation, and a latent-region-aligned pol-icy objective into online RL post-training. This allows local feedback to serve as localized training signals for model updates. 3. Region reward model, data, and benchmark. We train the region-aware reward model SFRe-ward, build SFReward-14K for region reward learning, and introduce MultiEditBench for diag-nosing fine-grained editing ability. On OmniGen2 and FLUX.2-klein-4B, SpatialFlow-GRPO outperforms Flow-GRPO on GEdit-Bench, ImgEdit-Bench, and MultiEditBench. 2Figure 2: Overview of SpatialFlow-GRPO. The policy samples a group of edited images for each instruction, and SFReward returns region boxes, semantic labels, and scores. Region and global scores are converted into hybrid advantages, mapped back to latent regions, and optimized through region-consistent ratios and power-weighted aggregation. 
+
+## 2 Related work 
+
+Image editing. Image editing modifies a source image according to text while preserving natu-ralness and semantic consistency. Prior methods use noise perturbation, masks, or attention con-trol [30, 5, 12], and instruction-based data and models further broaden editing ability [4, 50, 8]. Recent systems scale data, model interfaces, and task coverage [51, 18, 19, 42, 26, 38, 37, 41]. We study how to post-train such editors with spatially fine-grained RL feedback. 
+
+RL post-training for diffusion models. RL post-training directly optimizes diffusion policies with reward or preference signals [2, 7, 40], including image-editing variants [23, 22]. Dance-GRPO [46] and Flow-GRPO [25] extend GRPO to visual generation and flow matching, while ImageDoctor [11] studies diagnosis-oriented visual evaluation. These methods improve alignment but usually compress each edited image into one sample-level reward, which can hide local quality variation. 
+
+Fine-grained credit assignment and region-aware rewards. Fine-grained credit assignment im-proves RL efficiency and stability. GRPO-style reasoning systems show the value of relative opti-mization [36, 10, 49], and B2-DiffuRL densifies sparse diffusion rewards over timesteps [16]; how-ever, image editing also requires spatial credit. Visual reward models have become stronger [45, 20, 44, 28, 43, 47, 27], and SpatialReward already provides structured region scores. Our contribution is complementary: we train an editing-oriented region evaluator and convert its structured scores into comparable region advantages while preserving spatial correspondence during policy updates. 
+
+Evaluation benchmarks and fine-grained editing diagnosis. Editing evaluation is also moving from overall scores toward detailed diagnosis. Existing benchmarks cover real user requests, general editing, multi-attribute/object editing, data quality, automatic evaluation, interpretable scoring, and spatial preservation [26, 48, 17, 19, 29, 21, 27]. They measure overall quality well, but rarely isolate whether a model handles spatially distinct goals as editing complexity increases. We introduce MultiEditBench to evaluate this fine-grained ability under multi-region edits. 
+
+## 3 Method 
+
+The goal of SpatialFlow-GRPO is to turn whole-image relative optimization in GRPO into spatial credit assignment over semantic regions. Given an editing instruction, a source image, and G can-didate outputs sampled from the current policy, SFReward predicts semantic regions to be scored, 3Figure 3: Structured output format of SFReward. 
+
+their bounding boxes, and rewards {Ri,r } for each output. SpatialFlow-GRPO compares semanti-cally corresponding regions under the same instruction and combines region-level advantages with a global quality anchor. The resulting hybrid advantages are aligned with the corresponding latent positions and used in the policy objective. In this way, the reward no longer affects the whole im-age only at the sample level. Instead, it can guide model updates at the region level. The overall framework is shown in Figure 2. 
+
+3.1 Problem setup and structured region reward 
+
+We follow the online training paradigm of Flow-GRPO [25]. Given an editing instruction c and a source image, the policy model generates G edited images in each sampling round, together with their reverse diffusion trajectories {xit}Tt=0 [13, 24]. Standard Flow-GRPO uses a sample-level reward Ri to compute the within-group advantage: 
+
+ˆAi = Ri − μR
+
+σR + ϵ ,
+
+and optimizes a PPO/GRPO-style clipped surrogate over all timesteps [34]: 
+
+JFlow-GRPO (θ) = 1
+
+GT 
+
+> G
+
+X 
+
+> i=1
+> T−1
+
+X
+
+> t=0
+
+min 
+
+
+
+ri,t (θ) ˆAi, clip( ri,t (θ), 1 − ϵ−, 1 + ϵ+) ˆAi
+
+
+
+− λkl Lkl , (1) where 
+
+ri,t (θ) = pθ (xit−1 | xit, c )
+
+pθold (xit−1 | xit, c ) .
+
+This objective fits global preference feedback but loses local editing success and failure in multi-region editing. Our Flow-GRPO baseline uses the sample-level score from the same SFReward as 
+
+Ri, while SpatialFlow-GRPO uses region scores to construct region-level advantages and objectives. SFReward outputs two types of structured scores for each edited result. Semantic consistency (SC) evaluates whether the edit succeeds and whether it avoids over-editing. Perceptual quality (PQ) evaluates image naturalness and artifacts. The output format is shown in Figure 3. Let oi denote the overall_score from SC, and let qi denote the score from PQ. The Flow-GRPO baseline and the reward-model evaluation use a VIEScore-style aggregation [21] to combine global SC and PQ scores into a sample-level reward: 
+
+Rgi =
+
+pmin( oi) · min( qi)
+
+C , (2) where C is a fixed normalization constant. 4Unlike the sample-level reward in Equation (2), SpatialFlow-GRPO computes a separate reward for each edited region and for the background. SFReward provides semantic-consistency scores for the regions in edit_region , a background-preservation score, and image-level perceptual-quality scores. For sample i, let Ri = Rfg  
+
+> i
+
+∪ { bg }, let IF i,r denote the semantic-consistency score of foreground region r, let IF i, bg denote the background score, and let AES i = min( qi) denote the perceptual-quality term. The region reward is 
+
+Ri,r =
+
+pϕ(IF i,r ) · AES i
+
+C , ϕ(IF i,r ) = 
+
+(
+
+min(IF i,r ), r ∈ R fg  
+
+> i
+
+,
+
+IF i, bg , r = bg , (3) where ϕ selects the local semantic-consistency signal for each foreground region and the preser-vation signal for the background. AES i is computed from image-level perceptual-quality scores, since naturalness, artifacts, and aesthetic quality are judged from the whole edited image rather than from isolated regions. It therefore serves as a global quality factor shared by all region rewards. SFReward is trained on SFReward-14K, a 14,276-sample region-annotated editing dataset; details are provided in Appendix A.4. 
+
+3.2 Semantic-region advantage estimation 
+
+Rewards are comparable only within the same instruction and semantic label. SpatialFlow-GRPO therefore normalizes rewards by (instruction , label ). Given instruction p and label l, we define: 
+
+Sp,l = {Ri,r | ci = p, l i,r = l}. (4) When |S p,l | ≥ 2, the region advantage is 
+
+ˆAi,r = Ri,r − μp,l 
+
+σp,l + ϵ , (5) where μp,l and σp,l are the mean and standard deviation within the semantic group. Since grouping is within the same instruction, no predefined global semantic taxonomy is required. Region advantages capture local quality differences, but pure local scores can weaken composition, identity preservation, and naturalness. We therefore mix each region advantage with the global advantage: 
+
+ˆAmix  
+
+> i,r
+
+= (1 − α) ˆAgi + α ˆAi,r , α ∈ [0 , 1] . (6) Here, the global advantage ˆAgi is computed from the sample-level reward Rgi in Equation (2). Early in training, a small α preserves the global quality constraint. The region signal is then gradually increased using a clipped cosine schedule: 
+
+α(s) = αmin + αmax − αmin 
+
+2 (1 − cos( πu (s))) , (7) where u(s) = clip(( s − sstart )/(send − sstart ), 0, 1) . Each region box is scaled to latent resolution and mapped to positions Mi,r ; positions in Mi,r use ˆAmix  
+
+> i,r
+
+, while uncovered positions use the background region. Overlapping region boxes and sparse semantic groups are handled by multi-region averaging and a global-advantage fallback, respectively; implementation details are provided in Appendix A.3. 
+
+3.3 Region-aligned policy objective 
+
+Region advantages describe editing-quality differences of semantic regions relative to the candidates in the same group. To preserve this correspondence during the update, the policy objective should also operate at the region level. If policy ratios and loss aggregation are still computed indepen-dently over latent positions, the region-level signal can be diluted by local noise along the diffusion trajectory and by the large area of the background. SpatialFlow-GRPO therefore introduces two region-aligned designs in the policy objective. First, we aggregate position-level log-ratios within each region: 
+
+δi,t,k = log pθ (xit−1 | xit, c )k − log pθold (xit−1 | xit, c )k, (8) 
+
+¯δi,t,r = 1
+
+|Mi,r |
+
+X
+
+> k∈Mi,r
+
+δi,t,k , si,t,r = exp( ¯δi,t,r ). (9) 5All latent positions in the same region share the region ratio si,t,r , so the measure of policy change has the same granularity as the region advantage. Second, to prevent whole-image averaging from weakening foreground signals, we average within each region and use power-weighted aggregation across regions: 
+
+ℓi,t,k = max 
+
+
+
+− ˆAmix  
+
+> i,k
+
+si,t,r (k), − ˆAmix  
+
+> i,k
+
+clip( si,t,r (k), 1 − ϵ−, 1 + ϵ+)
+
+
+
+, (10) where r(k) is the region that contains position k. The policy loss is: 
+
+L(t) 
+
+> pg
+
+= 1
+
+G
+
+> G
+
+X
+
+> i=1
+
+X
+
+> r∈R i
+
+˜wi,r 
+
+1
+
+|Mi,r |
+
+X
+
+> k∈Mi,r
+
+ℓi,t,k , (11) where 
+
+˜wi,r = (|Mi,r | + τ )β
+
+P 
+
+> r′∈R i
+
+(|Mi,r ′ | + τ )β , β ∈ [0 , 1] , τ > 0. (12) When β = 1 , aggregation is area-weighted; when β = 0 , regions are weighted equally. We use 
+
+β = 0 .7 and τ = 10 −2 to preserve area information while increasing foreground influence. The final training objective is 
+
+LSpatialFlow-GRPO (θ) = 1
+
+|T s|
+
+X
+
+> t∈T s
+
+ωtL(t) 
+
+> pg
+
++ λkl 
+
+1
+
+|T s|
+
+X
+
+> t∈T s
+
+L(t)kl , (13) where Ts is the sampled timestep set, ωt follows Flow-GRPO, and L(t)kl regularizes against the reference policy. Unlike Flow-GRPO, SpatialFlow-GRPO keeps semantic-region granularity in ad-vantages, ratios, and aggregation, preserving spatial attribution during updates. The full training procedure, including region rewards, semantic advantage estimation, and the region-aligned policy objective, is summarized in Algorithm 1 in Appendix A.2. 
+
+## 4 Experiments 
+
+We evaluate the reward model, standard editing performance, multi-region editing ability, and com-ponent ablations. 
+
+4.1 Experimental setup 
+
+We evaluate SpatialFlow-GRPO on OmniGen2 [42], a Diffusion Transformer [32], and FLUX.2-klein-4B [3], a Rectified Flow model [24, 6]. The main baseline is Flow-GRPO [25]. Both methods use the same reward model, training data, base model, and sampling settings; Flow-GRPO uses the sample-level score in Equation (2) as the reward, while SpatialFlow-GRPO uses region scores to construct region advantages and the region-aligned policy objective. Metrics include three benchmarks: GEdit-Bench [26], ImgEdit-Bench [48], and MultiEditBench. RL post-training uses the 9-category editing subset of EditScore-RL-Data [28] as the source of editing instructions and source images. Training parameters and implementation details are provided in Appendix A.1. 
+
+4.2 SFReward evaluation 
+
+We compare SFReward with closed- and open-source evaluators on EditReward-Bench [28] and MMRB2 [15]. SFReward is initialized from Qwen3-VL-8B-Instruct [1]; the “w/o Dense Anno.” variant uses the same data source but keeps only the original global annotations, without the added region-level annotations. Table 1 shows that dense region supervision improves the evaluator’s ability to judge editing quality. 6Figure 4: Composition of MultiEditBench. 
+
+Table 1: SFReward evaluation results. PF, Cons., and Ovrl. denote prompt following, consistency, and overall, respectively.                                                                 
+
+> Model Type EditReward-Bench MMRB2 PF Cons. Ovrl. Single Multi Ovrl.
+> Closed-source models
+> GPT-4.1 Closed 0.673 0.602 0.705 0.547 0.478 0.535 GPT-5 Closed 0.777 0.669 0.755 0.627 0.584 0.619 Gemini-2.5-Pro Closed 0.703 0.560 0.722 0.545 0.483 0.534 Gemini-3.0-Flash Closed 0.717 0.662 0.769 0.627 0.596 0.621
+> Open-source generative evaluators
+> Qwen3-VL-8B Gen. 0.419 0.243 0.562 0.425 0.393 0.419 EditScore-7B (Avg@4) Gen. 0.722 0.720 0.727 –––w/o Dense Anno. (Ours) Gen. 0.627 0.514 0.699 0.591 0.545 0.583 SFReward (Ours) Gen. 0.648 0.621 0.760 0.629 0.551 0.615
+
+4.3 Main results 
+
+We further evaluate the effectiveness of SpatialFlow-GRPO as a region-level RL post-training method. Table 2 reports standard benchmark results on two base models. Across both OmniGen2 and FLUX.2-klein-4B, SpatialFlow-GRPO consistently improves over Flow-GRPO. These gains are consistent with the difference in optimization granularity. If region-level feedback is compressed into a sample-level score, local error sources are averaged during the update. In contrast, SpatialFlow-GRPO preserves region attribution in advantage estimation, policy ratios, and loss aggregation, allowing feedback to be converted into editing improvements more effectively. This trend appears on both Diffusion Transformer and Rectified Flow backbones, supporting the effectiveness of fine-grained credit assignment itself. Figure 5 provides qualitative examples of this behavior, with more results in Appendix A.9. 
+
+4.4 MultiEditBench: multi-region editing diagnosis 
+
+MultiEditBench evaluates a model’s ability to follow complex instructions that require multiple simultaneous edits. It contains 500 manually reviewed samples with 2–5 editing targets, which are grouped into 2-edit, 3-edit, 4-edit, and 5-edit subsets. We use GPT-4.1 with the VIEScore protocol [21] to judge semantic consistency (SC) and perceptual quality (PQ). Figure 4 summarizes the benchmark composition, and the construction process is described in Appendix A.5. Table 3 compares SpatialFlow-GRPO with Flow-GRPO, the corresponding base models, and repre-sentative open-source editors. Across both OmniGen2 and FLUX.2-klein-4B, SpatialFlow-GRPO gives the strongest result among methods using the same backbone, suggesting that region-level credit assignment improves multi-target editing beyond standard whole-image reward optimization. 
+
+4.5 Component and parameter ablations 
+
+The ablation study analyzes SpatialFlow-GRPO from two aspects: parameter sensitivity and com-ponent contribution. 7Table 2: Standard benchmark results. Overall is the score after post-training, and ∆ is the gain over the corresponding base model without RL.                                       
+
+> Base model Method GEdit Overall ↑∆GEdit ↑ImgEdit Overall ↑∆ImgEdit ↑
+> OmniGen2 No RL 6.42 0.00 3.44 0.00 OmniGen2 Flow-GRPO 6.99 +0.57 3.66 +0.22 OmniGen2 SpatialFlow-GRPO 7.29 +0.87 3.74 +0.30
+> FLUX.2-klein-4B No RL 6.58 0.00 3.42 0.00 FLUX.2-klein-4B Flow-GRPO 6.73 +0.15 3.50 +0.08 FLUX.2-klein-4B SpatialFlow-GRPO 6.80 +0.22 3.53 +0.11
+
+Table 3: Full MultiEditBench results. MEB Score is reported by the number of simultaneous editing regions. Avg is the equal-weighted average over the four difficulty subsets. ∆ Avg denotes the improvement over the corresponding base model and is omitted for standalone reference editors.                                                                    
+
+> Model 2-edit 3-edit 4-edit 5-edit Avg ∆Avg (n=140) ( n=165) ( n=150) ( n=45) Qwen-Image-Edit-2509 8.39 8.39 8.33 8.23 8.33 –OmniGen2 + SpatialFlow-GRPO 8.18 8.19 8.04 8.03 8.11 +1.70
+> FLUX.2-klein-4B + SpatialFlow-GRPO 8.03 8.07 8.14 7.92 8.04 +0.19
+> FLUX.2-klein-4B + Flow-GRPO 7.98 8.06 7.99 7.84 7.97 +0.12 FLUX.2-klein-4B Base 7.84 7.85 7.99 7.73 7.85 –OmniGen2 + Flow-GRPO 7.52 7.42 7.40 7.72 7.52 +1.11 Step1X-Edit 7.28 7.12 7.12 7.14 7.16 –FLUX.1-Kontext 6.80 7.04 6.80 7.66 7.07 –BAGEL-7B-MoT 6.67 6.74 6.50 6.59 6.62 –OmniGen2 Base 6.80 6.43 6.32 6.09 6.41 –
+
+Table 4 scans the region-mixing coefficient α and the region aggregation power β. The coefficient 
+
+α controls the trade-off between local region advantages and the global advantage. When the region signal is too strong or introduced too early, updates can be dominated by local scores, weakening global quality constraints such as composition, identity preservation, and naturalness. The param-eter β controls how sensitive region aggregation is to area: aggregation close to area weighting can still dilute foreground signals by large background regions, while equal region weighting can 
+
+Figure 5: Qualitative examples of SpatialFlow-GRPO on OmniGen2. Compared with Flow-GRPO, SpatialFlow-GRPO better preserves source identity and applies multiple requested local edits. 8Table 4: β–α parameter scan (OmniGen2, SFReward reward model). Overall is the score, and ∆ is the gain over the OmniGen2 base model (GEdit 6.42, ImgEdit 3.44). “w” indicates cosine warmup.                                                                                     
+
+> βαGEdit Overall ↑
+> ∆
+> GEdit ↑
+> ImgEdit Overall ↑
+> ∆
+> ImgEdit ↑
+> β= 1 (token-weighted, equivalent to global averaging)
+> 11 (pure region advantage) 6.92 +0.50 3.63 +0.19 10.5 7.04 +0.62 3.68 +0.24 10.7 6.98 +0.56 3.64 +0.20 10.3 7.02 +0.60 3.68 +0.24 10.5w 7.07 +0.65 3.67 +0.23
+> β= 0 (equal region weighting)
+> 016.94 +0.52 3.63 +0.19 00.5 7.12 +0.70 3.70 +0.26 00.5w 7.17 +0.75 3.69 +0.25 00.7w 7.01 +0.59 3.66 +0.22
+> β= 0 .7(power-weighted trade-off)
+> 0.7 0.5w 7.29 +0.87 3.74 +0.30
+> 0.7 0.5 7.21 +0.79 3.72 +0.28 0.7 0.3w 7.05 +0.63 3.66 +0.22
+> Other βvalues
+> 0.5 0.5w 7.10 +0.68 3.68 +0.24 0.9 0.5w 7.09 +0.67 3.68 +0.24
+
+Table 5: Progressive ablation. Starting from a Flow-GRPO baseline using the sample-level score from SFReward, we progressively add region advantages, global–region mixed advantages, 
+
+α warmup, and region-balanced aggregation. The corresponding β/α settings are also shown.                                                 
+
+> Variant Reg. adv. Mixed adv.
+> α
+> warm. Reg. ratio Bal. agg. βα∆
+> GEdit
+> ∆
+> ImgEdit V1 (Flow-GRPO) ✗✗✗✗✗––0.57 0.22 V2 (+Reg. adv.) ✓✗✗✓✗110.50 0.19 V3 (+Mix.) ✓✓✗✓✗00.5 0.70 0.26 V4 (+Warmup) ✓✓✓✓✗00.5w 0.75 0.25 V5 (Ours) ✓✓✓✓✓0.7 0.5w 0.87 0.30
+
+over-amplify high-variance small regions. These results suggest that region feedback should be introduced gradually and under global constraints. Table 5 further shows that adding region advantages alone does not stably outperform Flow-GRPO, indicating that fine-grained rewards provide more localized supervision but can also amplify local noise without proper constraints. Global–region mixing provides an image-level quality anchor, 
+
+α warmup prevents early training from relying too heavily on unstable local signals, and region-balanced aggregation reduces the dilution of foreground edits by background area. Overall, the benefit of SpatialFlow-GRPO comes from the cooperation of region rewards, global quality con-straints, and the region-aligned policy objective, rather than from simply replacing sample-level rewards with region rewards. 
+
+## 5 Conclusion and discussion 
+
+We presented SpatialFlow-GRPO for spatial credit assignment in image editing. It treats semantic regions as fine-grained optimization units and uses SFReward and SFReward-14K to provide region-level feedback. On OmniGen2 and FLUX.2-klein-4B, SpatialFlow-GRPO consistently outperforms Flow-GRPO, with larger gains on MultiEditBench multi-region edits, showing that semantically grouped rewards better capture local editing quality. The method still relies on region annotations and reward-model reliability; future work can study more flexible region representations and larger-scale human evaluation. 9References 
+
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhifang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, Mei Li, Kaixin Li, Zicheng Lin, Junyang Lin, Xuejing Liu, Jiawei Liu, Chenglong Liu, Yang Liu, Dayiheng Liu, Shixuan Liu, Dunjie Lu, Ruilin Luo, Chenxu Lv, Rui Men, Lingchen Meng, Xuancheng Ren, Xingzhang Ren, Sibo Song, Yuchong Sun, Jun Tang, Jianhong Tu, Jianqiang Wan, Peng Wang, Pengfei Wang, Qiuyue Wang, Yuxuan Wang, Tianbao Xie, Yiheng Xu, Haiyang Xu, Jin Xu, Zhibo Yang, Mingkun Yang, Jianxin Yang, An Yang, Bowen Yu, Fei Zhang, Hang Zhang, Xi Zhang, Bo Zheng, Humen Zhong, Jingren Zhou, Fan Zhou, Jing Zhou, Yuanzhi Zhu, and Ke Zhu. Qwen3-vl technical report, 2025. URL https://arxiv.org/abs/2511.21631 .[2] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforcement learning, 2024. URL https://arxiv.org/abs/2305.13301 .[3] Black Forest Labs. FLUX.2 [klein] 4b base. Hugging Face model card, 2026. URL https: //huggingface.co/black-forest-labs/FLUX.2-klein-base-4B .[4] Tim Brooks, Aleksander Holynski, and Alexei A. Efros. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 18392–18402, June 2023. [5] Guillaume Couairon, Jakob Verbeek, Holger Schwenk, and Matthieu Cord. Diffedit: Diffusion-based semantic image editing with mask guidance, 2022. URL https://arxiv. org/abs/2210.11427 .[6] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, Dustin Podell, Tim Dockhorn, Zion English, and Robin Rombach. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first International Conference on Machine Learning , 2024. URL https: //openreview.net/forum?id=FPnUhsQJ5B .[7] Ying Fan, Olivia Watkins, Yuqing Du, Hao Liu, Moonkyung Ryu, Craig Boutilier, Pieter Abbeel, Mohammad Ghavamzadeh, Kangwook Lee, and Kimin Lee. Dpok: Reinforce-ment learning for fine-tuning text-to-image diffusion models. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural In-formation Processing Systems , volume 36, pages 79858–79885. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper_files/paper/2023/file/ fc65fab891d83433bd3c8d966edde311-Paper-Conference.pdf .[8] Tsu-Jui Fu, Wenze Hu, Xianzhi Du, William Yang Wang, Yinfei Yang, and Zhe Gan. Guiding instruction-based image editing via multimodal large language models, 2024. URL https: //arxiv.org/abs/2309.17102 .[9] Google DeepMind. Gemini 3 pro model card, 2025. URL https://storage.googleapis. com/deepmind-media/Model-Cards/Gemini-3-Pro-Model-Card.pdf .[10] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue, Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Hanwei Xu, Honghui Ding, Huazuo Gao, Hui Qu, Hui Li, Jianzhong Guo, Jiashi Li, Jingchang Chen, Jingyang Yuan, Jinhao Tu, Junjie Qiu, Junlong Li, J. L. Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai Hu, Kaichao You, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Mingxu Zhou, Meng Li, Miaojun Wang, Mingming Li, Ning Tian, Panpan Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen, Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen, Shanghao Lu, Shangyan Zhou, Shanhuang Chen, Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing Wu, Tao 10 Yun, Tian Pei, Tianyu Sun, T. Wang, Wangding Zeng, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin, Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxiang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang, Xinxia Shan, Y. K. Li, Y. Q. Wang, Y. X. Wei, Yang Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yunfan Xiong, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Y. X. Zhu, Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu, Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zijia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu Zhang, and Zhen Zhang. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. 
+
+Nature , 645(8081):633–638, 2025. ISSN 1476-4687. doi: 10.1038/s41586-025-09422-z. URL 
+
+http://dx.doi.org/10.1038/s41586-025-09422-z .[11] Yuxiang Guo, Jiang Liu, Ze Wang, Hao Chen, Ximeng Sun, Yang Zhao, Jialian Wu, Xiaodong Yu, Zicheng Liu, and Emad Barsoum. Imagedoctor: Diagnosing text-to-image generation via grounded image reasoning, 2025. URL https://arxiv.org/abs/2510.01010 .[12] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt image editing with cross attention control, 2022. URL https://arxiv. org/abs/2208.01626 .[13] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, Advances in Neural Information Processing Systems , volume 33, pages 6840–6851. Curran As-sociates, Inc., 2020. URL https://proceedings.neurips.cc/paper_files/paper/ 2020/file/4c5bcfec8584af0d967f1ab10179ca4b-Paper.pdf .[14] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models, 2021. URL https://arxiv.org/abs/2106.09685 .[15] Yushi Hu, Reyhane Askari-Hemmat, Melissa Hall, Emily Dinan, Luke Zettlemoyer, and Mar-jan Ghazvininejad. Multimodal rewardbench 2: Evaluating omni reward models for interleaved text and image, 2026. URL https://arxiv.org/abs/2512.16899 .[16] Zijing Hu, Fengda Zhang, Long Chen, Kun Kuang, Jiahui Li, Kaifeng Gao, Jun Xiao, Xin Wang, and Wenwu Zhu. Towards better alignment: Training diffusion models with reinforce-ment learning against sparse rewards. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 23604–23614, June 2025. [17] Mingzhen Huang, Jialing Cai, Shan Jia, Vishnu Suresh Lokhande, and Siwei Lyu. Paralleledits: Efficient multi-object image editing, 2025. URL https://arxiv.org/abs/2406.00985 .[18] Yuzhou Huang, Liangbin Xie, Xintao Wang, Ziyang Yuan, Xiaodong Cun, Yixiao Ge, Jiantao Zhou, Chao Dong, Rui Huang, Ruimao Zhang, and Ying Shan. Smartedit: Exploring complex instruction-based image editing with multimodal large language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 8362– 8371, June 2024. [19] Mude Hui, Siwei Yang, Bingchen Zhao, Yichun Shi, Heng Wang, Peng Wang, Yuyin Zhou, and Cihang Xie. Hq-edit: A high-quality dataset for instruction-based image editing, 2024. URL https://arxiv.org/abs/2404.09990 .[20] Yuval Kirstain, Adam Polyak, Uriel Singer, Shahbuland Matiana, Joe Penna, and Omer Levy. Pick-a-pic: An open dataset of user preferences for text-to-image generation. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Ad-vances in Neural Information Processing Systems , volume 36, pages 36652–36663. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper_files/paper/ 2023/file/73aacd8b3b05b4b503d58310b523553c-Paper-Conference.pdf .11 [21] Max Ku, Dongfu Jiang, Cong Wei, Xiang Yue, and Wenhu Chen. Viescore: Towards explain-able metrics for conditional image synthesis evaluation, 2024. URL https://arxiv.org/ abs/2312.14867 .[22] Fan Li, Chonghuinan Wang, Lina Lei, Yuping Qiu, Jiaqi Xu, Jiaxiu Jiang, Xinran Qin, Zhikai Chen, Fenglong Song, Zhixin Wang, Renjing Pei, and Wangmeng Zuo. Hp-edit: A human-preference post-training framework for image editing, 2026. URL https://arxiv.org/ abs/2604.19406 .[23] Tiancheng Li, Jinxiu Liu, Huajun Chen, and Qi Liu. Instructrl4pix: Training diffusion for im-age editing by reinforcement learning, 2024. URL https://arxiv.org/abs/2406.09973 .[24] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling, 2023. URL https://arxiv.org/abs/2210.02747 .[25] Jie Liu, Gongye Liu, Jiajun Liang, Yangguang Li, Jiaheng Liu, Xintao Wang, Pengfei Wan, Di Zhang, and Wanli Ouyang. Flow-grpo: Training flow matching models via online rl, 2025. URL https://arxiv.org/abs/2505.05470 .[26] Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chunrui Han, Guopeng Li, Yuang Peng, Quan Sun, Jingwei Wu, Yan Cai, Zheng Ge, Ranchen Ming, Lei Xia, Xianfang Zeng, Yibo Zhu, Binxing Jiao, Xiangyu Zhang, Gang Yu, and Daxin Jiang. Step1x-edit: A practical framework for general image editing, 2025. URL https://arxiv.org/abs/2504.17761 .[27] Yancheng Long, Yankai Yang, Hongyang Wei, Wei Chen, Tianke Zhang, Haonan fan, Changyi Liu, Kaiyu Jiang, Jiankang Chen, Kaiyu Tang, Bin Wen, Fan Yang, Tingting Gao, Han Li, and Shuo Yang. Spatialreward: Bridging the perception gap in online rl for image editing via explicit spatial reasoning, 2026. URL https://arxiv.org/abs/2602.07458 .[28] Xin Luo, Jiahao Wang, Chenyuan Wu, Shitao Xiao, Xiyan Jiang, Defu Lian, Jiajun Zhang, Dong Liu, and Zheng liu. Editscore: Unlocking online rl for image editing via high-fidelity reward modeling, 2026. URL https://arxiv.org/abs/2509.23909 .[29] Yiwei Ma, Jiayi Ji, Ke Ye, Weihuang Lin, Zhibin Wang, Yonghan Zheng, Qiang Zhou, Xi-aoshuai Sun, and Rongrong Ji. I2ebench: A comprehensive benchmark for instruction-based image editing. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Processing Sys-tems , volume 37, pages 41494–41516. Curran Associates, Inc., 2024. doi: 10.52202/ 079017-1313. URL https://proceedings.neurips.cc/paper_files/paper/2024/ file/48fecef47b19fe501d27d338b6d52582-Paper-Conference.pdf .[30] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. Sdedit: Guided image synthesis and editing with stochastic differential equations, 2022. URL https://arxiv.org/abs/2108.01073 .[31] OpenAI. Introducing GPT-4.1 in the API, 2025. URL https://openai.com/index/ gpt-4-1/ .[32] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 4195–4205, October 2023. [33] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models, 2022. URL https://arxiv. org/abs/2112.10752 .[34] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms, 2017. URL https://arxiv.org/abs/1707.06347 .[35] John Schulman, Philipp Moritz, Sergey Levine, Michael Jordan, and Pieter Abbeel. High-dimensional continuous control using generalized advantage estimation, 2018. URL https: //arxiv.org/abs/1506.02438 .12 [36] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. Deepseekmath: Pushing the limits of mathematical reasoning in open language models, 2024. URL https://arxiv.org/abs/ 2402.03300 .[37] Shelly Sheynin, Adam Polyak, Uriel Singer, Yuval Kirstain, Amit Zohar, Oron Ashual, Devi Parikh, and Yaniv Taigman. Emu edit: Precise image editing via recognition and generation tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pages 8871–8879, June 2024. [38] Yichun Shi, Peng Wang, and Weilin Huang. Seededit: Align image re-generation to image editing, 2024. URL https://arxiv.org/abs/2411.06686 .[39] Yang Song, Jascha Sohl-Dickstein, Diederik P. Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations, 2021. URL https://arxiv.org/abs/2011.13456 .[40] Bram Wallace, Meihua Dang, Rafael Rafailov, Linqi Zhou, Aaron Lou, Senthil Purushwalkam, Stefano Ermon, Caiming Xiong, Shafiq Joty, and Nikhil Naik. Diffusion model alignment us-ing direct preference optimization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 8228–8238, June 2024. [41] Cong Wei, Zheyang Xiong, Weiming Ren, Xeron Du, Ge Zhang, and Wenhu Chen. Omniedit: Building image editing generalist models through specialist supervision. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=Hlm0cga0sv .[42] Chenyuan Wu, Pengfei Zheng, Ruiran Yan, Shitao Xiao, Xin Luo, Yueze Wang, Wanli Li, Xiyan Jiang, Yexin Liu, Junjie Zhou, Ze Liu, Ziyi Xia, Chaofan Li, Haoge Deng, Jiahao Wang, Kun Luo, Bo Zhang, Defu Lian, Xinlong Wang, Zhongyuan Wang, Tiejun Huang, and Zheng Liu. Omnigen2: Towards instruction-aligned multimodal generation, 2026. URL https: //arxiv.org/abs/2506.18871 .[43] Keming Wu, Sicong Jiang, Max Ku, Ping Nie, Minghao Liu, and Wenhu Chen. Editreward: A human-aligned reward model for instruction-guided image editing, 2026. URL https: //arxiv.org/abs/2509.26346 .[44] Xiaoshi Wu, Yiming Hao, Keqiang Sun, Yixiong Chen, Feng Zhu, Rui Zhao, and Hongsheng Li. Human preference score v2: A solid benchmark for evaluating human preferences of text-to-image synthesis, 2023. URL https://arxiv.org/abs/2306.09341 .[45] Jiazheng Xu, Xiao Liu, Yuchen Wu, Yuxuan Tong, Qinkai Li, Ming Ding, Jie Tang, and Yux-iao Dong. Imagereward: Learning and evaluating human preferences for text-to-image gen-eration. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, 
+
+Advances in Neural Information Processing Systems , volume 36, pages 15903–15935. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper_files/paper/ 2023/file/33646ef0ed554145eab65f6250fab0c9-Paper-Conference.pdf .[46] Zeyue Xue, Jie Wu, Yu Gao, Fangyuan Kong, Lingting Zhu, Mengzhao Chen, Zhiheng Liu, Wei Liu, Qiushan Guo, Weilin Huang, and Ping Luo. Dancegrpo: Unleashing grpo on visual generation, 2025. URL https://arxiv.org/abs/2505.07818 .[47] Yankai Yang, Yancheng Long, Hongyang Wei, Wei Chen, Tianke Zhang, Kaiyu Jiang, Haonan Fan, Changyi Liu, Jiankang Chen, Kaiyu Tang, Bin Wen, Fan Yang, Tingting Gao, Han Li, and Shuo Yang. Joint reward modeling: Internalizing chain-of-thought for efficient visual reward models, 2026. URL https://arxiv.org/abs/2602.07533 .[48] Yang Ye, Xianyi He, Zongjian Li, Bin Lin, Shenghai Yuan, Zhiyuan Yan, Bohan Hou, and Li Yuan. Imgedit: A unified image editing dataset and benchmark, 2025. URL https:// arxiv.org/abs/2505.20275 .13 [49] Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Wang Zhang, Hang Zhu, Jinhua Zhu, Jiaze Chen, Jiangjie Chen, Chengyi Wang, Hongli Yu, Yuxuan Song, Xiangpeng Wei, Hao Zhou, Jingjing Liu, Wei-Ying Ma, Ya-Qin Zhang, Lin Yan, Mu Qiao, Yonghui Wu, and Mingxuan Wang. Dapo: An open-source llm reinforcement learning system at scale, 2025. URL https: //arxiv.org/abs/2503.14476 .[50] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A man-ually annotated dataset for instruction-guided image editing. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural In-formation Processing Systems , volume 36, pages 31428–31449. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper_files/paper/2023/file/ 64008fa30cba9b4d1ab1bd3bd3d57d61-Paper-Datasets_and_Benchmarks.pdf .[51] Haozhe Zhao, Xiaojian Ma, Liang Chen, Shuzheng Si, Rujie Wu, Kaikai An, Peiyu Yu, Minjia Zhang, Qing Li, and Baobao Chang. Ultraedit: Instruction-based fine-grained image editing at scale. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Information Pro-cessing Systems , volume 37, pages 3058–3093. Curran Associates, Inc., 2024. doi: 10.52202/079017-0100. URL https://proceedings.neurips.cc/paper_files/ paper/2024/file/05a30a0fc9e6bacdd3abd4ca8508a9e6-Paper-Datasets_and_ Benchmarks_Track.pdf .14 A Additional details 
+
+A.1 Hyperparameters and training details 
+
+Table 6 lists the actual RL post-training configuration used for the main OmniGen2 experiments with SpatialFlow-GRPO. All RL post-training experiments use the 9-category editing subset of EditScore-RL-Data [28]. Table 6: Main hyperparameters. 
+
+Configuration Value 
+
+Data and sampling 
+
+RL training data EditScore-RL-Data 9-category editing subset Maximum text tokens 888 Output resolution cap 512 × 512 
+
+Unique instructions per round 48 Samples per instruction G 12 Inference timesteps 20 Maximum generation length 1024 Text/image guidance scale 4 / 2 CFG training interval [0 .0, 0.6] 
+
+Training timestep ratio 0.6 
+
+Optimization and finetuning 
+
+Global batch size 576 Training batch size 36 Gradient accumulation steps 2Total training steps 2000 Learning rate 4 × 10 −4
+
+Learning-rate schedule timm_constant_with_warmup Optimizer AdamW ( β1 = 0 .9, β 2 = 0 .95 )Weight decay / ϵ 0.01 / 10 −8
+
+Maximum gradient norm 1Mixed precision bf16 Gradient checkpointing Enabled Finetuning strategy LoRA [14] ( r=32, α=64, dropout=0) 
+
+SpatialFlow-GRPO specific 
+
+Update steps after sampling 2Forward batch size 9PPO clip range [10 −4, 5 × 10 −4]
+
+Advantage clipping threshold 5KL weight λkl 0.04 Sampling noise coefficient 0.7 Mixing coefficient αmax 0.5 Mixing coefficient αmin 0.0 Warmup start/end steps sstart / send 0 / 500 Region power β 0.7 Smoothing term τ 10 −2
+
+Policy-loss reweighting Enabled 
+
+15 A.2 Training algorithm Algorithm 1 SpatialFlow-GRPO training 
+
+Require: Policy model θ, reference model θref , region reward model R, mixing parameter α(s),power parameter β 
+
+> 1:
+
+for each training round do  
+
+> 2:
+
+Sample G edited images for each editing instruction p and record old-policy log probabilities  
+
+> 3:
+
+Use R to evaluate structured region scores {Ri,r } 
+
+> 4:
+
+Compute region advantages ˆAi,r by grouping over (p, l ) (Equation 5)  
+
+> 5:
+
+Compute the global advantage ˆAgi and mix it into ˆAmix  
+
+> i,r
+
+(Equation 6)  
+
+> 6:
+
+Map ˆAmix  
+
+> i,r
+
+to latent positions to form a fine-grained advantage map  
+
+> 7:
+
+for each update step do  
+
+> 8:
+
+Compute current-policy position-level log probabilities  
+
+> 9:
+
+Compute the region-consistent ratio si,t,r (Equation 9)  
+
+> 10:
+
+Compute the power-weighted region policy loss L(t) 
+
+> pg
+
+(Equation 11)  
+
+> 11:
+
+Compute the KL regularization term L(t)kl  
+
+> 12:
+
+Update θ using Equation (13)  
+
+> 13:
+
+end for  
+
+> 14:
+
+end for A.3 Region assignment and sparse semantic groups Overlapping region boxes. SFReward predicts semantic bounding boxes, so different edited regions may overlap after being mapped to the latent resolution. For a latent position k, let 
+
+Ci(k) = {r ∈ R fg  
+
+> i
+
+| k ∈ Mi,r } denote the foreground regions that cover it. If Ci(k) is non-empty, the position-level mixed advantage is the average of ˆAmix  
+
+> i,r
+
+over r ∈ C i(k), and the corresponding region-ratio term is averaged over the same covering regions. If Ci(k) is empty, the position is as-signed to the background region. This gives each latent position a unique and well-defined training signal while allowing overlapping positions to receive credit from all relevant semantic regions. 
+
+Sparse semantic labels. Equation (5) is used only when a semantic group contains at least two valid region rewards and has non-degenerate variance. If a label appears only once in the sampled group for an instruction, or if the within-group variance is too small, the group does not provide a reliable relative comparison. In this case, we do not compute an unstable region z-score; instead, the region advantage falls back to the corresponding sample-level global advantage ˆAgi . Thus the update reduces to global credit assignment when region-level comparison is underdetermined, and uses semantic-region relative advantages only when they are well defined. 
+
+A.4 SFReward and SFReward-14K details A.4.1 SFReward-14K construction 
+
+The region-aware reward model used in our experiments is denoted as SFReward. To train this model, we build SFReward-14K from multi-source edit triplets. As shown in Figure 6, the pipeline collects a source image, an edited image, and an instruction, asks expert annotators to mark nor-malized bounding boxes and semantic labels for edited regions, uses Gemini-3-Pro [9] to produce per-region success/preserve scores, background preservation scores, overall scores, and reasoning, and then applies automatic structural validation followed by human audit. This pipeline explicitly binds reward scores to semantic regions, providing input signals for region advantage estimation and local policy updates in SpatialFlow-GRPO. SFReward-14K will be released to support reproduction of SFReward training and research on region rewards. 
+
+A.4.2 SFReward training setup 
+
+SFReward is initialized from Qwen3-VL-8B-Instruct [1] and trained on SFReward-14K with super-vised finetuning. Table 7 gives the main training settings. 16 Figure 6: SFReward-14K construction pipeline. Multi-source edit triplets are annotated with expert region boxes and labels, scored by a multimodal teacher, and filtered through automatic vali-dation and human audit to produce data for training a region-aware reward model. Table 7: SFReward training hyperparameters. 
+
+Configuration Value Base model Qwen3-VL-8B-Instruct Training stage SFT Finetuning method LoRA ( r=32, α=64, dropout=0.05) LoRA target modules all Training data dense_grpo_coldstart_v1 Input template qwen3_vl Maximum sequence length 8192 Maximum image/video pixels 262144 / 16384 Per-device batch size 4Gradient accumulation steps 4Learning rate 1e-4 Training epochs 10 Learning-rate schedule cosine, warmup ratio 0.1 Optimizer AdamW Training precision bfloat16 Preprocessing/loading workers 192 / 48 
+
+A.4.3 Scoring prompt for the region-aware reward model 
+
+The following prompt is used to label SFReward-14K with the Gemini-3-Pro teacher model. It instructs the model to score each editing region in a structured and multi-dimensional way with reasoning.        
+
+> You are a professional digital artist. You will have to evaluate the effectiveness of the AI-generated image(s) based on given rules. All the input images are AI-generated. OUTPUT FORMAT: {"edit_region": [{"id": 0, "label": "region label", "bbox_2d": [x1, y1, x2, y2], "score": [score_success, score_preserve], "reasoning": "brief reason"}, ...
+
+17 ], "background": {"score": value, "reasoning": "..."}, "overall_score": [overall_success, overall_preserve] }RULES: Two images will be provided: original and edited version. The objective is to evaluate how successfully the editing instruction has been executed. You will be provided with pre-identified editing regions (bounding boxes with labels). Score each region separately. SCORING (per region, 0–25): 1) score_success: how well the edit follows the instruction (0=no change, 25=perfect). 2) score_preserve: degree of preservation within the region (0=completely different, 25=minimal effective edit). BACKGROUND (0–25): Rate how well non-edited areas are preserved. Penalize unexpected edits, layout changes, artifacts outside editing regions. OVERALL (0–25): Overall success score and overall overediting score. 
+
+The prompt has three key design elements. First, region-decoupled scoring evaluates success and preserve scores independently for each edited region, while keeping whole-image scores as auxiliary information. Second, spatial anchoring binds scores to pre-annotated bounding boxes so that the scorer attends to the correct spatial location. Third, reasoning asks the scorer to provide a short explanation for each region, improving interpretability and consistency. 
+
+A.4.4 Example output from the region reward model 
+
+The following is a structured output example from the region-aware reward model for a multi-region editing instruction. The instruction is: “Change the man’s shirt to red and add a tree in the background.” SFReward first outputs semantic-consistency scores: 
+
+{"edit_region": [ {"id": 0, "label": "person’s shirt", "bbox_2d": [120, 80, 420, 360], "score": [22, 20], "reasoning": "Shirt color successfully changed to red; slight texture distortion at collar." }, {"id": 1, "label": "tree", "bbox_2d": [520, 100, 860, 700], "score": [18, 15], "reasoning": "Tree added but appears slightly unnatural; some blending artifacts with sky." }], "background": { "score": 21, "reasoning": "Background well preserved; minor color shift near added tree boundary." }, "overall_score": [20, 18] }
+
+At the same time, SFReward outputs perceptual-quality scores: 
+
+{"reasoning": "The edited image is mostly natural, 
+
+18 with mild artifacts around the inserted tree.", "score": [22, 20] }
+
+The above output is converted into scalar region rewards by Equation (3). In this example, the 
+
+shirt region receives a high reward because the edit succeeds and is well preserved. The tree 
+
+region receives a lower reward because artifacts appear. The background region receives a moderate reward. Differentiated region rewards provide the basis for local credit assignment in SpatialFlow-GRPO. 
+
+A.4.5 Training data statistics 
+
+Table 8 reports statistics of SFReward-14K. The data is filtered through multiple rounds of quality control, resulting in a final retention rate of 98.75%. Table 8: SFReward-14K statistics.              
+
+> Statistic Value Total samples 14,276 Average edited regions per sample 2.32 Maximum edited regions per sample 7Single-region samples 24.3% Multi-region samples 75.7% Edit type distribution Attribute change (color/material/texture) 38.2% Object operation (add/replace/remove) 33.5% Background modification 18.7% Style/global transformation 9.6% Quality control Initially collected samples 16,465 Structured-output pass rate 99.68% Final retention rate 98.75%
+
+A.5 MultiEditBench details A.5.1 Data construction and statistics 
+
+MultiEditBench is designed to diagnose model performance in multi-region parallel editing scenar-ios. Source images come from several high-quality public sources and cover visual types such as people, indoor and outdoor scenes, object close-ups, and artistic compositions. The source distribu-tion is shown in Table 9. For each source image, we first use a VLM to identify editable elements. An LLM then generates compound instructions containing 2–5 edits. Human review removes am-biguous, contradictory, or overly simple samples. Table 9: Source images in MultiEditBench.           
+
+> Source Ratio Description LAION-Aesthetics 42.4% Natural images with high aesthetic scores CC8M 42.0% Diverse web images Pexels 7.8% Professional photography images Others 7.8% Other high-quality sources
+
+Editing operations include attribute modification, object replacement, element addition, enhance-ment, removal, and position adjustment. Since a compound instruction usually contains multiple operation types, the frequencies in Table 10 are not mutually exclusive. 19 Table 10: Editing operation types in MultiEditBench. 
+
+Operation type Frequency Example Change (attribute modification) 69.8% Change color, material, or expression Replace (object replacement) 58.8% Replace an object with another object Add (element addition) 49.4% Add a new object or decoration Enhance (enhancement) 27.0% Enhance lighting, makeup, or details Remove (removal) 15.2% Remove a specified element Adjust (adjustment) 13.2% Adjust pose, angle, or position 
+
+Table 11: Difficulty distribution of MultiEditBench. Samples are grouped by the number of simultaneous editing operations. 
+
+Type Meaning Count Ratio Avg. instruction length 2-edit 2 simultaneous edits 140 28.0% 131 chars 3-edit 3 simultaneous edits 165 33.0% 169 chars 4-edit 4 simultaneous edits 150 30.0% 198 chars 5-edit 5 simultaneous edits 45 9.0% 256 chars Total – 500 100% –
+
+A.5.2 MultiEditBench evaluation prompts 
+
+MultiEditBench follows the VIEScore [21] framework and uses GPT-4.1 [31] as the evaluation backbone. Each sample is evaluated separately for semantic consistency (SC) and perceptual quality (PQ), and the final metric is MEB Score = √SC × PQ. Scores are averaged within each task type. The final Avg is the equal-weighted average over the 2-edit, 3-edit, 4-edit, and 5-edit difficulty subsets. 
+
+Semantics Score (SC). SC takes the source image, edited image, and editing instruction as input. It outputs editing success and over-editing control scores, and their mean is used as SC.         
+
+> You are a professional digital artist. You will evaluate the effectiveness of the AI-generated image(s). RULES: Two images will be provided: the first being the original AI-generated image and the second being an edited version. Evaluate how successfully the editing instruction has been executed in the second image. SCORING (0–10): score1: editing success, where 0 means the edit does not follow the instruction and 10 means perfect instruction following. score2: degree of overediting, where 0 means the edited image is completely different from the original and 10 means a minimal yet effective edit. Output: {"score": [score1, score2], "reasoning": "..."} Editing instruction: {instruction}
+
+Quality Score (PQ). PQ takes only the edited image as input. It outputs naturalness and artifact-control scores, and their mean is used as PQ.       
+
+> The image is an AI-generated image. Evaluate the generation quality. SCORING (0–10): naturalness: 0 means the image does not look natural; 10 means it looks natural. artifacts: 0 means severe distortion, watermark, blur, unusual body parts, or disharmonized subjects; 10 means no artifacts. Output: {"score": [naturalness, artifacts], "reasoning": "..."}
+
+20 A.6 Notation 
+
+Table 12 summarizes the main notation used in this paper. Table 12: Main notation.                               
+
+> Symbol Meaning
+> GNumber of samples per editing instruction
+> TTotal number of diffusion timesteps
+> cEditing instruction (condition)
+> Ri,r Region reward of region rin sample i
+> ˆAi,r Region advantage of region rin sample i
+> ˆAmix
+> i,r Global–region mixed advantage
+> α(s)Region mixing coefficient as a function of training step sβRegion power-weighting parameter
+> τSmoothing term for power weighting
+> Mi,r Latent-position set corresponding to region rsi,t,r Region-consistent ratio
+> Sp,l Semantic group (instruction =p, label =l)
+> ϵ+, ϵ −PPO clipping bounds
+> λkl KL regularization weight
+> ωtTimestep reweighting coefficient
+
+A.7 Statistical evaluation and compute resources 
+
+For the main RL comparisons, we repeat training with different random seeds. The main RL post-training experiments were run on 16 NVIDIA H800 GPUs for about 40 hours, corresponding to roughly 640 GPU-hours for a main run. The same hardware class was used for Flow-GRPO baselines and SpatialFlow-GRPO variants. Compute for ablations scales approx-imately linearly with the number of training variants because each variant uses the same sampling and update schedule. 
+
+A.8 Responsible research, assets, and LLM usage 
+
+This work improves image editing models and may have both positive and negative societal im-pacts. Positive uses include controllable content creation, image restoration, and editing assistance; negative uses include misleading edits, identity manipulation, and disinformation. Released data and models will include usage restrictions, safety notes, and filtering for unsafe or privacy-sensitive content. All existing models, datasets, and benchmarks are cited in the main text or bibliography. We follow their licenses and terms of use, and will provide the code in the supplementary material. Human annotation is used to mark editing regions, assign semantic labels, and review benchmark samples. Annotators receive written instructions and examples, are compensated according to local requirements, and the task does not collect private information or involve interventions on human subjects. LLMs and VLMs are used in the data and evaluation pipeline: Gemini-3-Pro produces structured region scores for SFReward-14K, VLM/LLM tools identify editable elements and generate candi-date MultiEditBench instructions before human review, and GPT-4.1 serves as the VIEScore-style evaluation backbone. These uses are described in Appendix A.4.1 and Appendix A.5.2. 21 A.9 Additional OmniGen2 qualitative comparisons Source Image Base Model Flow-GRPO SpatialFlow-GRPO 
+
+Change the liquid in the left glass to a deep purple hue, replace the orange slice with a lime 
+
+wedge , and add three more frosted cranberries near the bottom right corner of the tray. 
+
+Enhance the subject s appearance by adding subtle makeup , warming and waving her hair, and 
+
+painting her nails bright red .
+
+Warm up skin tone with blush, add honey-blonde wave highlights to hair, replace silver earrings 
+
+with gold hoops , and shift lighting to soft warm side light with cheek shadow. 
+
+Modify the woman s facial expression to a gentle smile , adjust her body pose to face slightly 
+
+toward the camera, change the dress color from pure white to ivory cream , and replace her 
+
+dangling crystal earring with a minimalist gold hoop .
+
+Change the person's facial expression from neutral to smiling and replace the geometric earring 
+
+with a simple hoop earring .
+
+Brighten and smooth skin tone , darken and add volume to hair, adjust shirt collar for neatness, 
+
+and enhance lighting with warm side-lighting and soft shadows. 
+
+Figure 7: Additional OmniGen2 qualitative comparisons (1/3). Each row compares the base model, Flow-GRPO, and SpatialFlow-GRPO under multi-target editing instructions. 22 Source Image Base Model Flow-GRPO SpatialFlow-GRPO 
+
+Change the person s facial expression from a gentle smile to neutral , and replace the dress s 
+
+dark floral pattern with solid navy blue .
+
+Remove the sunglasses to reveal the person's eyes and replace the camouflage cap with a plain 
+
+navy blue beanie .
+
+Change the woman s expression to smiling , remove her sunglasses, switch her blazer from beige 
+
+to navy blue , and replace her beige shoulder bag with a black clutch .
+
+Change the woman s dress to bright red , add a small dog at the child s feet, replace the note 
+
+on the wall with a colorful poster , and remove the figure in the doorway to create an empty 
+
+arch. 
+
+Enhance the woman s complexion to be warmer and smoother , add soft waves and volume to her 
+
+hair, accessorize her wrist with a gold bangle and nude nails, and shift lighting to soft warm 
+
+side-lighting with lens flare .
+
+Enhance the subject with dramatic eye makeup , transform her sleek updo into soft loose waves ,
+
+and adjust lighting to soft side illumination with warm tone. Figure 8: Additional OmniGen2 qualitative comparisons (2/3). 23 Source Image Base Model Flow-GRPO SpatialFlow-GRPO 
+
+Change the man's facial expression from smiling to neutral and alter his shirt color from dark 
+
+blue to light gray .
+
+Change the woman's facial expression to a cheerful smile with raised eyebrows, and switch her 
+
+white feathered dress to black .
+
+Change the person's facial expression to a smile , replace the diamond-studded headpiece with a
+
+pearl-studded one, and lighten the lip color to soft pink .
+
+Change the character s facial expression from pensive to smiling and replace the beaded top 
+
+with a sleeveless metallic top .
+
+Modify the woman s facial expression to a soft smile , extend her hair to waist-length waves ,
+
+change her dress color to pale ivory , and add a delicate pearl choker necklace. 
+
+Enhance the subject with bold makeup , extend and soften her pink hair, replace the cup with a
+
+stylish gold tumbler , and apply warm side lighting to create depth and mood. Figure 9: Additional OmniGen2 qualitative comparisons (3/3). 24

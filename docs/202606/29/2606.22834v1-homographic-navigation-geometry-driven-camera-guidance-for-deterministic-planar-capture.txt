@@ -1,0 +1,694 @@
+Title: Homographic Navigation: Geometry-Driven Camera Guidance for Deterministic Planar Capture
+
+URL Source: https://arxiv.org/pdf/2606.22834v1
+
+Published Time: Tue, 23 Jun 2026 03:11:10 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Homographic Navigation: Geometry-Driven Camera Guidance for Deterministic Planar Capture 
+
+Dominik Kroupa † Marek Vaˇ sko † Muh Yuzril Ihza Baharuddin †∗ Adam Herout †† GRAPH@FIT, Brno University of Technology, Faculty of Information Technology  
+
+> ∗
+
+Ondokuz Mayıs University   
+
+> {ikroupa, ivasko, herout }@fit.vut.cz myuzrilib@gmail.com
+
+Abstract 
+
+We present homographic navigation , a geometry-centric framework for guiding camera acquisition toward precise capture of planar regions. Rather than treating homogra-phy as an output, we use it as an organizing variable that unifies learning, alignment, and evaluation. From a single annotated reference image, we generate unlimited synthetic training data via homographic augmentation and train a single-shot model for joint recognition and localization of multiple artifacts (physical objects with a rectangular pla-nar target) through sparse keypoint prediction. To address precision under limited model input resolu-tion, we introduce a two-pass inference scheme with global detection followed by localized refinement, and a Stable Warp training strategy that significantly improves accuracy, particularly in the high-precision regime. The model also predicts confidence estimates per predicted keypoint and per the whole sample. Experimental results demonstrate that accurate planar alignment can be achieved from minimal supervision, pro-viding a foundation for geometry-driven camera guidance and future learning from in-the-wild video data. 
+
+1. Introduction 
+
+Capturing images of planar surfaces in a precise and repeat-able manner is a fundamental requirement in many real-world applications, including condition monitoring, surface inspection, and artifact identification. In such settings, the goal is not merely to recognize or detect an object, but to ac-quire images under consistent geometric configurations so that meaningful comparisons can be made across time, de-vices, or environments. Achieving this level of consistency with a handheld camera, however, remains a challenging problem due to variations in viewpoint, scale, lighting, and partial or full occlusion (see Figure 1). A large body of prior work addresses related chal-lenges through planar homography estimation. Classical approaches rely on feature detection and matching followed by robust estimation procedures, while more recent meth-ods employ deep learning to directly regress homographies or learn intermediate correspondences. Recent advances in-clude transformer-based architectures and iterative refine-ment models that significantly improve accuracy and ro-bustness under challenging conditions such as large view-point changes and low-texture scenes [5, 8, 22, 23]. At the same time, planar alignment has been extensively studied in the context of planar object tracking and aug-mented reality. Despite substantial progress, recent bench-marks highlight that state-of-the-art methods still degrade significantly in unconstrained real-world conditions, partic-ularly under occlusion, extreme viewpoint changes, and ap-pearance variations [11]. A comprehensive review further emphasizes that, despite decades of research, homography estimation remains sensitive to real-world variability and domain shifts [12]. Despite these advances, homography is typically treated as the output of an inference process. While this enables alignment between images, it does not address how an image should be acquired so that a de-sired alignment is obtained reliably. In practice, this leads to unstable or inconsistent capture, especially when images are taken in unconstrained environments without explicit guid-ance. In this work, we introduce homographic navigation , a geometry-centric framework in which homography is el-evated from a prediction target to an organizing variable that jointly structures acquisition, learning, and evaluation. Rather than treating alignment as a passive estimation task, we consider how camera motion can be guided so that a pla-nar region of interest is captured in a predefined geometric configuration. The central objective is therefore to enable a form of acquisition in which correct alignment becomes a 
+
+> arXiv:2606.22834v1 [cs.CV] 22 Jun 2026 Figure 1. Homographic navigation should navigate the user to capture a planar surface even in challenging conditions – including in-the-wild lighting and scene arrangement, and occlusion.
+
+direct consequence of the camera pose, rather than an un-certain post hoc estimate (Section 3). Each physical object, artifact , defines a planar region of interest and is modeled at the instance level. The over-all framework is organized as a two-phase process. In the first phase, a model is learned from a single reference image using synthetic homographic augmentation, enabling initial recognition and localization with minimal user input. In the second phase, the model is further improved by harvesting additional training data from unlabeled in-the-wild videos, where confident predictions are used to collect diverse real examples. This progressively expands the training distri-bution and supports curriculum-style learning, allowing the model to adapt to increasingly challenging conditions while maintaining geometric consistency. 
+
+This paper focuses on the first phase of the proposed framework, in which an artifact model is learned from a sin-gle reference image using geometry-driven augmentation. We employ a single-shot convolutional architecture based on YOLO [15, 18] that predicts sparse keypoint configu-rations, together with objectness and confidence measures, enabling robust homography estimation from the predicted correspondences. We evaluate the proposed approach using a homography-based protocol that measures reprojection error on indepen-dently annotated keypoints, ensuring that performance re-flects true geometric alignment rather than direct regression accuracy on training targets. The results demonstrate that accurate planar localization can be achieved from extremely limited supervision. In summary, the contributions of this work are: • We introduce homographic navigation, a framework that treats homography as an organizing variable for camera guidance, learning, and evaluation. • We design a synthetic training pipeline (the first phase) based on homographic augmentation that supports effi-cient learning without additional labeling. • We introduce a dataset spanning real, augmented real, and synthetic imagery with consistent homography annota-tions, supporting systematic evaluation of geometric ac-curacy, domain shift, and scale variability. These results establish the feasibility of geometry-driven, minimally supervised learning for precise planar alignment, and form a foundation for future work on navigation-guided image acquisition. 
+
+2. Related Work 
+
+2.1. Planar Alignment and Image-Based Aug-mented Reality 
+
+Planar homography has long served as a principled abstrac-tion for recovering the geometric relationship between a camera and a planar surface, enabling applications such as augmented reality and visual tracking. Early systems relied on engineered fiducial markers that provide reli-able correspondences and stable pose estimation even un-der occlusion [7]. Subsequent work shifted toward mark-erless approaches based on natural image targets, combin-ing local feature detection, matching, and robust estima-tion to achieve real-time planar tracking in unconstrained scenes [19]. Despite their practical success, such methods remain sensitive to viewpoint changes, appearance variation, and partial occlusion, as confirmed by recent large-scale evalu-ations such as PlanarTrack [11]. These limitations motivate approaches that move beyond purely passive alignment and instead consider how acquisition conditions themselves in-fluence alignment quality. 
+
+2.2. Learning-Based Homography Estimation 
+
+Recent work has increasingly adopted deep learning to esti-mate planar homographies directly from image pairs. Early approaches demonstrated that convolutional networks can regress homography parameters end-to-end without explicit feature matching [5], while later methods improved robust-ness through unsupervised objectives and learned feature representations [14, 21]. A common challenge in this line of work is the reliance on synthetic training data. Recent approaches address the realism gap by generating more faithful training samples from real images, for example, by refining homography-based augmentation pipelines or iteratively improving train-ing data quality [9]. In parallel, iterative and recurrent ar-chitectures have been proposed to progressively refine ho-mography estimates, improving accuracy under large trans-formations and difficult conditions [1, 2]. More recent models further incorporate multiscale rea-soning, attention mechanisms, and efficient correlation structures to improve performance and efficiency [22, 23]. Very recent formulations reinterpret homography estima-tion as a continuous transformation process, improving ro-bustness and domain generalization [8]. Across these approaches, a common design pattern is that homography is treated as the output of the model, ei-ther regressed directly or inferred from learned correspon-dences. In contrast, the present work treats homography as an organizing variable that structures training data genera-tion, prediction, and evaluation. 
+
+2.3. Planar Object Localization and Tracking 
+
+Closely related problems include planar object detection, tracking, and alignment, where the goal is to localize and geometrically align planar regions such as documents, screens, or product surfaces. Recent approaches incor-porate joint modeling of geometry, visibility, and confi-dence to improve robustness under occlusion and appear-ance changes [20]. Nevertheless, these methods typically operate in asingle-frame or short-term tracking regime, focusing on es-timating alignment from arbitrary viewpoints. As demon-strated by recent benchmarks [11], performance degrades substantially under real-world variability, suggesting that inference-only formulations may be insufficient to guaran-tee reliable alignment. This motivates approaches that ex-plicitly incorporate acquisition into the problem formula-tion. 
+
+2.4. Camera Pose Estimation and Geometry-Aware Learning 
+
+More generally, the problem of estimating camera pose from images has been widely studied in visual localiza-tion. Learning-based approaches such as PoseNet [10] cast pose estimation as direct regression, but subsequent analyses show that such methods often struggle with ac-curacy and generalization compared to geometry-based ap-proaches [16]. These observations highlight a broader limitation of inference-centric formulations: predicting geometry from arbitrary inputs is fundamentally more challenging than constraining inputs to satisfy desired geometric conditions. Our approach follows this perspective and focuses on guid-ing acquisition so that correct alignment becomes a conse-quence of camera pose. 
+
+2.5. Instance-Level Learning and Geometry-Driven Supervision 
+
+Learning from limited supervision has been extensively ex-plored in few-shot and instance-level learning, where strong inductive biases and prior structure are essential for effec-tive generalization [17]. In parallel, self-supervised ap-proaches exploit geometric constraints, such as homogra-phy consistency across views, to provide supervision with-out manual labels [13]. Confidence-based self-training strategies further enable models to expand training data by selectively incorporating reliable predictions while mitigat-ing drift [3]. Test-time augmentation and prediction consistency have also been used as practical proxies for predictive uncer-tainty and robustness [4]. The approach proposed in this work combines these ideas in a geometry-driven set-ting: planar constraints enable learning from a single refer-ence image, while synthetic homographic augmentation and perturbation-based consistency provide both scalable super-vision and a direct estimate of prediction reliability. 
+
+3. Homographic Navigation Framework 
+
+We introduce homographic navigation as a framework for geometry-driven image acquisition, in which camera mo-tion, learning, and alignment are unified through planar ho-mography. The central idea is to move from inference-centric formulations, where alignment is estimated after capture, to acquisition-aware systems in which the camera is guided toward a configuration that directly yields the de-sired geometric alignment. An overview of the framework is shown in Figure 2. The system is organized as a two-phase learning process cen-tered on artifact-specific models. Each artifact is defined by a planar region of interest, specified by a single reference image and an axis-aligned bounding box – AABB is used for simplicity of annotation; it could as well be a general quadrilateral. From this minimal input, the system learns to localize the region and estimate its geometric configuration under varying conditions. The present work addresses the first phase of this frame-work, referred to as Phase One . In this phase, a model is learned from a single reference image using geometry-driven synthetic data generation. Homographic transforma-tions are used to produce a wide range of training samples that simulate viewpoint changes, scale variation, and par-tial visibility, enabling reliable planar localization without Phase One Learning Synthe �cData Generator Model 
+
+... 
+
+... reference images unlabeled videos 
+
+... Predic �on with Robustness Es �ma �on Pseudo-labeled Real Samples Phase Two Learning iterate Figure 2. Overview of the homographic navigation framework. Phase One (this paper) learns an artifact-specific model from a single reference image using synthetic homographic augmenta-tion. In later phases, the model is extended using pseudo-labeled samples from unlabeled videos, enabling iterative self-supervised learning and eventual camera guidance toward a desired geometric configuration. 
+
+additional manual annotation. Homography plays a central role as the organizing vari-able of the framework. It defines the relationship between reference and input views, provides supervision through synthetic data generation, and serves as the evaluation met-ric via geometric alignment. In later stages, it also becomes the target of camera guidance, enabling navigation toward a desired capture configuration. The learned model predicts sparse keypoints and asso-ciated confidence measures, allowing robust estimation of the homography between images. This establishes the rep-resentation and reliability estimates required for subsequent stages, including self-supervised learning from video and closed-loop camera navigation. 
+
+4. Method: Phase One – Learning from a Sin-gle Image via Homographic Augmentation 
+
+4.1. Synthetic Training via Homographic Augmen-tation 
+
+Given a reference image Is of an artifact (see Figure 3 left for two examples) and a planar region of interest user-defined by an axis-aligned rectangular bounding box 
+
+c = {(xL, y T ), (xR, y T ), (xR, y B ), (xL, y B )} ⊂ R2, (1) we construct a training process based on synthetic view gen-eration under planar projective transformations. For each training sample, a target quadrilateral d =
+
+{di}4 
+
+> i=1
+
+is generated by applying a sequence of stochas-tic transformations to the initial axis-aligned rectangle c.These transformations include random perturbations of cor-ner positions, global rotation, scaling, and translation, al-lowing controlled variation in viewpoint, orientation, appar-ent size, and partial visibility. A homography H ∈ R3×3 is then computed such that 
+
+˜di = H ˜ci, i = 1 , . . . , 4, (2) where ˜(·) denotes homogeneous coordinates and λ is a scale factor. The target image of a resolution matching the CNN model is generated by warping the reference image using the inverse mapping It(x) = Is
+
+ H−1x, with appropriate interpolation and background compositing. In addition to the corner points, we define a fixed set of canonical keypoints K ∈ RK×2 within the rectangu-lar region. These keypoints are deterministically derived from the bounding box geometry (they happen to include the four corner points) and provide a sparse representation of the planar structure; K = 29 in the current implemen-tation and in the experiments. For each synthetic sample, the corresponding target keypoints are obtained by apply-ing the same homography: K′ = π
+
+
+
+H ˜K
+
+
+
+, where π(·) de-notes dehomogenization. The transformed keypoints serve as supervised targets for learning. Additional stochastic variations are further applied after compositing and warping to increase appearance diversity while preserving geometric consistency. Specifically, the synthesized image is subjected to mild photometric pertur-bations, including contrast and brightness adjustments and additive Gaussian noise with randomly varying intensity. In addition, we apply structured spatial dropout, in which one or two contiguous rectangular regions are randomly masked within an extended bounding box defined around the pro-jected keypoints. The masks are sampled with probability 
+
+p (and p2 for a second block), with sizes drawn as fractions of the keypoint extent, and are filled with constant values. By conditioning the masking on the keypoint region, the augmentation encourages robustness to structured occlusion while maintaining relevance to the task. By sampling a new homography and background for each sample in each iteration, this process defines an ef-fectively unbounded distribution of training examples. This geometry-driven augmentation enables efficient training from a single annotated image while exposing the model to a broad range of viewing conditions relevant for planar alignment. 
+
+4.2. Model Architecture 
+
+The proposed model (Figure 4) follows a single-shot convo-lutional architecture inspired by Tekin et al . [18] that maps Figure 3. Two examples of artifacts and the generated training samples. left: Reference images with the defined axis-aligned bounding box and the generated keypoints. right: Examples of generated training samples. Note that the keypoints can extend beyond the training images. 
+
+an input image X ∈ RH×W ×3 to a dense prediction grid of geometric and semantic outputs. In the current setting, the input resolution is H × W = 384 × 256 , resulting in a grid of size Gh × Gw = 12 × 8. The network is composed of a backbone feature extractor, a multi-resolution neck, and a convolutional prediction head, and produces all outputs in a single forward pass. A ResNet-18 backbone (up to layer 3) is used to extract intermediate feature maps at multiple spatial resolutions. In particular, we use a feature tensor F ∈ R24 ×16 ×C (i.e., resolution H/ 16 × W/ 16 ) as input to the neck. The neck module combines a main processing branch with a parallel high-frequency preservation branch. The main branch ap-plies spatial downsampling followed by a sequence of con-volutional transformations, Fmain = ϕmain (F ), producing a feature map at resolution Gh × Gw with high channel ca-pacity. In parallel, a side branch applies a 1 × 1 convolu-tion ψ(·) that compresses the channel dimension of F and applies a pixel unshuffle operation, which rearranges local spatial neighborhoods into channel dimensions without in-formation loss: 
+
+Fside = unshuffle( ψ(F )) . (3) The resulting tensors are concatenated along the channel dimension, yielding a representation that jointly captures coarse semantic structure and fine spatial detail. The prediction head consists of a small stack of 3 × 3
+
+convolutional layers followed by a 1 × 1 projection to the final output tensor 
+
+Y ∈ RGh×Gw ×(2+3 K+C), (4) where K is the number of keypoints and C is the number of artifact classes ( C = 30 in the experiments). For each grid cell, the output encodes an objectness score, a sample-level confidence, and for each keypoint a triplet (∆ x, ∆y, q ) cor-responding to a cell-relative offset and confidence, together with class logits. For comparison, a simpler straight neck variant, consist-ing of a single processing branch without multi-resolution fusion and without pooling, is also implemented. Since it produces spatially twice as large an output, it can achieve slightly better accuracy at the cost of considerably greater computational complexity (14.6 vs. 6.0 estimated GFLOPs at the same input resolution). The multi-resolution design is preferred as it preserves high-frequency spatial information while maintaining a compact representation. 
+
+4.3. Loss Function 
+
+The model is trained using a composite loss that supervises multiple complementary objectives on the output grid of size Gh × Gw. Each grid cell predicts objectness, keypoint offsets, confidence estimates, and class logits. Let S denote the set of supervised cells associated with a target sample, defined by the cell containing the object centroid ( respon-sible cell ) and its neighborhood (4- or 8-connected). The total loss is given by 
+
+L = Lobj +λoff Loffset +Lcls +λkp Lkp -conf +λsLsample -conf ,
+
+(5) where the weights λoff , λ kp , λ s control the relative contri-butions of the individual components. 
+
+Objectness Learning A binary objectness map o∗ ∈{0, 1}Gh×Gw is defined such that o∗ 
+
+> uv
+
+= 1 only at the re-sponsible cell and 0 elsewhere. Objectness is optimized us-ing binary cross-entropy with per-cell weighting: 
+
+Lobj =
+
+P 
+
+> u,v
+
+wuv · BCE(ˆ ouv , o ∗ 
+
+> uv
+
+)
+
+P 
+
+> u,v
+
+wuv 
+
+, (6) 12×8×1024 keypoints: x,y,con fi dence ar �fact class sample con fi dence objectness score output channels: 2+3×K+C 12×8×output 12×8×1024 Convolu �onal 3×3×1024 3×3×1024 Convolu �onal 1×1×output backbone 384×256×3 24×16×256 Avg pooling 2×2 Convolu �onal 3×3×1024 3×3×1024 24×16×64 12×8×256 Convolu �onal 1×1×64 Merge unshu ffl e12×8×(1024+256) Figure 4. The backbone (ResNet-18) produces intermediate features at 24 × 16 resolution, which are processed by the multi-resolution neck consisting of a main branch and a parallel detail-preserving branch based on channel compression and pixel unshuffle. The fused representation is mapped to a dense Gh ×Gw prediction grid encoding objectness, per-keypoint offsets and confidences, sample confidence, and class logits. 
+
+where the responsible cell is assigned weight 1, background cells are down-weighted, and neighboring cells are ex-cluded from supervision. 
+
+Keypoint Regression For each supervised cell (u, v ) ∈ S 
+
+and each keypoint k, the model predicts offsets ( ˆ∆xk, ˆ∆yk)
+
+relative to the cell. These are regressed to ground-truth off-sets using a Smooth-ℓ1 loss: 
+
+Loffset = 1
+
+|S| K
+
+X
+
+> (u,v )∈S
+> K
+
+X
+
+> k=1
+
+SmoothL1 
+
+ ˆ∆(u,v ) 
+
+> k
+
+, ∆∗(u,v )
+
+> k
+
+
+
+.
+
+(7) 
+
+Confidence Estimation The model predicts both per-keypoint confidences ˆq(u,v ) 
+
+> k
+
+and a per-cell sample confi-dence ˆs(u,v ). Their targets are derived from the geometric prediction error. For keypoints: 
+
+q∗(u,v ) 
+
+> k
+
+= f
+
+
+
+d(u,v )
+
+> k
+
+
+
+, (8) where d(u,v ) 
+
+> k
+
+is the Euclidean distance (in pixels) between the predicted and ground-truth position of keypoint k. The confidence target is defined by a distance-decaying function 
+
+f (d) = 
+
+
+
+exp 
+
+
+
+α
+
+
+
+1 − ddth 
+
+ 
+
+− 1exp( α) − 1 if d < d th ,
+
+0 otherwise, (9) where dth is a distance threshold and α controls the slope of the decay (in our experiments, dth = 5 pixels and α =1). This assigns high confidence to accurate predictions and suppresses confidence beyond the threshold. The per-keypoint confidence loss is defined as 
+
+Lkp -conf = 1
+
+|S| K
+
+X
+
+> (u,v )∈S
+> K
+
+X
+
+> k=1
+
+SmoothL1(ˆ q(u,v ) 
+
+> k
+
+, q ∗(u,v ) 
+
+> k
+
+).
+
+(10) Similarly, the sample-level confidence target is com-puted from the RMS keypoint error 
+
+d(u,v )rms =
+
+vuut 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+
+
+d(u,v )
+
+> k
+
+2
+
+, (11) it is mapped through the same function 
+
+s∗(u,v ) = f
+
+
+
+d(u,v )rms 
+
+
+
+(12) and optimized as 
+
+Lsample -conf = 1
+
+|S| 
+
+X
+
+> (u,v )∈S
+
+SmoothL1(ˆ s(u,v ), s ∗(u,v )).
+
+(13) Gradients from confidence losses do not propagate into the offset predictions. 
+
+Classification Loss For each supervised cell (u, v ) ∈ S ,the model predicts class logits ˆl(u,v ) ∈ RC . Given the ground-truth class label c∗, the classification loss is: 
+
+Lcls = 1
+
+|S| 
+
+X
+
+> (u,v )∈S
+
+CE 
+
+ˆl(u,v ), c ∗
+
+. (14) 
+
+4.4. Inference in Two Passes and Stable Warp Train-ing 
+
+To preserve geometric precision under a fixed input res-olution, inference is performed in two passes (Figure 5). A global pass processes a resized full image I1 = P1(I)
+
+and yields coarse predictions ( ˆK1, ˆc1) = fθ (I1). These are used to define a focus transform that re-samples directly from the original high-resolution image, 
+
+I2 = P2(I; ˆK1, K⋆, m ). (15) Here, K⋆ = {k⋆i }Ni=1 is a fixed set of canonical keypoints defined in a class-specific normalized coordinate frame (centered, upright, and at a standard scale), with each in-dex corresponding to a consistent semantic location and m
+
+is a margin parameter controlling the spatial extent of the focus region, i.e., how much the region inferred from ˆK1
+
+is expanded before warping. The transform P2 maps the coarse prediction ˆK1 toward this canonical layout. A second forward pass produces refined keypoints 
+
+( ˆK2, ˆc2) = fθ (I2), and final geometry is estimated as 
+
+ˆH = Homography( ˆK2, K⋆). This decomposition sepa-rates coarse discovery from fine localization, while avoiding loss of detail by re-sampling from I.In the evaluation below, both passes are always executed and reported. In practical deployment (e.g., mobile AR), the system operates in a tracking regime: once the target is detected by the first pass, subsequent frames are processed only via the focused second-pass transformation centered at the previously estimated location. This exploits temporal continuity, as camera motion is typically smooth. If confi-dence drops (target lost), the system falls back to the global first pass to reinitialize. Thus, the model is not executed twice per frame in steady-state operation. To support both regimes with a single model, we intro-duce Stable Warp training. Each training sample is gener-ated either by a wide-range augmentation Awild or by a near-canonical augmentation Astable , with probabilities 1 − ρ and 
+
+ρ, respectively (with ρ ≈ 0.3). The former ensures robust-ness for global discovery (pass 1), while the latter concen-trates training signal in the high-precision regime induced by focused re-sampling (pass 2). This alignment enables a single network to operate effectively both in full-image search and in localized tracking, improving keypoint accu-racy and homography estimation without increasing practi-cal inference cost. 
+
+5. Experiments and Results 
+
+5.1. Training Details 
+
+The main model is trained in a multi-class setting for 
+
+300 ,000 iterations with batch size 64 using Adam. Differ-ent learning rates are used for parameter groups ( 10 −4 for the backbone, 10 −3 for the remaining layers), with a short linear warmup followed by cosine annealing to zero. Artifact-specific specialization is performed rather as an auxiliary experiment. Starting from the trained multi-class checkpoint, each class is fine-tuned independently for 500 
+
+iterations using a single learning rate 10 −5 and cosine an-nealing. No architectural or pipeline changes are introduced in this stage. 
+
+5.2. Datasets: Real, Real Augmented, Synthetic 
+
+We evaluate on three complementary datasets built over the same set of 23 artifact classes, each defined by a reference image with annotated keypoints and a canonical coordinate frame. All datasets, together with the evaluation protocol and code, will be made publicly available upon publication. 
+
+Real. A small but challenging dataset of 247 manually annotated smartphone images captured under unconstrained conditions (cluttered backgrounds, varying lighting, view-point, and scale). Images are high-resolution ( ∼ 9 MP), and the artifact may occupy only a small portion of the frame. Ground-truth homographies are estimated from sparse man-ual keypoint annotations. This dataset serves as the primary evaluation benchmark. 
+
+Synthetic. A procedurally generated dataset of 2000 
+
+images created by homographic warping of reference im-ages onto random backgrounds, followed by photometric augmentation and simulated occlusion. It provides exact ground-truth geometry and broad coverage of viewpoint and scale variation. This dataset is used for controlled eval-uation and ablation. 
+
+Real Augmented. A dataset of 2000 images derived from real captures by applying additional homographic per-turbations while preserving photorealistic appearance. Key-points are propagated analytically through the transforma-tions, yielding consistent annotations. This dataset bridges the gap between real and synthetic domains and tests gen-eralization under moderate geometric variation. 
+
+5.3. Evaluation Methodology 
+
+All methods are evaluated using a common geometric pro-tocol, ensuring direct comparability across HomoNav vari-ants and baselines. Each sample provides an image I and a ground-truth homography Hgt  
+
+> I→C
+
+mapping image coordi-nates to the canonical frame defined by reference keypoints. Pass 1                 
+
+> diag: 0.760%
+> size: 12.278% Pass 2
+> diag: 0.125%
+> size: 2.023% Pass 1
+> diag: 5.830%
+> size: 55.898% Pass 2
+> diag: 0.677%
+> size: 6.488% Pass 1
+> diag: 1.091%
+> size: 9.392% Pass 2
+> diag: 0.250%
+> size: 2.155%
+
+Figure 5. Two-pass inference. Pass 1 localizes coarsely; pass 2 refines on the target region. Red/white markers denote predicted/ground-truth keypoints. diag and size are normalized errors. Table 1. Quantitative comparison of methods using AUC of cumulative error curves (higher is better). Results are reported for real, augmented real, and synthetic datasets under diagonal- and target-size-normalized error measures. FPS was measured on preloaded inputs using an AMD Ryzen 9 7900X CPU and an NVIDIA RTX 4080 16GB GPU. 
+
+real real augmented synthetic AUC ↑ AUC ↑ AUC ↑
+
+method diag size fps diag size fps diag size fps 
+
+baseline: SIFT 42 .13 34 .41 35 .46 38 .39 30 .22 36 .91 23 .17 8.70 60 .06 
+
+baseline: RoMa v2 35 .68 27 .22 2.58 35 .57 25 .41 2.58 15 .77 6.26 2.57 
+
+HomoNav 33 .39 25 .04 289 .91 30 .66 20 .73 332 .20 47 .52 36 .27 323 .40 
+
+w/o Stable Warp 34 .04 23 .30 289 .91 31 .03 19 .09 332 .20 46 .70 31 .08 323 .40 
+
+Multi-Res Neck 33 .79 20 .98 430 .75 30 .94 16 .17 475 .85 47 .86 35 .54 482 .19 
+
+HomoNav evaluation. For each image, both inference passes (Section 4.4) are executed: 
+
+( ˆK1, ˆc1) = fθ (P1(I)) , ( ˆK2, ˆc2) = fθ (P2(I; ˆK1, K⋆, m )) .
+
+(16) Predicted keypoints are converted to homographies via ro-bust estimation, 
+
+ˆH(p) 
+
+> I→C
+
+= Homography( ˆKp, K⋆), p ∈ { 1, 2}, (17) and both pass-1 and pass-2 results are reported. 
+
+Baseline evaluation. Feature-based baselines (e.g. SIFT/RANSAC, RoMa v2 [6]) first estimate a homography in a high-resolution rescaled image domain, which is mapped back to original resolution and composed with the known target-to-canonical transform to obtain ˆHI→C .Failures to estimate a homography are treated as missing values. 
+
+Geometric error metric. Accuracy is measured by com-paring canonical reprojections. Let {qj }4 
+
+> j=1
+
+be four fixed canonical reference points (in the canonical space of K∗). Using inverse homographies, 
+
+ˆxj = π( ˆH−1 
+
+> I→C
+
+˜qj ), xgt  
+
+> j
+
+= π(( Hgt  
+
+> I→C
+
+)−1 ˜qj ), (18) where π(·) denotes dehomogenization, we define a single RMSE-style aggregate pixel error 
+
+Epx =
+
+vuut 4X
+
+> j=1
+
+∥ˆxj − xgt  
+
+> j
+
+∥22. (19) 
+
+Normalized error measures. To account for scale, we re-port two normalized errors: 
+
+Ediag = 100 Epx 
+
+√W 2 + H2 , Esize = 100 Epx 
+
+pAgt 
+
+, (20) where (W, H ) is image size and Agt is the area of the ground-truth projected quadrilateral. The former reflects error relative to image extent, while the latter normalizes by object scale. Reporting both prevents bias toward either large or small targets. 0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Real Data
+
+Diagonal-Normalized 
+
+> HomoNav (AUC=33.39)
+> Baseline (SIFT) (AUC=42.13)
+> Baseline (RoMa v2) (AUC=35.68)
+
+Target Size-Normalized 
+
+> HomoNav (AUC=25.04)
+> Baseline (SIFT) (AUC=34.41)
+> Baseline (RoMa v2) (AUC=27.22)
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Augmented Real Data
+> HomoNav (AUC=30.66)
+> Baseline (SIFT) (AUC=38.39)
+> Baseline (RoMa v2) (AUC=35.57)
+> HomoNav (AUC=20.73)
+> Baseline (SIFT) (AUC=30.22)
+> Baseline (RoMa v2) (AUC=25.41)
+
+0 10 20 30 40 50 
+
+Error (% of image diagonal) 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Synthetic Data
+> HomoNav (AUC=47.52)
+> Baseline (SIFT) (AUC=23.17)
+> Baseline (RoMa v2) (AUC=15.77)
+
+0 10 20 30 40 50 
+
+Error (% of target size) 
+
+> HomoNav (AUC=36.27)
+> Baseline (SIFT) (AUC=8.70)
+> Baseline (RoMa v2) (AUC=6.26)
+
+HomoNav × Baseline (SIFT, RoMa v2) Figure 6. Comparison of HomoNav with SIFT+RANSAC and RoMa v2 using cumulative error curves across real, augmented, and synthetic datasets. Solid lines denote pass 2 and dashed lines pass 1 (Section 4.4). Higher, more left-shifted curves indicate bet-ter performance; AUC values are summarized in Table 1. Note that the baselines operate with known artifact identity and high-resolution templates, whereas HomoNav jointly recognizes and lo-calizes all artifacts from downscaled inputs. 
+
+5.4. Comparison with Baseline: SIFT/RANSAC and RoMa v2 
+
+Table 1 and Figure 6 compare HomoNav with SIFT+RANSAC and RoMa v2 [6] using cumulative error curves (ECDF), where higher and more left-shifted curves indicate better performance. We report our most accurate variant: the straight-neck model without pooling, which produces higher-resolution outputs than Figure 4 at increased computational cost (see Section 5.5). A key difference is that SIFT and RoMa operate in a template-matching setting with known artifact identity and high-resolution inputs, whereas HomoNav jointly detects and localizes all artifacts from strongly downscaled images, trading precision for efficiency. Dashed curves in Figure 6 show pass 1 (global), while solid curves show pass 2 (re-fined; Section 4.4). The second pass provides a significant improvement by re-sampling from the original resolution. On real and augmented data, SIFT performs best, with RoMa and HomoNav moderately behind. On synthetic data, however, HomoNav clearly outperforms both base-lines, indicating strong alignment with the training distribu-tion and robustness to distortions and small object scales. This suggests better tolerance to scale variation, though 0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Real Data
+
+Diagonal-Normalized 
+
+> HomoNav (AUC=33.79)
+> w/o Stable Warp (AUC=33.45)
+> Neighborhood Zero (AUC=34.35)
+> Neighborhood Eight (AUC=34.24)
+
+Target Size-Normalized 
+
+> HomoNav (AUC=20.98)
+> w/o Stable Warp (AUC=19.94)
+> Neighborhood Zero (AUC=20.65)
+> Neighborhood Eight (AUC=21.28)
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Augmented Real Data
+> HomoNav (AUC=30.94)
+> w/o Stable Warp (AUC=30.96)
+> Neighborhood Zero (AUC=31.88)
+> Neighborhood Eight (AUC=31.33)
+> HomoNav (AUC=16.17)
+> w/o Stable Warp (AUC=15.38)
+> Neighborhood Zero (AUC=16.26)
+> Neighborhood Eight (AUC=16.58)
+
+0 10 20 30 40 50 
+
+Error (% of image diagonal) 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Synthetic Data
+> HomoNav (AUC=47.86)
+> w/o Stable Warp (AUC=47.35)
+> Neighborhood Zero (AUC=48.02)
+> Neighborhood Eight (AUC=47.82)
+
+0 10 20 30 40 50 
+
+Error (% of target size) 
+
+> HomoNav (AUC=35.54)
+> w/o Stable Warp (AUC=31.36)
+> Neighborhood Zero (AUC=36.51)
+> Neighborhood Eight (AUC=36.15)
+
+HomoNav base × w/o Stable Warp × w/o Nighborhood 
+
+Figure 7. Comparison of training strategies using cumulative error curves. Influence of Stable Warp (Section 4.4) and neighborhood supervision; Stable Warp notably improves pass 2 accuracy. 0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Real Data
+
+Diagonal-Normalized 
+
+> HomoNav (AUC=33.79)
+> Straight (AUC=34.16)
+> Straight w/o Pooling (AUC=33.39)
+
+Target Size-Normalized 
+
+> HomoNav (AUC=20.98)
+> Straight (AUC=21.33)
+> Straight w/o Pooling (AUC=25.04)
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Augmented Real Data
+> HomoNav (AUC=30.94)
+> Straight (AUC=31.15)
+> Straight w/o Pooling (AUC=30.66)
+> HomoNav (AUC=16.17)
+> Straight (AUC=16.94)
+> Straight w/o Pooling (AUC=20.73)
+
+0 10 20 30 40 50 
+
+Error (% of image diagonal) 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+> Synthetic Data
+> HomoNav (AUC=47.86)
+> Straight (AUC=47.84)
+> Straight w/o Pooling (AUC=47.52)
+
+0 10 20 30 40 50 
+
+Error (% of target size) 
+
+> HomoNav (AUC=35.54)
+> Straight (AUC=36.09)
+> Straight w/o Pooling (AUC=36.27)
+
+HomoNav base × Straight × Straight w/o Pooling 
+
+Figure 8. Comparison of architectural variants using cumula-tive error curves. Neck design ablation shows that the straight neck without pooling achieves the best performance at increased computational cost, while multi-resolution variants bring only marginal gains. 
+
+more real, challenging data is needed to confirm this. 5.5. Ablation: Stable Warp, Neighborhood, Neck Shape 
+
+Figure 7 and Figure 8 present cumulative error curves for several design choices. The first figure analyzes train-ing strategies (Stable Warp and neighborhood supervision), while the second one compares different neck architectures. In Figure 7, removing Stable Warp (Section 4.4) mainly degrades performance, most notably for pass 2, where this training is explicitly targeted. A smaller but visible drop is also observed for pass 1 on real data, likely because Sta-ble Warp increases the number of near-canonical training examples matching the real capture conditions. Neighbor-hood supervision (Section 4.3) is beneficial for the multi-resolution neck, although its effect is moderate and dataset-dependent. In Figure 8, the straight neck without pooling gives the strongest target-size-normalized performance, especially on real data, while remaining comparable to the other variants in diagonal normalization. This gain comes at the cost of a higher-resolution output grid and increased computation. Interestingly, the straight neck with pooling performs nearly identically to the multi-resolution neck adapted from [18], suggesting that the additional high-resolution branch brings limited benefit in the current setup. This motivates further exploration of architectures that better trade off precision and efficiency. 
+
+6. Conclusion 
+
+We introduced homographic navigation, a geometry-driven framework that enables joint recognition and precise pla-nar alignment from minimal supervision. Using synthetic homographic augmentation, we showed that accurate lo-calization can be learned from a single reference image, while the proposed two-pass inference improves precision through coarse-to-fine refinement. A key contribution is the Stable Warp training strategy, which significantly improves performance – especially for the high-precision second pass – by aligning training conditions with the focused inference regime. The present work addresses only the first phase of the full framework. Future work will focus on extending the approach by the second phase: by harvesting informative samples from unlabeled in-the-wild videos of artifacts and designing effective curriculum learning strategies. In paral-lel, we aim to develop lightweight models suitable for mo-bile deployment and to study the user experience of homo-graphic navigation in augmented reality settings. 
+
+References 
+
+[1] Si-Yuan Cao, Jianxin Hu, Zehua Sheng, and Hui-Liang Shen. Iterative deep homography estimation. In IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR) ,2022. [2] Si-Yuan Cao, Rui Zhang, Liang Luo, Benyuan Yu, Zehua Sheng, Jiangtao Li, and Hui-Liang Shen. Recurrent homog-raphy estimation using homography-guided image warping and focus transformer. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2023. [3] Paola Cascante-Bonilla, Fuwen Tan, Yongfeng Qi, and Vi-cente Ordonez. Curriculum labeling: Revisiting pseudo-labeling for semi-supervised learning. In AAAI Conference on Artificial Intelligence , 2021. [4] Pedro Conde, Tiago Barros, Rui L. Lopes, Cristiano Preme-bida, and Urbano J. Nunes. Approaching test-time augmen-tation in the context of uncertainty calibration for deep neural networks. arXiv preprint arXiv:2304.05104 , 2023. [5] Daniel DeTone, Tomasz Malisiewicz, and Andrew Rabi-novich. Deep image homography estimation. arXiv preprint arXiv:1606.03798 , 2016. [6] Johan Edstedt, David Nordstr¨ om, Yushan Zhang, Georg B¨ okman, Jonathan Astermark, Viktor Larsson, Anders Hey-den, Fredrik Kahl, M˚ arten Wadenb¨ ack, and Michael Fels-berg. RoMa v2: Harder better faster denser feature matching, 2025. [7] Sergio Garrido-Jurado, Rafael Mu˜ noz-Salinas, Francisco J. Madrid-Cuevas, and Manuel J. Mar´ ın-Jim´ enez. Automatic generation and detection of highly reliable fiducial markers under occlusion. Pattern Recognition , 2014. [8] Mengfan He, Liangzheng Sun, Chunyu Li, and Ziyang Meng. Homofm: Deep homography estimation with flow matching. arXiv preprint arXiv:2601.18222 , 2026. [9] Hankyeol Jiang et al. Supervised homography learning with realistic dataset generation. In International Conference on Computer Vision (ICCV) , 2023. [10] Alex Kendall, Matthew Grimes, and Roberto Cipolla. Posenet: A convolutional network for real-time 6-dof cam-era relocalization. In International Conference on Computer Vision (ICCV) , 2015. [11] Xinran Liu, Xiaoqiong Liu, Ziruo Yi, Xin Zhou, Thanh Le, Libo Zhang, Yan Huang, Qing Yang, and Heng Fan. Planar-track: A large-scale challenging benchmark for planar object tracking. In IEEE/CVF International Conference on Com-puter Vision (ICCV) , 2023. [12] Yinhui Luo, Xingyi Wang, Yanhao Liao, Qiang Fu, Chang Shu, Yuezhou Wu, and Yuanqing He. A review of homog-raphy estimation: Advances and challenges. Electronics , 12 (24):4977, 2023. [13] Bruce R. Muller and Toby Breckon. Self-supervised relative pose with homography model-fitting in the loop. In Win-ter Conference on Applications of Computer Vision (WACV) ,2023. [14] Ty Nguyen, Steven W. Chen, Shreyas S. Shivakumar, Camillo J. Taylor, and Vijay Kumar. Unsupervised deep ho-mography: A fast and robust homography estimation model. 
+
+IEEE Robotics and Automation Letters , 2018. [15] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Unified, real-time object de-tection, 2016. [16] Torsten Sattler, Qunjie Zhou, Marc Pollefeys, and Laura Leal-Taixe. Understanding the limitations of cnn-based ab-solute camera pose regression. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. [17] Yisheng Song, Ting Wang, Puyu Cai, Subrota K. Mondal, and Jyoti Prakash Sahoo. A comprehensive survey of few-shot learning: Evolution, applications, challenges, and op-portunities. ACM Computing Surveys , 55(13s):1–40, 2023. [18] Bugra Tekin, Sudipta N. Sinha, and Pascal Fua. Real-time seamless single shot 6d object pose prediction. In IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2018. [19] Daniel Wagner, Gerhard Reitmayr, Alessandro Mulloni, Tom Drummond, and Dieter Schmalstieg. Real-time detection and tracking for augmented reality on mobile phones. IEEE Transactions on Visualization and Computer Graphics , 16 (6):1404–1413, 2010. [20] Haoxian Zhang and Yonggen Ling. Hvc-net: Unifying ho-mography, visibility, and confidence learning for planar ob-ject tracking. In European Conference on Computer Vision (ECCV) , 2022. [21] Jirong Zhang, Chang Wang, Shaodi Liu, Lehu Jia, Nanning Ye, Jiaqing Wang, Jie Zhou, and Jin Sun. Content-aware un-supervised deep homography estimation. In European Con-ference on Computer Vision (ECCV) , 2020. [22] Haoyu Zhou, Wei Hu, Ying Li, et al. Deep homography es-timation with feature correlation transformer. In IEEE Inter-national Conference on Multimedia and Expo (ICME) , 2023. [23] Haokai Zhu, Si-Yuan Cao, Jianxin Hu, et al. Mcnet: Rethink-ing the core ingredients for accurate and efficient homogra-phy estimation. In IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , 2024.
