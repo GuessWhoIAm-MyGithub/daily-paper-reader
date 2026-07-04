@@ -1,0 +1,279 @@
+Title: Diffusion-Based Multi-Class Normality for OOD Detection: An Application to CDP Authentication
+
+URL Source: https://arxiv.org/pdf/2607.00609v1
+
+Published Time: Thu, 02 Jul 2026 00:52:43 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Diffusion-Based Multi-Class Normality for OOD Detection: An Application to CDP Authentication 
+
+Bolutife Atoki, Iuliia Tkachenko, Bertrand Kerautret, and Carlos Crispim-Junior 
+
+Universit´ e Lumi` ere Lyon 2, CNRS, INSA Lyon, Universite Claude Bernard Lyon 1 LIRIS, UMR 5205 Lyon, France 
+
+{bolutife.atoki, iuliia.tkachenko, bertrand.kerautret, carlos.crispim-junior }@liris.cnrs.fr 
+
+Abstract 
+
+Reconstruction-based generative models offer a natural framework for unsupervised out-of-distribution (OOD) detection, but multi-class normality modelling requires a single detector to capture multiple in-distribution manifolds and produce comparable anomaly scores across classes. We study this problem in copy detection pattern (CDP) authentication, where authentic and counterfeit samples are visually similar but differ in subtle printing-and-digitisation (P&D) signatures. We propose a diffusion-based multi-class normality framework in which a single class-conditional ControlNet is trained exclusively on authentic CDPs from multiple P&D classes and detects counterfeits through reconstruction error under authentic-class conditioning. We further introduce dual template masking, which hides complementary regions of the input template and scores only withheld pixels, reducing reliance on visible binary structure. On the Indigo 1 × 1 Base dataset, the proposed method outperforms traditional and adapted generative baselines under multi-class authentic-versus-counterfeit evaluation, without using counterfeit samples for training or threshold calibration. 
+
+Index Terms 
+
+Denoising diffusion models, out-of-distribution detection, product authentication, copy detection patterns. 
+
+I. I NTRODUCTION 
+
+The detection of out-of-distribution (OOD) samples (inputs that do not belong to the distribution seen during training) is a fundamental challenge in deploying reliable machine learning systems [1], [2]. Reconstruction-based approaches, where generative models are trained on in-distribution data and OOD samples are identified via elevated reconstruction errors, have proven particularly effective for unsupervised anomaly and novelty detection [3], [4]. A natural extension is multi-class normality modelling, where a single model learns the manifolds of multiple in-distribution classes and identifies deviations from any of them. In this work, we apply this paradigm to the authentication of Copy Detection Patterns (CDPs) 1. CDPs are utilised for product authentication due to their low cost and inherent sensitivity to copying. However, recent advances in deep learning have demonstrated that machine learning-based attacks can accurately estimate CDP templates from printed samples and reproduce high-fidelity counterfeits through reprinting. These DNN-generated counterfeits exhibit remarkable visual similarity to authentic CDPs, challenging traditional authentication methods that rely on image-level similarity comparison. This vulnerability necessitates authentication approaches capable of detecting sophisticated counterfeits despite their similarity to authentic counterparts [5], [6]. From an OOD detection perspective, this application poses two core challenges that generalize beyond CDPs. First, in-distribution and OOD samples may be structurally near-identical, differing only in subtle distributional signatures. In this case, authentic and counterfeit CDPs share the same nominal template but undergo different printing-and-digitisation (P&D) processes. Authentic samples are produced using trusted printing and scanning devices, whereas counterfeits result from unauthorised reprinting after template estimation (see “Printing and Digitisation” module of Figure 1). While these P&D differences leave subtle, device-specific signatures arising from hardware imperfections and mechanical variations [7], [8], exploiting them for authentication is non-trivial due to their spatial non-uniformity and complexity. A second challenge is that the normality model should capture multiple in-distribution classes within a single framework. Practical deployment of CDP authentication methods requires handling multiple printing devices within a single authentication system, as production environments typically span multiple manufacturing sites with different P&D equipment. Various authentication approaches have been proposed, spanning analytical modelling, learned representations, and generative synthesis. Early analytical approaches [9]–[11] model P&D processes through statistical codebooks, while learning-based methods such as Siamese networks [12] directly learn printer-specific signatures via feature space embeddings. However, analytical methods assume spatial uniformity that does not hold for real devices, and learned embeddings may struggle to localize device-specific artifacts without template context. Generative approaches explicitly model P&D transformations, employing template estimation [13] or printed CDP synthe-sis [14], [15] with deep neural network–based architectures such as Pix2Pix and U-Net. Diffusion models have been explored for CDP generation [16], though primarily for augmentation. Despite their sophistication, existing generative methods share a 
+
+> 1
+
+https://en.wikipedia.org/wiki/Copy detection pattern  
+
+> arXiv:2607.00609v1 [cs.CV] 1 Jul 2026 Fig. 1. Overview of the proposed framework. A class-conditional ControlNet learns authentic P&D manifolds and detects counterfeits via dual-mask reconstruction error under authentic-class conditioning. Images are cropped and zoomed for illustration.
+
+critical scalability limitation, as each requires training separate models per printer type, making them impractical for production environments with multiple devices. Additionally, supervised variants [10] require counterfeit samples during training, which may be unavailable and cannot anticipate evolving attacks. These limitations motivate reconceptualizing CDP authentication as unsupervised out-of-distribution detection, in which the model is trained and calibrated exclusively on authentic data, and counterfeits are identified purely as deviations from learned in-distribution manifolds. Chapus et al. [17] adopt this perspective, training an energy-based model exclusively on authentic samples for both model fitting and threshold calibration. Recent work has shown that diffusion models can capture printer signatures under textual and spatial conditioning [18]. Building on that capability, we reformulate authentication as out-of-distribution detection via multi-class normality modelling, rather than supervised printer classification. A single model learns distinct authentic manifolds for different authentic classes, and samples outside these manifolds yield elevated reconstruction errors under authentic-class conditioning. Since full-template access can make this error depend on binary structure rather than subtle P&D signatures, we introduce dual template masking, following diffusion-inpainting OOD detection [4], which hides complementary template regions in two reconstruction passes and scores only the withheld pixels. Accordingly, we train a class-conditional ControlNet [19] exclusively on authentic CDPs from K P&D classes. Authentication is performed by the resulting dual-mask reconstruction error, calibrated solely from authentic validation samples (see Figure 2). The main contributions of this paper are as follows. We propose a diffusion-based multi-class normality framework for unsupervised OOD detection, in which a single class-conditional model learns multiple in-distribution manifolds and identifies OOD samples via conditioning mismatch and reconstruction error analysis. We demonstrate the effectiveness of this framework by formulating CDP authentication as a class-conditional OOD detection problem. In addition, we introduce dual template masking to hide complementary regions of the input template and score only withheld pixels, reducing reliance on visible binary structure and improving sensitivity to subtle class-specific P&D deviations. Finally, we adapt prior work as baselines for multi-class evaluation. Our implementation and models are available at our public repository 2
+
+The remainder of this paper is organized as follows. Section II details our methodology, Section III describes the experimental setup and baselines, Section IV discusses results, and Section V concludes with a summary of our findings, limitations, and future directions. II. M ETHODOLOGY 
+
+A. Problem Formulation and Overview 
+
+We formulate multi-class normality modelling as a class-conditioned diffusion process for OOD detection in the context of CDP authentication. Let b ∈ { 0, 1}H×W denote the binary template, p the authentic CDP printed from b using a trusted P&D device from one of K classes {c1, . . . , c K }, and ˜p a counterfeit produced from p. The authentication task is: given a candidate CDP y ∈ { p, ˜p}, determine whether it belongs to the multi-class authentic distribution or represents an out-of-distribution    
+
+> 2Repository URL is available at https://gitlab.liris.cnrs.fr/anr-trustit/cdp-multiclass-normality.git Fig. 2. Training architecture. The printed CDP is fed to the ControlNet encoder as a spatial conditioning signal alongside the class prompt via the CLIP text encoder. The VAE encoder maps the binary template to the latent space, where the U-Net denoises under joint conditioning. At each timestep t, the network predicts the added noise ϵ.
+
+counterfeit. At inference, the binary template b is available (stored and linked to the product), and a conditioning class ci
+
+is inferred from y over the authentic classes, as formalised in Section II-D. We now describe the architectural components underlying this reconstruction-based detection framework. 
+
+B. Class-Conditional Diffusion for Multi-Class Normality Modelling 
+
+Our class-conditional diffusion backbone builds on the ControlNet-based CDP authentication framework of [18], which adapts latent diffusion [20] to jointly condition on the printed CDP and a textual printer prompt. We repurpose this architecture for authentic-only multi-class normality modelling, using reconstruction error for unsupervised OOD detection. Let x0 denote the latent representation of the binary template b, let z denote the latent representation of the printed CDP, and let ci denote the printer prompt. The denoising network ϵθ (xt, t, z, c i) predicts the noise ϵ added at timestep t, and training minimizes: 
+
+L = Ex0,ϵ ∼N (0 ,I ),t,z,c i
+
+∥ϵ − ϵθ (xt, t, z, c i)∥22
+
+ (1) where the expectation E is taken over all training samples across K authentic P&D classes, and N (0 , I ) denotes the standard normal distribution. 
+
+C. Dual-Mask Template Masking 
+
+The full input template provides a strong structural cue for reconstruction. If used directly, the resulting error may depend on reproducing visible binary structure rather than on subtle class-specific P&D signatures. Following the masking principle of diffusion-inpainting OOD detection [4], we therefore evaluate reconstruction only on template regions hidden from the model, so that the score reflects how well missing structure can be inferred under the authentic-class conditioning. We use a checkerboard mask M ∈ { 0, 1}H×W , where Mij = 1 denotes pixels visible in pass A and Mij = 0 denotes pixels hidden in pass A. Let ¯M = 1 − M be the inverted mask used for pass B. Hidden pixels are replaced by the constant value 
+
+−1:
+
+b(A)masked = M ⊙ b + ( 1 − M )( −1) , (2) 
+
+b(B)masked = ¯M ⊙ b + ( 1 − ¯M )( −1) . (3) Let b(A)rec and b(B)rec denote the corresponding reconstructions of the masked versions of binary template b. Since pass A hides the pixels in ¯M and pass B hides the pixels in M , we compute each error only on the pixels hidden in that pass: 
+
+edual = 12
+
+h
+
+e
+
+
+
+b ¯M , b (A)rec , ¯M
+
+
+
++ e
+
+
+
+bM , b (B)rec ,M 
+
+i 
+
+, (4) where bM and b ¯M denote template values restricted to the corresponding mask supports, and e(·, ·) is computed only over the selected pixels. D. Authentication via OOD Detection 
+
+Given a candidate CDP y, the binary template b, and conditioning class ci (inferred as described below), we apply the complementary dual-mask strategy (Section II-C) to produce edual , thresholded against τ calibrated from authentic validation samples: Auth (y) = 
+
+(
+
+Authentic, if edual ≤ τ
+
+Counterfeit, otherwise (5) At test time, the conditioning prompt is inferred using the diffusion-classifier procedure of [18], [21]. For each authentic class prompt ci ∈ C ∗, the model evaluates the expected noise-prediction error and selects the minimiser: 
+
+ˆc = arg min  
+
+> ci∈C ∗
+
+Et
+
+h
+
+ϵ − ϵθ (xt, t, z, c i) 22
+
+i
+
+(6) where C∗ = {c1, . . . , c K } is the set of authentic P&D classes exclusively, and Et is estimated over N randomly sampled timesteps. Unlike [18], the search is restricted to authentic classes only, yielding test-time inferred conditioning without assuming access to counterfeit identities. This remains informative because a counterfeit ˜p derived from an authentic print of device cj
+
+retains residual source-family P&D signatures, so the inferred prompt is often family-consistent even when the sample lies outside the authentic manifold. The subsequent reprinting step nevertheless perturbs that manifold sufficiently that edual remains high under ˆc, enabling OOD detection. III. E XPERIMENTS TABLE I AUTHENTICATION PERFORMANCE AT THE FIXED GLOBAL THRESHOLD (λ = 1 σ) UNDER INFERRED CONDITIONING . L OWER IS BETTER .                                                                                 
+
+> Perr Pmiss Pfa
+> HP55 HP76 Mean HP55 55 HP55 76 HP76 76 HP76 55 Mean
+> Baseline Chaban et al. [14] 0.106 0.049 0.250 0.149 0.097 0.153 0.000 0.000 0.063 Taran et al. [13] 0.130 0.083 0.007 0.045 0.333 0.510 0.021 0.000 0.216 Tutt et al. [10] 0.238 0.007 0.417 0.212 0.542 0.521 0.000 0.000 0.266 NCC 0.286 0.292 0.310 0.301 0.300 0.361 0.264 0.201 0.273 Chapus et al. [17] 0.335 0.000 0.340 0.170 1.000 1.000 0.000 0.000 0.500 Ours MSE 0.055 0.180 0.021 0.101 0.000 0.000 0.042 0.000 0.010
+> PCC 0.061 0.194 0.021 0.108 0.000 0.007 0.042 0.007 0.014 BER 0.063 0.201 0.021 0.111 0.000 0.007 0.042 0.014 0.016
+
+A. Experimental Setup 
+
+Dataset. The Indigo 1 × 1 Base dataset [5] contains 720 binary templates, each printed by two authentic printing devices (HP Indigo 5500 and HP Indigo 7600, denoted HP55 and HP76) and four counterfeit types (HP55 55, HP55 76, HP76 55, HP76 76), yielding 4,320 samples. Counterfeits are generated by estimating templates from authentic prints and reprinting them with each device. To support out-of-distribution (OOD) detection, we reformulate the dataset as a multi-class problem. Specifically, template–print pairs from the two authentic devices ( K = 2 ) are treated as in-distribution (P&D) classes, while the four counterfeit types are used exclusively for OOD evaluation. We construct training, validation, and test splits of 70%, 10%, and 20%, respectively, based on template identity (504/72/144 samples per class). This protocol prevents leakage across splits [10], [13], [14] and ensures evaluation on entirely unseen templates. 
+
+Detection scores and thresholding. Reconstruction error is measured using MSE, BER, and PCC [5], [6], [22]. For each metric m, a detection threshold is estimated from authentic validation samples only: 
+
+τ m = μm + smλσ m (7) where μm and σm denote the mean and standard deviation of m on the authentic validation set, λ controls detection sensitivity, and sm ∈ { +1 , −1} determines the threshold direction: sm = +1 for distance-based metrics, for which larger values indicate greater deviation from authentic samples, and sm = −1 for similarity-based metrics, for which smaller values indicate greater deviation. 
+
+Evaluation protocol. Results are reported under two scenarios. In the fixed-threshold scenario, λ = 1 is held constant across all methods. We report in Table I, the missed authentic detection rate Pmiss , false-acceptance rate Pfa , and balanced error rate: 
+
+Perr = Pmiss + Pfa 
+
+2 (8) In the threshold-robustness scenario, the decision threshold is swept over the full range of reconstruction error scores to obtain the ROC curve, and AUROC is reported, aggregating all authentic classes against all counterfeit types (Figure 3). 
+
+B. Implementation Details 
+
+We adopt the data augmentation and optimization settings from [18]. Specifically, each template–printed CDP pair is augmented 20 times using random crops and flips, while printed CDPs additionally receive photometric perturbations to model imaging variability and templates remain binary. The VAE is fine-tuned for CDP images, while the U-Net backbone and CLIP encoder are frozen; training uses mixed precision on an RTX 3090, batch size 8 with gradient accumulation of 4, AdamW optimization, a cosine schedule with 500-step warmup, learning rate 8 × 10 −5, and 200 epochs. The task-specific differences are the authentic-only multi-class training protocol, test-time prompt inference over authentic classes, global thresholding with 
+
+λ = 1 .0 from Equation (7), and the dual-mask template masking with 8 × 8 grids at inference. 
+
+C. Baseline Methods 
+
+We compare against NCC, Pix2Pix-based print synthesis of Chaban et al. [14], OC-SVM on Dtt /D xx features from Taran et al. [13], the analytical LLS score of Tutt et al. [10] and the authentic-only energy-based model of Chapus et al. [17]. Each method is reduced to a scalar anomaly or similarity score and evaluated as a single authentic-versus-counterfeit detector across all authentic P&D classes, with thresholds calibrated only on authentic validation data. For similarity scores such as NCC and PCC, the threshold direction is reversed so that lower similarity indicates greater anomaly. IV. R ESULTS AND DISCUSSION 
+
+The evaluation addresses two related but distinct requirements. First, per-family authentic-versus-counterfeit discrimination 
+
+measures whether a method separates authentic samples from counterfeits associated with the same source printer family, e.g., HP55 authentic samples versus HP55-derived counterfeits. This evaluates whether the score captures family-specific P&D deviations. Second, multi-class authentication requires a single detector to operate across all authentic P&D classes using one common score scale and one global threshold. This additionally tests cross-class score calibration, where authentic samples from different printers should receive comparable normality scores, while counterfeits from all families should be shifted toward the anomalous side. 
+
+Multi-class authentication performance. The proposed method achieves the strongest performance in the multi-class authen-tication setting. With MSE scoring, it obtains the lowest Perr = 0 .055 and the highest combined AUROC of 0.975 , compared with Perr = 0 .106 and AUROC = 0 .962 for the best adapted baseline, Chaban et al. [14], as shown in Table I and Figure 3. This indicates that the dual-mask reconstruction score is not only discriminative, but also sufficiently aligned across authentic P&D classes to support a single global decision rule. The same trend holds under template-level bootstrap resampling: Table II shows that our Perr confidence interval does not overlap that of Chaban et al. [14] while the AUROC intervals overlap only slightly. 
+
+Per-family discrimination versus multi-class calibration. In Figure 4, we see that several baselines remain effective when each source printer family is evaluated separately. In this setting, methods are not required to place HP55 and HP76 authentic samples on the same score scale, rather, they only need to rank authentic and counterfeit samples correctly within a given family. For example, Tutt et al. [10] and Chapus et al. [17] achieve strong per-family AUROCs, showing that their scores contain useful P&D-discriminative information. However, strong per-family discrimination does not necessarily imply strong multi-class authentication. In the multi-class setting, the same score and threshold must be valid across all authentic P&D classes. Figure 5 illustrates why some baselines degrade in this setting. For Chapus et al. [17], authentic classes occupy different score ranges, so a threshold suitable for one authentic class does not transfer cleanly to the other. Similarly, Tutt et al. [10] separates some authentic and counterfeit groups well locally, but its scores are not sufficiently calibrated across authentic classes for a single global threshold. Their lower combined AUROCs therefore reflect cross-class score miscalibration, rather than a complete inability to detect counterfeits in the per-family setting. In contrast, our method produces compact authentic score distributions for both authentic classes under the same global threshold, while all counterfeit types are shifted toward higher anomalous scores. This is the desired behaviour for multi-class normality modelling, where the model learns class-specific authentic manifolds, but the resulting OOD scores remain comparable across classes. Chaban et al. [14] is the strongest adapted baseline under this criterion, confirming that learned reconstruction is a strong foundation for CDP authentication. Nevertheless, its higher fixed-threshold error indicates weaker global calibration at the selected operating point. 
+
+Operating-point behaviour. At the fixed authentic-only threshold, our method prioritizes low false-acceptance rates. With MSE scoring, the mean false-acceptance rate is Pfa = 0 .010 , while the mean missed-authentic rate is Pmiss = 0 .101 . The higher missed-authentic rate for HP55 relative to HP76 reflects greater within-class score variability for HP55, causing some 0.0 0.2 0.4 0.6 0.8 1.0 
+
+False Positive Rate (FPR) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0     
+
+> True Positive Rate (TPR)
+> Traditional (NCC) - AUC=0.926
+> Chaban et al. (PCC) - AUC=0.962
+> Tutt et al. (LLS) - AUC=0.886
+> Chapus et al. (ENERGY) - AUC=0.746
+> Ours (MSE) - AUC=0.975
+> Random (AUC=0.5) Fig. 3. ROC curves for multi-class authentication. All authentic classes are evaluated against all counterfeit classes using a single score per method. Dots mark the λ= 1 σoperating points from Table I. Baselines are adapted.
+
+0.0 0.1 0.2 0.3 0.4 
+
+False Positive Rate (FPR) 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90 
+
+0.95 
+
+1.00 
+
+> True Positive Rate (TPR)
+
+HP55 Family 
+
+0.0 0.1 0.2 0.3 0.4 
+
+False Positive Rate (FPR) 
+
+HP76 Family    
+
+> Traditional (NCC)
+> Chaban et al. (PCC)
+> Tutt et al. (LLS)
+> Chapus et al. (ENERGY)
+> Ours (MSE)
+> Fig. 4. Per-family ROC curves. Each panel evaluates authentic samples and counterfeits associated with one source printer family separately, therefore measuring discrimination without requiring score calibration across authentic classes. Dots mark the fixed-threshold operating points at λ= 1 σ.
+
+borderline authentic samples to exceed the global threshold. In many authentication settings, this trade-off may be preferable because false rejections can be routed to secondary verification, whereas false acceptances directly compromise security. The AUROC results complement this fixed-threshold analysis by showing that the proposed score remains highly discriminative over the full range of possible thresholds. 
+
+Prompt Inference. As shown in Table III, the diffusion classifier selects the correct family prompt for 93 .1% of HP55 and 88 .9% of HP76 authentic samples (balanced accuracy 91 .0% ), and the same family-consistent pattern carries over to counterfeits. Crucially, the classifier does not degenerate to a single default prompt, and the authentication performance is therefore realistic under test-time inferred conditioning without access to ground-truth family labels. 
+
+Effect of dual template masking. We isolate the contribution of the proposed dual template masking strategy in Table IV. Full-template reconstruction already achieves strong AUROC, but the score can still benefit from reducing direct reliance on visible template structure. A single checkerboard mask lowers Pmiss but substantially increases Pfa , indicating an unstable operating point. Random patch masking (covering one-fifth of the template) partially improves this trade-off but does not improve both ranking and thresholded performance simultaneously. The complementary dual-mask strategy achieves the best overall result, with AUROC = 0 .975 and Perr = 0 .055 . By reconstructing and scoring complementary withheld regions in two TABLE II COMBINED AUROC AND PERR WITH 95% BOOTSTRAP CONFIDENCE INTERVALS (5,000 TEMPLATE -LEVEL RESAMPLES ). 
+
+Method Combined AUROC [95% CI] Perr [95% CI] 
+
+Chaban et al. [14] 0.962 [0.952, 0.972] 0.106 [0.085, 0.127] Tutt et al. [10] 0.886 [0.874, 0.898] 0.239 [0.217, 0.261] NCC 0.926 [0.909, 0.943] 0.286 [0.256, 0.315] Chapus et al. [17] 0.746 [0.744, 0.748] 0.335 [0.316, 0.354] Ours (MSE) 0.975 [0.959, 0.988] 0.055 [0.039, 0.073] 0.4 0.6 0.8 1.0 1.2                
+
+> HP55
+> HP55_55
+> HP55_76
+> HP76
+> HP76_55
+> HP76_76
+> Printer class
+> Ours (MSE)
+> 0.90 0.85 0.80 0.75 0.70
+> HP55
+> HP55_55
+> HP55_76
+> HP76
+> HP76_55
+> HP76_76
+> Chaban et al. (PCC)
+> 0.35 0.40 0.45 0.50 0.55 0.60
+> Counterfeit-oriented score (right = more counterfeit)
+> HP55
+> HP55_55
+> HP55_76
+> HP76
+> HP76_55
+> HP76_76
+> Printer class
+> Tutt et al. (LLS)
+> 0246
+> Counterfeit-oriented score (right = more counterfeit)
+> HP55
+> HP55_55
+> HP55_76
+> HP76
+> HP76_55
+> HP76_76
+> Chapus et al. (ENERGY)
+> Authentic HP55-family counterfeit HP76-family counterfeit Global threshold
+
+Fig. 5. Score distributions under a global threshold ( λ = 1 σ). Authentic samples should lie on the authentic side, while counterfeits on the anomalous side. The figure visualizes cross-class calibration, where authentic HP55 and HP76 samples should be comparable under the same decision rule. 
+
+passes, the method reduces dependence on visible binary structure while stabilizing the final score. This improves sensitivity to subtle class-specific P&D deviations under authentic-class conditioning. Overall, the results show that the proposed method addresses both requirements of the task. It remains discriminative when authentic and counterfeit samples are considered within each source printer family, and it also provides a calibrated anomaly score suitable for a single multi-class detector operating across multiple authentic P&D classes. V. C ONCLUSION 
+
+This paper introduced a diffusion-based multi-class normality framework for unsupervised OOD detection. A single class-conditional diffusion model is trained only on authentic in-distribution classes and detects OOD samples through reconstruction error under authentic-class conditioning. We further introduced dual template masking, which hides complementary template regions and scores only withheld pixels to reduce reliance on visible binary structure. The proposed method is applied to CDP authentication and outperforms traditional and adapted generative baselines on the Indigo 1 × 1 Base dataset. The results show that it supports both per-family authentic-versus-counterfeit discrimination and multi-class authentication with a single global decision rule across authentic P&D classes. Future work will evaluate larger and more diverse printer and scanner configurations, additional conditioning signals, adaptive thresholding, and applications beyond CDP authentication. TABLE III INFERRED TEST -TIME PROMPTS . E NTRIES ARE COUNT (PERCENTAGE ). 
+
+Type Class HP55 prompt HP76 prompt 
+
+Authentic HP55 134 (93.1%) 10 (6.9%) HP76 16 (11.1%) 128 (88.9%) Counterfeit HP55 55 134 (93.1%) 10 (6.9%) HP55 76 136 (94.4%) 8 (5.6%) HP76 55 24 (16.7%) 120 (83.3%) HP76 76 26 (18.1%) 118 (81.9%) 
+
+TABLE IV MASKING ABLATION USING MSE. 
+
+Strategy AUROC Perr Pmiss Pfa 
+
+No masking (full template) 0.968 0.070 0.135 0.005 
+
+Single checkerboard 0.971 0.081 0.063 0.099 Random patch 0.963 0.067 0.090 0.043 
+
+Dual-mask 0.975 0.055 0.101 0.010 VI. A CKNOWLEDGEMENTS 
+
+This work was financed by the French National Research Agency (ANR), project TRUSTIT referenced under ANR-23-CE39-0002-01 REFERENCES [1] D. Hendrycks and K. Gimpel, “A baseline for detecting misclassified and out-of-distribution examples in neural networks,” in ICLR . OpenReview.net, 2017. [2] W. Liu, X. Wang, J. D. Owens, and Y. Li, “Energy-based out-of-distribution detection,” in NeurIPS , 2020. [3] M. S. Graham, W. H. L. Pinaya, P. Tudosiu, P. Nachev, S. Ourselin, and M. J. Cardoso, “Denoising diffusion models for out-of-distribution detection,” in CVPR Workshops . IEEE, 2023, pp. 2948–2957. [4] Z. Liu, J. P. Zhou, Y. Wang, and K. Q. Weinberger, “Unsupervised out-of-distribution detection with diffusion inpainting,” in ICML , ser. Proceedings of Machine Learning Research, vol. 202. PMLR, 2023, pp. 22 528–22 538. [5] R. Chaban, O. Taran, J. Tutt, T. Holotyak, S. Bonev, and S. Voloshynovskiy, “Machine learning attack on copy detection patterns: are 1x1 patterns cloneable?” in WIFS . IEEE, 2021, pp. 1–6. [6] R. Yadav, I. Tkachenko, A. Tr´ emeau, and T. Fournel, “Copy sensitive graphical code estimation: Physical vs numerical resolution,” in WIFS . IEEE, 2019, pp. 1–6. [7] S. Joshi and N. Khanna, “Source printer classification using printer specific local texture descriptor,” IEEE Transactions on Information Forensics and Security , vol. 15, pp. 160–171, 2020. [8] N. Khanna and E. J. Delp, “Intrinsic signatures for scanned documents forensics : Effect of font shape and size,” in Proceedings of 2010 IEEE International Symposium on Circuits and Systems , 2010, pp. 3060–3063. [9] J. Tutt, O. Taran, R. Chaban, B. Pulfer, Y. Belousov, T. Holotyak, and S. Voloshynovskiy, “Mathematical model of printing-imaging channel for blind detection of fake copy detection patterns,” in WIFS . IEEE, 2022, pp. 1–6. [10] J. Tutt, O. Taran, R. Chaban, B. Pulfer, Y. Belousov, T. Holotyak, and S. Voloshynovskiy, “Authentication of copy detection patterns: A pattern reliability based approach,” IEEE Trans. Inf. Forensics Secur. , vol. 19, pp. 3124–3134, 2024. [11] J. Tutt and S. Voloshynovskiy, “Provable performance guarantees of copy detection patterns,” in WIFS . IEEE, 2024, pp. 1–6. [12] H. Zeghidi, C. F. C. Junior, and I. Tkachenko, “Cdp-sim: Similarity metric learning to identify the fake copy detection patterns,” in WIFS . IEEE, 2023, pp. 1–6. [13] O. Taran, J. Tutt, T. Holotyak, R. Chaban, S. Bonev, and S. Voloshynovskiy, “Mobile authentication of copy detection patterns: how critical is to know fakes?” in WIFS . IEEE, 2021, pp. 1–6. [14] R. Chaban, B. Pulfer, and S. Voloshynovskiy, “Assessing the viability of synthetic physical copy detection patterns on different imaging systems,” in 
+
+WIFS . IEEE, 2024, pp. 1–6. [15] B. Pulfer, Y. Belousov, J. Tutt, R. Chaban, O. Taran, T. Holotyak, and S. Voloshynovskiy, “Anomaly localization for copy detection patterns through print estimations,” in WIFS . IEEE, 2022, pp. 1–6. [16] Y. Belousov, O. Taran, V. Kinakh, and S. Voloshynovskiy, “Stochastic digital twin for copy detection patterns,” in WIFS . IEEE, 2023, pp. 1–6. [17] M. Chapus, C. Crispim-Junior, V. Eglin, and A. Baskurt, “Unsupervised energy-based model for the identification of out-of-distribution copy detection patterns,” in AVSS . IEEE, 2025, pp. 1–6. [18] B. Atoki, I. Tkachenko, B. Kerautret, and C. Crispim-Junior, “Diffusion-based authentication of copy detection patterns: A multimodal framework with printer signature conditioning,” in WACV . IEEE, 2026, pp. 1685–1694. [19] L. Zhang, A. Rao, and M. Agrawala, “Adding conditional control to text-to-image diffusion models,” in ICCV . IEEE, 2023, pp. 3813–3824. [20] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models,” in CVPR . IEEE, 2022, pp. 10 674–10 685. [21] A. C. Li, M. Prabhudesai, S. Duggal, E. Brown, and D. Pathak, “Your diffusion model is secretly a zero-shot classifier,” in ICCV . IEEE, 2023, pp. 2206–2217. [22] Y. Belousov, B. Pulfer, R. Chaban, J. Tutt, O. Taran, T. Holotyak, and S. Voloshynovskiy, “Digital twins of physical printing-imaging channel,” in WIFS .IEEE, 2022, pp. 1–6.

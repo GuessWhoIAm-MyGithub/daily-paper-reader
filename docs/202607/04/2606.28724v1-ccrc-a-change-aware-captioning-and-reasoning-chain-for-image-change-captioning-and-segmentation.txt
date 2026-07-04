@@ -1,0 +1,414 @@
+Title: CCRC: A Change-Aware Captioning and Reasoning Chain for Image Change Captioning and Segmentation
+
+URL Source: https://arxiv.org/pdf/2606.28724v1
+
+Published Time: Tue, 30 Jun 2026 00:27:33 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# CCRC: A Change-Aware Captioning and Reasoning Chain for Image Change Captioning and Segmentation 
+
+## Jinhong Hu a, Xiaoping Wang a, *, Shuyin Huang b, Guojin Zhong a, Kaitai Liu a and Kai Lu c, ∗
+
+aCollege of Computer Science and Electronic Engineering, Hunan University, China 
+
+bGuangxi Minzu University, China 
+
+cNational University of Defense Technology, China 
+
+Abstract. Understanding and localizing subtle changes between paired images is critical for tasks such as surveillance and image editing. However, traditional Image Change Captioning (ICC) meth-ods lack spatial grounding, limiting their precision. We introduce Image Change Captioning and Segmentation (ICCS), a new multi-modal task that jointly requires structured change description and pixel-level localization. To address ICCS, we propose the Change-aware Captioning and Reasoning Chain (CCRC), a dual-chain frame-work that decouples semantic reasoning from spatial segmentation. The first chain, Chain-of-Change-Captioning (CCC), enhances fine-grained change perception via a visual fusion module—based on Multi-Head Change-aware Attention—inserted between the visual and language components of a Multimodal Large Language Model (MLLM). CCC also determines whether a change is segmentable. If not, it alone generates the caption. Otherwise, the second chain, Chain-of-Change-Segmenting (CCS), is activated, leveraging spatial priors from CCC and refining masks with a Change-aware Token Re-finer for accurate boundary localization. We evaluate CCRC on both synthetic and real-world change detection benchmarks with pixel-level supervision. Experiments show CCRC achieves state-of-the-art performance. Code is available at https://github.com/user-jinhong/ CCRC. 
+
+## 1 Introduction 
+
+Understanding and localizing visual changes between image pairs is a key challenge in vision-language reasoning. Traditional Image Change Captioning (ICC) models [21] focus on generating descrip-tions but are limited in real-world applications due to their lack of spatial awareness. A fundamental issue with ICC is the inherent se-mantic ambiguity of the generated captions. For example, as shown in Figure 1(a), the description “The small cylinder that is behind the shiny yellow object moved” leads to object ambiguity , as multiple small cylinders may exist within the scene. Similarly, the description 
+
+“The small block to the left of the blue matte object turned purple” 
+
+reflects color ambiguity , since several objects may share similar pur-plish appearances. The lack of explicit spatial grounding and validity verification results in descriptions that are insufficiently discrimina-tive for precise localization, highlighting the need to integrate struc-tured reasoning and spatial disambiguation into change captioning tasks. 
+
+∗ Corresponding Authors. Email: xpwang@hnu.edu.cn, kailu@nudt.edu.cn Generated: The small cylinder that is behind the                   
+
+> shiny yellow object moved.
+> (b) Segmentation without validity check and shallow reasoning
+> Object ambiguity
+> Please segment and describe the
+> changes.
+> (a) Captioning Without Grounding Leads to Ambiguity
+> Reasoning Segmentation Tasks
+> Color ambiguity
+> Ground Truth Masks Generated Masks
+> Non -segmentable visual changes
+> <before> <after>
+> <before> <after>
+> <before> <after>
+> <before> <after> Ground Truth Masks Generated Masks
+> Generated: The small block to the left of the blue
+> matte object become to purple .
+> Please segment and describe the
+> changes.
+> Ground Truth: Increase the image
+> contrast .
+> Ground Truth: Change hair color to
+> blue. Gener ated: Make the whole image
+> more blue. Gener ated: Change the hair color
+> to blue.
+> Image Change Captioning
+> Image Change Captioning and Segmentation
+> Generated: The large
+> green rubber sphere
+> that is right of the small
+> gray object turned blue .
+> <before> <after>
+> Target clarity
+> No Segmentation
+> Validity Check
+> Shallow
+> Reasoning
+
+Figure 1. Illustration of Ambiguity and Failure Cases in Existing ICC and MLLM-based Segmentation Methods. 
+
+To address these issues, we propose a new multimodal task: Im-age Change Captioning and Segmentation (ICCS). In this task, the model generates a natural language description of the change and a precise segmentation mask of the changed region, enabling joint se-mantic and spatial understanding. This is crucial for real-world appli-cations such as surveillance, image editing, and ecological monitor-ing. As shown in Figure 1(a), ICCS directly aligns the caption (e.g., "The large green rubber sphere to the right of the small gray object turned blue") with the visualized change region, significantly enhanc-ing the discriminative clarity of the expression and effectively elim-inating the localization ambiguities that are inherent in traditional ICC, which relies solely on language. Although ICCS unifies semantic and spatial reasoning, most meth-ods [37] [36] still separate captioning and segmentation, lacking an integrated reasoning framework for real-world change detection and localization. With the rapid advancement of Multimodal Large Language Models (MLLMs), it is now feasible to build end-to-end systems that unify semantic and spatial reasoning through coher-ent interaction. Representative attempts, such as LISA [16], combine LLaVA [18] with a SAM decoder [15] and use synthetic supervision to enable language-guided segmentation. However, as illustrated in 
+
+> arXiv:2606.28724v1 [cs.CV] 27 Jun 2026
+
+Figure 1(b), such approaches still face three key challenges when ap-plied to the ICCS setting: (1) Lack of segmentation validity check. 
+
+The model fails to recognize non-localizable changes. For example, in the “overall brightness increase” case, which reflects only a global style adjustment, it still generates incorrect partial masks. (2) Shal-low reasoning. In fine-grained changes like “hair color modifica-tion,” the model fails to focus on the key region, producing masks that not only miss the target but also include irrelevant areas. (3) 
+
+Lack cross-image contrast modeling. Most MLLM-based meth-ods process the image pair independently or via naive concatenation, without explicitly capturing their differences, making it difficult to detect subtle movements or attribute shifts. To address the limitations of existing MLLM-based ap-proaches—such as weak spatial discrimination, insensitivity to fine-grained changes, and inability to handle non-segmentable cases—we propose a dual-chain reasoning framework called CCRC (Change-aware Captioning and Reasoning Chain) . Built on a pretrained vision-language model (e.g., LLaVA), CCRC decouples semantic reasoning from spatial localization, while preserving reasoning con-tinuity via a sequential design. The first chain, Chain-of-Change-Captioning (CCC) , performs image-text alignment using the MLLM backbone and enhances inter-image difference modeling through a 
+
+Visual Fusion module, where a Multi-Head Change-Aware Atten-tion mechanism is introduced to strengthen contrastive reasoning. This mechanism improves the model’s ability to distinguish subtle differences between images while suppressing irrelevant background noise. To further improve change localization and description, we in-troduce an In-Context Guidance that injects spatial and semantic priors into the input context. CCC then generates a structured change description and predicts a segmentation flag token [SF] to determine whether spatial localization is needed. If the change is deemed seg-mentable, the second chain, Chain-of-Change-Segmenting (CCS) , is triggered. CCS performs coarse localization based on spatial pri-ors from CCC and progressively refines the change mask using a 
+
+Change-Aware Token Refiner (CATRefiner) for pixel-level precision. If the change is judged as non-segmentable (e.g., global style shift or no significant visual difference), CCC alone generates the textual description, and the segmentation process is skipped. The key contributions of this work are as follows: 
+
+• We define a new vision-language task, Image Change Caption-ing and Segmentation (ICCS) , which jointly performs change description and pixel-level localization. 
+
+• We propose CCRC , a dual-chain architecture that decouples se-mantic reasoning from spatial localization. The first chain, CCC ,generates structured change descriptions through visual fusion en-hanced by multi-head change attention and in-context guidance. The second chain, CCS , uses CCC-derived spatial priors for coarse localization and refines segmentation masks via a CATRefiner. 
+
+• We extend two existing benchmarks, CLEVR-Change and Image-Editing-Request, with fine-grained segmentation annotations to support ICCS evaluation, and demonstrate that CCRC achieves state-of-the-art performance on both captioning and segmentation tasks. 
+
+## 2 Related Work 
+
+## 2.1 Image Change Captioning 
+
+Image Change Captioning (ICC) focuses on describing subtle visual differences between similar images. Early works like DUDA [21] and VAM [23] enhance change localization via attention and view-point modeling. Various subsequent models have continued to refine change localization and semantic alignment [26, 33, 31, 12]. IDC-PCL [39] introduces contrastive learning and self-supervised align-ment of vision-language features. Recent transformer-based models [22, 28], improve region-word correspondence. [10, 41] introduce diffusion models [7] to enhance change representation and generate more accurate captions in ICC. FINER-MLLM [40] further leverages multimodal large language models (MLLMs) with dual feature con-straints and retrieval-based enhancement for fine-grained captioning. We propose Image Change Captioning and Segmentation (ICCS) , a task that combines textual generation and pixel-level local-ization, extending the capabilities of traditional ICC. Unlike models that produce vague descriptions, ICCS enables more accurate reason-ing and segmentation. 
+
+## 2.2 Multimodal Large Language Model 
+
+Multimodal Large Language Models (MLLMs) integrate visual and textual inputs to enhance performance in vision-language tasks. Rep-resentative models such as LLaVA [18] leverage frozen vision en-coders with cross-modal fusion or fine-tuning to enable effective in-context learning. InstructBLIP [6] further improves instruction-following via curated datasets. Beyond captioning, MLLMs have been extended to segmentation tasks, such as LISA [16] and CoRes [2], which incorporate reasoning-based segmentation. How-ever, these models struggle to capture subtle image-level Changes. FINER-MLLM [40] is the first to introduce MLLMs for image change captioning, using feature-level constraints for change per-ception. Nevertheless, it lacks segmentation capability. Our method extends MLLMs to jointly perform change captioning and segmen-tation, enabling spatially grounded and semantically precise under-standing of visual Changes. 
+
+## 2.3 Image Segmentation 
+
+Referring Image Segmentation (RIS) segments targets from nat-ural language queries, with early works combining CNN [11], and later models using attention and Transformers. SAM [15] en-hances segmentation quality by using high-quality masks, and Trans-former models [25] and ETRIS [37] improve fusion and optimiza-tion through cross-modal decoders. Reasoning segmentation [16] [2] predicts binary masks from image-text pairs but lacks the ability to model changes between images. In contrast, ICCS aims to capture subtle, context-dependent Changes across image pairs. Unlike se-mantic or instance segmentation, it focuses on dynamic variations rather than static object labeling. This makes ICCS more challeng-ing, requiring both precise localization and change-aware reasoning. 
+
+## 3 Task Definition 
+
+Existing Image Change Captioning (ICC) tasks often suffer from se-mantic ambiguity due to the lack of spatial grounding, making it hard to determine what changed and where. To address this, we pro-pose Image Change Captioning and Segmentation (ICCS) , a new task that jointly detects, describes, and segments semantic changes between aligned image pairs. Given two input images, the model determines whether a change occurred, generates a structured cap-tion indicating its content and location, and segments the changed region at pixel level. ICCS unifies semantic description and spa-tial localization, bridging the gap between conventional ICC—which Mask Decoder                     
+
+> Chain -of -Change -Captioning
+> Img1 Img2
+> Large Language Model
+> There is [SF] change between two images.
+> [NSF] [YSF]
+> MLLM
+> [LOC]
+> [SEG]
+> Region Segmentation
+> Change Segmentation
+> + Query + In -context
+> LORA
+> "There is no significant change between the two images, or the observed change
+> cannot be localized for segmentation. The caption is: ‘There is no change ’."
+> Query: The initial image
+> is on the left, and the
+> changed image is on the
+> right. Please segment and
+> describe the changes.
+> MLLM Vision Encoder
+> Visual Fusion
+> LORA
+> The change
+> caption is “no
+> change has
+> occurred ”
+> The change region
+> appears in ,
+> and the change
+> object is .
+> The change caption is "the tiny gray matte
+> ball on the left side of the small matte
+> cylinder changed to shiny."
+> Prompt
+> Encoder
+> Change -
+> AwareToken
+> Refiner
+> Chain -of -Change -Segmenting
+> "There is a change between the two images. The changed region is on the left side.
+> The changed object is the tiny gray matte ball next to the small matte cylinder. The
+> caption is: ‘The tiny gray matte ball on the left side of the small matte cylinder
+> changed to shiny ’."
+> Trainable single -image change encoder pair -image change encoder Frozen
+> In -Context In -Context
+> Linear
+> Concat
+> GroupNorm )]V Ksoftmax(Q γ)KQ([softmax T)2()2(T)1()1(−
+> Linear Linear )γ1(0−
+> Linear Linear Linear Linear Linear Linear (1)
+> Q(2)
+> Q)2(
+> K)1(
+> KVXh
+> Heads
+> Mask Decoder
+> Multi -Head Change -Aware Attention
+
+Figure 2. Overview of the proposed CCRC framework for the ICCS task. Given a pair of aligned images, visual features are extracted by the MLLM (SAM encoder omitted for clarity), enhanced via a Visual Fusion module based on Multi-Head Change-Aware Attention, and combined with a change-specific in-context prompt. These fused features and prompts are processed by a Large Language Model (LLM), forming the core of the Chain-of-Change-Captioning (CCC) module, which predicts a segmentation flag [SF] , spatial prompts [LOC] and [SEG] , and generates a structured caption. If [SF] = [NSF] , indicating a non-segmentable change, only the caption is produced. Otherwise, if [SF] = [YSF] , the Chain-of-Change-Segmenting (CCS) module is activated. CCS first performs Region Segmentation based on the spatial cues provided by CCC (shown in blue), and then refines the segmentation within the region through the Change-Aware Token Refiner (CATRefiner) to produce fine-grained Change Segmentation (shown in red). 
+
+lacks grounding—and referring segmentation—which focuses on single-object queries. Unlike existing MLLMs that struggle with contrastive reasoning and segmentability prediction, ICCS provides a more structured benchmark for grounded multimodal understanding. 
+
+## 4 Methodology 
+
+## 4.1 Architecture Overview 
+
+We propose the Change-aware Captioning and Reasoning Chain (CCRC ), an end-to-end model tailored for the Image Change Cap-tioning and Segmentation (ICCS) task. At its core, CCRC adopts a dual-chain architecture that decouples semantic reasoning from spa-tial localization. The first chain generates structured change descrip-tions, enhanced by a lightweight change-aware attention module that strengthens cross-image contrast. The second chain then performs fine-grained segmentation guided by the spatial cues from the first. As illustrated in Figure 2, CCRC adopts a progressive dual-chain architecture that enables adaptive switching between semantic-level inference and detailed spatial localization. By explicitly decoupling what has changed from where it occurs, the model provides a uni-fied and interpretable solution to image change comprehension. This dual-chain reasoning process begins with the Chain-of-Change-Captioning (CCC) (see Sec. 4.2), which takes contrast-enhanced vi-sual features and in-context prompts as input and generates a struc-tured output beginning with a segmentation flag token [SF] , followed by a natural language description T . If [SF] = [NSF] , indicating the change is not segmentable, the pipeline terminates after caption generation. Here, non-segmentable changes refer to cases where the Change cannot be localized to a specific region, such as no visual change or global image adjustments like brightness or filter effects. Otherwise, when [SF] = [YSF] , CCC additionally predicts a spa-tial prior [LOC] i and a coarse segmentation token [SEG] i, which are passed to the Chain-of-Change-Segmenting (CCS) (see Sec. 4.3). Rather than performing segmentation over the entire image, CCS first uses [LOC] i to coarsely localize the region of change. Guided by this region-level cue, the model then refines the segmentation within the localized area to produce pixel-accurate masks [SEG] i
+
+that precisely delineate the changed object. The coarse-to-fine strat-egy improves segmentation accuracy while reducing background in-terference. Through the integration of semantic reasoning and spa-tial grounding, CCRC provides a unified framework that captures both what changed and where it occurred, enabling precise and inter-pretable visual change understanding. 
+
+## 4.2 Chain-of-Change-Captioning 
+
+The Chain-of-Change-Captioning (CCC) serves as the semantic rea-soning stage in the CCRC model. It is designed to generate structured natural language descriptions that explicitly articulate the semantic Changes between a pair of input images. Unlike traditional image captioning tasks that focus on static understanding of a single image, CCC formulates change comprehension as a contrastive reasoning process conditioned on paired visual features and task-specific lan-guage prompts. Specifically, CCC is built upon a Multimodal Large Language Model (MLLM), leveraging its strong cross-modal align-ment capability to perform joint visual-linguistic modeling for high-quality change description. This reasoning chain consists of three core components: a visual fusion module for contrast modeling, an in-context prompting mechanism for language conditioning, and a captioning head for structured output generation. 
+
+Visual Fusion. To enable fine-grained reasoning over image Changes, the visual fusion module adopts a two-stage architec-ture consisting of a single-image change encoder and a pair-image change encoder . This architecture explicitly decouples intra-image context modeling from inter-image contrast integration, allowing the model to progressively capture both structural context and change cues. Given visual features F1, F 2 ∈ RN ×d extracted by a shared-weight MLLM visual encoder, each image is first independently pro-cessed by an intra-image change encoder A∆
+
+> intra
+
+(·) to preserve its con-textual representation. The resulting features are then concatenated and fed into an inter-image change encoder A∆
+
+> inter
+
+(·), which explic-itly models the contrast between the two images: 
+
+Ffused = A∆
+
+> inter
+
+h 
+
+A∆
+
+> intra
+
+(F1); A∆
+
+> intra
+
+(F2)
+
+i 
+
+. (1) The contrast-enhanced representation Ffused is then passed to the downstream Chain-of-Change-Captioning (CCC) module for struc-tured reasoning. Both A∆
+
+> self
+
+(·) and A∆
+
+> cross
+
+(·) employ multi-head change-aware atten-tion to amplify token-level changes and suppress redundant or shared attention noise (see Figure 2). While the subtraction-based formula-tion resembles that of [4], our design focuses on cross-modal contrast and spatial change localization in paired visual inputs by applying change-aware attention to both self- and cross-attention pathways. For each attention head, the input feature matrix X ∈ RN ×dmodel 
+
+is projected as: 
+
+[Q(1) , Q (2) ] = XW Q, [K(1) , K (2) ] = XW K , V = XW V
+
+(2) where WQ, W K ∈ Rdmodel ×2d and WV ∈ Rdmodel ×d are learnable parameters. The attention map is computed via subtraction of dual attention scores: 
+
+M∆ = Softmax Q(1) K(1) ⊤
+
+√d
+
+!
+
+−γ·Softmax Q(2) K(2) ⊤
+
+√d
+
+!
+
+(3) where γ is a learnable contrast-suppression factor, reparameterized as: 
+
+γ = exp( u⊤ 
+
+> 1
+
+v1) − exp( u⊤ 
+
+> 2
+
+v2) + γ0 (4) with u1, u 2, v 1, v 2 ∈ Rd, which are learnable parameters, and γ0 afixed scalar set to 0.8 for all layers. Each attention head then computes the output via: head i = (1 − γ0) · Norm (M∆V (i)) (5) where Norm (·) denotes per-head normalization (e.g., LayerNorm or GroupNorm). Multi-head outputs are concatenated and linearly pro-jected: MultiHead (X) = Concat (head 1, . . . , head h)W O (6) with W O ∈ Rhd ×dmodel as the final output projection. The change attention module is integrated into a residual Trans-former block with SwiGLU-activated feed-forward layers, enabling stable learning and effective feature composition. The Visual Fusion mechanism, with its two-stage architecture and change-aware attention, captures subtle image differences and lo-calizes changes effectively. By decoupling intra-image context and inter-image contrast, it enhances fine-grained reasoning and spatial localization for precise change detection and segmentation. 
+
+In-Context Guidance. To enable structured generation, CCC adopts an in-context prompting strategy during training, where each prompt consists of two natural language exemplars—one with a seg-mentable change and one with a non-segmentable case. These ex-emplars follow a fixed linguistic template: the structural description is generated by GPT [3], while the caption comes directly from the dataset’s ground-truth annotation. As shown in the in-context exemplars in the figure 2, the seg-mentable example demonstrates a well-structured in-context prompt composed of four natural language sentences. The first sentence, 
+
+"There is a change between the two images." , expresses the presence of a visual Change, implicitly guiding the model to predict a pos-itive segmentation flag ( [SF] = [YSF] ). The second sentence, "The changed region is on the left side." , provides a coarse spatial cue, functioning as the prior for [LOC] . The third sentence, "The changed object is the tiny gray matte ball next to the small matte cylinder." ,specifies the target entity of the change, corresponding to [SEG] .Finally, the fourth sentence, beginning with "The caption is:" , deliv-ers the natural language description that serves as the model’s gen-erated caption [T] . In contrast, the non-segmentable example lacks such structured spatial and object-level references. Its first sentence, 
+
+"There is no significant change between the two images, or the ob-served change cannot be localized for segmentation." , conveys either the absence of meaningful change or the presence of a global trans-formation. This leads the model to infer a negative segmentation flag ([SF] = [NSF] ), and only the final sentence, "The caption is: ’There is no change.’ or ’Straighten photo.’" , is retained as the textual output 
+
+[T] , with no [LOC] or [SEG] fields involved. Further details on the construction of in-context prompts are provided in Appendix A. By aligning sentence cues with structural fields (e.g., [LOC] ,
+
+[SEG] ), the model learns to perform structured reasoning and gener-ate segmentation outputs as needed—without requiring explicit sym-bolic supervision. 
+
+Structured Output Generation. To generate the structured out-put C, the model jointly encodes the input image pair, the contrast-enhanced visual features Ffused , and an in-context prompt P that con-tains few-shot exemplars. The fused features are embedded as visual tokens, while the prompt provides linguistic priors to guide the out-put formatting. During decoding, the MLLM attends to both modal-ities to determine whether the observed change is segmentable and allocates semantic content to the corresponding output fields accord-ingly. Formally, the structured output C is defined as: 
+
+C =
+
+(
+
+T, if [SF] = [NSF] [LOC] i, [SEG] i, T, if [SF] = [YSF] (7) where T is the textual description, [SF] ∈ { [NSF] , [YSF] } is the segmentation flag predicted by CCC, and [LOC] i and [SEG] i repre-sent the spatial region and pixel-wise segmentation mask for image 
+
+Ii, respectively. This unified formulation allows the model to perform structured captioning through implicit supervision, without relying on manually designed tags or multi-head decoders. The output strictly adheres to the format defined in Equation 7, enabling controllable generation that reflects both semantic meaning and spatial granularity. To support this learning objective, we apply LoRA [9] to the MLLM for efficient language adaptation, while the change visual fu-sion module is trained from scratch. The model is trained to autore-gressively generate the structured caption C based on both visual and language context. The training loss is defined as: 
+
+Ldiff-text = −
+
+> T
+
+X
+
+> t=1
+
+log Pθ (ct | c<t , F fused , P ) (8) where ct is the t-th token in the output sequence, and θ includes the parameters from both LoRA adapters and the fusion encoder. 
+
+## 4.3 Chain-of-Change-Segmenting 
+
+As illustrated in the overall framework (Figure 2), the Chain-of-Change-Segmenting (CCS) module serves as the spatial localization stage within the CCRC framework. Its objective is to produce pre-cise, pixel-level masks that delineate the semantic changes identified by the CCC module. The SAM encoder is omitted in the figure for clarity but included in implementation. To reduce unnecessary computation and minimize interference from irrelevant background regions, CCS adopts a coarse-to-fine seg-mentation strategy conditioned on the predicted segmentation flag. Specifically, CCS is only activated when CCC predicts a segmentable change, i.e., [SF] = [YSF] . Under this condition, CCC also provides a spatial prior [LOC] i for each input image Ii, which guides the seg-mentation process. The model first extracts image features fseg ,i via a frozen segmentation encoder FV 2:
+
+fseg ,i = FV 2(Ii), i ∈ { 1, 2}. (9) Next, a coarse Region Segmentation mask Di,t −1 is generated by feeding both the visual features and the spatial prompt [LOC] i into the segmentation decoder Dsam :
+
+Di,t −1 = Dsam (fseg ,i , [LOC] i). (10) This intermediate region mask Di,t −1 is then encoded as a mask prompt using a dedicated encoder Fmask , resulting in a segmentation prompt Si,t :
+
+Si,t = Fmask (Di,t −1). (11) The Change-aware Token Refiner (CATRefiner) module enhances visual-linguistic alignment by progressively refining the semantic embedding [SEG ]i,t through multi-head change-aware attention (MHCA; see Section 4.2). To this end, we first concatenate visual features from two input images and extract a region-level change pro-totype using masked average pooling (MAP) over the union of their segmentation masks D1,t −1 ⊕ D 2,t −1. This prototype serves as a vi-sual anchor to guide the update of [SEG ]i,t , enabling it to capture localized cross-image differences: 
+
+ˆ[SEG ]i,t = Fref (β([ SEG ]i,t ), f seg ,1 ⊕ fseg ,2, D1,t −1 ⊕ D 2,t −1) ,
+
+(12) where β is an MLP projection layer, and Fref (·) is the refinement function of the CATRefiner: 
+
+Fref (h, i, m ) = h + AMHCA (h, MAP (i, m )) . (13) By injecting visual cues from both images into the reasoning chain, this module enables [SEG ]i,t to focus more precisely on change-relevant regions, thereby improving semantic alignment and segmen-tation quality. Finally, the model generates a refined Change Segmentation mask 
+
+Di,t by combining the visual features, segmentation prompt, and re-fined semantic embedding: 
+
+Di,t = Dsam (fseg ,i , S i,t , ˆ[SEG ]i,t ). (14) In this formulation, Di,t −1 and Di,t respectively denote the in-termediate Region Segmentation and the final Change Segmentation outputs for each image Ii.To ensure effective training of the segmentation process, we adopt a hybrid optimization strategy. The parameters of the pro-jection layers and the mask decoder are set to be trainable, while the backbone components of the Segmentation Foundation Model (SAM)—including the image encoder and the prompt encoder—are kept frozen to retain their strong generalization capability. During hierarchical segmentation, only the final-level segmenta-tion mask is supervised, aligning the model’s optimization with the ultimate localization objective. Like [2], we employ a composite loss function that combines Dice loss and cross-entropy loss to capture both region-level overlap and pixel-wise classification accuracy: 
+
+Ldiff-seg = λd · L Dice (ST , S GT ) + λc · L CE (ST , S GT ), (15) where ST denotes the predicted segmentation mask at the final stage, and SGT is the corresponding ground truth mask. The balancing weights are empirically set to λd = 0 .5 and λc = 2 .0.To jointly optimize both semantic understanding and spatial local-ization, the total training loss integrates the segmentation loss Lseg 
+
+and the captioning loss Ltext derived from the CCC chain: 
+
+Ltotal = λR · L diff-text + λS · L diff-seg , (16) where λR and λS balance the contributions of language and segmen-tation objectives, and are set to 0.5 by default. 
+
+## 5 Experiments 
+
+## 5.1 Experimental setup 
+
+Implementation Details Our model is built on LLaVA-v1.5-7B, which adopts Vicuna-7B as its language backbone, with a vision en-coder (CLIP ViT-L-336px) and a two-layer MLP to enhance mul-timodal integration. The visual fusion module adopts a lightweight two-stage design, using one-layer Transformers (embed_dim=256, num_heads=8) for both single-image and pair-image encoding. The Change-aware Token Refiner shares the same configuration. We use the AdamW optimizer with weight decay and WarmupDecayLR scheduler (100 warmup iterations). For segmentation, we adopt the ViT-H variant of SAM. To ensure fair comparison, the same MLLM and SAM configuration is applied to LISA [16], CoRes [2], and our method. 
+
+Datasets This study uses the CLEVR-Change [21] and Image-Editing-Request [24] datasets, covering both synthetic and real-world changes. We annotate samples as either segmentable or non-segmentable. In the CLEVR-Change dataset, 39,803 samples are segmentable, and 39,803 are non-segmentable, totaling 79,606 sam-ples. In the Image Editing Request dataset, 2,046 samples are segmentable, and 1,893 are non-segmentable, totaling 3,939 sam-ples. Further annotation procedures and criteria are detailed in Ap-pendix B. 
+
+Evaluation To evaluate Image Change Captioning and Segmenta-tion, similar to previous work, we use metrics such as BLEU-4 (B4) [20], METEOR (M) [1], CIDEr (C) [34], ROUGE (R) [5] for caption generation, with CIDEr as the core evaluation metric. For image seg-mentation, we refer to previous work and adopt two metrics: gIoU [13] and cIoU [19], with gIoU serving as the core evaluation metric. 
+
+Handling Empty Targets Following Liu et al. [17], if a model correctly identifies an expression as referring to an empty target (i.e., no mask should be predicted), its gIoU is set to 1.0 and excluded from Table 1. Comparison of ICCS performance on CLEVR-Change and Image-Editing-Request. B, M, C, and R denote BLEU-4, METEOR, CIDEr, and ROUGE; gIoU and cIoU assess segmentation quality. 
+
+Method CLEVR-Change Image-Editing-Request B M C R gIoU cIoU B M C R gIoU cIoU 
+
+X-Decoder(CVPR23) [42] 45.3 28.2 110.3 64.2 24.3 17.5 5.1 8.8 18.2 25.6 23.1 15.2 SEEM(NeurIPS23) [43] 48.2 30.8 115.8 65.3 25.6 19.3 6.3 9.1 23.3 27.3 24.8 16.9 LISA (CVPR24) [16] 54.2 38.1 128.9 72.3 50.2 44.0 10.6 11.9 48.2 38.3 50.2 44.3 CoReS (ECCV24) [2] 55.1 38.4 130.7 72.6 52.1 45.3 12.1 13.2 51.2 40.8 52.3 46.5 LISA++ [38] 54.8 37.8 129.3 72.1 51.0 44.3 9.9 12.4 50.9 39.7 51.9 45.8 SESAME (CVPR24) [35] 56.3 39.1 132.3 75.3 51.2 45.5 13.1 14.7 52.3 41.3 52.4 47.9 
+
+Ours 58.3 42.5 139.4 77.5 54.4 48.7 15.3 17.5 55.8 44.2 54.7 49.1 
+
+the cIoU computation. Conversely, if a mask is incorrectly generated, the gIoU is set to 0.0, and the predicted area contributes to the cIoU denominator, penalizing false positives. To identify empty targets, we apply model-specific rules: for LISA and CoRes , masks with fewer than 50 foreground pixels are considered empty. In contrast, CCRC 
+
+uses a segmentation flag—if [SF] is [NSF] , the model deems the change non-segmentable and skips mask prediction. This consistent, interpretable strategy ensures fair evaluation across architectures. To ensure fair evaluation, we reproduce X-Decoder [42], SEEM [43], LISA [16], LISA++ [38], SESAME [35] and CoReS [2] based on their official implementations and released configurations. All models are evaluated within a unified framework.  
+
+> Table 2. Captioning performance under the ICC setting on CLEVR-Change. B, M, C, and R denote BLEU-4, METEOR, CIDEr, and ROUGE, respectively.
+
+Model B M C R
+
+DUDA+Aux (CVPR21)[8] 51.2 37.7 115.4 70.5 SRDRL+AVS (ACL21)[27] 54.9 40.2 122.2 73.1 VACC (ICCV21)[14] 52.4 37.5 114.2 -IDC-PCL (AAAI22)[39] 51.2 36.2 128.9 71.7 VARDTrans (TIP23)[28] 55.4 40.1 126.4 73.8 SCORER (ICCV23)[30] 56.3 41.2 126.8 74.5 DIRL (ECCV24)[31] 54.6 38.1 123.6 71.9 SMART (TPAMI24)[32] 56.1 40.8 127.0 74.2 DECIDER (AAAI25)[41] 57.2 40.4 134.6 76.5 MCT-CCDiff (TIP25)[10] 58.0 41.1 134.8 76.3 FINER-MLLM (MM25)[40] 55.6 36.6 137.2 72.2 
+
+Ours 58.3 42.5 139.4 77.5 
+
+Results on CLEVR-Change Table 2 presents the captioning re-sults under the ICC setting. Our method achieves the best perfor-mance across most metrics, especially CIDEr (139.4) and ROUGE (77.5), outperforming state-of-the-art ICC models such as DE-CIDER [32] and FINER-MLLM [40], demonstrating superior se-mantic precision in describing image changes. Table 1 reports the full evaluation under the ICCS setting, which jointly assesses cap-tioning and segmentation. All models follow a unified empty-target handling protocol: LISA [16] and CoRes [2] treat masks with fewer than 50 foreground pixels as empty, while CCRC uses the predicted flag [SF] and generates a mask only when [SF] =[YSF] . Our method consistently outperforms all baselines, achieving 54.4 gIoU and 48.7 cIoU, highlighting its robustness and the effectiveness of the dual-chain design. 
+
+Results on Image-Editing-Request. Table 3 presents the cap-tioning performance under the ICC setting. Our method achieves a CIDEr score of 55.8, outperforming FINER-MLLM by 2.3 points, with consistent improvements across BLEU, METEOR, and ROUGE. These results demonstrate the model’s strong capability in generalizing to diverse and instruction-driven editing scenarios. Un-der the ICCS setting (Table 1), our method also achieves superior segmentation performance, with a gIoU of 54.7 and a cIoU of 49.1, clearly outperforming LISA [16] and CoRes [2]. This confirms the effectiveness of the proposed dual-chain framework in jointly cap-turing fine-grained semantic changes and accurately localizing them, even under complex real-world image distributions.  
+
+> Table 3. Comparison of captioning performance with ICC models on Image-Editing-Request. B, M, C, and R denote BLEU-4, METEOR, CIDEr, and ROUGE, respectively.
+
+Model B M C R
+
+Rel-Att (ACL19)[24] 6.7 12.8 26.4 37.4 NCT (TMM23)[29] 8.2 15.0 34.2 38.8 VARDTrans (TIP23)[28] 9.9 14.8 35.6 39.0 SCORER (ICCV23)[30] 10.0 15.0 33.4 39.6 SMART (TPAMI24)[32] 10.5 15.2 37.8 39.1 DIRL (ECCV24)[31] 10.9 15.0 34.1 41.0 DECIDER (AAAI25)[41] 11.3 16.7 39.5 42.4 MCT-CCDiff (TIP25)[10] 10.2 15.4 38.3 41.2 FINER-MLLM (MM25)[40] 14.1 15.9 53.5 40.4 
+
+Ours 15.3 17.5 55.8 44.2 
+
+Qualitative Results: Figure 3 compares the qualitative results of LISA, CoReS, and our CCRC framework on the ICCS task. The first three rows are from the Image-Editing-Request dataset, and the last two are from CLEVR-Change. Each example shows the gener-ated captions and corresponding masks, with gray backgrounds in-dicating non-segmentable changes. The red-marked change captions highlight generation errors that are inconsistent with the ground-truth changes, including semantic inaccuracies and misaligned spatial ref-erences. CCRC achieves better performance in segmentability pre-diction, semantic-mask alignment, and spatial localization. It cor-rectly identifies non-segmentable cases in real-world edits, avoids false masks, and produces more precise captions and tighter masks for object removals. In synthetic scenes, CCRC captures fine-grained changes and accurately models object relocations and structural vari-ations, enabling more precise understanding. More qualitative results are provided in Appendix D. 
+
+## 5.2 Ablation Study 
+
+To assess the contribution of each module in our framework, we conduct an incremental ablation study on the Image-Editing-Request LISA  CoReS  CCRC  GT           
+
+> remove the man from the image remove the man in the
+> background
+> remove a person in the
+> background
+> remove the man behind the
+> woman
+> remove the leash remove the leash remove leash remove the leash
+> change the background to blue increase the contrast of the picture
+> the tiny purple metallic block that
+> is in front of the large cyan object
+> changed its location
+> the small purple shiny block that
+> is in front of the large yellow
+> cylinder is in a different location
+> the small purple metallic cube
+> that is in front of the green rubber
+> object changed its location
+> there is no difference no change was made no change has occurred
+> make the whole image more blue
+> the scene remains the same
+> the large yellow rubber cylinder
+> that is left of the big cyan matte
+> thing changed to metallic.
+> increase the contrast of the entire
+> image
+> <before> <after>
+> <before> <after>
+> <before> <after>
+> <before> <after>
+> <before> <after>
+
+Input Figure 3. Qualitative results of LISA, CoReS, and CCRC on image change captioning and segmentation. Gray-shaded backgrounds denote non-segmentable changes (i.e., changes that cannot be localized for segmentation). 
+
+dataset, as detailed in Table 4. The base configuration adopts a LISA-style backbone with a LoRA-tuned MLLM and a directly trained seg-mentation encoder, augmented with a segmentability flag token [SF] .However, it lacks structured reasoning and spatial guidance mecha-nisms. 
+
+Table 4. Incremental ablation study on Image-Editing-Request. Components are progressively added to evaluate their contributions. 
+
+Configuration B C R gIoU cIoU 
+
+Base (LoRA + [SF]) 11.2 49.2 40.2 50.8 45.3 + CCC module 12.7 51.5 40.6 51.2 46.1 + In-context prompting 12.9 51.7 40.9 51.4 46.3 + Visual Fusion 14.9 54.8 43.8 52.1 46.7 + CCS module 15.1 55.3 44.1 54.2 48.3 + CATRefiner (Full: CCRC) 15.3 55.8 44.2 54.7 49.1 
+
+We begin by incorporating the Chain-of-Change-Captioning (CCC) module, which introduces semantic tokens [LOC] and [SEG] 
+
+for coarse location and object-level reference. When [SF] is posi-tive, their aggregated embedding provides weak supervision to the segmentation encoder, improving both captioning and segmentation (CIDEr ↑ from 49.2 to 51.5; cIoU ↑ from 45.3 to 46.1). Next, we add the In-context prompting strategy, offering format-aware language priors that enhance caption structural consistency and improve align-ment (ROUGE ↑ from 40.6 to 40.9; cIoU ↑ to 46.3). Subsequently, we enable the Visual Fusion module, which decou-ples intra-image and inter-image encoding. This module enhances contrastive modeling and cross-image difference capture, powered by our proposed Multi-Head Change-Aware Attention. This results in further improvements across both modalities (CIDEr ↑ to 54.8; gIoU ↑ to 52.1; cIoU ↑ to 46.7). Introducing the Chain-of-Change-Segmenting (CCS) module yields substantial gains in spatial local-ization, thanks to its coarse-to-fine segmentation pipeline guided by CCC-derived priors (gIoU ↑ from 52.1 to 54.2; cIoU ↑ from 46.7 to 48.3). Finally, the full CCRC model, with the CATRefiner, achieves the best overall performance (CIDEr: 55.8; gIoU: 54.7; cIoU: 49.1), demonstrating the effectiveness of each module in enhancing seman-tic reasoning, structural guidance, and spatial precision. Further ab-lations on fusion layers and language models are in Appendix C. 
+
+## 6 Conclusion 
+
+This paper presents Image Change Captioning and Segmentation (ICCS), a multimodal task that jointly models semantic change de-scription and pixel-level localization. To address its dual objec-tives, we propose the CCRC framework, which decouples reasoning and segmentation through a dual-chain architecture. The Chain-of-Change-Captioning (CCC) module leverages Multi-Head Change-Aware Attention and in-context prompting for interpretable caption-ing, while the Chain-of-Change-Segmenting (CCS) module progres-sively refines localization based on CCC’s priors. We enhance both synthetic and real data with fine-grained segmentation to support thorough evaluation, and experiments show CCRC achieves state-of-the-art performance in both description and segmentation. Future work targets broader generalization in open-domain image changes. References 
+
+[1] S. Banerjee and A. Lavie. Meteor: An automatic metric for mt evalua-tion with improved correlation with human judgments. In ACL Work-shop on MT Evaluation , pages 65–72, 2005. [2] X. Bao, S. Sun, S. Ma, K. Zheng, Y. Guo, G. Zhao, Y. Zheng, and X. Wang. Cores: Orchestrating the dance of reasoning and segmen-tation. In ECCV , pages 187–204. Springer, 2024. [3] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. Language models are few-shot learners. In NeurIPS , 33:1877–1901, 2020. [4] Y. Cang, Y. Liu, X. Zhang, and X. Wang. Shared diff transformer. arXiv preprint arXiv:2501.17900 , 2025. [5] L. Chin-Yew. Rouge: A package for automatic evaluation of summaries. In ACL Workshop on Text Summarization , 2004. [6] W. Dai, J. Li, D. Li, A. Tiong, J. Zhao, W. Wang, B. Li, P. Fung, and S. Hoi. InstructBLIP: Towards general-purpose vision-language models with instruction tuning. In In NeurIPS , 2023. [7] J. Ho, A. Jain, and P. Abbeel. Denoising diffusion probabilistic models. 
+
+NeurIPS , 33:6840–6851, 2020. [8] M. Hosseinzadeh and Y. Wang. Image change captioning by learning from an auxiliary task. In CVPR , pages 2725–2734, 2021. [9] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen. Lora: Low-rank adaptation of large language models. arXiv preprint arXiv:2106.09685 , 2021. [10] J. Hu, G. Zhong, J. Yuan, W. Pan, and X. Wang. Mct-ccdiff: Context-aware contrastive diffusion model with mediator-bridging cross-modal transformer for image change captioning. IEEE TIP , 2025. [11] R. Hu, M. Rohrbach, and T. Darrell. Segmentation from natural lan-guage expressions. In In ECCV , pages 108–124, 2016. [12] Q. Huang, Y. Liang, J. Wei, Y. Cai, H. Liang, H.-f. Leung, and Q. Li. Im-age difference captioning with instance-level fine-grained feature repre-sentation. IEEE TMM , 24:2004–2017, 2021. [13] S. Kazemzadeh, V. Ordonez, M. Matten, and T. Berg. Referitgame: Referring to objects in photographs of natural scenes. In In EMNLP ,pages 787–798, 2014. [14] H. Kim, J. Kim, H. Lee, H. Park, and G. Kim. Agnostic change cap-tioning with cycle consistency. In ICCV , pages 2095–2104, 2021. [15] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, et al. Segment anything. In In ICCV , pages 4015–4026, 2023. [16] X. Lai, Z. Tian, Y. Chen, Y. Li, Y. Yuan, S. Liu, and J. Jia. Lisa: Reason-ing segmentation via large language model. In In CVPR , pages 9579– 9589, 2024. [17] C. Liu, H. Ding, and X. Jiang. Gres: Generalized referring expression segmentation. In CVPR , pages 23592–23601, 2023. [18] H. Liu, C. Li, Q. Wu, and Y. J. Lee. Visual instruction tuning. In CVPR ,36, 2024. [19] J. Mao, J. Huang, A. Toshev, O. Camburu, A. L. Yuille, and K. Murphy. Generation and comprehension of unambiguous object descriptions. In 
+
+In CVPR , pages 11–20, 2016. [20] K. Papineni, S. Roukos, T. Ward, and W.-J. Zhu. Bleu: A method for automatic evaluation of machine translation. In ACL , pages 311–318, 2002. [21] D. H. Park, T. Darrell, and A. Rohrbach. Robust change captioning. In 
+
+ICCV , pages 4624–4633, 2019. [22] Y. Qiu, S. Yamamoto, K. Nakashima, R. Suzuki, K. Iwata, H. Kataoka, and Y. Satoh. Describing and localizing multiple changes with trans-formers. In ICCV , pages 1951–1960, 2021. [23] X. Shi, X. Yang, J. Gu, S. Joty, and J. Cai. Finding it at another side: A viewpoint-adapted matching encoder for change captioning. In ECCV ,pages 574–590. Springer, 2020. [24] H. Tan, F. Dernoncourt, Z. Lin, T. Bui, and M. Bansal. Expressing visual relationships via language. In ACL , pages 1873–1883, 2019. [25] J. Tang, G. Zheng, C. Shi, and S. Yang. Contrastive grouping with trans-former for referring image segmentation. In In CVPR , pages 23570– 23580, 2023. [26] Y. Tu, L. Li, C. Yan, S. Gao, and Z. Yu. R^3net: Relation-embedded rep-resentation reconstruction network for change captioning. In EMNLP ,pages 9319–9329, 2021. [27] Y. Tu, T. Yao, L. Li, J. Lou, S. Gao, Z. Yu, and C. Yan. Semantic relation-aware difference representation learning for change captioning. In Findings of the Association for Computational Linguistics , pages 63– 73, 2021. [28] Y. Tu, L. Li, L. Su, J. Du, K. Lu, and Q. Huang. Viewpoint-adaptive representation disentanglement network for change captioning. IEEE TIP , 2023. [29] Y. Tu, L. Li, L. Su, K. Lu, and Q. Huang. Neighborhood contrastive transformer for change captioning. IEEE TMM , 2023. [30] Y. Tu, L. Li, L. Su, Z.-J. Zha, C. Yan, and Q. Huang. Self-supervised cross-view representation reconstruction for change captioning. In 
+
+ICCV , pages 2805–2815, 2023. [31] Y. Tu, L. Li, L. Su, C. Yan, and Q. Huang. Distractors-immune represen-tation learning with cross-modal contrastive regularization for change captioning. In ECCV , pages 311–328. Springer, 2024. [32] Y. Tu, L. Li, L. Su, Z.-J. Zha, and Q. Huang. Smart: Syntax-calibrated multi-aspect relation transformer for change captioning. IEEE TPAMI ,2024. [33] Y. Tu, L. Li, L. Su, Z.-J. Zha, C. Yan, and Q. Huang. Context-aware difference distilling for multi-change captioning. In ACL , pages 7941– 7956, 2024. [34] R. Vedantam, C. Lawrence Zitnick, and D. Parikh. Cider: Consensus-based image description evaluation. In CVPR , pages 4566–4575, 2015. [35] T.-H. Wu, G. Biamby, D. Chan, L. Dunlap, R. Gupta, X. Wang, J. E. Gonzalez, and T. Darrell. See say and segment: Teaching lmms to over-come false premises. In CVPR , pages 13459–13469, 2024. [36] Z. Xia, D. Han, Y. Han, X. Pan, S. Song, and G. Huang. Gsva: General-ized segmentation via multimodal large language models. In In CVPR ,pages 3858–3869, 2024. [37] Z. Xu, Z. Chen, Y. Zhang, Y. Song, X. Wan, and G. Li. Bridging vision and language encoders: Parameter-efficient tuning for referring image segmentation. In ICCV , pages 17503–17512, 2023. [38] S. Yang, T. Qu, X. Lai, Z. Tian, B. Peng, S. Liu, and J. Jia. Lisa++: An improved baseline for reasoning segmentation with large language model. arXiv preprint arXiv:2312.17240 , 2023. [39] L. Yao, W. Wang, and Q. Jin. Image difference captioning with pre-training and contrastive learning. In AAAI , volume 36, pages 3108– 3116, 2022. [40] X. Zhang, H. Wen, J. Wu, P. Qin, H. Xue’, and L. Nie. Differential-perceptive and retrieval-augmented mllm for change captioning. In 
+
+ACM MM , pages 4148–4157, 2024. [41] G. Zhong, J. Hu, J. Chen, J. Yuan, and W. Pan. Decider: Difference-aware contrastive diffusion model with adversarial perturbations for im-age change captioning. In AAAI , 2025. [42] X. Zou, Z.-Y. Dou, J. Yang, Z. Gan, L. Li, C. Li, X. Dai, H. Behl, J. Wang, L. Yuan, et al. Generalized decoding for pixel, image, and language. In CVPR , pages 15116–15127, 2023. [43] X. Zou, J. Yang, H. Zhang, F. Li, L. Li, J. Wang, L. Wang, J. Gao, and Y. J. Lee. Segment everything everywhere all at once. NeurIPS , 36: 19769–19782, 2023.
