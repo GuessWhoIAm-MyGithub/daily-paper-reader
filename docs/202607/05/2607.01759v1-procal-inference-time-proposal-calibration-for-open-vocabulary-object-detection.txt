@@ -1,0 +1,341 @@
+Title: ProCal: Inference-Time Proposal Calibration for Open-Vocabulary Object Detection
+
+URL Source: https://arxiv.org/pdf/2607.01759v1
+
+Published Time: Fri, 03 Jul 2026 00:36:25 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# ProCal: Inference-Time Proposal Calibration for Open-Vocabulary Object Detection 
+
+Jae-Ryung Hong 1, Ho-Joong Kim 1, and Seong-Whan Lee 1
+
+Abstract — Open-vocabulary object detection aims to localize and classify objects beyond the fixed set of categories seen dur-ing training. Recent open-vocabulary object detection methods improve localization and classification for unseen categories by leveraging a frozen VLM as a detector backbone. However, VLM classification score lacks recognizing position and scale of the object in an image. We observe that pretrained VLMs en-able to classify foreground and background regions. According to this observation, we propose a simple inference-time Pro-posal Calibration (ProCal) that improves localization quality of the classification score. ProCal computes a proposal prior by combining two scores: localization-aware foreground score and background-aware suppression score. Localization-aware foreground score captures whether a proposal contains an object area. Background-aware suppression score measures the extent to which the proposal resembles background. We analyze that ProCal suppresses false novel activation on background proposals and consistently ranks true novel proposals above background and partial novel proposals. Applied to CLIPSelf ViT-L/14, ProCal improves AP r +2.5 on OV-LVIS. The analyses show that proposal-level localization-aware reranking effects to mitigate ranking miscalibration for novel objects. 
+
+I. INTRODUCTION Category-level generalization has been studied across zero-shot and transfer-learning recognition settings [1], [2], [3]. Open-vocabulary object detection (OVD) instantiates this issue in object detection, where detectors trained with base-category annotations are required to localize and classify categories that are not annotated during detector training. By leveraging text embeddings from pretrained vision-language models (VLMs) such as CLIP [4], OVD enables the local-ization and classification of unseen objects. Through pre-trained image-text alignment, the detector associates object regions with semantic class descriptions. Transferring this image-level alignment of pretrained VLMs to region-level recognition for object detection remains challenging. Previous methods [5], [6], [7], [8] adapt vision-language models to detection through additional pretraining, transfer learning, or fine-tuning to improve region-text alignment. F-VLM [9] incorporates the image encoder of a pretrained VLM into the detector backbone, motivated by the observa-tion that pretrained VLM features capture object boundaries. Building on this idea, recent open-vocabulary detectors [10],          
+
+> *This work was supported by the Institute of Information & Commu-nications Technology Planning & Evaluation (IITP) grant funded by the Korea government (MSIT) (No. RS-2019-II190079, Artificial Intelligence Graduate School Program, Korea University), and by the Information Technology Research Center (ITRC) support program (No. IITP-2026-RS-2024-00436857).
+> 1J.-R. Hong, H.-J. Kim, and S.-W. Lee are with the Department of Artifi-cial Intelligence, Korea University, Anam-dong, Seongbuk-ku, Seoul 02841, Korea.
+
+{h jr, hojoong kim, sw.lee }@korea.ac.kr “a photo of a background”  “a photo of an object in the background”  “a photo of an object in the background”  
+
+> -“a photo of an object”
+
+(a)  (b)  (c) 
+
+Fig. 1: Qualitative results of similarities computed by three different prompt strategies. Each visualized heatmap highlights the similarities between cropped images and class-agnostic prompts. (a): leveraging the background prompt highlights the background area. (b): prompt including both object and background highlights boundary regions of the object. (c): leveraging the difference between background and object prompts yields object-containing regions. [11] follow this approach that freezes a pretrained VLM as the image backbone. These F-VLM-style methods [10], [11], [12] compute VLM scores using the cosine simi-larity between text-prompt and region features generated from proposal modules such as RPN [13]. Since VLMs are pretrained to align images and texts by increasing the similarity of positive image-text pairs and decreasing that of negative pairs. By combining the detector score with the VLM score, these methods [9], [10], [11], [12] exploit the zero-shot classification capability of pretrained VLMs for novel-object recognition. However, existing F-VLM-style methods still fail to address novel-object detection because the detector is trained with supervision from base classes only. This training protocol biases the detector toward base-category objects, causing regions containing novel objects to be assigned as background or to receive consistently low detection scores. As a result, novel-object proposals are often suppressed, which indicates the need for explicit calibration for novel classes. This issue is related to a broader recognition challenge in which models must remain reliable under distribution shifts, open-set uncertainty, or ambiguous candidate ranking [14], [15], [16]. To compensate for this limitation, we leverage a pre-trained VLM kept frozen during detector training, since it preserves generic visual-semantic priors that are not biased by base-class supervision. Fig. 1 shows that pretrained VLMs enable to identify background and foreground regions in an image. By leveraging generic class-agnostic prompts, we verify that pretrained VLMs have following properties. 
+
+> arXiv:2607.01759v1 [cs.CV] 2 Jul 2026
+
+First, pretrained VLMs recognize background regions. As illustrated in Fig. 1(a), the prompt “a photo of a background” 
+
+produces high similarity for background regions, indicating that pretrained VLMs encode useful cues for background localization and discrimination. Second, pretrained VLMs recognize regions corresponding to the target concept with reduced reliance on spurious correlations. The contrast be-tween prompts with and without background information tends to highlight the corresponding object regions. As illus-trated in Fig. 1(b), the similarity contrast between the prompt 
+
+“a photo of an object in the background” and “a photo of an object” highlights object-containing regions more clearly than either prompt alone, suggesting that generic class-agnostic prompts provide proposal-level localization signals even without category supervision. PerceptionCLIP [17] found that using the prompts including contextual attributes reduces reliance on spurious features. Based on this finding, we hypothesize that the effect in Fig 1(b) arises from the contrast between similarities that are differentially influenced by common spurious features from the prompt “a photo of an object in the background” and similarities that are more influenced by common spurious features from the prompt “a photo of an object” . These observations imply that a frozen VLM contains complementary information that is absent from detector scores trained only on base categories. These observations suggest that a proposal can be characterized in a class-agnostic manner by its foreground-aware and background-aware properties. Based on this in-sight, we propose to recalibrate only the novel category scores using a proposal prior derived from the foreground-aware and background-aware prompt similarities. Rather than modifying detector training or proposal generation, our method acts as an inference-time ranking correction module that suppresses false novel activation on background proposals while promoting better-localized novel proposals in the final scoring stage. Motivated by these observations, we propose ProCal, a plug-in score recalibration strategy that reduces background-foreground confusion and improves the localization quality of detection scores in existing OVD models without any additional training. Given the proposals, we extract proposal-level visual fea-tures using a frozen pretrained VLM image encoder and compute prompt-based similarities to derive localization-aware and background-aware cues. These cues are integrated into the novel confidence scores. Unlike approaches that require retraining the detector and introducing additional supervision, our method preserves the original OVD archi-tecture and attaches to existing pipelines in a plug-in manner. Our method refines the scoring of generated proposals from RPN so that the confidence becomes better aligned with localization quality. By calibrating pretrained VLM scores at inference time, our approach improves detection performance for novel classes while remaining training-free. Our contributions are summarized as three-fold:  
+
+> •
+
+We observe that generic class-agnostic prompts in pre-trained VLMs provide foreground-background discrim-inative cues.  
+
+> •
+
+We propose a training-free plug-in recalibration module that builds a proposal prior from localization-aware foreground and background-aware suppression scores.  
+
+> •
+
+We show that ProCal improves proposal-level localization-aware ranking while suppressing the confidence of partial novel proposals. II. RELATED WORKS 
+
+A. Open-Vocabulary Object Detection 
+
+OVD has advanced primarily by transferring semantic knowledge from vision-language models to the downstream task of object detection. ViLD [5] and RegionCLIP [18] improve novel-category recognition by distilling pretrained vision-language knowledge or by learning region-level rep-resentations. F-VLM [9] shows that a frozen VLM serves as an effective region classifier by combining the detector and VLM outputs at inference time, while CLIPSelf [10] alleviates the gap between the whole image and the region features through self-distillation. CORA [12] addresses the distribution gap between the whole image and region features and localization difficulty for novel proposals by introducing region prompting and anchor pre-matching. These meth-ods mainly focus on improving region-language alignment, representation quality, or localization generalization. OV-DQUO [11] observes that detectors trained on base cat-egories tend to assign higher confidence to seen classes and to confuse novel objects with background proposals, and mitigates this issue with denoising text-query training and unknown-object supervision by using an open-world detector. We introduce a prompt-derived, localization-aware proposal-level prior that reranks existing proposals by favor-ing object-containing regions while suppressing background regions without modifying detector training or introducing additional unknown supervision. 
+
+B. Vision-Language Models 
+
+Recent years have witnessed advances in VLMs through contrastive learning. Pioneering works such as CLIP [4] and ALIGN [19] establish unified image-text embedding spaces by learning cross-modal alignment on web-scale datasets. These models demonstrate remarkable zero-shot transfer capabilities. For instance, CLIP achieves open-vocabulary classification on ImageNet [20] with zero-shot setting. This paradigm inspires numerous innovations for downstream tasks including semantic segmentation and object detec-tion. We present an OVD framework that efficiently and effectively leverages pretrained knowledge of VLMs. Using prompts that encode foreground and background cues at inference time improves novel-object detection performance. III. METHOD 
+
+A. Preliminaries 
+
+Given an input image I ∈ R3×H×W , a two-stage open-vocabulary detector predicts a set of bounding boxes 
+
+{bi}Ni=1 , where bi ∈ R4 together with category scores. ProCal extracts the bounding box bi to proposal features. By Detection score        
+
+> TE
+> RPN RCNN Bbox coordinate
+> 𝑬 text
+> A photo of anobject in the background
+> A photo of anobject
+> A photo of a background
+
+ProCal         
+
+> Final detection
+> score
+> VLM score
+> …
+> IE
+> t1
+> 𝐭 2
+> t3
+> v𝒊
+> 𝒑 1
+> 𝒑 2
+> 𝒑 3
+> Open -vocabulary detector
+> 𝑬 img
+> 𝒃 𝒊
+> 𝑪 𝐛𝐚𝐬𝐞
+> 𝒔 𝒊
+> loc
+> 𝒔 𝒊
+> bg
+> 𝒒 𝒊
+> Proposal prior
+> 𝑪 𝐧𝐨𝐯𝐞𝐥
+> Fusion
+> …
+> Fusion
+> Fusion
+> Fusion
+> Fusion
+> …
+> Fusion
+> Fusion
+> A photo of a person
+> A photo of a vase
+> A photo of a cat
+> A photo of a sink
+> … …
+> 𝑷 𝒊
+> …
+
+Fig. 2: Overview of ProCal . First, ProCal uses region proposals to extract visual features from the VLM. After that, ProCal computes localization-aware and background-aware scores for each region. Finally, ProCal combines the proposal prior with the proposal-level scores to produce the final detection score. Notably, ProCal does not require any training. using the proposal features, ProCal computes localization-aware and background-aware scores. The detector predicts category scores over the test vocabulary Ctest = Cbase ∪ C novel .During training, only the base categories Cbase are annotated, while novel categories Cnovel are introduced only at test time. 
+
+B. Proposal Calibration (ProCal) 
+
+Our method is motivated by a key limitation of two-stage OVD: since unseen objects are not explicitly labeled as fore-ground during detector training, proposals containing novel objects are often confused with true background and receive insufficient confidence at inference. To alleviate this issue, we introduce a proposal-level score recalibration strategy that injects foreground-aware and background-aware cues derived from a frozen pretrained VLM. Specifically, given the top-k proposals produced by the detector, we extract proposal-level visual features using the frozen VLM image encoder and compute prompt-based similarities with three hand-crafted prompts. From these similarities, we construct ( i) a localization-aware foreground score and ( ii ) a background-aware suppression score. These two signals are combined into a proposal prior, which is then fused with the original detection scores for novel categories. In this way, our method improves the ranking and preser-vation of novel foreground proposals without modifying the detector architecture, proposal generator, or box regressor. 
+
+1) Proposal-level features: Let B = {bi}ki=1 denote the top-k proposals predicted by the detector. For each proposal 
+
+bi, we crop the corresponding image region Ibi from the input image and feed it into the VLM image encoder Eimg (·).We extract the proposal feature as follows: 
+
+vi = Eimg (Ibi )
+
+∥Eimg (Ibi )∥2
+
+. (1) We encode the following three prompts: “a photo of an object in the background” as p1, “a photo of an object” 
+
+as p2, and “a photo of a background” as p3. We extract the feature of pk as follows: 
+
+tk = Etext (pk)
+
+∥Etext (pk)∥2
+
+, k ∈ { 1, 2, 3}, (2) where Etext (·) denotes the frozen text encoder. 
+
+2) Localization-aware foreground score: We aim to cap-ture whether a proposal contains a foreground region rather than a background. Based on the observation that the contrast between p1 and p2 emphasizes object-containing regions, we define the localization-aware score for proposal bi as: 
+
+sloc  
+
+> i
+
+= ϕ(vi, t1) − ϕ(vi, t2), (3) where ϕ(·) denotes the cosine similarity. A larger sloc  
+
+> i
+
+indi-cates that the proposal contains a foreground object region with meaningful spatial extent. 
+
+3) Background-aware suppression score: We measure the extent to which a proposal resembles the background. Since the prompt p3 is responsive to background regions, we define the background score as: 
+
+sbg  
+
+> i
+
+= ϕ(vi, t3), (4) where sbg  
+
+> i
+
+suggests that the proposal corresponds to back-ground or to a low-quality proposal containing background. 
+
+4) Proposal prior: To combine the two cues, we first map them into [0 , 1] using the sigmoid function: 
+
+ˆsloc  
+
+> i
+
+= σ(sloc  
+
+> i
+
+/τ 1), ˆsbg  
+
+> i
+
+= σ(−sbg  
+
+> i
+
+/τ 2), (5) where σ(·) denotes the sigmoid function and both τ1 and τ2
+
+denote temperature. ˆsloc  
+
+> i
+
+promotes foreground-aware propos-als, whereas ˆsbg  
+
+> i
+
+suppresses background proposals. We then construct a proposal prior qi by combining the two terms through a weighted arithmetic mean: 
+
+qi = λˆsloc  
+
+> i
+
++ (1 − λ) ˆ sbg  
+
+> i
+
+, (6) where λ ∈ [0 , 1] controls the relative contribution of the localization-aware and background-aware cues. The design of the proposal prior follows a general cue-fusion principle: weak but complementary signals can yield a more reliable decision variable when aggregated appropriately, a strategy that has been effective in various tasks [21], [22], [23]. These proposal priors reflect whether a proposal contains a fore-ground object while remaining distinct from the background. We show ablations of different score combination designs in the experiments section. 
+
+5) Score fusion: Let P ji denote the original detection score of the baseline detector for proposal bi and category 
+
+j ∈ C test . In F-VLM-style OVD frameworks, P ji is obtained by combining detector confidence and VLM-based category similarity. We recalibrate the original detection score using the qi. Since our goal is to mitigate the underestimation of novel objects, we apply the recalibration only to novel categories while leaving base-category scores unchanged: 
+
+˜P ji =
+
+
+
+P ji , j ∈ C base ,
+
+
+
+P ji
+
+1−γ
+
+(qi)γ , j ∈ C novel ,
+
+(7) where γ ∈ [0 , 1] controls the strength of the proposal-level score recalibration. This fusion preserves the original category-specific evidence from the detector while injecting a proposal-level prior that reflects foreground-background separability. Consequently, novel proposals that contain fore-ground objects are promoted, whereas background-aware or low-quality proposals are relatively suppressed. 
+
+C. Training and Inference 1) Training: Our method introduces no additional training objective and preserves the training procedure of the detector. The detector is trained in the standard open-vocabulary setting using only annotations from Cbase . The pretrained VLM image encoder and text encoder used in our method remain frozen throughout both training and inference. 
+
+2) Inference: At inference time, the baseline detector first generates proposals and predicts the original detection scores 
+
+P ji . We then select the top-k proposals, crop each proposal region, and extract proposal-level visual features using the frozen VLM image encoder. We use a frozen VLM different from that of the baseline to extract proposal-level visual features. Prompt-based similarities are computed to obtain the localization-aware score sloc  
+
+> i
+
+and the background-aware score sbg  
+
+> i
+
+, which are further combined into the qi. Finally, we recalibrate the detection scores of novel categories using Eq. (7), while keeping base-category scores unchanged. Notably, the proposed method does not alter proposal generation or box regression. Instead, it acts as an inference-time calibration module that improves the ranking and preservation of surviving novel proposals under foreground-background ambiguity. IV. EXPERIMENTS 
+
+A. Datasets and Evaluation Metrics 
+
+We evaluate our method on the COCO [24] and LVIS [25]. By following OVR-CNN [26], we divide the 65 classes in the COCO dataset into 48 base classes and 17 novel classes. In the COCO benchmark, we report the box mean TABLE I: Performance comparison with state-of-the-art methods on the OV-COCO dataset.                                                      
+
+> Method Backbone AP 50
+> Base AP 50
+> Novel AP 50
+> RegionCLIP RN50 57.1 31.4 50.4 Detic 47.1 27.8 45.0 F-VLM -28.0 39.6 CORA 35.5 35.1 35.4 RegionCLIP RN50x4 61.6 39.3 55.7 CORA 44.5 41.7 43.8 CORA+ 60.9 43.1 56.2 DST-Det ViT-B/16 59.6 41.3 54.8 OV-DQUO 42.6 39.4 41.7 CLIPSelf + F-ViT 54.8 37.4 50.3 CLIPSelf + NoOVD 56.5 37.9 51.6 CLIPSelf + F-ViT + ProCal 54.3 40.1 (+2.7) 50.5 DST-Det ViT-L/14 61.9 46.7 58.0 OV-DQUO 48.3 45.3 47.5 CLIPSelf + F-ViT 64.2 44.5 59.0 CLIPSelf + NoOVD 64.7 45.4 59.7 CLIPSelf + F-ViT + ProCal 63.4 45.7 (+1.2) 58.8
+
+average precision at an IoU threshold of 0.5 for 65 classes, base classes, and novel classes, denoted as AP 50 , AP 50 base and AP 50 novel , respectively. ProCal is evaluated on LVIS comprising 100K images and 1,203 categories. The categories are split into three groups: common, frequent, and rare classes. We report the box mean average precision from IoU threshold 0.5 to 0.95 for rare classes and all classes, denoted as AP r
+
+and AP, respectively. 
+
+B. Comparison Methods 
+
+We select OVD methods employing transfer learning such as F-VLM [9], CLIPSelf [10], and OV-DQUO [11], knowledge distillation such as RegionCLIP [18], and pseudo-labeling such as Detic [6] and CORA [12] for compari-son. NoOVD [27] improves discovery for novel objects via knowledge distillation and applies to the top of CLIPSelf. We set our baseline as CLIPSelf ViT-B/16 and ViT-L/14 on the open-vocabulary benchmarks. 
+
+C. Implementation Details 
+
+We use OpenCLIP [28] ViT-B/16 model as image and text encoder to extract proposal-level features for the proposal prior. For the proposal prior fusion, we use λ = 0 .5, τ1 =0.02 , and τ2 = 0 .1. For final score fusion, we set γ = 0 .2.We set the non-maximum suppression (NMS) threshold to 0.3 and 0.5 on OV-COCO and OV-LVIS, respectively. Other settings are the same as the CLIPSelf baseline. 
+
+D. Quantitative Results 1) Results on OV-COCO: Tab. I presents the results of other OVD methods and ProCal on the OV-COCO. Although ProCal requires no additional training or extra data, it per-forms comparably to or better than other OVD methods that relied on additional training process or additional datasets. 
+
+2) Results on OV-LVIS: Tab. II presents the results of other OVD methods and ProCal on OV-LVIS. ProCal with ViT-L/14 performs comparable AP r while higher AP to OV-DQUO. These results support that our simple localization-aware foreground and background suppression method oper-ates properly for novel object detection. TABLE II: Performance comparison with state-of-the-art methods on the OV-LVIS dataset.                                     
+
+> Method Backbone AP rAP RegionCLIP RN50 17.1 28.2 Detic 24.9 32.4 F-VLM 18.6 24.2 RegionCLIP RN50x4 22.0 32.3 CORA 22.2 -CORA+ 28.1 -F-VLM 26.3 28.5 DST-Det 26.2 -OV-DQUO 29.4 26.5 CLIPSelf + F-ViT 25.8 26.4 CLIPSelf + NoOVD 28.3 27.6 CLIPSelf + F-ViT + ProCal 26.9 (+1.1) 26.0 OWL-ViT ViT-L/14 31.2 34.6 OV-DQUO 39.5 33.7 CLIPSelf + F-ViT 36.8 37.3 CLIPSelf + NoOVD 37.2 37.7 CLIPSelf + F-ViT + ProCal 39.3 (+2.5) 37.3
+
+E. Analysis of Localization-Aware Score Refinement 1) Localization-aware improvement across IoU thresholds and object scales: Tab. III analyzes the effect of improving the localization quality of the detection score. In Tab. III(a), the improved performance is not restricted to AP 50 
+
+> Novel
+
+. We observe consistent improvements at higher IoU thresholds, including AP 75  
+
+> Novel
+
+and AP 90 
+
+> Novel
+
+. The results suggest that our localization-aware foreground score elevates well-localized novel proposals rather than merely increasing the overall confidence of novel proposals. In Tab. III(b), ProCal is par-ticularly effective for medium-sized novel objects, where the region features retain sufficient object semantics while still suffering from substantial misalignment between confidence and localization quality. This result suggests that ProCal mainly improves the ranking of novel proposals. 
+
+2) Proposal ranking quality analysis: Tab. IV analyzes the composition of top-ranked proposals. To better under-stand why the proposed refinement improves the novel de-tection performance, we analyze whether the final detection score better reflects the localization quality of the proposal. We divide proposals into three groups: (1) novel positive proposals: IoU ≥ 0.5 with novel ground-truth boxes, (2) partial novel proposals: 0.1 ≤ IoU < 0.5 with novel ground-truth boxes, and (3) background proposals: IoU < 0.1 with base and novel ground-truth boxes. We then compare the original and refined detection scores with respect to proposal-level ranking quality, defined as whether true novel proposals are ranked above background and partial proposals. After refinement, the proportion of novel positive pro-posals increases consistently across all top-k sets, while the proportion of background proposals decreases. These results show that the upper-ranked novel predictions be-come cleaner after refinement. This trend is consistent with candidate-selection and localization-refinement studies [16], [29], where reliable intermediate candidates are important for final prediction quality. In our setting, we observe that proposal-level score calibration improves localization-aware novel-object ranking. Therefore, the proposed method im-proves the localization-aware ranking quality of detections, which explains the observed improvement in novel AP. TABLE III: Quantitative comparison of different AP settings against the baseline. We use the OV-COCO dataset and ViT-B/16. 
+
+(a)         
+
+> CLIPSelf + F-ViT CLIPSelf + F-ViT + ProCal AP 50:95
+> Novel 17.9 19.2 (+1.3)
+> AP 50
+> Novel 37.4 39.9 (+2.5)
+> AP 75
+> Novel 15.3 16.8 (+1.5)
+> AP 90
+> Novel 1.2 1.4 (+0.2)
+
+(b)       
+
+> CLIPSelf + F-ViT CLIPSelf + F-ViT + ProCal AP Small Novel 13.0 13.9 (+0.9)
+> AP Medium Novel 21.2 23.8 (+2.6)
+> AP Large Novel 24.6 24.8 (+0.2)
+
+TABLE IV: Analysis of the three different top-ranked proposals. We include novel positive, partial novel, and background proposals. We refine the proposals using top-
+
+k and report the accuracy measured by varying k using the OV-COCO dataset with ViT-B/16.                                           
+
+> Top-kNovel positive proposals (%) Partial novel proposals (%) Background proposals (%) IoU ≥0.50.1≤IoU <0.5IoU <0.1
+> Original Refined Original Refined Original Refined 10 24.7 25.8 5.7 5.4 9.5 8.0
+> 20 22.5 23.5 6.3 6.2 10.6 9.1
+> 50 17.5 18.2 7.5 7.6 13.6 12.2
+> 100 12.9 13.3 7.8 8.0 18.5 17.2
+
+TABLE V: Ablation study of the proposed ProCal on the OV-COCO dataset. All results are based on ViT-B/16.                     
+
+> #sloc sbg AP 50
+> Novel AP 50:95
+> Novel
+> 1--37.4 17.9 2✓✗40.0 19.2 3✗✓39.5 19.0 4✓✓40.1 19.3
+
+TABLE VI: Ablation study of score fusion for the proposal prior. We study different score fusion mechanisms of ProCal. We report AP 50  
+
+> Novel
+
+on the OV-COCO with ViT-L/14. 
+
+(a) Geometric fusion                
+
+> λτ1τ2AP 50
+> Novel
+> 0.5 0.04 0.1 45.4 0.5 0.04 0.04 45.4 0.5 0.02 0.1 45.6 0.5 0.02 0.04 45.4
+
+(b) Arithmetic fusion                
+
+> λτ1τ2AP 50
+> Novel
+> 0.5 0.04 0.1 45.4 0.5 0.04 0.04 45.2 0.5 0.02 0.1 45.7 0.5 0.02 0.04 45.1
+
+F. Ablation Study 1) Ablation study on main components: We perform an ablation study to analyze the effects of the localization-aware foreground score and the background-aware suppression score. As reported in Tab. V, the foreground score contributes more substantially to the overall performance improvement. This indicates that object-aware localization cues are critical for boosting novel AP. Meanwhile, the suppression score helps mitigate the tendency of background proposals to be incorrectly classified as novel. 
+
+2) Score fusion for proposal prior: Tab. VI analyzes the effect of score fusion mechanisms and hyperparame-ter choices in ProCal. Although arithmetic fusion achieves the best performance, ProCal remains consistently effective across both arithmetic and geometric methods as well as different τ1 and τ2 settings. The performance variation is small across all configurations, showing that the proposed method is robust to the choice of fusion strategy and hy-perparameters. Based on the best result, we use arithmetic fusion as the default setting in ProCal method. Ours Baseline Fig. 3: Visualized detection results on the OV-COCO dataset with ViT-B/16. We highlight the detected novel classes using a green box. 
+
+G. Qualitative Results 
+
+We present detection results for the baseline and ProCal after NMS with a threshold of 0.3 on the OV-COCO valida-tion sets. In Fig. 3, the baseline predicts a partial object box for the elephant region and misclassifies a part of the elephant region as an umbrella. Compared with the baseline, ProCal assigns higher confidence scores to boxes that more heavily overlap the ground-truth boxes of elephants in the image. We observe that ProCal suppresses false novel proposals as well as background proposals. V. CONCLUSION In this paper, we addressed a key limitation of two-stage open-vocabulary object detection. Unseen objects are not explicitly learned as valid foreground during training. Surviving novel proposals are often ranked below back-ground proposals or low-quality proposals at inference. To mitigate this issue, we proposed a simple inference-time score recalibration method that injects foreground-aware and background-aware cues from a frozen pretrained VLM into the final scoring process. Our analyses showed that ProCal improves proposal-level ranking quality. ProCal suppresses false novel activation and more consistently ranks true novel proposals above background proposals and partial novel proposals. These results suggest that localization-aware score calibration is an effective direction for improving novel object detection, and that frozen VLMs provide useful class-agnostic cues for correcting proposal-level ranking bias. REFERENCES [1] J.-W. Seo, H.-G. Jung, and S.-W. Lee, “Self-augmentation: General-izing deep networks to unseen classes for few-shot learning,” IEEE Trans. Neural Netw. , vol. 138, pp. 140–149, 2021. [2] M.-C. Roh, H.-K. Shin, and S.-W. Lee, “View-independent human action recognition with volume motion template on single stereo camera,” Pattern Recog. , vol. 31, no. 7, pp. 639–647, 2010. [3] S. K. Prabhakar and S.-W. Lee, “Holistic approaches to music genre classification using efficient transfer and deep learning techniques,” 
+
+Expert Syst. Appl. , vol. 211, p. 118636, 2023. [4] A. Radford et al. , “Learning transferable visual models from natural language supervision,” in Int. Conf. Mach. Learn. (ICML) , vol. 139, 2021, pp. 8748–8763. [5] X. Gu, T.-Y. Lin, W. Kuo, and Y. Cui, “Open-vocabulary object detection via vision and language knowledge distillation,” in Int. Conf. Learn. Represent. (ICLR) , 2022. [6] X. Zhou, R. Girdhar, A. Joulin, P. Kr¨ ahenb¨ uhl, and I. Misray, “Detect-ing twenty-thousand classes using image-level supervision,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2022. [7] D. Kim, A. Angelova, and W. Kuo, “Region-aware pretraining for open-vocabulary object detection with vision transformers,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2023. [8] S. Xu, X. Li, S. Wu, W. Zhang, Y. Tong, and C. C. Loy, “DST-Det: Simple dynamic self-training for open-vocabulary object detection,” in Int. Conf. Learn. Represent. (ICLR) , 2024. [9] W. Kuo, Y. Cui, X. Gu, A. Piergiovanni, and A. Angelova, “Open-vocabulary object detection upon frozen vision and language models,” in Int. Conf. Learn. Represent. (ICLR) , 2023. [10] S. Wu et al. , “CLIPSelf: Vision transformer distills itself for open-vocabulary dense prediction,” in Int. Conf. Learn. Represent. (ICLR) ,2024. [11] J. Wang et al. , “OV-DQUO: Open-vocabulary detr with denoising text query training and open-world unknown objects supervision,” in Proc. AAAI Conf. Artif. Intell. (AAAI) , 2025. [12] X. Wu, F. Zhu, R. Zhao, and H. Li, “CORA: Adapting clip for open-vocabulary detection with region prompting and anchor pre-matching,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2023. [13] S. Ren, K. He, R. Girshick, and J. Sun, “Faster R-CNN: Towards real-time object detection with region proposal networks,” in Adv. Neural Inf. Process. Syst. (NeurIPS) , 2015. [14] D. Kang, H. Han, A. K. Jain, and S.-W. Lee, “Nighttime face recog-nition at large standoff: Cross-distance and cross-spectral matching,” 
+
+Pattern Recog. , vol. 47, no. 12, pp. 3750–3766, 2014. [15] D.-O. Won, Y.-N. Jang, and S.-W. Lee, “Plausmal-gan: Plausible malware training based on generative adversarial networks for analo-gous zero-day malware detection,” IEEE Trans. Emerg. Top. Comput. ,vol. 11, no. 1, pp. 82–94, 2022. [16] Y.-B. Lee, U. Park, A. K. Jain, and S.-W. Lee, “Pill-id: Matching and retrieval of drug pill images,” Pattern Recog. Lett. , vol. 33, no. 7, pp. 904–910, 2012. [17] B. An, S. Zhu, M.-A. Panaitescu-Liess, C. K. Mummadi, and F. Huang, “PerceptionCLIP: Visual classification by inferring and conditioning on contexts,” in Int. Conf. Learn. Represent. (ICLR) , 2024. [18] Y. Zhong et al. , “RegionCLIP: Region-based language-image pretrain-ing,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) ,2022. [19] C. Jia et al. , “Scaling up visual and vision-language representation learning with noisy text supervision,” in Int. Conf. Mach. Learn. (ICML) , 2021. [20] O. Russakovsky et al. , “Imagenet large scale visual recognition challenge,” in Adv. Neural Inf. Process. Syst. (NeurIPS) , 2012. [21] P.-S. Kim, D.-G. Lee, and S.-W. Lee, “Discriminative context learning with gated recurrent unit for group activity recognition,” Pattern Recog. , vol. 76, pp. 149–161, 2018. [22] H.-D. Yang and S.-W. Lee, “Robust sign language recognition by combining manual and non-manual features based on conditional random field and support vector machine,” Pattern Recog. Lett. ,vol. 34, no. 16, pp. 2051–2056, 2013. [23] Y. Shi, H.-I. Suk, Y. Gao, S.-W. Lee, and D. Shen, “Leveraging coupled interaction for multimodal alzheimer’s disease diagnosis,” IEEE Trans. Neural Netw. Learn. Syst. , vol. 31, no. 1, pp. 186–200, 2019. [24] T.-Y. Lin et al. , “Microsoft COCO: Common objects in context,” in 
+
+Proc. Eur. Conf. Comput. Vis. (ECCV) , 2014. [25] A. Gupta, P. Doll´ ar, and R. Girshick, “LVIS: A dataset for large vocabulary instance segmentation,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2019. [26] A. Zareian, K. D. Rosa, D. H. Hu, and S.-F. Chang, “Open-vocabulary object detection using captions,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2021. [27] Y. Zhang, R. Han, Z. Chen, W. Feng, and L. Wan, “NoOVD: Novel category discovery and embedding for open-vocabulary object detection,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2026. [28] M. Cherti et al. , “Reproducible scaling laws for contrastive language-image learning,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog. (CVPR) , 2023. [29] J. Xue et al. , “Cascaded multitask 3-d fully convolutional networks for pancreas segmentation,” IEEE Trans. Cybern. , vol. 51, no. 4, pp. 2153–2165, 2019.

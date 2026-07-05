@@ -1,0 +1,383 @@
+Title: Active Learning for Cascaded Object Detection: Balancing Coverage and Uncertainty in Table Extraction Pipelines
+
+URL Source: https://arxiv.org/pdf/2607.00747v1
+
+Published Time: Thu, 02 Jul 2026 00:51:57 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Active Learning for Cascaded Object Detection: Balancing Coverage and Uncertainty in Table Extraction Pipelines 
+
+Eliott Thomas 1,2[0009-0008-5266-8797] , Mickael Coustaty 1[0000-0002-0123-439X] , Aurélie Joseph 2[0000-0002-5499-6355] ,Gaspar Deloin 2[0009-0007-2449-5385] , Vincent Poulain d’Andecy 2[0009-0008-5515-3561] , and Jean-Marc Ogier 1[0000-0002-5666-475X]  
+
+> 1
+
+L3i, La Rochelle Université, La Rochelle, France 
+
+eliott.thomas@univ-lr.fr, mcoustat@univ-lr.fr, jean-marc.ogier@univ-lr.fr  
+
+> 2
+
+Yooz, Aimargues, France 
+
+aurelie.joseph@getyooz.com, gaspar.deloin@getyooz.com, vincent.poulaindandecy@getyooz.com 
+
+Abstract. Table extraction from business documents relies on a cas-caded pipeline where Table Detection (TD) first localizes tables and Table Structure Recognition (TSR) then recovers their internal layout. Building task-specific training sets for this pipeline is costly, particularly for TSR which requires fine-grained structural annotations. Active learning (AL) can reduce this annotation burden, yet most AL strategies are designed for single-model tasks and do not account for inter-stage dependencies in cascaded architectures. In this work, we present the first adaptation of Uncertainty Herding (UHerding), a hybrid coverage-uncertainty sampling method originally proposed for image classification, to cascaded object detection pipelines. We propose two pipeline-aware extensions that exploit the TD-to-TSR dependency: RankFusion adds dual-manifold coverage over both detection and structure representation spaces, while CAPA further incorporates stage-dependent gating and per-task uncertainty calibration. Extensive experiments across two public (PubTables-1M [36] and FinTabNet [45]) and two private table extraction datasets, with vari-ous annotation budgets (from 71 to 500 documents) show that UHerding generalizes well to table extraction, outperforming each baseline. Among pipeline-aware variants, RankFusion achieves higher expected gains but at the cost of greater variance, while CAPA emerges as the most consistent strategy, outperforming standard UHerding on three out of four datasets. 
+
+Keywords: Active Learning · Table Extraction · Cascaded Object De-tection · Pipeline-aware Sampling · Document Analysis  
+
+> arXiv:2607.00747v1 [cs.CV] 1 Jul 2026 2E. Thomas et al.
+
+## 1 Introduction 
+
+Business documents such as invoices, financial reports, and contracts rely on tables to organize structured data, making table extraction a central task in document analysis. The most common approach formulates this problem as a cascaded detection pipeline [18, 30, 39]: a Table Detection (TD) model first localizes tables within the document, and a Table Structure Recognition (TSR) model then recovers their internal layout, identifying rows, columns, and headers from the detected regions. Deploying such pipelines on new document domains requires task-specific training data, as publicly available table datasets [12, 14, 36, 45] often differ significantly in layout, structure, and visual characteristics from the target domain. However, building these training sets is costly: while TD requires a single bounding box per table, TSR demands fine-grained annotations for each structural element, typically one header, several columns, and numerous rows per table. Active learning (AL) [13,33] offers a principled approach to this annotation burden: given a large pool of unlabeled documents, AL strategies select the most informative samples for annotation, maximizing model performance under a limited labeling budget. This cascaded formulation introduces a structural dependency: TSR operates on regions predicted by TD, so detection failures propagate irrecoverably down-stream. The two stages also differ fundamentally in input scope, task complexity, and class structure: TD is single-class detection on full pages, while TSR is multi-class recognition on cropped table images. These asymmetries suggest that the two stages may benefit from different training signals and may not improve at the same rate as annotated data is added. Active learning has been widely studied as a means to reduce annotation costs in deep learning [28, 33]. Existing strategies broadly fall into two families: coverage-based methods [2, 32, 43], which prioritize representing the diversity of the unlabeled pool, and uncertainty-based methods [10, 11, 21], which favor samples on which the model is least confident. These two paradigms tend to excel in different budget regimes, with coverage dominating in low-budget settings and uncertainty becoming more effective as the labeled set grows [16]. Uncertainty Herding (UHerding) [3] was recently proposed to bridge this gap through an adaptive mechanism that balances coverage and uncertainty based on the current training state, making it a strong baseline across budget regimes. However, UHerding was designed for image classification with a single model. To the best of our knowledge, this work presents the first adaptation of UHerding to a cascaded object detection pipeline, where two interdependent models must be trained jointly from a shared pool of annotated documents. While adapted UHerding performs well in this setting, it remains pipeline-agnostic: it selects samples based on a single shared representation and a combined uncertainty signal, without distinguishing between the contributions of each stage. Given the structural asymmetry between TD and TSR, a natural question arises: can AL strategies that explicitly account for inter-stage dependencies provide consistent improvements, and what trade-offs emerge? Drawing on prior work on active learning for pipeline models [29], we propose two pipeline-aware Active Learning for Cascaded Object Detection 3
+
+extensions. RankFusion introduces dual-manifold coverage, selecting samples that are informative in both the detection and structure representation spaces. CAPA goes further by incorporating stage-dependent gating and per-task uncertainty calibration, dynamically adapting to the reliability of each pipeline stage. Our contributions are as follows: 1. To the best of our knowledge, the first adaptation of UHerding to a cascaded object detection pipeline for table extraction. 2. Two pipeline-aware extensions of our adaptation of UHerding: RankFusion, adding dual-manifold coverage over document-level and table-level spaces, and CAPA, extending RankFusion with stage-dependent gating and per-task uncertainty calibration. 3. An extensive evaluation across four diverse table extraction datasets, two public (PubTables-1M [36] and FinTabNet [45]) and two private, with 10 seeds per configuration, revealing a consistency versus expected gain trade-off among pipeline-aware strategies. 
+
+## 2 Related Work 
+
+2.1 Table Extraction 
+
+Table extraction has been extensively studied [18], with approaches broadly categorized into detection-based cascaded pipelines [30, 39, 42] and generative methods based on vision-language models [5,20,26] that directly output structured markup such as HTML or LaTeX. While generative approaches have shown strong results on academic documents, cascaded pipelines remain the dominant paradigm for applications requiring spatial coordinates of individual structural elements. Within this paradigm, TD and TSR are typically addressed as separate object detection tasks with distinct characteristics. For table detection, most recent approaches rely on general-purpose ob-ject detectors adapted for document images, such as DETR [6], D-FINE [27], and YOLOv9 [41]. Smock et al. [36] showed that such architectures can be effectively trained for both TD and TSR on large-scale table datasets. For structure recognition, the geometric regularity of table layouts, with repeating rows, columns, and headers, has additionally motivated a range of task-specific architectures [17, 19, 23, 44]. Standard benchmarks [12, 14] remain small, while PubTables-1M [36] and FinTabNet [45] better support AL research. GriTS [37] addresses inconsistencies in the earlier TEDS metric [46]. Prior work reduces labeling cost through semi-supervised learning for layout analysis [4], table detection [34], and full pipelines [40]. To our knowledge, Gautam et al. [13] provide the only AL application to table extraction, limited to detection. No prior work addresses the full cascaded pipeline. 4 E. Thomas et al. 
+
+2.2 Active Learning for Deep Learning 
+
+Uncertainty sampling [21] selects samples on which the current model is most uncertain, through measures such as prediction confidence, margin, or entropy [33]. For deep networks, Bayesian approximations such as Monte Carlo Dropout [10,11] enable uncertainty estimation without architectural changes. Coverage-based methods take the opposite approach, prioritizing samples that represent the diversity of the unlabeled pool. CoreSet [32] formulates this as a k-center problem in a learned feature space. ProbCover [43] refines this through fixed-radius coverage in embedding space. MaxHerding [2] further improves upon this line through kernel herding with a Gaussian kernel, providing smoother coverage estimates more robust to hyperparameter choices. This complementarity between uncertainty and coverage methods across bud-get regimes, formalized by Hacohen et al. [16], has motivated hybrid approaches that combine both signals. BADGE [1] captures both signals jointly through gradient embeddings, though its reliance on task-specific gradients makes it diffi-cult to extend to multi-model pipelines. UHerding [3] instead explicitly combines coverage with uncertainty weighting and automatically adapts the balance based on the current training state, removing the need for manual regime identification. Active learning has been applied to document layout analysis [35, 38], but its application to table extraction remains limited. Recent work has also addressed the characterization of AL performance curves. PALM [25] fits a parametric model to learning trajectories for cross-strategy comparison, though reliable fits require learning curves that extend into the saturation regime, limiting applicability to settings with broad budget ranges. 
+
+2.3 Active Learning for Multi-Stage Models 
+
+While active learning has been extensively studied for individual models, its application to multi-stage pipelines has received comparatively little attention. Roth and Small [29] proposed a beta-weighting framework for active learning in pipeline models, where the contribution of each stage to the overall loss is weighted by the reliability of upstream components. A key insight from their work is that early pipeline stages should be prioritized until they perform reliably, after which the learning focus should shift to later stages. Despite the theoretical appeal of this framework, it has seen limited follow-up, and no prior work has applied pipeline-aware active learning to object detection architectures. This gap motivates the pipeline-aware extensions we introduce in the following section. 
+
+## 3 Method 
+
+3.1 Problem Formulation 
+
+We consider a table extraction pipeline composed of two models trained from a shared set of annotated documents. A Table Detection model Mtd localizes tables within full document pages, and a Table Structure Recognition model Mtsr Active Learning for Cascaded Object Detection 5
+
+identifies rows, columns, and headers within each detected region. These two stages are coupled at inference: Mtsr operates on the table regions predicted by 
+
+Mtd , so the end-to-end performance of the pipeline is bounded by the quality of the upstream detection. We scope the pipeline to single-table documents without spanning cells, yielding a regular grid structure and three structural element classes for TSR: rows, columns, and headers. This design isolates the effect of the sampling strategy from confounding factors such as multi-table disambiguation or complex cell merging. As our results show, even this well-defined setting proves challenging at the annotation budgets considered, with models far from saturation across all datasets. We formulate active learning for this pipeline in the standard pool-based setting. Let U = {xn}Nn=1 denote a large pool of unlabeled documents and L0 asmall initial labeled set. At each iteration t, both models are trained on Lt: Mtd is trained on full document pages with table bounding box annotations, while Mtsr 
+
+is trained on ground-truth table crops with structural element labels, following the standard setup in table structure recognition where structural annotations are provided at the table level. A sampling strategy then selects a batch St ⊂ U t
+
+of documents for annotation, and the sets are updated as Lt+1 = Lt ∪ S t and 
+
+Ut+1 = Ut \ S t. This process repeats for T iterations with a fixed batch size 
+
+|S t| = b, yielding a final labeled set LT of size |L 0| + T b .Annotating a single document provides training signal for both stages, but the two stages do not necessarily benefit equally from the same document. Moreover, the relative contribution of each stage to the overall pipeline error is dataset-dependent: in some domains Mtd is the bottleneck, while in others Mtsr limits end-to-end performance. The objective is to select, at each iteration, the batch St that maximizes end-to-end pipeline performance, evaluated by a metric that measures structural correctness of extracted tables through grid-based cell matching. This requires the sampling strategy to balance informativeness across both stages rather than optimizing for a single model. 
+
+3.2 Coverage-Uncertainty Sampling for Cascaded Pipelines 
+
+Recent work in single-model active learning has shown that combining coverage and uncertainty signals outperforms either signal alone across budget regimes [3]. We build on this principle and adapt it to the cascaded detection setting, which requires extending both the coverage and uncertainty components to account for multiple stages with different embedding spaces and error profiles. Generalized coverage (GCoverage) [2] measures how well a labeled set L
+
+represents the unlabeled pool. Let g be a pretrained document encoder that maps each document to a d-dimensional representation, fixed throughout the AL process and independent of the detection models Mtd and Mtsr . Given a Gaussian kernel kσ (x, x ′; g) = exp  −∥ g(x) − g(x′)∥2/σ 2, where ∥ · ∥ denotes the 6 E. Thomas et al. 
+
+Euclidean norm, the estimated GCoverage of L over the pool U is: 
+
+bCkσ (L) = 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+max  
+
+> x′∈L
+
+kσ (xn, x ′; g). (1) MaxHerding [2] greedily adds the candidate that most increases bCkσ .UHerding [3] extends this objective by weighting coverage gains with a nonnegative uncertainty function U , so that uncertain regions of the pool receive higher priority. For each pool document xn, let hn = max x′∈L t kσ (xn, x ′; g)
+
+denote its current best coverage from the labeled set. The coverage gain from a candidate ˜x at pool point xn is max (0 , k σ (xn, ˜x; g) − hn): positive only when ˜x
+
+is closer to xn in embedding space than any currently labeled document. The next point is selected as: 
+
+x∗ = arg max 
+
+> ˜x∈U t
+> N
+
+X
+
+> n=1
+
+U (xn) · max  0, k σ (xn, ˜x; g) − hn
+
+. (2) After selecting x∗, the coverage values are updated as hn ← max (hn, k σ (xn, x ∗; g)) 
+
+for all n, and the process repeats until St is filled. This procedure selects documents that best cover uncertain, underrepresented regions of the pool. We adapt UHerding to cascaded table extraction as follows. For the embed-ding function g, the original work [3] uses self-supervised image features (e.g., SimCLR [8], DINO [7]) designed for natural images. We replace these with a pretrained document image encoder that captures layout and visual properties specific to document pages, while remaining independent of any table-related task. This choice of g is instantiated in Section 4.2. For uncertainty, Bae et al. [3] showed that the choice of measure (margin, entropy, confidence) has limited impact in the single-model setting. We adopt confidence-based uncertainty, extended to both pipeline stages. Let ctop (x) be the confidence of the highest-scoring detection in document x, and ¯ctsr (x) the mean confidence across retained structural predictions. When no prediction exceeds a threshold t, uncertainty defaults to 1: 
+
+Utd (x) = 
+
+(
+
+1 − ctop (x) ctop ≥ t
+
+1 else Utsr (x) = 
+
+(
+
+1 − ¯ctsr (x) ¯ctsr ≥ t
+
+1 else (3) The combined uncertainty is: 
+
+U (x) = 12
+
+ Utd (x) + Utsr (x), (4) treating both stages as equally informative. We relax this assumption in the pipeline-aware variants of Section 3.3. Two adaptive parameters control the balance between coverage and uncer-tainty at each AL iteration. The kernel bandwidth σt determines the spatial scale of coverage in the embedding space of g: as the labeled set grows, σt decreases, Active Learning for Cascaded Object Detection 7
+
+making coverage increasingly local and shifting the selection signal toward uncer-tainty. The original UHerding [3] sets σt to the minimum pairwise distance in the labeled set: 
+
+σorig  
+
+> t
+
+= min 
+
+> u,v ∈L t
+> u̸=v
+
+∥g(u) − g(v)∥. (5) Near-duplicate documents can make this minimum arbitrarily small, collapsing the kernel prematurely. We instead use the 5th percentile of pairwise distances: 
+
+σt = P5
+
+ {∥ g(u) − g(v)∥ : u, v ∈ L t, u ̸ = v}, (6) which retains the decreasing behavior while being robust to outlier pairs. The calibration parameter τt controls how strongly uncertainty influences selection. The original UHerding [3] calibrates τ by minimizing Expected Cali-bration Error (ECE) [15] on a classifier’s logits, which assumes a single model producing one probability distribution per input. In object detection, each doc-ument yields multiple predictions with individual confidence scores, and the per-document uncertainties Utd , Utsr are aggregations over these predictions, for which ECE has no standard formulation. We therefore adopt a rank-correlation approach: at each iteration, we compute the Spearman correlation ρt between 
+
+U (x) and the per-document prediction error 1−F1(x), where F1 is the GriTS-Con F1, on the validation subset of Lt, and set: 
+
+τt = τmin +  1 − max(0 , ρ t) · (τmax − τmin ). (7) Calibrated uncertainties are obtained as Ucal (x) = U (x)1/τ t . When uncertainty correlates well with actual error ( ρt high), τt is small and the raw uncertainty signal is preserved. When the correlation is weak, τt is large, compressing the distribution toward uniform values and recovering coverage-dominated selection. 
+
+3.3 Exploiting the Pipeline Dependency 
+
+The formulation of Section 3.2 treats both pipeline stages symmetrically: coverage operates in a single embedding space, uncertainties are averaged, and a single calibration parameter governs the trade-off. However, in a cascaded pipeline, this symmetry does not hold. The two stages can exhibit markedly different difficulty levels, and they are not independent: TSR can only succeed on documents where TD correctly detects a table. When table detection is the bottleneck, investing in TSR diversity yields diminishing returns because most tables are missed before structure recognition begins. Conversely, when detection is reliable, structure recognition errors dominate. We introduce two extensions that progressively relax these symmetry assumptions. Figure 1 provides an overview. 
+
+RankFusion. A first limitation of single-manifold coverage is that the document-level encoder g captures global page layout but is agnostic to table-internal struc-ture. We introduce a second encoder g′ that operates at the table level, producing 8 E. Thomas et al.              
+
+> Encoder g
+> TD
+> Cov. ×Rank
+> Encoder g′
+> TSR
+> Cov. ×Rank
+> U1/τ 1
+> k+rg
+> +1
+> k+rg′
+> equal weights
+
+(a) RankFusion               
+
+> Encoder g
+> TD
+> Cov. ×Rank
+> Encoder g′
+> TSR
+> Cov. ×Rank
+> U1/τ td td
+> eU1/τ tsr tsr
+> gate
+> βtd
+> k+rg
+> +βtsr
+> k+rg′
+> βadapts to bottleneck
+
+(b) CAPA 
+
+Fig. 1. Overview of the two pipeline-aware selection strategies. Both score documents along a Table Detection (TD, blue) and a Table Structure Recognition (TSR, green) path, each computing coverage gains weighted by calibrated uncertainty ( ×), then ranking and fusing via Reciprocal Rank Fusion. (a) RankFusion uses shared calibration τ and equal fusion weights. (b) CAPA adds per-stage calibration ( τtd , τtsr ), gates TSR uncertainty by TD confidence (dashed), and adapts fusion weights β to the current bottleneck. 
+
+representations sensitive to structural elements (rows, columns, headers). Cover-age is now computed independently in both spaces, each with its own adaptive bandwidth σt and σ′ 
+
+> t
+
+(Eq. 6). For a candidate ˜x, let Ig ( ˜x) and Ig′ ( ˜x) denote the uncertainty-weighted coverage gains in the document-level and table-level spaces, respectively. Rather than summing these heterogeneous scores, which would require careful normalization across spaces of different dimensionality and scale, we convert each to a rank among the remaining candidates and combine them via Reciprocal Rank Fusion (RRF) [9]: score (˜ x) = 1
+
+k + rg (˜ x) + 1
+
+k + rg′ (˜ x) , (8) where rg and rg′ are the ranks in each space and k is a smoothing constant. This rank-based fusion is scale-invariant and does not require the two embedding spaces to be commensurable. We call this variant RankFusion . It retains UHerding’s combined uncertainty U (Eq. 4) and single calibration parameter τt, extending only the coverage component to dual manifolds. 
+
+CAPA. RankFusion weights both spaces equally, which does not account for the pipeline dependency: TSR can only succeed on documents where TD correctly detects a table. Following Roth and Small [29], who showed that early-stage errors propagate through pipeline models and that active learning should prioritize the bottleneck stage, we introduce CAPA (Calibrated and Pipeline-Aware), which extends RankFusion along three axes. First, a global weighting mechanism directs sampling effort toward the current bottleneck. Let AP td and AP tsr denote the validation performance of each stage at iteration t. We define: 
+
+βtd ∝ 1 − AP td , βtsr ∝ (1 − AP tsr ) · AP td , (9) normalized such that βtd + βtsr = 1 . The AP td factor in βtsr encodes the pipeline dependency: when detection is poor, improving structure recognition has limited value. These weights are applied to the RRF fusion as βtd /(k + rg ) + βtsr /(k + rg′ ).Active Learning for Cascaded Object Detection 9
+
+Second, CAPA replaces the combined uncertainty U (Eq. 4) with stage-specific signals. For the table detection branch, Utd is used directly. For the structure recognition branch, a local gating mechanism suppresses TSR uncertainty for documents where detection is itself unreliable: 
+
+eUtsr (x) =  1 − Utd (x) · Utsr (x). (10) When Utd is high, the factor (1 − Utd ) approaches zero, suppressing the TSR signal regardless of the raw TSR uncertainty and preventing wasted structural annotations on documents with missed detections. Third, CAPA replaces the single calibration parameter τt with stage-specific values τtd and τtsr , each computed via Spearman correlation between the cor-responding uncertainty signal and the stage-specific prediction error on the validation subset of Lt (Eq. 7). Crucially, gating is applied before calibration: if the order were reversed, a large τtsr would first compress Utsr toward uniform values, and the subsequent gate would merely scale a near-constant quantity by detection confidence rather than modulate the actual uncertainty signal. 
+
+## 4 Experiments 
+
+4.1 Datasets 
+
+We evaluate on four table extraction datasets spanning diverse document types (Table 1). Two are publicly available: PubTables-1M [36], a large-scale dataset of academic papers, and FinTabNet [45], containing financial reports. Two are proprietary: invoice-int , consisting of invoices, and business-int , a collection of mixed business documents. The two proprietary datasets cannot be released, so they serve only to test robustness on real-world business documents. Every methodological claim is also validated on the two public benchmarks, and the full pipeline relies on publicly available models (D-FINE for detection, DiT for embeddings), so the core results remain independently reproducible. Following the scope defined in Section 3.1, we retain only documents containing exactly one table with no spanning cells. For PubTables-1M, we apply this filter to the original validation split, and for FinTabNet to the training split, in both cases obtaining pools large enough for meaningful AL experiments while keeping the per-iteration scoring of the full unlabeled pool computationally tractable. 
+
+4.2 Experimental Setup 
+
+Both pipeline stages use D-FINE-X [27], a DETR-based detector initialized from a COCO-pretrained checkpoint and trained separately for table detection (1 class) and table structure recognition (3 classes: row, column, header). This training is the active learning loop itself, not a separate pre-training stage: at each round both models are re-initialized from the COCO checkpoint and trained on the current labeled set, with no warm-starting from the previous round. Models are trained with AdamW (learning rate 2.5 × 10 −4, weight decay 1.25 × 10 −4), 10 E. Thomas et al.                               
+
+> Table 1. Dataset overview. Pool denotes the unlabeled documents available for AL selection. Test is a held-out evaluation set. Dataset Domain Total Pool Test Public PubTables-1M Academic 4,459 3,459 1,000 Yes FinTabNet Financial 8,066 7,105 961 Yes invoice-int Invoices 2,394 2,117 277 No business-int Business 3,920 2,920 1,000 No
+
+batch size 24, and standard geometric and photometric augmentations (zoom-out, IoU crop, brightness and contrast jitter). Training runs for up to 100 epochs with early stopping on validation loss (patience 40) to avoid retaining a local optimum. The document-level encoder g (Section 3.2) is DiT [22], a Vision Transformer pretrained on document images, providing fixed representations throughout the AL process. The table-level encoder g′ (Section 3.3) reuses the multi-scale features of the trained TSR model, which are globally average-pooled and concatenated into a single 1152-dimensional vector. This pairing was selected after preliminary analysis indicated that combining document-level and structure-level representations yielded the best coverage balance. Unlike g,these representations evolve as the model is retrained at each iteration. Each experiment begins with 71 randomly sampled documents and grows the labeled set over six sampling rounds, yielding seven equally-spaced budget levels up to 500 documents, balancing evaluation granularity with computational cost. At each round, 10% of the labeled set is held out for validation and for computing adaptive parameters ( σt, τt, β). The RRF smoothing constant is set to k = 60 [9], the calibration bounds to τmin = 1 , τmax = 20 , and predictions with confidence below 
+
+t = 0 .3 are discarded before computing uncertainties. Unlike image classification AL with fixed training schedules [1, 2, 16], transformer-based detection requires a validation holdout for early stopping. As Lüth et al. [24] note, validation protocols are rarely reported yet can matter as much as multiplying the labeled budget fivefold. All configurations share the same initial set per seed, and each is repeated over 10 seeds (independent initial labeled sets) to enable paired comparisons. End-to-end performance is measured by GriTS-Con F1 [37], which evalu-ates both structural correctness and text content of extracted cells. Run-to-run variance is high at low budgets across all strategies. We therefore summarize each strategy by the normalized area under its median learning curve rather than the mean, an average F1 over the budget range that resists outlier seeds. Cross-dataset comparison uses the Schulze method [31]: for each pair of strategies, we count on how many of the 4 datasets one achieves a higher AUC, and resolve all pairwise outcomes into a complete ranking. The W-T-L column in Table 2 reports wins, ties, and losses across the 5 head-to-head matchups. We compare six strategies: Random (uniform sampling), Confidence (uncertainty-only, using the combined signal of Eq. 4), MaxHerding [2] (coverage-only), UHerding [3] (coverage and uncertainty, adapted as in Section 3.2), RankFusion (dual-manifold Active Learning for Cascaded Object Detection 11 
+
+Table 2. Normalized AUC (%) and per-dataset ranks (in parentheses, 1 = best) com-puted from median learning curves over 10 seeds. The rightmost columns report the Schulze ranking [31] and each strategy’s pairwise record (wins–ties–losses against the 5 other strategies), both derived from cross-dataset AUC comparisons. Best AUC per column in bold. Strategy inv-int bus-int fintab pub1m Mean Schulze W-T-L      
+
+> AUC % ↑(rank ↓)↑↓
+
+Pipeline-aware (ours) 
+
+CAPA 64.44 (4) 54.14 (3) 70.52 (1) 70.86 (3) 64.99 1† 3–2–0 RankFusion 65.22 (2) 57.51 (1) 70.34 (2) 69.90 (5) 65.74 1† 3–2–0 
+
+Adapted (ours) 
+
+UHerding 66.24 (1) 52.78 (5) 70.16 (3) 70.77 (4) 64.99 3 2–2–1 
+
+Baselines 
+
+Confidence 64.69 (3) 52.83 (4) 68.90 (5) 71.99 (1) 64.60 4 1–3–1 MaxHerding 63.80 (6) 56.71 (2) 69.88 (4) 69.70 (6) 65.02 5 0–2–3 Random 64.20 (5) 51.93 (6) 68.77 (6) 71.38 (2) 64.07 6 0–1–4  
+
+> †Tied at Schulze rank 1; their head-to-head is 2–2 across datasets.
+
+UHerding, Section 3.3), and CAPA (calibrated pipeline-aware, Section 3.3). These baselines span the two main axes of AL: coverage (MaxHerding) and uncertainty (Confidence). MaxHerding generalizes CoreSet and outperforms it on low-budget benchmarks [2], making it the stronger coverage representative. Ensemble and MC-dropout acquisition were not evaluated: Bae et al. [3] showed limited impact of the uncertainty estimator on UHerding, and retraining both stages from scratch at each round makes the additional cost prohibitive. 
+
+4.3 Results 
+
+Table 2 and Figure 2 report normalized AUC and median learning curves for all strategies. As visible in the learning curves, our proposed methods sepa-rate from baselines early (around budget 200) and maintain their advantage throughout the budget range. Since AUC integrates performance over the entire budget trajectory, this early and sustained advantage is directly reflected in the table scores. No single-signal baseline is consistent across datasets: Confidence ranks first on pubtables1m (71.99), where high model performance yields re-liable uncertainty estimates, but fifth on fintabnet. MaxHerding ranks second on business-int (56.71), where scarce data makes coverage critical, but sixth on invoice-int. UHerding, our adaptation of coverage-weighted uncertainty sampling to cascaded table extraction, ranks above all three baselines in the Schulze cross-dataset ranking (rank 3). Our two pipeline-aware extensions improve further. RankFusion achieves the highest mean AUC (65.74), with its largest gain on business-int (57.51), where extending coverage to both document-level and table-level embedding spaces amplifies the diversity signal. CAPA leads on fintabnet (70.52) and beats 12 E. Thomas et al. Budget (documents) 
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> GriTS-Con F1 (%)
+
+invoice-int 
+
+> Random (64.2)
+> Confidence (64.7)
+> MaxHerding (63.8)
+> UHerding (66.2)
+> RankFusion (65.2)
+> CAPA (64.4)
+
+Budget (documents) 
+
+> 35
+> 40
+> 45
+> 50
+> 55
+> 60
+> 65
+> GriTS-Con F1 (%)
+
+business-int     
+
+> Random (51.9)
+> Confidence (52.8)
+> MaxHerding (56.7)
+> UHerding (52.8)
+> RankFusion (57.5)
+> CAPA (54.1)
+> 100 200 300 400 500
+
+Budget (documents) 
+
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> GriTS-Con F1 (%)
+
+fintabnet     
+
+> Random (68.8)
+> Confidence (68.9)
+> MaxHerding (69.9)
+> UHerding (70.2)
+> RankFusion (70.3)
+> CAPA (70.5)
+> 100 200 300 400 500
+
+Budget (documents) 
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> GriTS-Con F1 (%)
+
+pubtables1m 
+
+> Random (71.4)
+> Confidence (72.0)
+> MaxHerding (69.7)
+> UHerding (70.8)
+> RankFusion (69.9)
+> CAPA (70.9)
+
+Fig. 2. Median learning curves (GriTS-Con F1) across 10 seeds. Dashed/dotted lines denote baselines, solid lines proposed methods. Hybrid methods separate from single-signal baselines early and maintain their advantage throughout the budget range. 
+
+UHerding on 3 of 4 datasets, making it the most consistent improvement over the adapted baseline. Both extensions tie at Schulze rank 1 (3 wins, 2 ties, 0 losses each), confirming that pipeline-aware sampling yields consistent improvements. Despite their shared rank, they exhibit different risk profiles: RankFusion’s coverage-oriented approach is less suited to pubtables1m, where high model performance makes uncertainty the more informative signal. CAPA is never worse than rank 4, making it the safest choice when the difficulty of the target dataset is unknown. 
+
+## 5 Discussion 
+
+5.1 Datasets Difficulty 
+
+Table 3 shows that the performance bottleneck is dataset-dependent rather than strategy-dependent . On invoice-int (TD-bottlenecked), UHerd-ing leads : its uncertainty signal directly targets detection failures, while pipeline-aware methods dilute it across both manifolds. On business-int (balanced, the Active Learning for Cascaded Object Detection 13 
+
+Table 3. Per-task bottleneck profiles across datasets. The gap between TD and TSR performance is consistent across strategies and budgets. Dataset Bottleneck TD AP range TSR AP range invoice-int TD 0.54–0.73 0.74–0.77 business-int Balanced 0.61–0.66 0.65–0.68 fintabnet TSR 0.85–0.89 0.83–0.85 pubtables1m TSR 0.80–0.87 0.75–0.78 
+
+hardest dataset), RankFusion benefits from dual-manifold coverage. On pubta-bles1m (TSR-bottlenecked), high absolute performance makes uncertainty reliable, and Confidence dominates . On fintabnet (TSR-bottlenecked), CAPA ranks first by reallocating coverage toward the TSR manifold. CAPA’s β-weighting does not fully compensate on invoice-int: when TD is the true bottleneck, dual-manifold coverage biases selection toward TSR enough to offset per-task calibration.    
+
+> •CAPA
+> •MH
+> ◦Init
+
+(a) DiT embedding space    
+
+> •CAPA
+> •MH
+> ◦Init
+
+(b) TSR embedding space 
+
+Fig. 3. Qualitative comparison of CAPA vs. MaxHerding selections on fintabnet (budget 142, first round). Filled dots: green=CAPA, orange=MaxHerding, grey=both. Hollow circles: initial set. Background shading: per-pool coverage differential between the two strategies (a: DiT, b: TSR). 
+
+This reallocation is directly visible in Figure 3. Starting from the same initial labeled set ( |L0| = 71 ), CAPA and MaxHerding each select 71 additional samples with near-zero overlap (1 of 71 shared). In the DiT embedding space (a), both strategies achieve comparable coverage ( ∆ = −0.3% , where ∆ is the mean Gaussian kernel coverage gain of CAPA over MaxHerding across the pool). In the TSR embedding space (b), CAPA covers substantially more of the structural manifold ( ∆ = +3 .1% ). CAPA redistributes its coverage budget toward the space corresponding to the performance bottleneck, which the DiT-only MaxHerding baseline cannot access. 14 E. Thomas et al. 
+
+5.2 Compute 
+
+All experiments were conducted on a shared GPU cluster using NVIDIA A40, A6000, and H100 GPUs. Each AL run comprises 7 budget levels with 6 sampling rounds, retraining both Mtd and Mtsr on the augmented labeled set at each budget. A complete run (one strategy, one dataset, all budgets) takes approximately 24 hours. With 6 strategies, 4 datasets, and 10 seeds, the full experimental campaign amounts to 240 runs, totaling approximately 5,760 GPU-hours. 
+
+5.3 Limitations 
+
+Although evaluating on a single detection architecture is common practice in the AL literature, it does not capture how strategies interact with different model families, particularly YOLO-based detectors whose training dynamics differ significantly from DETR-based models like D-FINE. The experimental scope is restricted to single-table documents without spanning cells, though even under these constraints end-to-end performance remains far from saturated at the budgets considered. The sampling framework operates on page- and table-level embeddings and per-stage confidence rather than on table topology, so it applies unchanged to multi-table pages and spanning-cell layouts. Calibration quality is the open question: multiple tables per page dilute per-document TSR uncertainty, and spanning cells break the regular-grid assumption, both potentially weakening the gating and τ signals. Whether bottleneck-driven preferences persist under these relaxed constraints remains to be tested. The β weights depend on coarse per-stage AP estimates, making them robust to validation noise at early budgets. A formal sensitivity analysis is left to future work. Finally, our budget range (71 to 500 documents) gives dense coverage with 7 points but does not reach high-data regimes where strategy differences may diminish or shift. Scaling further was prohibitive given the cost of the full pipeline. 
+
+## 6 Conclusion 
+
+We adapted UHerding from image classification to cascaded table extraction with two pipeline-aware extensions: RankFusion, which fuses coverage across document-level and table-level spaces, and CAPA, which adds per-task calibration and adaptive bottleneck weighting. Across 4 datasets and 10 seeds, both share rank 1 in the Schulze ordering, with CAPA offering the most consistent gains. A key finding is that the bottleneck between pipeline stages shapes strategy preferences more than the acquisition function itself: where the pipeline fails matters as much as how samples are selected, suggesting that this framework generalizes to any cascaded detection task with sequential dependencies.  
+
+> Acknowledgments. This research was supported by the CIFRE PhD program funded by the ANRT, by the ANR agency under grant number ANR-21-PRRD-0010-01 (Lab-Com Ideas), as well as by the YOOZ company. This work also benefited from the computing resources of the L3i laboratory, La Rochelle University.
+
+Active Learning for Cascaded Object Detection 15 
+
+Disclosure of Interests. The authors have no competing interests to declare that are relevant to the content of this article. 
+
+## References 
+
+1. Ash, J.T., Zhang, C., Krishnamurthy, A., Langford, J., Agarwal, A.: Deep batch active learning by diverse, uncertain gradient lower bounds. In: Proceedings of the International Conference on Learning Representations (ICLR) (2020), https: //openreview.net/forum?id=ryghZJBKPS 2. Bae, W., Noh, J., Sutherland, D.J.: Generalized coverage for more robust low-budget active learning. In: European Conference on Computer Vision (2024), https://api.semanticscholar.org/CorpusID:271244923 3. Bae, W., Sutherland, D.J., Oliveira, G.L.: Uncertainty herding: One active learning method for all label budgets. In: ICLR (2025) 4. Banerjee, A., Biswas, S., Lladós, J., Pal, U.: SemiDocSeg: Harnessing semi-supervised learning for document layout analysis. International Journal on Docu-ment Analysis and Recognition 27 , 317–334 (2024) 5. Blecher, L., Cucurull, G., Scialom, T., Stojnic, R.: Nougat: Neural optical un-derstanding for academic documents. In: International Conference on Learning Representations (ICLR) (2024) 6. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., Zagoruyko, S.: End-to-end object detection with transformers. In: European Conference on Computer Vision (ECCV). pp. 213–229 (2020) 7. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: IEEE/CVF International Conference on Computer Vision (ICCV). pp. 9650–9660 (2021) 8. Chen, T., Kornblith, S., Norouzi, M., Hinton, G.: A simple framework for con-trastive learning of visual representations. In: Proceedings of the 37th International Conference on Machine Learning (ICML). vol. 119, pp. 1597–1607. PMLR (2020) 9. Cormack, G.V., Clarke, C.L.A., Büttcher, S.: Reciprocal rank fusion outperforms condorcet and individual rank learning methods. In: Proceedings of the 32nd International ACM SIGIR Conference on Research and Development in Information Retrieval. pp. 758–759. ACM (2009) 10. Gal, Y., Ghahramani, Z.: Dropout as a bayesian approximation: Representing model uncertainty in deep learning. In: international conference on machine learning. pp. 1050–1059. PMLR (2016) 11. Gal, Y., Islam, R., Ghahramani, Z.: Deep bayesian active learning with image data. In: International conference on machine learning. pp. 1183–1192. PMLR (2017) 12. Gao, L., Huang, Y., Déjean, H., Meunier, J.L., Yan, Q., Fang, Y., Kleber, F., Lang, E.M.: Icdar 2019 competition on table detection and recognition (ctdar). 2019 International Conference on Document Analysis and Recognition (ICDAR) pp. 1510–1515 (2019), https://api.semanticscholar.org/CorpusID:211026773 13. Gautam, S., Purohit, N., Harit, G.: Table detection with active learning. In: Inter-national Conference on Document Analysis and Recognition. pp. 130–146. Springer (2025) 14. Göbel, M.C., Hassan, T., Oro, E., Orsi, G.: Icdar 2013 table competition. 2013 12th International Conference on Document Analysis and Recognition pp. 1449–1453 (2013), https://api.semanticscholar.org/CorpusID:206777311 16 E. Thomas et al. 15. Guo, C., Pleiss, G., Sun, Y., Weinberger, K.Q.: On calibration of modern neural networks. In: Proceedings of the 34th International Conference on Machine Learning (ICML). vol. 70, pp. 1321–1330. PMLR (2017) 16. Hacohen, G., Dekel, A., Weinshall, D.: Active learning on a budget: Opposite strategies suit high and low budgets. In: International Conference on Machine Learning (ICML). vol. 162, pp. 8175–8195. PMLR (2022) 17. Hou, Q., Wang, J.: TABLET: Table structure recognition using encoder-only transformers. In: Document Analysis and Recognition (ICDAR). pp. 253–278 (2026) 18. Kasem, M.M., Abdallah, A., Berendeyev, A., Elkady, E., Abdalla, M., Mahmoud, M., Hamada, M., Nurseitov, D.B., Taj-Eddin, I.: Deep learning for table detection and structure recognition: A survey. ACM Computing Surveys 56 , 1 – 41 (2022), https://api.semanticscholar.org/CorpusID:253553399 19. Khang, M., Hong, T.: TFLOP: Table structure recognition framework with layout pointer mechanism. In: International Joint Conference on Artificial Intelligence (IJCAI) (2024) 20. Kim, G., Hong, T., Yim, M., Nam, J., Park, J., Yim, J., Hwang, W., Yun, S., Han, D., Park, S.: Ocr-free document understanding transformer. In: European Conference on Computer Vision (ECCV) (2022) 21. Lewis, D.D., Gale, W.A.: A sequential algorithm for training text classifiers. In: Annual International ACM SIGIR Conference on Research and Development in Information Retrieval (1994), https://api.semanticscholar.org/CorpusID:915058 22. Li, J., Xu, Y., Lv, T., Cui, L., Zhang, C., Wei, F.: DiT: Self-supervised pre-training for document image transformer. In: Proceedings of the 30th ACM International Conference on Multimedia. pp. 4003–4011. ACM (2022) 23. Long, R., Xing, H., Yang, Z., Zheng, Q., Yu, Z., Huang, F., Yao, C.: LORE++: Logical location regression network for table structure recognition with pre-training. Pattern Recognition 157 , 110816 (2025) 24. Lüth, C.T., Bungert, T.J., Klein, L., Jaeger, P.F.: Navigating the pitfalls of ac-tive learning evaluation: A systematic framework for meaningful assessment. In: Advances in Neural Information Processing Systems (NeurIPS). vol. 36 (2023) 25. Machnio, J., Nielsen, M., Ghazi, M.M.: To label or not to label: Palm-a predictive model for evaluating sample efficiency in active learning models. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 4039–4048 (2025) 26. Nassar, A., Omenetti, M., Lysak, M., Livathinos, N., Auer, C., Morin, L., de Lima, R.T., Kim, Y., Gurbuz, A.S., Dolfi, M., Staar, P.W.J.: SmolDocling: An ultra-compact vision-language model for end-to-end multi-modal document conversion. In: IEEE/CVF International Conference on Computer Vision (ICCV) (2025) 27. Peng, Y., Li, H., Wu, P., Zhang, Y., Sun, X., Wu, F.: D-FINE: Redefine regression task in DETRs as fine-grained distribution refinement. In: International Conference on Learning Representations (ICLR) (2025) 28. Ren, P., Xiao, Y., Chang, X., Huang, P.Y.B., Li, Z., Chen, X., Wang, X.: A survey of deep active learning. ACM Computing Surveys (CSUR) 54 , 1 – 40 (2020), https://api.semanticscholar.org/CorpusID:221397441 29. Roth, D., Small, K.: Active learning for pipeline models. In: AAAI. pp. 683–688 (2008) 30. Schreiber, S., Agne, S., Wolf, I., Dengel, A.R., Ahmed, S.: Deepdesrt: Deep learning for detection and structure recognition of tables in document images. 2017 14th IAPR International Conference on Document Analysis and Recognition (ICDAR) 
+
+01 , 1162–1167 (2017), https://api.semanticscholar.org/CorpusID:10191334 Active Learning for Cascaded Object Detection 17 31. Schulze, M.: A new monotonic, clone-independent, reversal symmetric, and Condorcet-consistent single-winner election method. Social Choice and Welfare 
+
+36 (2), 267–303 (2011) 32. Sener, O., Savarese, S.: Active learning for convolutional neural networks: A core-set approach. In: International Conference on Learning Representations (ICLR) (2018) 33. Settles, B.: Active learning literature survey (2009), https://api.semanticscholar. org/CorpusID:324600 34. Shehzadi, T., Sarode, S., Stricker, D., Afzal, M.Z.: Towards end-to-end semi-supervised table detection with semantic aligned matching transformer. In: Docu-ment Analysis and Recognition (ICDAR) (2024) 35. Shen, Z., Li, W., Zhao, J., Yu, Y., Dell, M.: OLALA: Object-level active learning for efficient document layout annotation. In: Proceedings of the Fifth Workshop on Natural Language Processing and Computational Social Science (NLP+CSS). pp. 170–182. Abu Dhabi, UAE (2022), https://aclanthology.org/2022.nlpcss-1.19/ 36. Smock, B., Pesala, R., Abraham, R.: PubTables-1M: Towards comprehensive table extraction from unstructured documents. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 4634–4642 (2022) 37. Smock, B., Pesala, R., Abraham, R.: GriTS: Grid table similarity metric for table structure recognition. In: Document Analysis and Recognition (ICDAR). p. 535–549 (2023) 38. Subramanian, V., Poudel, S., Chaudhuri, P., Ramakrishnan, G.: TACTFUL: A framework for targeted active learning for document analysis. In: Document Analysis and Recognition – ICDAR 2023. vol. 13824, pp. 259–273. Springer (2023). https: //doi.org/10.1007/978-3-031-41734-4_16 39. Thomas, E., Coustaty, M., Joseph, A., Deloin, G., Carel, E., D’Andecy, V.P., Ogier, J.M.: RAPTOR: Refined approach for product table object recognition. In: Winter Conference on Applications of Computer Vision (WACV) (2025) 40. Thomas, E., Coustaty, M., Joseph, A., Deloin, G., Carel, E., D’Andecy, V.P., Ogier, J.M.: QUEST: Quality-aware semi-supervised table extraction for business documents. In: International Conference on Document Analysis and Recognition (ICDAR) (2025). https://doi.org/10.1007/978-3-032-04630-7_16 41. Wang, C.Y., Yeh, I.H., Liao, H.Y.M.: YOLOv9: Learning what you want to learn using programmable gradient information. In: European Conference on Computer Vision (ECCV) (2024) 42. Xiao, B., Simsek, M., Kantarci, B., Alkheir, A.A.: Rethinking detection based table structure recognition for visually rich document images. Expert Systems with Applications 269 , 126461 (2025). https://doi.org/https://doi.org/10.1016/j.eswa. 2025.126461 43. Yehuda, O., Dekel, A., Hacohen, G., Weinshall, D.: Active learning through a covering lens. Advances in Neural Information Processing Systems 35 , 22354–22367 (2022) 44. Zhang, Z., Liu, S., Hu, P., Ma, J., Du, J., Zhang, J., Hu, Y.: UniTabNet: Bridging vision and language models for enhanced table structure recognition. In: Findings of the Association for Computational Linguistics: EMNLP. p. 6131–6143 (2024) 45. Zheng, X., Burdick, D., Popa, L., Wang, N.X.R.: Global table extractor (gte): A framework for joint table identification and cell structure recognition using visual context. 2021 IEEE Winter Conference on Applications of Computer Vision (WACV) pp. 697–706 (2020), https://api.semanticscholar.org/CorpusID:218487305 46. Zhong, X., ShafieiBavani, E., Jimeno Yepes, A.: Image-based table recognition: Data, model, and evaluation. In: European Conference on Computer Vision (ECCV). pp. 564–580 (2020)
