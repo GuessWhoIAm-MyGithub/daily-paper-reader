@@ -1,0 +1,260 @@
+Title: Handwriting Trajectory Recovery with Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2607.03422v1
+
+Published Time: Tue, 07 Jul 2026 01:07:51 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Handwriting Trajectory Recovery with Diffusion Models 
+
+Hiroki Nagamatsu [0009 −0005 −2038 −4923] , Shoji Toyota [0000 −0003 −0613 −4205] , and Seiichi Uchida [0000 −0001 −8592 −7566] 
+
+Kyushu University, Fukuoka, Japan 
+
+hiroki.nagamatsu@human.ait.kyushu-u.ac.jp 
+
+Abstract. Recovering online pen trajectories from offline handwriting images, often referred to as handwriting trajectory recovery (stroke re-covery), is an offline-to-online conversion task with applications in stroke-level editing and forensic analysis. We propose, to the best of our knowl-edge, the first diffusion-model-based framework for this task. Our method formulates trajectory recovery as image-conditioned generation and uses a denoising diffusion model to sample pen trajectories consistent with the observed ink trace. Through extensive quantitative evaluations on CASIA-OLHWDB (1.0–1.1), we verify that the proposed approach en-ables accurate recovery even for complex multi-stroke characters, sub-stantially improving both temporal similarity (DTW/LDTW) and shape fidelity (AIoU) over representative prior methods such as PEN-Net and Cross-VAE. We further show that the model captures general stroke-order tendencies and generalizes to classes unseen during training, ex-emplified by cross-script transfer: a model trained on Chinese characters can recover reasonable stroke orders for Latin letters to some extent. 
+
+Keywords: handwriting trajectory recovery · offline-to-online conver-sion · diffusion models · conditional generation. 
+
+## 1 Introduction 
+
+Handwriting trajectory recovery (also referred to as stroke recovery ) is an offline-to-online conversion task: given a completed offline handwriting image, the goal is to reconstruct a time-ordered pen trajectory that is consistent with the ob-served ink trace. Recovering the trajectory turns a static raster image into a dynamic “digital ink” representation, enabling stroke-level operations (e.g., re-touching or deleting individual strokes) and resolution-independent rendering by resampling the continuous path before rasterization. Temporal cues are also valu-able for downstream analysis — for example, directionality and pen dynamics can improve comparisons in signature verification and related tasks [12]. Fig. 1 illustrates the modality gap between an offline character image and its underlying online trajectory. While rasterizing a trajectory into an image (often called inking ) is straightforward, the inverse mapping is fundamentally ill-posed: a static image records only the final ink trace, not the writing process that   
+
+> arXiv:2607.03422v1 [cs.CV] 3 Jul 2026 2H. Nagamatsu et al.
+> Fig. 1. Example of an offline character image and its corresponding online handwriting trajectory.
+
+produced it. For simple glyphs (e.g., letters or digits with few strokes and limited pen-up events), heuristic rules can sometimes recover a plausible order [4, 6], but ambiguity grows rapidly for complex multi-stroke characters where crossings, tight loops, and stroke concatenations are frequent. The goal of this paper is to experimentally demonstrate that the handwrit-ing trajectory recovery task for complex multi-stroke characters can be solved with high accuracy using diffusion models [16, 5]. Although diffusion models are widely used for image synthesis, the same denoising framework can also generate 1D time-series data by using a 1D denoiser. For instance, a model trained on many samples of the 14-stroke character “ ” can stochastically generate diverse trajectories of “ ” by changing the initial noise. In trajectory recovery, however, the objective is not to generate diverse tra-jectories arbitrarily, but to generate the particular trajectory that corresponds to the observed ink trace in a handwriting image. To this end, we propose an image-conditioned diffusion model for time-series generation, where the input handwriting image guides the denoising process. Moreover, to obtain more ac-curate estimates, we introduce multi-scale conditioning, which gradually injects image evidence from coarse global shape down to fine local details. With this model, even very complex multi-stroke characters can be recovered with high precision. Several learning-based models for handwriting trajectory recovery have been proposed, including PEN-Net [2] and Cross-VAE [17]. However, they often strug-gle with the complexity of multi-stroke characters, and their recovered trajecto-ries may fail to preserve the original glyph shape. In particular, the predicted pen path can drift away from the observed ink trace, producing pen trajectories that pass through regions where no stroke exists in the input image. In contrast, by leveraging diffusion models for the trajectory recovery task — to the best of our knowledge, for the first time — we aim to address these limitations. Experiments demonstrate that the proposed model achieves accurate recov-ery even for complex characters such as those in Fig. 1. Interestingly, we also ob-serve that recovery accuracy improves as the number of training character classes Handwriting Trajectory Recovery with Diffusion Models 3
+
+increases (e.g., from 20 classes to 3,000 classes). This suggests that handwriting trajectories have general trends across character classes. One plausible source of this regularity is the reuse of radicals across characters. Although the characters “ ,” “ ,” and “ ” are different classes, they share the radical “ ,” and their handwriting trajectories are largely consistent; therefore, more classes and more training data can directly improve recovery accuracy. Beyond such radical-level trends, our experiments indicate that the model also learns more general writ-ing tendencies (e.g., left-to-right and top-to-bottom tendencies). Concretely, a model trained on Chinese characters can recover stroke orders for Latin letters to some extent, demonstrating cross-script generalization. Our main contributions are as follows. 
+
+– We address handwriting trajectory recovery with diffusion models for the first time. Specifically, we propose an image-conditioned diffusion model for time-series generation, and show that multi-resolution conditioning further improves recovery accuracy. 
+
+– Experiments on CASIA-OLHWDB show clear improvements over PEN-Net and Cross-VAE in terms of both temporal alignment (DTW/LDTW) and shape fidelity (AIoU). 
+
+– We experimentally demonstrate that the learned model generalizes to not only unseen Chinese character classes but also unseen Latin alphabet char-acters. We also show that it produces plausible recovery results even for “incomplete” characters where parts of strokes are intentionally removed. 
+
+## 2 Related Work 
+
+As reviewed in [12], classical handwriting trajectory recovery methods rely on heuristic rules to resolve ambiguous structures such as stroke intersections, over-lapping strokes (double-strokes), and loops. In general, these methods (i) detect keypoints such as intersections and endpoints, (ii) decompose the ink trace into sub-strokes based on these keypoints, and (iii) reconnect the sub-strokes accord-ing to hand-crafted rules. For instance, a “+”-shaped intersection may be split into four sub-strokes and then reconnected into a horizontal segment “–” and a vertical segment “|,” rather than two corner-like fragments (e.g., “ ⌞” and “ ⌝”). Such rule-based methods have mainly been applied to single-stroke characters (or single-stroke cursive words) [3, 6, 13, 4], and have rarely been used for more complex multi-stroke characters, because multi-stroke characters introduce many more intersections and ambiguities, making rule-based reconnection impractical. Deep neural networks have increasingly been used for handwriting trajectory recovery, with different design choices on how strongly the output is constrained by intermediate structures. One line of work explicitly decomposes the input into sub-strokes and then predicts their temporal evolution or ordering, like the above classical methods. Pen Tip Motion Prediction (PTMP) [18] tackles drawing-order recovery through pen-tip motion prediction: a CNN takes partially drawn handwriting images as input and outputs a distribution over the next pen position, which is then used in an iterative framework to generate the pen 4 H. Nagamatsu et al. 
+
+movement sequence. Setsort [10] further constrains the solution space at the sub-stroke level by first inferring a skeleton with a CNN and cutting it into sub-strokes; a Sub-stroke Encoding Transformer (SET) embeds each sub-stroke point sequence, and a Sub-strokes Ordering Transformer (SORT) predicts the discrete ordering together with the pen state. Such structure-constrained pipelines can produce geometrically precise reconstructions when the extracted skeleton/sub-strokes are reliable, but they inherit the limitations of classical methods on densely written multi-stroke characters. Another line of work learns a more direct mapping from an offline image to an online coordinate sequence using encoder–decoder architectures, reduc-ing reliance on explicit stroke extraction. DED-Net [1] proposes an end-to-end deep encoder–decoder network that encodes the offline image into features and decodes them into a trajectory point sequence. Kanji-Net [11] adapts encoder– decoder recovery to multi-stroke characters by incorporating an attention mech-anism to focus on local context during sequential generation and by using a mix-ture density output (GMM) to improve robustness to handwriting distortions and writer variation. PEN-Net [2] specifically targets complex glyphs and long trajectories with a parsing-and-tracing encoder–decoder: it introduces a double-stream parsing encoder to capture complementary horizontal/vertical context, and a global tracing decoder that conditions each decoding step on glyph pars-ing features to mitigate trajectory-point drifting; it also proposes AIoU and LDTW to jointly evaluate glyph fidelity and temporal alignment for complex characters. From a different perspective, Cross-VAE [17] performs bidirectional modality conversion by coupling an image VAE and a trajectory VAE through a shared latent space with an explicit space-sharing loss, enabling stroke recovery by encoding the offline image and decoding it into an online trajectory. De-spite these advances, recovering accurate stroke order while maintaining strict geometric consistency with the input ink trace remains challenging for highly complex multi-stroke characters, and several methods still exhibit noticeable drift or inconsistencies in difficult regions. In contrast to the above pipelines, we introduce diffusion models to hand-writing trajectory recovery for the first time, to the best of our knowledge. Our approach performs image-conditioned denoising directly on a 1D trajectory se-quence: starting from Gaussian noise, a 1D denoiser iteratively updates the entire 
+
+trajectory while being guided by the input handwriting image through multi-resolution conditioning [16, 5]. This design mitigates two recurring limitations of prior methods. First, it avoids fragile intermediate representations such as explicit skeletonization and sub-stroke segmentation by letting the model refer to image evidence throughout the iterative refinement process. Second, unlike single-pass or strictly step-by-step decoding, iterative denoising enables global corrections to the trajectory over multiple refinement steps, which helps sup-press geometric drift from the observed ink trace, especially for long and com-plex multi-stroke characters. As demonstrated in our experiments, the resulting model consistently surpasses existing approaches in both temporal alignment and glyph fidelity on complex characters. Handwriting Trajectory Recovery with Diffusion Models 5-1 -1 0.82 -0.7 -1 -1 0.76 -0.62 -1 10.72 -0.6 -1 -1 0.65 -0.82 -1 -1 -0.12 0.67  
+
+> 11-0.12 0.89
+> -1.0 1.0 1.0 -1.0 Temporal Progression
+
+Fig. 2. Visualization of an online trajectory sequence. The color changes from dark to bright along the temporal order. 
+
+## 3 Handwriting Trajectory Recovery with Diffusion Models 
+
+3.1 Problem Formulation 
+
+We aim to sample plausible online handwriting trajectories conditioned on an offline image. Let I ∈ RH×W be an offline handwriting image with height H ∈
+
+N>0 and width W ∈ N>0, and let X be an online trajectory sequence: 
+
+X = {(xi, y i, p i, e i)}Li=1 . (1) Fig. 2 illustrates X. Here (xi, y i) denotes the pen coordinate at sequence index 
+
+i. pi ∈ {− 1, 1} denotes a binary variable indicating whether the pen is up ( 1) or down ( −1). ei ∈ {− 1, 1} is an end-of-sequence (EOS) flag. Once ei = 1 at the terminal point, we pad the remaining positions up to the maximum length L by repeating the terminal coordinate. Stroke recovery from an offline image is an ill-posed inverse problem, because multiple plausible writing trajectories can produce visually similar (or even iden-tical) rasterized character images. Therefore, instead of learning a deterministic image-to-sequence mapping, we formulate the task as learning a conditional dis-tribution over trajectories, p(X | I).For stable learning, we normalize the coordinates (xi, y i) to [−1, 1] . Although 
+
+pi and ei are inherently discrete variables, we treat them as continuous values in the diffusion model and binarize them using a threshold of 0 at the final output stage. Let D = {(I(n), X(n))}Nn=1 be a set of paired training samples. Our goal is to learn the conditional distribution pθ (X | I) and recover trajectories by sampling from it. 
+
+3.2 Conditional Diffusion Model for Trajectories 
+
+A diffusion model [16, 5] is a powerful approach for generating samples from a target distribution. While diffusion models are typically used to generate images or videos, they can also be applied to the generation of handwriting trajectories. 6 H. Nagamatsu et al. 
+
+In the diffusion model framework, we define a forward diffusion process X0 →
+
+X1 → · · · → XT over handwriting trajectories by gradually adding Gaussian noise to a clean handwriting trajectory X0 = X over T diffusion steps. Here, t ∈{1, . . . , T } denotes the diffusion step, and Xt represents the noisy handwriting trajectory at step t. Given a variance schedule {βt}Tt=1 and αt = 1 − βt, the noised handwriting trajectory at step t is expressed as 
+
+Xt = √¯αt X0 + √1 − ¯αt ϵ, ϵ ∼ N (0, I), (2) where ¯αt = Qts=1 αs.By considering the reverse process XT → XT −1 → · · · → X0 corresponding to (2), we can generate a handwriting trajectory from the target distribution of X0. To model the reverse process, it is sufficient to estimate the noise term 
+
+ϵ(Xt, t ), which can be learned using a denoising network ϵθ (Xt, t ) [5]. While the diffusion models described above enable the sampling of random handwriting trajectories, our objective is to generate a trajectory that is aligned with a given offline image I, rather than an arbitrary random sample. To this end, we incorporate I as a conditioning variable into the denoising network. Formally, we define the conditioned denoising network ϵθ as 
+
+ˆϵ = ϵθ (Xt, t, f ϕ(I)) , (3) where fϕ denotes an image encoder applied to I. Using this conditioned denoising network, a handwriting trajectory is generated by iteratively denoising a sample drawn from a Gaussian distribution, with the generation process conditioned on 
+
+I.To train the denoising network, we adopt the standard noise-prediction ob-jective: 
+
+L(θ, ϕ ) = Et,I, X0,ϵ
+
+h
+
+∥ϵ − ϵθ (Xt, t, f ϕ(I)) ∥22
+
+i
+
+. (4) The expectation Et,I, X0,ϵ can be empirically estimated using the training dataset 
+
+D = {(I(n), X(n))}Nn=1 consisting of offline images and their corresponding tra-jectories, where the time index t is sampled uniformly from {1, . . . , T } for each training example. 
+
+3.3 Multi-scale Image Conditioning 
+
+Accurate stroke recovery requires preserving the spatial structure of the input image, because the offline character image provides strong geometric constraints on plausible pen trajectories. Therefore, instead of compressing the image into a single global latent vector, we condition the denoiser on multi-resolution image feature maps that keep spatially localized features. This is particularly important in ambiguous regions (e.g., crossings, closely adjacent strokes, and loops), where local geometric evidence must be aligned with trajectory tokens. An overview of the full architecture of the proposed model is shown in Fig. 3. Let the image encoder fϕ produce M feature maps at different resolutions: 
+
+Z = fϕ(I) = {Z(m)}Mm=1 , Z(m) ∈ RHm×Wm×Cm , (5) Handwriting Trajectory Recovery with Diffusion Models 7QKV 
+
+> QKV
+> QKV
+> QKV
+> QKV
+> QKV 1D U-Net
+> Image Positional Encoding
+
+Fig. 3. Overview of the proposed image conditioned diffusion model for handwriting trajectory recovery. 
+
+where m indexes the feature scale, and Hm, Wm, and Cm denote the height, width, and channel dimensions of the m-th feature map, respectively. For each scale m, we project the feature map to the denoiser hidden dimension d, add a 2D positional encoding, and flatten it into spatial tokens: 
+
+˜Z(m) = Flatten 
+
+
+
+g(m)(Z(m)) + E(m)2D 
+
+
+
+∈ RNm×d, Nm = HmWm, (6) where g(m)(·) denotes a scale-specific projection layer used to align the channel dimension to d, and E(m)2D denotes the 2D positional encoding for the m-th feature map (with the same spatial resolution as Z(m)). Flatten( ·) reshapes the 2D feature grid into a sequence of Nm spatial tokens. Our denoiser is a 1D U-Net [15] operating along the trajectory sequence axis, with 1D convolutional blocks for local continuity and self-attention layers for long-range dependencies. To inject image evidence, we insert cross-attention blocks at selected U-Net stages. At each U-Net resolution, we inject the corre-sponding image-feature scale via cross-attention. Let ˆH(m) ∈ RLm×d denote the trajectory features at the U-Net stage paired with image scale m, where Lm is the trajectory token length at that stage. We then apply cross-attention with trajectory tokens as queries and image tokens as keys and values: 
+
+H′(m) = ˆH(m) + MHCA 
+
+ ˆH(m)W (m) 
+
+> Q
+
+, ˜Z(m)W (m) 
+
+> K
+
+, ˜Z(m)W (m)
+
+> V
+
+
+
+, (7) where MHCA denotes standard multi-head cross-attention, and W (m) 
+
+> Q
+
+, W (m) 
+
+> K
+
+,and W (m) 
+
+> V
+
+are learnable linear projection matrices for queries, keys, and values, respectively. 8 H. Nagamatsu et al. 
+
+This design preserves explicit spatial correspondence between image regions and trajectory tokens, unlike conditioning with a single global vector. Moreover, multi-scale feature injection provides complementary cues: coarse-scale features capture the global character layout, while fine-scale features preserve local stroke geometry. The effect of this design is examined in the ablation study in Sec-tion 4.5. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Chinese Handwriting Dataset We evaluate the performance of our method on large-scale Chinese online handwriting datasets, CASIA-OLHWDB 1.0 and 1.1 [9], which contain samples from 420 and 300 writers, respectively, totaling 720 writers. In this study, we focus on the 3,755 character classes in the GB2312-80 Level-1 set. We create writer-disjoint splits with 576 writers for training and 144 writers for testing. All reported results are computed on samples written by the 144 test writers. To evaluate generalization to unseen character classes, we split the 3,755 classes into 3,000 seen classes and 755 unseen classes. We train the model using only samples from the seen classes. We then report performance on the 3,000 seen classes and the 755 unseen classes. For fair comparison with prior work, we follow the same offline-image render-ing process as PEN-Net [2]. Offline images are rendered from online trajectories. For each trajectory, we rasterize the ink trace into a 64 × 64 image with a black background and white strokes. 
+
+Implementation Details We use T =1000 diffusion steps with a cosine noise schedule [14]. During testing, we use the DDPM sampler [5] with 1,000 steps. We optimize the model using Adam [7] with a batch size of 512, a learning rate of 8 × 10 −5, and 500,000 training steps. The experiments are conducted on a single A100 GPU. 
+
+Evaluation Metrics We evaluate recovery quality from two complementary viewpoints: temporal correctness and spatial glyph fidelity. For temporal cor-rectness, we use Dynamic Time Warping (DTW) and Length-independent DTW (LDTW) [2] as trajectory distances. DTW aligns two sequences by an optimal warping path and accumulates point-wise Euclidean distances; lower values indi-cate better temporal similarity. Because DTW increases with sequence length, we also use LDTW. LDTW normalizes the accumulated DTW cost by the warping-path length, enabling fair comparison across characters with different stroke counts. For DTW/LDTW computation, we rescale coordinates to the image co-ordinate space [0 , 64] , so LDTW can be interpreted as an average pixel-level deviation from the ground-truth trajectory. In our evaluation, the ground-truth stroke order and direction are defined by the temporal sequence recorded in the online CASIA data, rather than by a canonical dictionary order. Handwriting Trajectory Recovery with Diffusion Models 9             
+
+> Table 1. Trajectory recovery performance on seen classes (trained on 3,000 classes). Lower is better for DTW/LDTW; higher is better for AIoU. Method DTW ↓LDTW ↓AIoU ↑
+> Cross-VAE [17] 713.8 7.029 0.346 PEN-Net [2] 212.3 2.728 0.607 Ours 111.1 1.574 0.745
+
+For spatial glyph fidelity, we use Adaptive IoU (AIoU) [2], which measures the overlap between (i) the ink region obtained by rasterizing the recovered trajec-tory and (ii) the ground-truth ink region. Unlike standard IoU, AIoU adaptively adjusts the rasterization stroke width, making the metric less sensitive to minor stroke-thickness differences and better reflecting pure glyph-shape fidelity [2]. 
+
+Baselines We compare our method with two representative deep learning base-lines for handwriting trajectory recovery. We use PEN-Net [2] as a primary baseline because it is one of the most directly comparable methods for complex character trajectory recovery under similar datasets and evaluation metrics. We additionally include Cross-VAE [17] as a complementary baseline; this is because Cross-VAE uses a non-autoregressive decoder, similarly to our approach. Since their official implementations are not publicly available, we re-implement both baselines following the original papers and tune hyperparameters to reproduce the reported behavior. 
+
+4.2 Main Results on Seen Classes 
+
+We first report the main benchmark results on the seen classes test set. Ta-ble 1 shows that our method achieves the best performance across all metrics. In handwriting trajectory recovery, the offline image specifies the target ink lay-out; altering the glyph shape is invalid because it no longer corresponds to the given input and effectively becomes trajectory synthesis for a different shape. Therefore, evaluation should prioritize fidelity to the given rasterized shape while assessing ordering consistency. DTW/LDTW are affected by both tem-poral alignment and geometric deviations, so they do not isolate stroke order on their own. In particular, geometric drift can increase DTW/LDTW even when the stroke order is correct, whereas improved geometry can reduce them without fully resolving ordering errors. Qualitative comparisons further show that our method preserves fine-grained stroke geometry while maintaining a plausible stroke order. Fig. 4 compares recovered trajectories from our method and the baselines on representative test samples. Our method reproduces fine-grained details such as terminal hooks and curvature changes at turning points, and the color-coded temporal progression aligns well with the ground truth, suggesting accurate stroke-order recovery. In contrast, PEN-Net occasionally produces spurious strokes or local mistakes 10 H. Nagamatsu et al. 5          
+
+> Ground Truth PEN-Net Cross-VAE Ours
+> Ground Truth PEN-Net Ours
+> (a) (b) Ex.1 Ex.2 Ex.3 Ex.4 Ex.5 Ex.6 Ex.1 Ex.2 Ex.3 Ex.4 Ex.5 Ex.6
+> Input Image
+
+Fig. 4. Qualitative comparison between our method and baselines in the 3,000-character-class setting. (a) Overall trajectory comparisons for representative examples. (b) Zoomed-in views of the green rectangular regions in (a), highlighting local differ-ences in geometric fidelity. 
+
+that reduce glyph-shape consistency, and Cross-VAE often fails to reconstruct stroke-level structure for complex characters. 
+
+4.3 Error Analysis: Ours vs. PEN-Net 
+
+A major difference between our diffusion-model-based method and conventional approaches is that the latter are typically autoregressive: they recursively pre-dict the next pen stroke based solely on the previous ones. In contrast, diffusion-model-based approaches generate pen strokes while incorporating information from both past and future time steps. As a result, in autoregressive methods, once an error occurs in the trajectory, it accumulates progressively over future time steps. By contrast, diffusion models are expected to alleviate such error accumulation, leading to superior performance compared to conventional meth-ods. Handwriting Trajectory Recovery with Diffusion Models 11 Ground Truth Generated Generated Ground Truth Overlay Ours Best 1st 2nd 3rd 4th 5th Generated Ground Truth Overlay PEN-Net Best 1st 2nd 3rd 4th 5th Worst 1st 2nd 3rd 4th 5th Worst 1st 2nd 3rd 4th 5th 
+
+> Input Image Input Image
+
+Fig. 5. Five best and five worst qualitative examples ranked by LDTW for our method and PEN-Net (trained on 3,000 classes). 
+
+To investigate this conjecture, we visualize the five best and five worst test cases ranked by LDTW for both our method and the autoregressive baseline, PEN-Net, as shown in Fig. 5. Both methods perform well on relatively simple characters in the five best examples. However, in the five worst cases, PEN-Net frequently exhibits unnaturally elongated strokes and large local deviations from the ink trace. Because PEN-Net predicts coordinates sequentially conditioned on previous predictions, local mistakes can propagate and amplify over time, eventually causing severe trajectory breakdown. 
+
+4.4 Effect of the Number of Training Classes 
+
+We examine how the number of training character classes affects trajectory re-covery performance. We change the number of classes used for training while keeping the model and training settings the same. Using more classes also in-creases the number of training samples. Figure 6 shows test-set LDTW as we increase the number of training classes, together with the corresponding number of training samples. While the number of training samples increases almost lin-early, LDTW does not improve at a constant rate. It drops quickly up to around 500 classes and then decreases more slowly, suggesting smaller gains after the training set becomes sufficiently diverse. 12 H. Nagamatsu et al. 
+
+Fig. 6. Test-set LDTW as the number of training character classes increases. The left y-axis shows LDTW, and the right y-axis shows the number of training samples (in 
+
+10 6). Top Best 1st 2nd 3rd 4th 5th Worst 1st 2nd 3rd 4th 5th Generated Ground Truth Overlay  
+
+> Ground Truth Generated
+> Input Image
+
+Fig. 7. Qualitative results when training on 20 character classes. We show the five best and five worst ranked by LDTW. 
+
+One reason may be that Chinese characters are built from shared parts: many characters reuse the same radicals and local stroke patterns. With small training classes, these common parts appear over and over, so the model can learn them quickly. As we add more classes, many new characters are largely new combinations of parts the model has already seen, so each additional class provides less new information and the improvement slows down. This trend is also visible in Fig. 7, which shows qualitative results for the smallest training setting (20 classes). The model handles simple characters well, but errors become more frequent for complex ones. In the five worst examples, the recovered trajectories often deviate from the input image, leading to noticeable shape distortions and incorrect stroke order. Overall, these examples suggest that limited class diversity mainly hurts shape fidelity and stroke-order estimation, both of which improve as more classes are included in training. Handwriting Trajectory Recovery with Diffusion Models 13                 
+
+> Table 2. Ablation of image-conditioning injection types. Feature map 1/2 and 1/8 inject spatial feature maps extracted at resolutions of 1/2 and 1/8 of the input image, respectively. Global vector uses the final image representation after a global pooling layer, which discards spatial layout information. Multi-scale feature maps inject feature maps from multiple resolutions. Injection type DTW ↓LDTW ↓AIoU ↑
+> Global vector 191.3 2.629 0.605 Feature map 1/2 233.8 3.249 0.524 Feature map 1/8 119.7 1.625 0.736 Multi-scale feature maps 111.1 1.574 0.745
+
+4.5 Image-Conditioning Injection Strategies 
+
+Multi-scale spatial conditioning described in Section 3.3 is critical for preserving glyph geometry while recovering plausible stroke order. We ablate the image-conditioning design by varying only the form of image features provided to the denoiser: (i) a global pooled image embedding with no spatial layout (Global vector in Table 2), (ii) a single spatial feature map at a fixed encoder scale (Feature map 1/2 or 1/8), and (iii) the proposed multi-resolution feature maps (Multi-scale feature maps). Here, “1/2” and “1/8” denote the spatial resolution of the feature map relative to the input image (i.e., H 
+
+> 2
+
+× W 
+
+> 2
+
+and H 
+
+> 8
+
+× W 
+
+> 8
+
+), corresponding to different downsampling factors in the image encoder. Table 2 compares image-conditioning injection strategies on the seen classes test set, while keeping the remaining training and sampling settings identical to those used in Table 1. Global vector conditioning performs poorly, indicating that compressing the image into a single global representation discards geomet-ric evidence necessary for accurate trajectory recovery. Replacing the global vec-tor with a spatial feature map substantially improves performance, confirming the importance of preserving 2D image structure in the conditioning pathway. Multi-scale feature-map conditioning achieves the best overall trade-off and the highest glyph fidelity, supporting our design choice of injecting image evidence at multiple resolutions. Injecting overly fine features alone can hurt because local evidence without global layout increases ambiguity at crossings and junctions. This trend is re-flected in the degraded performance of the single 1/2-resolution feature map con-dition, which is worse than both the 1/8-resolution and multi-scale variants. A plausible explanation is that conditioning only on fine-resolution features makes the denoiser more sensitive to local appearance variations while providing insuf-ficient global structural context for resolving long-range stroke dependencies and stroke-order ambiguity. In contrast, multi-scale conditioning balances coarse and fine cues: coarser features provide robust global layout constraints, whereas finer features refine local geometry, leading to better shape preservation and more stable trajectory recovery. 14 H. Nagamatsu et al.               
+
+> Table 3. Trajectory recovery performance on unseen character classes (755 classes excluded from training). Lower is better for DTW/LDTW; higher is better for AIoU. Method DTW ↓LDTW ↓AIoU ↑
+> Cross-VAE [17] 742.6 7.463 0.337 PEN-Net [2] 272.0 3.178 0.594 Ours 117.7 1.653 0.743 Generated Ground Truth
+> Fig. 8. Qualitative results under cross-script domain shift: English characters are fed to a model trained on Chinese characters. Red boxes highlight examples where the generated trajectories differ from the recorded reference temporal order or direction.
+
+4.6 Generalization to Unseen Character Classes 
+
+Our method generalizes to unseen character classes and maintains strong re-covery performance on held-out classes. We evaluate on 755 character classes that are never observed during training. Table 3 reports the quantitative results, showing that our method still outperforms both baselines by a wide margin on the unseen-class test set. The performance drop from the seen classes setting in Table 1 is relatively small, suggesting that the model learns transferable geometric and temporal primitives rather than memorizing class-specific trajectories. This result is con-sistent with the compositional structure of Chinese characters, where many classes share reusable substructures and stroke patterns. We evaluate cross-script generalization by applying a model trained exclu-sively on Chinese characters to Latin letters in CASIA-OLHWDB. As shown in Fig. 8, we observe stroke-order estimation errors for a few characters (highlighted in red), which are attributable to differences in writing conventions across scripts. Because counter-clockwise stroke directions are uncommon in Chinese handwrit-ing, the recovered trajectories for “O” and “Q” are biased toward clockwise di-rections. Nevertheless, the predicted stroke order is correct for most letters, and the recovered trajectories remain consistent with the input glyph shapes without noticeable geometric deviation. Handwriting Trajectory Recovery with Diffusion Models 15                                          
+
+> Table 4. Robustness to stroke width variation (DTW/LDTW lower is better; AIoU higher is better). The top row shows example images of “ ” rendered at each stroke width. Width=1 Width=2 Width=3
+> Method DTW ↓LDTW ↓AIoU ↑DTW ↓LDTW ↓AIoU ↑DTW ↓LDTW ↓AIoU ↑
+> Cross-VAE [17] 713.8 7.029 0.346 742.6 7.463 0.337 802.2 7.862 0.323 PEN-Net [2] 212.3 2.728 0.607 265.0 3.149 0.593 300.8 3.403 0.586 Ours 111.1 1.574 0.745 131.1 1.805 0.741 156.9 2.121 0.729 Original Images Input Images Generated
+> Fig. 9. Recovery results of our method for character images with missing strokes (ran-dom rectangular masks). Red boxes indicate the rectangular masked regions.
+
+4.7 Robustness Analyses 
+
+We study robustness under two practical perturbations: stroke-width variation and missing strokes. These analyses test whether the recovered trajectory re-mains geometrically consistent with the observable ink under degraded or out-of-domain inputs. 
+
+Stroke-width variation. We evaluate robustness to stroke-width variations be-cause they affect local structures around junctions and crossings. Following the protocol of [2], we train with stroke widths in {1, 2, 3} pixels and evaluate sep-arately on each condition. Table 4 shows that all methods degrade as stroke width increases, but our method remains the most accurate across all widths and exhibits only a mild drop in AIoU, indicating stable glyph preservation. 
+
+Missing strokes. To test robustness to local missing information, we train on clean images and apply random rectangular masks to the input image at in-ference time. Fig. 9 shows that the model generally avoids generating spurious strokes and keeps the recovered trajectory aligned with the visible ink. In masked regions, the model tends to be conservative: rather than aggressively filling in occluded parts, it often preserves the observed structure, and the trajectory may remain fragmented when large or critical ink regions are removed. 16 H. Nagamatsu et al. 
+
+## 5 Conclusion and Future Work 
+
+In this paper, we address the problem of handwriting trajectory recovery using diffusion models. By formulating trajectory recovery as an image-conditioned time-series generation task, we leverage diffusion models to reconstruct tempo-rally ordered pen trajectories that are consistent with a given offline handwriting image. We further introduce a multi-scale conditioning technique to effectively encode image information at different resolutions. This design significantly re-duces trajectory drift and improves the performance of handwriting trajectory recovery. Experimental results on CASIA-OLHWDB demonstrate clear improve-ments over the baselines PEN-Net and Cross-VAE in terms of both temporal alignment (DTW/LDTW) and shape fidelity (AIoU), particularly for complex multi-stroke characters. Furthermore, we confirm that increasing the number of training character classes leads to a significant improvement in recovery per-formance. These findings suggest that handwriting trajectories exhibit shared structural and dynamic regularities across character classes, and that generative models can learn underlying writing principles rather than merely memorizing character-specific stroke orders. Several directions remain for future work. First, sampling speed could be improved by leveraging flow matching [8], fewer-step samplers, or network op-timization. Second, although our experiments provide preliminary evidence of cross-script transfer, extending the method to a wider range of writing systems remains an important direction. Finally, our current rendering protocol assumes uniform stroke widths, whereas real offline handwriting images may contain local stroke-width variations caused by pen pressure, writing instruments, or scanning conditions. Adapting the model to such realistic image conditions is therefore another important future direction.  
+
+> Acknowledgments. This work was supported by JSPS KAKENHI Grant Numbers JP25H01149 and JP24K20750, JST CRONOS-JPMJCS24K4, and ACT-X-JPMJAX25C.
+
+## References   
+
+> 1. Bhunia, A.K., Bhowmick, A., Bhunia, A.K., Konwer, A., Banerjee, P., Roy, P.P., Pal, U.: Handwriting trajectory recovery using end-to-end deep encoder-decoder network. In: Proceedings of the 24th International Conference on Pattern Recog-nition (ICPR). pp. 3639–3644 (2018) 2. Chen, Z., Yang, D., Liang, J., Liu, X., Wang, Y., Peng, Z., Huang, S.: Complex handwriting trajectory recovery: Evaluation metrics and algorithm. In: Proceedings of the Asian Conference on Computer Vision (ACCV). p. 58–74 (2022) 3. Díaz, M., Crispo, G., Parziale, A., Marcelli, A., Ferrer, M.A.: Writing order recov-ery in complex and long static handwriting. International Journal of Interactive Multimedia and Artificial Intelligence 7(4), 171–184 (2022) 4. Doermann, D., Rosenfeld, A.: Recovery of temporal information from static images of handwriting. International Journal of Computer Vision 15 , 143–164 (1995)
+
+Handwriting Trajectory Recovery with Diffusion Models 17 5. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. In: Advances in Neural Information Processing Systems (NeurIPS). vol. 33, pp. 6840–6851 (2020) 6. Kato, Y., Yasuhara, M.: Recovery of drawing order from single-stroke handwriting images. IEEE Transactions on Pattern Analysis and Machine Intelligence 22 (9), 938–949 (2000) 7. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 (2014) 8. Lipman, Y., Chen, R.T.Q., Ben-Hamu, H., Nickel, M., Le, M.: Flow matching for generative modeling. In: The Eleventh International Conference on Learning Representations (ICLR) (2023) 9. Liu, C., Yin, F., Wang, D., Wang, Q.: CASIA online and offline chinese handwriting databases. In: Proceedings of the International Conference on Document Analysis and Recognition (ICDAR). pp. 37–41 (2011) 10. Moussa, E.M., Lelore, T., Mouchère, H.: SET, SORT! a novel sub-stroke level transformer for offline handwriting to online conversion. In: Proceedings of the International Conference on Document Analysis and Recognition (ICDAR). pp. 81–97 (2023) 11. Nguyen, H.T., Nakamura, T., Nguyen, C.T., Nakagawa, M.: Online trajectory re-covery from offline handwritten japanese kanji characters of multiple strokes. In: Proceedings of the 25th International Conference on Pattern Recognition (ICPR). pp. 8320–8327 (2021) 12. Nguyen, V., Blumenstein, M.: Techniques for static handwriting trajectory re-covery: A survey. In: Proceedings of the 9th IAPR International Workshop on Document Analysis Systems (DAS). pp. 463–470 (2010) 13. Qiao, Y., Yasuhara, M.: Recover writing trajectory from multiple stroked image using bidirectional dynamic search. In: Proceedings of the 18th International Con-ference on Pattern Recognition (ICPR). vol. 2, pp. 970–973 (2006) 14. Ramesh, A., Pavlov, M., Goh, G., Gray, S., Voss, C., Radford, A., Chen, M., Sutskever, I.: Zero-shot text-to-image generation. In: Proceedings of the Interna-tional Conference on Machine Learning (ICML). pp. 8821–8831 (2021) 15. Ronneberger, O., Fischer, P., Brox, T.: U-Net: Convolutional networks for biomed-ical image segmentation. In: Proceedings of the International Conference on Medi-cal Image Computing and Computer-Assisted Intervention (MICCAI). pp. 234–241 (2015) 16. Sohl-Dickstein, J., Weiss, E.A., Maheswaranathan, N., Ganguli, S.: Deep unsu-pervised learning using nonequilibrium thermodynamics. In: Proceedings of the International Conference on Machine Learning (ICML). pp. 2256–2265 (2015) 17. Sumi, T., Iwana, B.K., Hayashi, H., Uchida, S.: Modality conversion of handwritten patterns by cross variational autoencoders. In: Proceedings of the International Conference on Document Analysis and Recognition (ICDAR). pp. 407–412 (2019) 18. Zhao, B., Yang, M., Tao, J.: Pen tip motion prediction for handwriting drawing order recovery using deep neural network. In: Proceedings of the 24th International Conference on Pattern Recognition (ICPR). pp. 704–709 (2018)

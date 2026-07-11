@@ -1,0 +1,743 @@
+Title: Partial-Reference IQA Based on Hermite-Gauss Structural Prediction and Texture Deviation
+
+URL Source: https://arxiv.org/pdf/2607.08563v1
+
+Published Time: Fri, 10 Jul 2026 01:17:27 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> PROPOSAL2026 1
+
+# Partial-Reference IQA Based on Hermite-Gauss Structural Prediction and Texture Deviation 
+
+Paolo Giannitrapani, Elio D. Di Claudio, and Giovanni Jacovitti 
+
+Abstract —We propose PreSPA (Partial-Reference Structural Prediction Approach), a Partial-Reference Image Quality Assess-ment framework that decomposes perceptual quality into two complementary indices. A structure-aware index, operating in a No-Reference manner, captures structural degradation through Hermite-Gauss prediction of the distorted gradient field and the angular variance of its curvature. A texture-sensitive index estimates local noise through a scalar prior μ, obtained from energy differences between reference and distorted complex gradient maps on strong-edge regions and accumulated over weakly-structured ones, reflecting the perceptual leakage of degraded edges into surrounding textures. Crucially, μ is the only information extracted from the reference and is computed once per image pair, reducing the reference footprint to its information-theoretic minimum. The final score is produced by an affine fusion with only three interpretable parameters, making the method compact, transparent, and computationally efficient, with the viewing distance embedded into the operator scale and no dataset-specific calibration. Extensive evaluations on six standard benchmarks show that PreSPA consistently rivals or exceeds leading No-Reference approaches, while in several cases matching the accuracy of Full-Reference models. 
+
+Index Terms —Hermite-Gauss structural prediction, partial-reference IQA, perceptual texture degradation, training-free lightweight models, viewing-distance modeling. 
+
+I. I NTRODUCTION 
+
+# IMAGE Quality Assessment (IQA) plays a central role in virtually every stage of modern visual pipelines, from acquisition and compression to transmission, restoration, and display. The reference quantity in this field is the subjective re-sponse of human observers, conventionally expressed as Mean Opinion Score (MOS) or Difference of Mean Opinion Score (DMOS). Because collecting subjective ratings is impractical in real-time or large-scale settings, the goal of objective IQA is to predict MOS/DMOS algorithmically while remaining faithful to perceptual behavior [1], [2], [3]. Objective IQA methods are grouped into three classes by the reference information they exploit: Full-Reference (FR) methods compute a discrepancy with the fully available pristine image; Reduced-/Partial-Reference (RR/PR) methods access only a compact reference summary; No-Reference (NR) methods operate solely on the distorted image. FR techniques achieve the highest accuracy but require the reference to be transmitted or stored with the test content. NR techniques are appealing for deployability, yet the most competitive ones 
+
+P. Giannitrapani is with the Department of Information Engineering, Elec-tronics and Telecommunications (DIET), University of Rome “Sapienza”, Rome, Italy (e-mail: paolo.giannitrapani@ieee.org). E. D. Di Claudio and G. Jacovitti were with the same department (e-mail: elio.diclaudio@uniroma1.it; gianni.iacovitti@gmail.com). EDICS No.: SMR-HPM. 
+
+rely on deep models with tens to hundreds of millions of parameters, large training corpora, and limited interpretability [4], [5], [6], [7]. The PR setting sits in between but has re-ceived little attention: existing approaches extract pre-defined global features transmitted as side information [8], [9], leaving largely unexplored how a minimal reference signal can guide an otherwise reference-free perceptual analysis. A second limitation concerns how perceptual content is treated. Most metrics pool local measures into a single scalar without distinguishing the perceptual roles of different struc-tures. Human observers, however, weigh locations unequally: strong isolated edges dominate scene interpretation, and the perceived integrity of surrounding texture depends on the fidelity of those edges, in line with Marr’s hierarchical model of early vision [10]. The recent BELE estimator [11], [12] showed that disentangling these roles yields interpretable, lightweight models with state-of-the-art accuracy, but entirely in the FR setting, relying on dense pixel-wise comparisons over both supports. A third, often overlooked limitation concerns calibration. Objective scores are computed on the displayed image, whereas perception is governed by the retinal image, whose scale depends on the viewing distance. Most metrics either ignore this dependence or absorb it into a final calibration — typically the five-parameter VQEG logistic rectification [13] fitted per dataset — which couples the metric to the specific subjective experiment and obscures the physical origin of the score. The FR estimator BELE [11], [12] avoids this step by letting the viewing distance act directly on the scale of the feature-extraction operators. Whether the same principle can be carried over to a largely reference-free PR estimator has remained an open question. In this work, we propose the Partial-Reference Structural Prediction Approach (PreSPA), which exploits the percep-tual asymmetry between edges and textures to minimize the reference footprint. The reference is used only to compute a single scalar prior μ, quantifying the energy deviation between reference and distorted complex gradient fields over structurally reliable regions. Computed once per image pair, 
+
+μ is propagated to a fully No-Reference analysis built on two indices: a texture-fidelity index Qt, a normalized signal-to-noise ratio modulated by μ, and a structural index Qstruct ,from a Hermite-Gauss self-prediction of the distorted gradient field. In both, the viewing distance enters by construction, rescaling the Gaussian kernels so that the indices are aligned on a common perceptual scale and combined through a low-order fusion, without dataset-dependent VQEG rectification. The estimator has three interpretable parameters — the affine-arXiv:2607.08563v1 [eess.IV] 9 Jul 2026 PROPOSAL2026 2
+
+fusion coefficients — with two further constants ( a, τ ) fixed a priori from metadata, and no learned weights. The main contributions of this paper are summarized as follows:  
+
+> •
+
+Minimal-reference design : a single scalar, extracted from localized energy deviations on strong-edge regions, suf-fices to guide a perceptually grounded estimator, reducing the reference to its information-theoretic minimum while preserving FR-like interpretability.  
+
+> •
+
+Hermite-Gauss self-prediction : a No-Reference structural index Qstruct based on second-order Hermite-Gauss filters that locally regress the distorted gradient field, using the divergence and angular variance of the resulting tensor field as a reference-free descriptor of structural degradation.  
+
+> •
+
+Cross-regional perceptual coupling : the prior μ is eval-uated on strong-edge regions ( ΩC ) but accumulated on weakly structured ones ( ΩH ), capturing how distortions in dominant structures leak into surrounding textures, consistently with Marr’s raw primal sketch.  
+
+> •
+
+Training-free, calibration-free estimator : the prediction relies on three fixed fusion coefficients, with the viewing distance embedded into the operator scale rather than a post-hoc calibration, removing the dataset-dependent VQEG rectification. PreSPA is, to our knowledge, the first PR method to adopt this principle, recently introduced for the FR estimator BELE.  
+
+> •
+
+Comprehensive validation : on six benchmarks (LIVE DBR2, TID2013, CSIQ, LIVE MD, KADID-10K, PI-PAL), PreSPA consistently rivals or surpasses leading NR deep models, while matching state-of-the-art FR accuracy on several distortion classes. The remainder of the paper is organized as follows. Sec. II reviews the FR, NR, and PR/RR-IQA literature; Sec. III recalls the underlying theoretical framework; Sec. IV introduces the PreSPA framework, its texture and structural indices, and the fusion stage; Sec. V reports the experimental evaluation; and Sec. VII concludes the paper. II. R ELATED WORKS 
+
+We organize the IQA literature according to the quality-prediction mechanism, with explicit attention to the reference-access protocol (FR, RR/PR, NR) along which PreSPA posi-tions itself. We distinguish three families: perceptually mo-tivated models, which incorporate Human Visual System (HVS) mechanisms; classical signal-fidelity and hybrid ana-lytic methods, combining handcrafted features with structural or statistical measures; and data-driven models, from early CNNs to transformer-CNN hybrids and large multimodal models. A dedicated subsection then covers the under-explored Reduced/Partial-Reference setting that is the natural home of PreSPA. 
+
+A. Classification of IQA Approaches Perceptually motivated models quantify differences between reference and distorted images by emulating early-stage HVS mechanisms, focusing on low-level features such as contrast sensitivity, spatial frequency response, and local structure [14], [15]. They generally assume a relatively uniform perceptual processing across observers, neglecting higher-level cognitive factors — such as emotion, education, or past experience — that also influence subjective quality judgments [16], [17], [18]. Widely adopted FR methods belonging to this family, such as FSIM [19] and GMSD [20], extract features inspired by contrast sensitivity, phase congruency, and gradient mag-nitude. A complementary class is that of cognitive models , which interpret degradation as visual information loss [10], [21]: PSNR is the simplest instance, while VIF measures the loss of Shannon mutual information between reference and distorted images [22]. Two information-theoretic mechanisms can be distinguished: the Fisher-information one underlies BELE [11], [12], which disentangles strong-edge and texture degradation via Positional Fisher Information and a Com-plex PSNR term at state-of-the-art FR accuracy with three parameters; the Shannon channel-capacity one models the distorted image as input and output of a noisy self-channel ,quantifying retained information as a normalised capacity. PreSPA belongs to this second sub-current, inheriting BELE’s edge–texture decomposition while replacing the full-reference Fisher machinery with a self-predictive formulation needing only a minimal scalar prior. Classical metrics such as SSIM [1] and MS-SSIM [23] blend psycho-physical and cognitive principles via multi-scale pooling. A second family consists of classical signal-fidelity and hybrid analytic methods , combining handcrafted features with structural or statistical measures. 2stepQA [24] fuses no-reference (NIQE) and full-reference (MS-SSIM) assessments multiplicatively, while RVSIM [25] employs Log-Gabor filters and monogenic-signal analysis weighted by contrast sensi-tivity. Saliency-based variants such as SG-ESSIM [26] and SWLGV [27] further incorporate visual attention into the SSIM framework. These methods retain interpretability and a parameter count in the order of units, but rely on the full reference image. A third, increasingly dominant family is that of data-driven models , which learn perceptual features from data. Within FR-IQA, CNN-based methods include TOPIQ-FR [6], a cross-feature attention network on a ResNet-50 backbone (with a PIPAL-retrained variant [28]), DISTS [29], which balances texture and structure similarity in learned feature spaces, LPIPS [30], based on AlexNet or VGG features, PIEAPP [31], and the semantic-guided SG-JND [32]. Hy-brid transformer-CNN models include IQT [33], CQT [34], and AHIQ [35], which combine transformers with CNN or deformable-convolution components for texture-rich and GAN-generated content. Finally, multimodal large pre-trained models such as CLIPIQA and CLIPIQA+ [7] exploit CLIP embeddings, while Q-Align [36] and Compare2Score [37] reformulate IQA as a discrete-rating or pairwise-preference task solved by large multimodal models. In the No-Reference setting, early statistical approaches — DIIVINE [38], BLIINDS-II [39], BRISQUE [40], NIQE [41] — extract Natural Scene Statistics (NSS) for a regressor. CNN-based methods (CNNIQA [42], HyperIQA [4], MUSIQ [5], PROPOSAL2026 3
+
+MANIQA [43], TOPIQ-NR [6]) set the current state of the art, while self-supervised methods such as Re-IQA [44] and ARNIQA [45] reduce reliance on labeled data. As in the FR case, these methods share large parameter counts and limited interpretability [46]. 
+
+B. Reduced and Partial-Reference IQA 
+
+Reduced-Reference (RR) and Partial-Reference (PR) IQA has received markedly less attention, despite its relevance when transmitting the full reference is infeasible (broadcasting, network monitoring, restoration diagnostics). The seminal wavelet-domain model of Wang and Simoncelli [8] transmits a small set of reference features as side information; RRED [9] formalises this via entropic differencing, and more recent models exploit free-energy principles [47] or shallow learned features. In all cases the reference summary is a vector of pre-defined statistics whose dimensionality, though reduced, is non-trivial and fixed by design. In all these approaches the side information enters sym-metrically — the same statistics are computed from both images and compared — mirroring the FR philosophy of feature matching rather than exploiting an asymmetry between reference-derived priors and reference-free analysis. To the best of our knowledge, no prior PR-IQA work reduces the reference footprint to a single scalar computed only on perceptually privileged regions, used to modulate a subsequent fully No-Reference analysis, as PreSPA does. 
+
+C. Limitations of Existing Methods 
+
+Most FR-IQA methods exhibit unequal sensitivity to differ-ent impairments [2], [48], only partially mitigated by multi-resolution aggregation [23], [20]. A second, more fundamental limitation is the dependence on viewing distance: scores are computed on the displayed image, whereas perception is based on the retinal image, whose scale depends on the observer’s distance. Most methods lack an explicit model of this effect, addressing it only implicitly through multi-scale pooling or, in some cases, by rescaling images [49] or learning distance as a parameter [50]. A more principled alternative, introduced for FR-IQA in BELE [11], [12], embeds the viewing distance directly into the operator scale; transferring this principle to a largely reference-free estimator is one of the questions addressed here. Deep models add further limitations: parameter counts of millions to hundreds of millions [30], [5], [6] entail high cost, limited interpretability, and overfitting risk, while gen-eralisation is imperfect — models trained on one benchmark (e.g., KADID-10K) often degrade on others (e.g., PIPAL) and require dataset-specific fine-tuning. Multimodal models such as CLIPIQA and Q-Align further inherit semantic biases from their pre-training corpora that do not always align with low-level quality. In the RR and PR setting, the reference summary is fixed by design and computed globally, with no perceptual guidance on where the most informative content lies; moreover, the scarcity of recent work means PR-IQA has not benefited from the structural insights — edge–texture decomposition, viewing-distance modelling, complex-domain analysis — that have driven recent FR-IQA advances. PreSPA fills this gap, recast-ing PR-IQA as a minimal-reference, perceptually-grounded modulation of an otherwise fully No-Reference analysis. III. B ACKGROUND 
+
+We briefly recall the Virtual Receptive Field model introduced in [12], [11], as a foundation for defining the concept of visual map and the smoothed gradient energy of the detail, both of which are essential to the proposed method. The retinal model targets the foveal region, where light receptors are distributed over Cartesian coordinates p ≡
+
+(x1, x 2). Image projection onto the retina yields a luminance signal I(p), with chrominance ignored. A receptor density of approximately 60 samples per visual degree is assumed. Due to their non-uniform placement, the generalized sampling theory from [51] ensures accurate representation of I(p), provided its 2D spatial spectrum remains within (−30 , +30) cycles/degree (or (−1/2, +1 /2) cycles/arcmin), matching the Snellen acuity limit. The display model assumes a regular pixel grid with resolu-tion R (pixels/mm), yielding a pixel pitch d = 1 /R . To align display sampling with retinal resolution, a viewing distance 
+
+δ0 is required such that δ0 × tan(1) = 1 /R = d, where angles are in arcminutes and lengths in millimeters. This 
+
+nominal viewing distance δ0 ensures a perceptually lossless, non-redundant mapping from the display to the retina. When the viewing distance differs from the nominal, i.e., at a generic distance δ, the spectral content of the retinal image scales proportionally, resulting in a spatial frequency band of 
+
+(−δ/ 2δ0, +δ/ 2δ0) cycles/arcmin or (−30 δ/δ 0, +30 δ/δ 0)
+
+cycles/degree in both horizontal and vertical directions, as prescribed by the Nyquist criterion. Consequently, if δ < δ 0,the bandwidth is reduced, implying a loss of perceived detail. Conversely, if δ > δ 0, the bandwidth increases, potentially enhancing perceived sharpness. Within this framework, the visual response of the retina is modeled by receptive fields that compute a spatially weighted sum of the luminance component I(p) in the neighborhood of each point p. This is formalized via a spatial convolution between I(p) and the so-called Virtual Receptive Field (VRF) 
+
+h(p):
+
+y (p) = I (p) ∗ h (p)
+
+h (p) = Re {h (p)} + jIm {h (p)} (1) where ∗ denotes convolution. The output y(p) is referred to as the visual map , while h(p) serves as a complex-valued Point Spread Function, i.e., the visual response to an impulse stimulus in a dark field [52]. The VRF model is specifically designed to extract the Po-sitional Fisher Information, which quantifies the localizability of features in the image and supports gradient-based analysis [12]. Expressed in polar coordinates — r = px21 + x22 and φ =tan −1(x2/x 1) — the VRF adopts a polar-separable form: 
+
+h(r, φ ) = r
+
+2πs 2
+
+> G
+
+e−r2/(2 s2
+
+> G)
+
+ejφ , (2) PROPOSAL2026 4            
+
+> Fig. 1: Flowchart illustrating the extended computational pipeline for deriving the texture index Qtand the structural information capacity Qstruct . The process starts with gradient extraction from both the test and reference images. A weighted local averaging is applied to compute the smoothed gradient energy for the residual map ( λerr (p)), while the Hermite-Gauss predictor is applied only to the distorted image’s complex map. The modulation index μ,derived from λerr (p), is used both to compute the texture index Qtand to estimate σv, which is required by the Normalized Channel Capacity block to obtain Qstruct .
+
+where sG is the spread parameter of the VRF, controlling the extent of spatial integration. This VRF is an eigenfunction of the two-dimensional Fourier transform [53], whose transform yields the Virtual Neural Transfer Function (VNTF): 
+
+H(ρ, ϑ ) = j2πρe jϑ e−s2
+
+> Gρ2
+
+, (3) where ρ = pf 21 + f 22 and ϑ = tan −1(f2/f 1) denote the radial and angular frequency coordinates. Empirical studies in [54] confirm that this VNTF closely models the Contrast Sensitivity Function of the human visual system, as further discussed in [55]. The model incorporates key aspects of human vision, such as orientation selectivity and spatial frequency selectivity , in accordance with the foundational principles established in [56]. The visual map of a pristine (non-degraded) image on the display eID (p) projected onto the retina is: 
+
+ey (p) = eID
+
+
+
+p δδ0
+
+
+
+∗ h(p) (4) and eλ (p) = X
+
+> q
+
+wp(q)2 |ey (p − q)|2 (5) is the energy of the detail of a pristine image, extracted by a window wp(q), centered on p [57]. Likewise, for the same detail of a degraded version of the image: 
+
+y (p) = eID
+
+
+
+p δδ0
+
+
+
+∗ b
+
+
+
+p δδ0
+
+
+
+∗ h(p) (6) is the visual map of a blurred version of a pristine image on the display eID (p) ∗ b (p) projected onto the retina ( b (p) is the contribution of the Gaussian blur) and 
+
+λ (p) = X
+
+> q
+
+wp(q)2 |y (p − q)|2 (7) is the energy of the detail of a degraded image. The smoothed gradient energy of the detail, computed on the reference and on the distorted image, constitutes the elementary building block of the proposed estimator. In the following section, these quantities are combined in two complementary ways: a Partial-Reference texture index, which compares reference and distorted energies only to extract a single scalar prior, and a No-Reference structural index, which predicts the expected gradient structure from the distorted image alone. IV. P ROPOSED METHOD 
+
+This section presents the proposed Partial-Reference Image Quality Assessment framework, which combines a texture-aware PR index and a structure-sensitive NR index. The overall design is motivated by the observation that texture degradation and geometric distortions often manifest independently, yet both significantly impact perceived image quality. By decou-pling their estimation, the method ensures higher robustness and interpretability. The proposed system relies on two complementary process-ing branches:  
+
+> •
+
+A Partial-Reference (PR) branch that estimates a scalar noise prior μ from localized energy deviations between distorted and reference gradient maps, enabling percep-tual texture degradation estimation.  
+
+> •
+
+A No-Reference (NR) branch that evaluates structural inconsistencies such as edge deformation and curvature noise, using only the distorted image and the noise prior 
+
+μ.To ensure interpretability and facilitate implementation, each component is based on simple, spatial-domain operations without reliance on deep learning or pre-trained features. 
+
+A. Overview and Processing Pipeline 
+
+Fig. 1 illustrates the processing pipeline, which combines a minimal Partial-Reference component with a fully No-Reference structural analysis:  
+
+> •
+
+Gradient extraction : gradient magnitude maps are com-puted from both reference and distorted images to char-acterize local texture energy.  
+
+> •
+
+Noise prior μ (the only PR component): a scalar prior is derived from the energy error between predicted and ob-served gradients, restricted to strong-edge regions ΩC but accumulated over weakly structured areas ΩH , capturing the perceptual propagation of structural distortions into texture zones. It is computed once and used as a fixed prior.  
+
+> •
+
+Texture index Qt: a saturating signal-to-noise score rela-tive to a perceptual threshold, in which the signal strength 
+
+σ2 
+
+> s
+
+is modulated by μ.PROPOSAL2026 5          
+
+> Fig. 2: Upper row: Gaussian blurred images ”Sailing1” from the LIVE DBR2 dataset, evaluated at Gaussian blur levels of sB= 0 .5,0.9,1.4,1.9,3.3.Lower row: λerr (p)ΩH
+> . Blue and violet colors indicate a growing impact of strong edge degradation on texture regions, whereas a more uniform red hue corresponds to mild, barely perceptible losses. Additionally, we can observe where the degradation impact is strongest — specifically in the surrounding regions where strong edges progressively merge as blur increases.
+> •
+
+Hermite-Gauss structural prediction : second-order Hermite-Gauss filters (2 , 0) and (0 , 2) , fitted by weighted regression over a Gaussian window, yield a coefficient field B(x, y ) encoding local curvature and orientation.  
+
+> •
+
+Structure-adaptive noise σ2 
+
+> v
+
+: divergence and angular vari-ance of B(x, y ) form a structural instability measure that perceptually modulates μ, suppressing unstable regions.  
+
+> •
+
+Structural index Qstruct : a reference-free, rate-distortion-inspired signal-to-noise score driven by the predictive gain, signal energy, and modulated noise.  
+
+> •
+
+Fusion : the PR and NR components are combined through a low-order affine mapping. 
+
+B. Partial-Reference Texture Index 
+
+To estimate the texture degradation in a perceptually mean-ingful way, the proposed method focuses on measuring local energy loss in the gradient domain, but only within regions of the image that exhibit reliable structural information. This is crucial to avoid spurious responses in textured or noise-sensitive areas. The first step involves identifying what we define as the 
+
+certainty region — a spatial mask that delimits the structurally stable zones of the image. These are typically formed by strong but isolated edges, where the local image structure is stable and thus suitable for reference-based comparisons. The certainty map M (p) is computed at each pixel location p as the ratio between the absolute value of the distorted complex gradient field y(p) and the magnitude of the reference complex gradient field ˜y(p):
+
+M (p) = |y(p)||˜y(p)| .
+
+The certainty map defines two mutually exclusive subsets of the gradient domain Ω: the certainty region ΩC of structurally reliable pixels, and the weaker-edges region ΩH where weak or overlapping edges dominate: 
+
+ΩC = p ∈ Ω M (p) ≥ M ,
+
+ΩH = p ∈ Ω M (p) < M ,
+
+with threshold M = √0.3 (a −10 dB drop from the peak gradient magnitude), chosen empirically to isolate stable edges while excluding saturated or noisy areas. Within the region ΩC , we compute a localized energy difference map yerr (p), capturing the structural attenuation between the distorted and reference complex gradients. This is formulated as: 
+
+yerr (p) = y(p) ΩC
+
+− ˜y(p) ΩC
+
+.
+
+The comparison is strictly localized to ΩC , where the edge signal is strong and stable, avoiding unreliable responses from weaker or overlapping edges. The smoothed gradient energy of the error detail is defined as: 
+
+λerr (p) = X
+
+> q
+
+wp(q)2 |yerr (p − q)|2 , (8) where wp(q) is a sampling window centered on p. In Fig. 2, we show λerr (p) ΩH
+
+for the image ”Sailing1” from the LIVE DBR2 dataset, across increasing Gaussian blur levels with sB = 0 .5, 0.9, 1.4, 1.9, 3.3. As the blur intensifies, we observe a progressive shift in the residual map from red to blue and violet tones, indicating a growing impact of strong edge degradation on texture regions. The resulting error map is restricted to the weaker edges region ΩH , and a single scalar value μ is derived by averaging the smoothed energy error within this region. Formally, we define: 
+
+μ =
+
+s 1
+
+|ΩC |
+
+X
+
+> p∈ΩH
+
+λerr (p) .
+
+Note that the error energy is accumulated over the weaker-edges region ΩH , where degradations are perceptually most visible, but normalized by the cardinality of ΩC , not of ΩH .This asymmetry encodes the assumption that the perceived error injected into the texture is causally tied to the strength of the degraded structural sources in ΩC , rather than to the extent of ΩH over which it is observed. Unlike typical reduced-reference models that rely on pre-extracted global statistics, this estimation leverages both local filtering and spatial masking, adapted dynamically to each PROPOSAL2026 6
+
+image content. Crucially, μ is computed once per image pair and serves as a structural prior for the second stage of the system, which operates without further reference access. A deeper look into the definition of the scalar noise estimate 
+
+μ reveals an intentional cross-regional interaction between structurally reliable (cold) and perceptually ambiguous (hot) zones. Specifically, the error energy is measured by evaluating the divergence between the distorted and reference complex gradients only within the structurally reliable set ΩC —regions characterized by strong, isolated edges. This ensures that the source of the error is grounded in areas where edge information is unambiguous and consistent across distortions. However, the impact of this error is not assessed locally: the error energy is propagated through a smoothing kernel 
+
+wp(q) and measured in the surrounding, perceptually more sensitive areas ΩH (flat textures, weak edges, overlapping structures), where visual masking is lower. This dual-region approach reflects the intuition that distortions originating in strong edges bleed into neighboring textured zones, amplifying their perceived degradation. For statistical consistency and invariance to the local geo-metric support, μ is normalized by the cardinality of ΩC rather than ΩH , consistently with the perceptual observation that interference from high-contrast structures dominates subjective judgments in nearby textured or flat zones. This propagation mechanism is conceptually aligned with Marr’s theory of early vision, particularly the raw primal sketch , where local edge primitives are organized into higher-order representations: the perception of structure depends not only on local gradients but also on their contextual integration, mirrored here by the influence of strong-edge deviations over texture-dominated regions. Variations in viewing distance are incorporated by adapting the Gaussian kernel scale as σ = σ0 · τ 2, with τ ∆
+
+= δ/δ 0
+
+(see Sec. III), so that gradient features capture perceptual effects consistently across distances. When the distance is not available as metadata, τ is recovered through the same regression on Gaussian-blurred images used for the Full-Reference case [12]. Once the structural error has been aggregated into the global scalar value μ, we proceed to compute the proposed texture fidelity index Qt, which quantifies the perceptual degradation of non-structured, fine-detail regions. This estimation relies solely on the distorted image. The smoothed gradient energy of the detail λ(p) is: 
+
+λ(p) = X
+
+> q
+
+wp(q)2 |y (p − q)|2 . (9) The average signal energy is then computed as: 
+
+σ2 
+
+> s
+
+= 1
+
+|ΩC |
+
+X
+
+> p∈ΩC
+
+λ(p) ,
+
+where, for simplicity, we reuse the certainty region ΩC as a stable support for signal measurement. The corresponding noise level is given by μ, previously defined as the energy deviation accumulated over ΩH and normalized by |ΩC |, computed from the difference between gradient maps of the distorted and reference images. The texture index Qt is finally computed as a normalized SNR ratio: 
+
+Qt = SNR SNR 0
+
+= σ2
+
+> s
+
+μ + C · Cσ2
+
+> s
+
+= Cμ + C ,
+
+where C = 20 sets the noise floor. This expression yields a perceptually normalized fidelity measure bounded in (0 , 1) ,with higher values indicating lower relative noise and higher texture fidelity. This formulation avoids local fitting or patch-based pro-cessing, relying on global statistics from the distorted image and on the reference only to estimate the scalar μ — which classifies the approach as Partial-Reference , though minimal in data dependency. 
+
+C. Structural Degradation Index from Hermite-Based Predic-tion 
+
+The structural analysis module is founded on the use of Hermite-Gauss filters to extract a local geometric description of the distorted gradient map in the absence of an explicit reference. This is accomplished through a self-prediction mechanism that allows estimation of structural regularity and coherence by leveraging internal correlations within the dis-torted content. Let y(p) be the complex gradient map of the distorted image, from which we extract local patches centered at pixel location p. These patches are projected onto a set of second-order Hermite-Gauss basis functions, specifically ϕ20 and ϕ02 ,designed to capture directional curvature in the horizontal and vertical axes: 
+
+ϕ2 (xi) ≡
+
+√2 x2
+
+> i
+
+σ2 − 1
+
+√2
+
+
+
+π−1/4σ−1e− x2 
+
+> i
+> 2σ2
+
+, (10) where xi = x1 and xi = x2 are the spatial coordinates of the map and σ is the standard deviation of the Gaussian kernel modified in distance as in IV-B. Each patch is thus encoded as a weighted combination of these basis components using a weighted least-squares regression: 
+
+B(p) =  R⊤W R −1 R⊤W X (p) ,
+
+where R contains the vectorized Hermite-Gauss basis sampled over the local window, X(p) is the observed gradient patch, and W is a Gaussian weighting matrix enforcing locality. The coefficients B2(p) and B3(p), i.e. the local strengths of the 
+
+(2 , 0) and (0 , 2) filters, form the surrogate structural field: 
+
+G(p) = 
+
+B2(p)
+
+B3(p)
+
+
+
+.
+
+Unlike classical gradients, this field is derived entirely from the distorted image, making the analysis fully No-Reference .The key insight is that G(p) encapsulates local curvature and flow orientation, enabling a perceptual characterization of structural integrity. To quantify structural distortion, we compute the divergence of this field over the entire image: 
+
+∇ · G(p) = ∂B 2(p)
+
+∂x 1
+
++ ∂B 3(p)
+
+∂x 2
+
+,PROPOSAL2026 7                           
+
+> Fig. 3: Upper row: Gaussian blurred images ”Churchandcapitol” from the LIVE DBR2 dataset, evaluated at Gaussian blur levels of sB=1.0,1.3,1.9,2.5,10 .8. Lower row: ∇ · G(p). As blur increases, closely spaced strong edges progressively merge, causing a more pronounced impact on perceived image degradation compared to other regions, which remain mostly light blue. The wide Gaussian window ( σw= 10 ) used for regression emphasizes structural coherence over large areas, highlighting zones of residual curvature where strong edges were previously concentrated as blur increases. Focusing on the central image region — where the visual system is most sensitive — enhances discriminability, consistent with the perceptual dominance of foveal vision and supporting central cropping as a refinement strategy.
+
+which acts as a vector Laplacian of the complex gradient field y(p), measuring local expansion or compression in the directional flow and thus highlighting geometric inconsisten-cies. As illustrated in Fig. 3 (image “Churchandcapitol”, LIVE DBR2, at increasing blur levels), the Laplacian magnitude rises where closely spaced strong edges merge, providing a sensitive indicator of structural degeneration that matches the perceived quality decline. In parallel, we evaluate the angular variability of the structural field by computing the variance of the orientation angle: 
+
+θ(p) = atan2( B3(p), B 2(p)) , Var θ = Var (θ(p)) .
+
+The total curvature measure is then defined as a weighted combination: 
+
+Etotal (p) = |∇ · G(p)| + γ0 · Var θ ,
+
+where the divergence term captures the breakdown of local structure, Var θ the orientation incoherence, and γ0 = 10 
+
+balances the two. The resulting structural reliability weight is obtained through a single exponential of unit rate, 
+
+w(p) = exp( −γ1 · E total (p)) , γ1 = 1 ,
+
+mapping the local irregularity into a reliability factor in (0 , 1] :coherent regions ( Etotal → 0) approach w → 1, ambiguous ones are suppressed ( w → 0). The unit rate γ1 = 1 is the natural, unscaled modulation, leaving γ0 as the only free constant; both are fixed across all datasets, with a sensitivity analysis in the supplementary material confirming robustness to γ0.We then adopt an information-theoretic interpretation : qual-ity evaluation is framed as a transmission problem over a 
+
+self-channel , where the distorted image acts as both input and output and degradation is modeled as additive noise. Unlike VIF, no reference is available, so both source and observation derive from the same distorted observation ˜x(p) = x(p) = 
+
+|y(p)|. The channel signal-to-noise relationship is modulated by two quantities: μ, the residual noise estimate derived from structural deviations in weakly textured regions ( ΩH ); and 
+
+Etotal , which governs both the reliability weight w and the noise amplification. The modulated noise variance is obtained by amplifying the base noise level μ2 through the inverse of the structural reliability, 
+
+σ2 
+
+> v
+
+(p) = μ2
+
+w(p) = μ2 · exp( γ1 · E total (p)) ,
+
+tying the two roles of Etotal to a single rate γ1: reliable regions (w → 1) yield σ2 
+
+> v
+
+→ μ2, while severely damaged ones ( w → 0)diverge ( σ2 
+
+> v
+
+→ ∞ ), driving the retained information to zero; the exponential form also guarantees σ2 
+
+> v
+
+> 0. The final score is a perceptually weighted, log-domain information ratio: 
+
+Qstruct =
+
+P 
+
+> p
+
+w(p) log 2
+
+
+
+1 + g2·σ2 
+
+> x
+> σ2
+> v+σ2
+> n
+
+P 
+
+> p
+
+w(p) log 2
+
+
+
+1 + σ2
+
+> x
+> σ2
+> n
+
+ ,
+
+where σ2 
+
+> x
+
+is the local signal energy derived from |y(p)|, σ2 
+
+> n
+
+is a constant noise floor, and g = Cov (˜ x,x ) 
+
+> Var (˜ x)+ ε
+
+≈ 1 reflects unit-gain transmission. The same reliability weight w(p) multiplies both numerator and denominator, acting as a perceptual aggregation weight that emphasizes structurally coherent regions, in the spirit of the sub-band weighting of the original VIF. The weighted sums run over all image patches, yielding a score that reflects how much structural information is preserved under implicit self-degradation. The structural quality term Qstruct can be interpreted as a normalized information capacity between predicted and original image structures: a ratio of two log-domain signal-to-noise terms, akin to a channel capacity under Gaussian noise, quantifying the structural information retained relative to an undistorted scenario. This formulation is fully blind, relying solely on inter-nal consistency within the distorted image, yet perceptually grounded through both signal statistics and structural geome-try. The scalar μ adapts the model to the noise context of each image, enabling stable prediction across distortion types. The divergence map ∇· G(p), i.e. the local Laplacian of the complex gradient field y(p), derived from smooth structural PROPOSAL2026 8
+
+coefficient maps B(p), offers a robust structural regularity descriptor, even in the absence of a reference image. The wide Gaussian window σw = 10 used for regression enforces structural integration over extended spatial supports, making the map responsive to regional consistency rather than local detail. Focusing the analysis on the central image region, where the visual system is most sensitive to structural distortions, further improves the discriminative power of the index, consistently with the dominance of foveal vision in perceptual evaluation. 
+
+D. Final Quality Prediction 
+
+The two indices derived in the previous subsections capture complementary aspects of perceived degradation: the texture index Qt measures the perceptual loss in fine, non-structured detail, while the structural index Qstruct quantifies the integrity of the dominant geometric structures. Crucially, both indices are computed on operators whose scale is set by the same viewing-distance-dependent kernel σ = σ0 · τ 2, so that they are already expressed on a common perceptual scale. This is what allows the two scores to be merged through a simple low-order combination, without reintroducing the viewing distance at the fusion stage and without the dataset-dependent logistic rectification recommended by the VQEG [13]. The final quality score is obtained as a first-order (affine) combination of the two indices: PreSPA = b0 + b1 · a · Qstruct + b2 · a · Qt , (11) which depends on three model parameters — the coefficients 
+
+(b0, b 1, b 2) controlling the affine fusion — together with a pair 
+
+(a, τ ) that is fixed a priori from metadata or blur regression and, following the same convention as in BELE [12], is not included in the parameter count. No parameter is learned through backpropagation or stochastic optimization. The two a priori parameters (a, τ ) mirror the role of the pair 
+
+(Q, τ ) in the Full-Reference estimator BELE [12], [11] and are not fitted on subjective scores, being retrieved from metadata or estimated through regression on Gaussian-blurred images. Here a is a statistical anchor that scales the scoring system to the database, setting the lower bound of perceived quality [52], while τ ∆
+
+= δ/δ 0 is the normalized viewing distance, incorporated into the scale of both indices as σ = σ0 · τ 2
+
+(Sec. III). The three coefficients (b0, b 1, b 2) arise from the fusion in Eq. (11): b0 is a bias term, while b1 and b2 weight the structural and textural components. They are fixed once via a simple curve-fitting on a small held-out set, following the same affine-alignment rationale as [12]; since the combination is affine and the indices are already perceptually aligned, this fitting is a one-off scale-and-offset adjustment, not a data-driven training stage. This clear separation from data-driven training pipelines, together with the reliance on spatial-domain operations only, enables PreSPA to remain interpretable, highly generalizable, and computationally lightweight, while still delivering com-petitive performance across diverse distortion types, as shown in the next section. V. E XPERIMENTS 
+
+The PreSPA framework requires no training and no dataset-specific hyperparameter tuning: the three model parameters 
+
+(b0, b 1, b 2) are obtained from a one-shot affine fitting, while the two constants (a, τ ) are physically grounded or obtained from a one-shot regression on Gaussian-blurred references and, as in BELE [12], are not counted among the model param-eters, as detailed in Sec. IV-D. This makes PreSPA particularly suited for evaluation across heterogeneous benchmarks, since the same model is applied unchanged to all datasets. In this section we report a comprehensive experimental campaign on six widely adopted IQA benchmarks. We first present per-distortion results against state-of-the-art No-Reference (NR) methods (Sec. V-B), then summarise the overall performance and contextualise PreSPA against the full landscape including Full-Reference (FR) methods (Sec. V-D), and finally analyse the computational cost (Sec. V-E). 
+
+A. Datasets and Protocols 
+
+The evaluation spans six publicly available datasets covering a wide spectrum of distortions: LIVE DBR2 [2] ( 779 images, 
+
+5 classic distortions), TID2013 [58] ( 3000 images, 24 types including chromatic and contrast/saturation changes), CSIQ 
+
+[21] ( 866 images, six classes), LIVE MD [59] ( 450 multiply-distorted images), KADID-10K [60] ( 10125 images, 25 types including colour-domain artefacts), and PIPAL [28] ( 21800 
+
+images, restoration- and GAN-induced distortions). For all datasets, τ and a are retrieved from metadata or recovered through the regression procedure of [12], while the three fusion coefficients (b0, b 1, b 2) are fitted once on a held-out subset and kept fixed, with no per-dataset calibration. PreSPA is compared against deep NR methods (TOPIQ-NR [6], MUSIQ [5], HyperIQA [4], CNNIQA [42], CLIP-IQA and CLIPIQA+ [7]), traditional NSS-based NR methods (BRISQUE [40], NIQE [41]), deep FR methods (TOPIQ-FR [6], TOPIQ-FR-PIPAL [28], DISTS [29], LPIPS and LPIPS-VGG [30], PIEAPP [31]), and classical FR metrics (VIF [22], MS-SSIM [23], FSIM [19], GMSD [20]). Performance is measured by SROCC and PLCC against subjective DMOS; all NR competitors are re-aligned on each dataset’s DMOS scale prior to PLCC computation to ensure a fair comparison. 
+
+B. Performance Evaluation Across Distortion Types 
+
+Tab. I reports the per-distortion comparison on the four clas-sical benchmarks LIVE DBR2, TID2013, CSIQ, and LIVE MD. PreSPA achieves the best performance on 32 out of 
+
+37 distortion classes for both SROCC and PLCC, which corresponds to a winning rate of approximately 86% . On the remaining five classes, the advantage of competing NR methods is concentrated in two specific categories: distortions that primarily alter colour or global contrast (TID2013 Block-wise Distortions , Contrast Change , Saturation Change ) and multiply-distorted classes that combine blur with secondary degradations (LIVE MD Blur + JPEG , Blur + Gaussian Noise ). The first failure mode is consistent with the struc-tural nature of PreSPA: by design, the framework analyses PROPOSAL2026 9
+
+TABLE I: Experimental verification of PreSPA compared to NR Deep and Clip-based methods on the full LIVE DBR2, TID2013, CSIQ, LIVE MD, KADID-10K, and PIPAL datasets. Best values for each distortion are highlighted in bold blue, and second-best values in bold black. The table also includes computational cost (FLOPS) and the number of parameters used by each method. FLOPS refers to the computational cost per pair of processed images, with deep metric values expressed in gigaflops (GFLOPS). The number of parameters for deep metrics is expressed in millions (M). TOPIQ-NR HyperIQA MUSIQ CNNIQA CLIPIQA CLIPIQA+ PreSPA Parameter no. 45 M 27 M 27 M 0.7 M 102 M 102 M 3
+
+GFLOPS 14 215 17 0.7 35 12 0.13 
+
+Traditional Distortion type SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC datasets LIVE DBR2 Gaussian Blur 0.93274 0.89725 0.86608 0.82924 0.94053 0.87463 0.76188 0.39043 0.76852 0.72046 0.78398 0.82801 0.96048 0.95504 
+
+Bit Errors in JPEG2000 Stream 0.92124 0.91702 0.91458 0.91450 0.92287 0.91687 0.62370 0.49036 0.78977 0.79767 0.90138 0.89911 0.94607 0.94543 
+
+JPEG Compression 0.89448 0.89514 0.86272 0.86872 0.94071 0.94239 0.21366 0.24275 0.85137 0.87511 0.89707 0.93263 0.98533 0.98527 
+
+JPEG2000 Compression 0.94142 0.94430 0.93299 0.93901 0.92500 0.92521 0.54915 0.52538 0.74366 0.73839 0.85729 0.85674 0.97151 0.96791 
+
+Gaussian White Noise 0.70972 0.69436 0.75871 0.76188 0.69429 0.67507 0.08750 0.09156 0.41509 0.42200 0.71287 0.69317 0.98666 0.98444 
+
+TID2013 Colour Additive Noise 0.62682 0.58934 0.62323 0.52779 0.63579 0.62581 0.02180 0.10084 0.58894 0.54843 0.57387 0.59658 0.83960 0.86136 
+
+Gaussian Blur 0.92505 0.92144 0.82048 0.77698 0.89066 0.90100 0.69940 0.66754 0.85411 0.85297 0.77795 0.77284 0.95309 0.95117 
+
+Gaussian White Noise 0.65971 0.62273 0.71239 0.64655 0.77340 0.75927 0.04828 0.10156 0.70355 0.68855 0.72446 0.72552 0.90840 0.91274 
+
+High Frequency Noise 0.74507 0.75907 0.75576 0.74185 0.84673 0.86209 0.26863 0.33859 0.54571 0.50488 0.68474 0.72176 0.89572 0.94581 
+
+Impulse Noise 0.64904 0.65855 0.66041 0.59586 0.77825 0.74452 0.27831 0.32797 0.36169 0.32149 0.47923 0.46921 0.89086 0.88519 
+
+Masked Noise 0.78315 0.79147 0.66655 0.55274 0.60153 0.61748 0.34075 0.34582 0.44148 0.42385 0.50980 0.56311 0.85233 0.87252 
+
+Quantization Noise 0.25480 0.23119 0.40000 0.31475 0.47582 0.48990 0.06384 0.02268 0.54508 0.53467 0.76459 0.76173 0.87260 0.86688 
+
+Spatially Correlated Noise 0.71235 0.69788 0.68339 0.66422 0.74179 0.72837 0.11773 0.07067 0.78217 0.77537 0.79058 0.78298 0.90806 0.90997 
+
+Block-wise Distortions 0.10861 0.04809 0.01898 0.00566 0.11489 0.07802 0.33630 0.22546 0.46452 0.36330 0.20482 0.16704 0.22538 0.14323 
+
+Chromatic Aberrations 0.85052 0.86300 0.84608 0.86926 0.84705 0.94880 0.78702 0.80183 0.78449 0.80556 0.76505 0.83679 0.88302 0.95281 
+
+Comfort Noise 0.52637 0.46556 0.65425 0.50466 0.59043 0.59116 0.27296 0.21507 0.64643 0.58410 0.66224 0.69523 0.91771 0.91280 
+
+Contrast Change 0.38315 0.30702 0.15092 0.10575 0.11899 0.10916 0.62456 0.64841 0.56644 0.49017 0.26046 0.27556 0.42381 0.40812 
+
+Image Denoising 0.86502 0.88509 0.87680 0.88293 0.88980 0.89933 0.76247 0.81354 0.88704 0.87712 0.90000 0.90758 0.94791 0.96647 
+
+Dither Color Quantization 0.56406 0.55550 0.42716 0.35275 0.65841 0.67491 0.17040 0.17670 0.11141 0.05613 0.68562 0.66958 0.83708 0.84979 
+
+JPEG Compression 0.83288 0.83450 0.83058 0.83370 0.82563 0.86966 0.22934 0.21217 0.85239 0.90430 0.84947 0.92415 0.96096 0.97460 
+
+JPEG Transmission Errors 0.58014 0.61977 0.65794 0.56877 0.64383 0.64622 0.30765 0.29837 0.68109 0.74426 0.72652 0.77839 0.82290 0.81436 
+
+JPEG2000 Compression 0.92007 0.92863 0.91439 0.90607 0.92807 0.95152 0.82646 0.87659 0.74987 0.80643 0.82437 0.86985 0.96581 0.96600 
+
+JPEG2000 Transmission Errors 0.64596 0.61761 0.65726 0.51765 0.73904 0.67027 0.22183 0.09995 0.66558 0.63552 0.59737 0.58227 0.93760 0.92716 
+
+Lossy Compression 0.85226 0.85179 0.83334 0.83437 0.89179 0.89514 0.46907 0.52038 0.84867 0.87828 0.87159 0.89070 0.95934 0.96535 
+
+Mean Shift 0.15512 0.05539 0.13134 0.05233 0.27508 0.30010 0.17662 0.06553 0.02427 0.01849 0.01246 0.01676 0.73179 0.76657 
+
+Multiplicative Gaussian Noise 0.57115 0.55416 0.61375 0.49003 0.66181 0.65699 0.13238 0.16690 0.61004 0.59071 0.64883 0.65364 0.86141 0.86477 
+
+Non-Eccentricity Pattern Noise 0.04041 0.02820 0.03429 0.02692 0.01720 0.00730 0.03637 0.03672 0.15444 0.11294 0.16465 0.21895 0.73617 0.71928 
+
+Saturation Change 0.49147 0.42269 0.42631 0.34614 0.55540 0.55417 0.12386 0.04279 0.22032 0.16274 0.17615 0.13392 0.03867 0.11915 
+
+Sparse Sampling 0.86078 0.82429 0.82598 0.81863 0.92181 0.92771 0.80278 0.79285 0.89578 0.88075 0.90371 0.91717 0.96238 0.96498 
+
+CSIQ Gaussian White Noise 0.70857 0.70576 0.75871 0.76188 0.69429 0.67511 0.08750 0.09156 0.52645 0.55439 0.66537 0.66627 0.95927 0.95767 
+
+Gaussian Blur 0.87046 0.85957 0.82048 0.77698 0.89066 0.90096 0.69940 0.73289 0.80912 0.80363 0.79890 0.83705 0.97167 0.97065 
+
+JPEG Compression 0.84597 0.89245 0.83058 0.83370 0.82563 0.86968 0.22934 0.21156 0.77471 0.88527 0.81004 0.92170 0.97414 0.98614 
+
+Contrast Decrement 0.20425 0.17830 0.03510 0.03016 0.02358 0.03774 0.69479 0.68764 0.46721 0.53998 0.24492 0.25009 0.83800 0.85615 
+
+Additive Pink Gaussian Noise 0.75162 0.74081 0.70326 0.70178 0.65902 0.60556 0.02918 0.09724 0.52615 0.53530 0.69175 0.67815 0.95767 0.96121 
+
+JPEG2000 Compression 0.90023 0.93357 0.92255 0.90256 0.85185 0.90507 0.66903 0.78893 0.78562 0.81588 0.79964 0.85431 0.97842 0.98485 
+
+LIVE MD Blur + JPEG 0.84251 0.88807 0.62217 0.74378 0.88677 0.91451 0.30865 0.60077 0.52377 0.59975 0.77984 0.83700 0.82051 0.87536 
+
+Blur + Gaussian Noise 0.76634 0.84365 0.60456 0.68893 0.86443 0.89695 0.07770 0.22612 0.37876 0.57308 0.77365 0.80763 0.81948 0.87148 
+
+KADID-10K Brighten 0.52452 0.58460 0.28058 0.33427 0.44966 0.53127 0.11557 0.07020 0.36664 0.43199 0.58103 0.64939 0.91327 0.85412 
+
+Color Block 0.03210 0.00314 0.06387 0.04481 0.05445 0.03306 0.18053 0.17282 0.22988 0.22378 0.35177 0.31022 0.46188 0.44212 
+
+Color Diffusion 0.66957 0.56041 0.57654 0.50338 0.64828 0.55170 0.50836 0.43534 0.42911 0.35258 0.76371 0.71234 0.80994 0.87649 
+
+Color Quantization 0.52871 0.55169 0.25265 0.27476 0.50675 0.54976 0.22505 0.23665 0.04710 0.07938 0.57488 0.58972 0.62436 0.63638 
+
+Color Saturation HSV 0.23850 0.23713 0.21963 0.20759 0.21046 0.20901 0.13648 0.10588 0.10793 0.11684 0.27734 0.28187 0.29924 0.30204 
+
+Color Saturation Lab 0.68050 0.64516 0.63676 0.61593 0.53508 0.50339 0.48607 0.44854 0.56083 0.56072 0.72144 0.69639 0.85368 0.88487 
+
+Color Shift 0.03568 0.08328 0.04404 0.05491 0.12239 0.08612 0.07200 0.11279 0.09409 0.06879 0.11398 0.09737 0.61683 0.65462 
+
+Contrast Change 0.19711 0.17614 0.12534 0.12115 0.16825 0.13470 0.06097 0.05290 0.08681 0.09552 0.23907 0.24055 0.53230 0.47517 
+
+Darken 0.39070 0.49625 0.31456 0.38763 0.46742 0.57536 0.30313 0.31125 0.19114 0.25369 0.48892 0.60280 0.89651 0.86933 
+
+Denoise 0.88153 0.90042 0.85476 0.86088 0.88836 0.87461 0.75106 0.74764 0.72019 0.69722 0.84211 0.84078 0.83989 0.84339 
+
+Gaussian Blur 0.95033 0.96777 0.91554 0.93834 0.93887 0.97132 0.78713 0.86372 0.80298 0.80264 0.86404 0.86300 0.90981 0.93001 
+
+High Sharpen 0.68566 0.64463 0.63433 0.58363 0.54104 0.49735 0.49793 0.48859 0.45406 0.44735 0.78046 0.74166 0.88573 0.87076 
+
+Impulse Noise 0.81626 0.75914 0.70255 0.64551 0.75987 0.71771 0.03347 0.04208 0.16560 0.17715 0.51494 0.54164 0.89504 0.87381 
+
+JPEG 0.85201 0.91159 0.79638 0.81985 0.79626 0.89977 0.36793 0.38101 0.79907 0.91189 0.82153 0.93820 0.87067 0.96481 
+
+JPEG2000 0.90440 0.93406 0.91528 0.92185 0.82289 0.90577 0.60132 0.74181 0.65716 0.69017 0.83402 0.86616 0.93485 0.93627 
+
+Jitter 0.74194 0.74209 0.39905 0.42512 0.80322 0.83803 0.03695 0.01190 0.41496 0.38348 0.82962 0.83416 0.90709 0.90317 
+
+Lens Blur 0.89945 0.93402 0.75685 0.82508 0.90794 0.94641 0.45140 0.59362 0.71666 0.72529 0.83543 0.82011 0.86266 0.88640 
+
+Mean Shift 0.18791 0.19645 0.14940 0.17386 0.25767 0.26268 0.10289 0.10353 0.01807 0.04612 0.15965 0.18761 0.70339 0.58324 
+
+Motion Blur 0.93614 0.93135 0.87596 0.86622 0.91043 0.92313 0.79049 0.81666 0.84520 0.85104 0.88087 0.87155 0.90969 0.88860 Multiplicative Noise 0.78359 0.76994 0.75816 0.74522 0.75993 0.74287 0.05065 0.03798 0.51859 0.51678 0.74606 0.73679 0.90687 0.89638 
+
+Non-Eccentricity Patch 0.19070 0.17172 0.15844 0.12470 0.13615 0.13515 0.08302 0.06901 0.29668 0.34085 0.37245 0.38449 0.34556 0.32293 
+
+Pixelate 0.68528 0.78435 0.58067 0.68526 0.53084 0.64368 0.40275 0.42789 0.56719 0.61181 0.65197 0.72111 0.53484 0.57429 
+
+Quantization 0.27939 0.27962 0.28586 0.31106 0.30896 0.32307 0.16050 0.15636 0.43258 0.43073 0.57965 0.59779 0.67751 0.68281 
+
+White Noise 0.71141 0.70945 0.66582 0.66741 0.72445 0.70076 0.00921 0.01285 0.48193 0.47836 0.65548 0.66066 0.89053 0.86322 
+
+White Noise Color Component 0.79342 0.80153 0.76393 0.76654 0.80497 0.80632 0.07207 0.06431 0.49387 0.49396 0.73413 0.73580 0.92567 0.92677 
+
+PIPAL Complete 0.45042 0.44595 0.41855 0.40861 0.45419 0.45369 0.33837 0.32632 0.36345 0.34804 0.38656 0.39565 0.51684 0.53178 
+
+Gaussian Blur 0.56722 0.55334 0.59445 0.57679 0.55542 0.55033 0.15199 0.13308 0.36441 0.34323 0.47192 0.46827 0.63690 0.65328 
+
+White Noise 0.44360 0.42345 0.41045 0.40499 0.42558 0.40975 0.24256 0.21372 0.18016 0.20225 0.10852 0.09658 0.60785 0.60025 
+
+the complex gradient field of the luminance channel and is therefore intrinsically less responsive to distortions that preserve gradient geometry while only shifting colour, hue, or global luminance level. The second failure mode, observed only on LIVE MD, reflects the difficulty of disentangling two superimposed degradations from a single self-prediction step; the gap with the best NR method (MUSIQ) remains nonetheless modest, with PreSPA placing second on Blur + Gaussian Noise and within 0.07 of the leader on Blur + JPEG .On the two large modern benchmarks KADID-10K and PIPAL, also reported in Tab. I, PreSPA achieves the best NR performance on 22 out of 28 distortion classes ( ∼ 79% ). The six classes where another NR method prevails are concentrated in KADID-10K colour-related distortions (Pixelate , Non-Eccentricity Patch ) and specific blur types ( Denoise , Gaussian Blur , Lens Blur , Motion Blur ), where deep architectures such as MUSIQ and TOPIQ-NR retain a residual advantage. Even there, the absolute SROCC gap from the leader is small (typically below 0.05 ), and PreSPA consistently outperforms the same competitors on the corresponding categories of the other datasets, indicating a dataset-specific characteristic of KADID-10K rather than a structural limitation. PROPOSAL2026 10 
+
+A second observation supports this interpretation: on PIPAL — the most challenging modern benchmark, dominated by perceptual distortions induced by image restoration and GAN-based pipelines — PreSPA outperforms all NR competitors on the Complete aggregate (PLCC 0.532 against the second-best MUSIQ at 0.454 ), on Gaussian Blur , and on White Noise , with margins substantially larger than those observed on KADID-10K. The contrast suggests that PreSPA is more robust on distortions that affect the structural geometry of the image, which dominate restoration-based artefacts, while the relative weakness on KADID-10K is confined to colour-domain distortions and to specific synthetic blurs that closely match the training distribution of competing deep models. 
+
+C. Comparison with Reference-Reduced Methods 
+
+The comparisons reported so far place PreSPA against No-Reference methods, which use no reference at all, and against Full-Reference methods, which exploit the entire pristine image. A more equitable comparison is against methods that, like PreSPA, occupy the middle ground and rely on a reduced or non-standard use of the reference. We consider two representative cases: 2stepQA [24], a hybrid metric that fuses the Full-Reference MS-SSIM with the No-Reference NIQE through a multiplicative combination, and CKDN [61], a learned Degraded-Reference metric that uses the degraded image itself as a surrogate reference. Tab. II reports the per-distortion comparison across all six benchmarks. PreSPA attains the best SROCC on 44 of the 65 distortion classes, corresponding to a winning rate of about 68% , against 
+
+23% for 2stepQA and 9% for CKDN. This result is notable be-cause PreSPA operates under the most restrictive information budget of the three: it consumes a single scalar from the ref-erence, whereas 2stepQA accesses the full reference through its MS-SSIM component and CKDN relies on a degraded-reference network trained on subjective scores. The advantage of PreSPA is most pronounced on structural distortions — blur, noise, compression and transmission artefacts — where it is consistently the top performer across all datasets. The distortion classes in which 2stepQA prevails are al-most entirely confined to the colour and contrast families of TID2013 and KADID-10K (colour block, colour diffu-sion, colour quantization, colour and saturation shifts, contrast change). This is the expected counterpart of the structural– chromatic dichotomy already discussed: 2stepQA inherits from its full-reference MS-SSIM component a direct sensitiv-ity to chromatic and luminance-level changes that a luminance-gradient model does not capture. CKDN, by contrast, prevails only on a handful of cases, mostly the multiply-distorted classes of LIVE MD and a few contrast-related distortions, while remaining markedly less stable across the structural categories. Overall, the comparison confirms that, within the family of reference-reduced estimators, PreSPA offers the most favourable trade-off between the amount of reference information consumed and the accuracy achieved. 
+
+TABLE II: Comparison of PreSPA against reference-reduced methods (2stepQA [24], a hybrid Full-Reference/No-Reference metric, and CKDN [61], a learned Degraded-Reference metric) on the full LIVE DBR2, TID2013, CSIQ, LIVE MD, KADID-10K, and PIPAL benchmarks, reported per distor-tion type as SROCC and PLCC. Bold blue marks the best performer in each row and metric; bold black marks the second best. The Parameter no. and 
+
+GFLOPS rows report model size and per-pair cost at 3 × 224 × 224 . Despite using a single scalar of reference information, PreSPA is the top performer on most distortions; the cases where 2stepQA prevails concentrate on colour-and contrast-related types. The symbol † indicates that CKDN operates on 
+
+288 × 288 inputs by design, and its FLOPS are reported at that resolution. 2stepQA (Hybrid) CKDN (DR) PreSPA (PR) Parameter no. 0 ∼ 13 M 3                                                                                                                                                                                                                                                                                                                                                                                                                  
+
+> GFLOPS 93 ·10 −3∼4.3 †0.13
+> Dataset Distortion type SROCC PLCC SROCC PLCC SROCC PLCC LIVE DBR2 Gaussian Blur 0.95242 0.95502 0.83938 0.85109 0.96048 0.95504
+> Bit Errors in JPEG2000 Stream 0.93215 0.93522 0.80333 0.84234 0.94607 0.94543
+> JPEG Compression 0.96472 0.97238 0.48724 0.52492 0.98533 0.98527
+> JPEG2000 Compression 0.95913 0.96436 0.71334 0.74714 0.97151 0.96791
+> Gaussian White Noise 0.96999 0.96686 0.90715 0.87666 0.98666 0.98444
+> TID2013 Colour Additive Noise 0.58964 0.57832 0.59969 0.59327 0.83960 0.86136
+> Gaussian Blur 0.85784 0.85492 0.86007 0.88484 0.95309 0.95117
+> Gaussian White Noise 0.82185 0.79242 0.69312 0.67724 0.90840 0.91274
+> High Frequency Noise 0.83556 0.86165 0.83621 0.86546 0.89572 0.94581
+> Impulse Noise 0.72125 0.68418 0.71803 0.67346 0.89086 0.88519
+> Masked Noise 0.39531 0.21910 0.56495 0.53211 0.85233 0.87252
+> Quantization Noise 0.88665 0.84589 0.31264 0.29235 0.87260 0.86688
+> Spatially Correlated Noise 0.86265 0.84975 0.40812 0.38514 0.90806 0.90997
+> Block-wise Distortions 0.04283 0.12640 0.20186 0.07642 0.22538 0.14323
+> Chromatic Aberrations 0.71983 0.89969 0.78301 0.93092 0.88302 0.95281
+> Comfort Noise 0.86303 0.89080 0.67806 0.75990 0.91771 0.91280
+> Contrast Change 0.42799 0.64338 0.74181 0.80360 0.42381 0.40812
+> Image Denoising 0.90522 0.94581 0.84620 0.90826 0.94791 0.96647
+> Dither Color Quantization 0.81212 0.81234 0.69080 0.69256 0.83708 0.84979
+> JPEG Compression 0.87307 0.92845 0.65537 0.70561 0.96096 0.97460
+> JPEG Transmission Errors 0.81632 0.86733 0.61994 0.66113 0.82290 0.81436
+> JPEG2000 Compression 0.90403 0.93194 0.86970 0.91744 0.96581 0.96600
+> JPEG2000 Transmission Errors 0.86594 0.84172 0.47069 0.45887 0.93760 0.92716
+> Lossy Compression 0.91210 0.91963 0.82282 0.86288 0.95934 0.96535
+> Mean Shift 0.66560 0.70061 0.00796 0.00037 0.73179 0.76657
+> Multiplicative Gaussian Noise 0.75064 0.73708 0.59681 0.55808 0.86141 0.86477
+> Non-Eccentricity Pattern Noise 0.78032 0.77519 0.28804 0.27206 0.73617 0.71928
+> Saturation Change 0.25800 0.13506 0.19563 0.18257 0.03867 0.11915
+> Sparse Sampling 0.93282 0.94802 0.90146 0.94547 0.96238 0.96498
+> CSIQ Gaussian White Noise 0.87886 0.87219 0.63033 0.63896 0.95927 0.95767
+> Gaussian Blur 0.91299 0.93666 0.79022 0.86150 0.97167 0.97065
+> JPEG Compression 0.92747 0.96582 0.49307 0.50231 0.97414 0.98614
+> Contrast Decrement 0.72844 0.79862 0.85033 0.82952 0.83800 0.85615
+> Additive Pink Gaussian Noise 0.90599 0.90601 0.73919 0.73596 0.95767 0.96121
+> JPEG2000 Compression 0.93387 0.95789 0.76008 0.85073 0.97842 0.98485
+> LIVE MD Blur + JPEG 0.84045 0.88303 0.85530 0.84101 0.82051 0.87536
+> Blur + Gaussian Noise 0.82627 0.84795 0.85056 0.84693 0.81948 0.87148
+> KADID-10K Brighten 0.89667 0.85979 0.34248 0.36267 0.91327 0.85412
+> Color Block 0.46972 0.49539 0.15735 0.14423 0.46188 0.44212
+> Color Diffusion 0.86327 0.86337 0.36502 0.35675 0.80994 0.87649
+> Color Quantization 0.76040 0.78701 0.36019 0.32556 0.62436 0.63638
+> Color Saturation HSV 0.45365 0.41531 0.35513 0.37647 0.29924 0.30204
+> Color Saturation Lab 0.82143 0.82357 0.19096 0.19131 0.85368 0.88487
+> Color Shift 0.71229 0.73809 0.34122 0.27306 0.61683 0.65462
+> Contrast Change 0.75891 0.73393 0.22985 0.24859 0.53230 0.47517
+> Darken 0.86889 0.90626 0.41762 0.51151 0.89651 0.86933
+> Denoise 0.90523 0.89628 0.77152 0.78213 0.83989 0.84339
+> Gaussian Blur 0.88508 0.90903 0.83831 0.86269 0.90981 0.93001
+> High Sharpen 0.89084 0.86797 0.08298 0.02748 0.88573 0.87076
+> Impulse Noise 0.83244 0.80943 0.64341 0.57199 0.89504 0.87381
+> JPEG 0.84231 0.96059 0.60682 0.59041 0.87067 0.96481
+> JPEG2000 0.88737 0.94818 0.69498 0.78427 0.93485 0.93627
+> Jitter 0.87861 0.89183 0.80839 0.82385 0.90709 0.90317
+> Lens Blur 0.89020 0.91398 0.80472 0.85549 0.86266 0.88640
+> Mean Shift 0.64694 0.67010 0.08925 0.09425 0.70339 0.58324
+> Motion Blur 0.85702 0.83870 0.71746 0.69404 0.90969 0.88860
+> Multiplicative Noise 0.85546 0.84402 0.66840 0.61184 0.90687 0.89638
+> Non-Eccentricity Patch 0.56147 0.53888 0.22163 0.22531 0.34556 0.32293
+> Pixelate 0.54830 0.59637 0.31144 0.29531 0.53484 0.57429
+> Quantization 0.82131 0.83533 0.27957 0.24999 0.67751 0.68281
+> White Noise 0.81141 0.81305 0.60187 0.54869 0.89053 0.86322
+> White Noise Color Component 0.86630 0.86846 0.68483 0.63570 0.92567 0.92677
+> PIPAL Complete 0.50821 0.52876 0.70976 0.73416 0.51684 0.53178
+> Gaussian Blur 0.57665 0.54602 0.62650 0.60681 0.63690 0.65328
+> White Noise 0.48788 0.35242 0.70017 0.68137 0.60785 0.60025
+
+D. Overall Performance and Comparison with Full-Reference Methods 
+
+Tab. III summarises the overall performance on the entire datasets and broadens the comparison to FR methods, or-ganised into four classes: NR Deep and Clip-based, NR Traditional, FR Deep, and FR Traditional. The colour coding makes the two intended comparisons immediately readable: bold blue marks the best performer among all No-Reference methods together with PreSPA, while bold black marks the leader of each of the four classes, including the FR ones. Within the reference-free family, PreSPA either wins out-right or remains within 0.05 of the best competitor on 9 out of 12 score cells across the six datasets. On LIVE DBR2 the PROPOSAL2026 11 
+
+TABLE III: Comparison of PreSPA against No-Reference (NR) Deep and Clip-based, NR Traditional, Full-Reference (FR) Deep, and FR Traditional methods across the entire datasets LIVE DBR2, TID2013, CSIQ, LIVE MD, KADID-10K, and PIPAL, each containing a diverse set of distortions. Bold black highlights the best-performing metric within each of the four classes, enabling a direct comparison of PreSPA against the leader of each family. Bold blue identifies the best performer among the No-Reference methods together with PreSPA. The Params / GFLOPS column reports the parameter count and the computational cost per image pair at 3 × 224 × 224 resolution: DL-IQA methods require tens to hundreds of millions of parameters, while PreSPA uses only three. Tab. I provides the per-distortion breakdown.                                                                                                                                                                                                                                                                                                                                                          
+
+> Class IQA metric Params / GFLOPS LIVE DBR2 TID2013 CSIQ LIVE MD KADID-10K PIPAL SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC SROCC PLCC
+> PR PreSPA 3/0.13 G0.96292 0.95967 0.58801 0.61546 0.91684 0.89233 0.82001 0.87314 0.49069 0.47770 0.51684 0.53178 NR Deep and TOPIQ-NR 45 M/14 G0.83460 0.81432 0.44521 0.56254 0.74866 0.78507 0.78960 0.85367 0.51117 0.54636 0.45042 0.44595 Clip-based HyperIQA 27 M/215 G0.87096 0.85689 0.45389 0.59001 0.71750 0.72006 0.61022 0.71287 0.46237 0.50257 0.41855 0.40861 MUSIQ 27 M/17 G0.87739 0.86786 0.57495 0.68144 0.70981 0.77039 0.87134 0.90301 0.55552 0.59417 0.45419 0.45369
+> CNNIQA 0.7M/0.7G0.28377 0.30297 0.17686 0.39804 0.34274 0.44006 0.20591 0.35574 0.37476 0.39925 0.33837 0.32632 CLIPIQA 102 M/35 G0.68295 0.67333 0.57860 0.64709 0.68076 0.72694 0.43516 0.57267 0.50086 0.52315 0.36345 0.34804 CLIPIQA+ 102 M/12 G0.86029 0.84432 0.63183 0.70097 0.71955 0.77101 0.76690 0.81485 0.65435 0.66186 0.38656 0.39565
+> NR Traditional BRISQUE 0/−0.96538 0.96676 0.36718 0.43174 0.64096 0.75661 0.51700 0.46554 0.32967 0.37005 0.21742 0.13392
+> NIQE 0/−0.90850 0.90678 0.31209 0.37152 0.62784 0.71654 0.75156 0.81404 0.38004 0.41687 0.15366 0.12284
+> RR 2stepQA 0/0.09 G0.94403 0.94289 0.74034 0.78695 0.85329 0.84798 0.81691 0.85295 0.77125 0.76700 0.50821 0.52876 CKDN 13 M/4.3G0.66836 0.68653 0.59435 0.68050 0.62407 0.64370 0.84944 0.83980 0.46751 0.49750 0.70976 0.73416 FR Deep TOPIQ-FR 36 M/19 G0.97590 0.97190 0.91654 0.91578 0.96743 0.96971 0.89093 0.91437 0.98566 0.98515 0.70902 0.71528 TOPIQ-FR-PIPAL 36 M/19 G0.94319 0.94100 0.81986 0.85481 0.90756 0.91860 0.89891 0.92632 0.89474 0.89443 0.81101 0.84001
+> DISTS 15 M/61 G0.94766 0.94463 0.70766 0.75494 0.92964 0.93764 0.78146 0.81110 0.81370 0.81373 0.58113 0.59507 LPIPS 63 M/3G0.92350 0.91624 0.74448 0.77129 0.92333 0.91935 0.74968 0.82166 0.82243 0.81699 0.58535 0.58262 LPIPS-VGG 153 M/61 G0.93185 0.93361 0.69395 0.75864 0.88304 0.90424 0.76774 0.79994 0.72005 0.72837 0.57315 0.60666 PIEAPP 68 M/155 G0.91821 0.91019 0.84690 0.83272 0.89692 0.88053 0.80023 0.86091 0.86468 0.77202 0.70373 0.69471
+> FR Traditional VIF 0/0.5G0.96359 0.95876 0.67697 0.73360 0.91936 0.92515 0.88271 0.91857 0.67919 0.68563 0.56008 0.55826 MS-SSIM 0/0.05 G0.95083 0.94731 0.78593 0.83128 0.91321 0.89811 0.81827 0.85311 0.82440 0.75615 0.55813 0.58954 FSIM 0/0.08 G0.96462 0.96044 0.85092 0.87679 0.93096 0.91820 0.86336 0.90745 0.85270 0.79149 0.58902 0.60896 GMSD 0/0.001 G0.96025 0.96026 0.80438 0.85592 0.95703 0.92918 0.84169 0.88906 0.84742 0.80476 0.58091 0.62622
+> RVSIM 0/0.38 G0.95959 0.95663 0.67609 0.75676 0.89343 0.91540 0.85614 0.89476 0.71768 0.72813 0.56991 0.59618
+
+comparison with BRISQUE is essentially a tie (SROCC 0.962 
+
+vs. 0.965 , PLCC 0.958 vs. 0.967 ), with PreSPA achieving the highest combined performance over all 5 distortion classes (see Tab. I). On CSIQ and PIPAL, PreSPA is the top-performing NR method by margins that range from moderate to substan-tial, while on LIVE MD it remains within 0.05 of the leading NR method. The three cells in which PreSPA does not appear in colour (TID2013-PLCC, KADID-10K-SROCC, KADID-10K-PLCC) correspond to the datasets in which colour-domain distortions are particularly numerous and weight heavily on the aggregate: 9 of the 24 TID2013 distortions and 11 of the 
+
+25 KADID-10K distortions belong to the colour, contrast, or saturation families. The gap with the best NR competitor on these aggregates is therefore a direct consequence of the per-distortion behaviour discussed above, rather than a sign of inferior overall accuracy. The comparison with the FR families provides a useful sense of how far PreSPA stands from methods that exploit the full reference image. Within the FR Deep class, TOPIQ-FR remains the strongest method overall, while TOPIQ-FR-PIPAL takes the lead on PIPAL by virtue of its dedicated training on that benchmark. In the FR Traditional class, FSIM and GMSD dominate. On LIVE DBR2, CSIQ, and LIVE MD — the three datasets dominated by structural distortions — PreSPA approaches or matches the FR Traditional leaders: its SROCC and PLCC are within 0.01 –0.05 of FSIM and GMSD, and within 0.05 –0.06 of VIF. This is a notable result given that PreSPA consumes a single scalar from the reference, while all FR methods exploit the entire reference image at the pixel level. The gap to the FR Deep family is wider on TID2013 and KADID-10K, where models trained directly on these datasets enjoy a structural advantage that no training-free method can match, but narrows considerably on the datasets with predominantly structural distortions. Overall, the picture that emerges from Tab. III is consistent with the design principle of PreSPA: a framework that with only three interpretable parameters and a single reference scalar matches the leading NR methods on most datasets, approaches the FR Traditional family on distortions where the structural assumption holds, and exhibits its main limitations exclusively on colour-domain artefacts that lie outside the scope of a luminance-gradient analysis. 
+
+E. Computational Efficiency 
+
+A final dimension along which the proposed framework should be evaluated is its computational footprint. PreSPA is ex-tremely compact: with only three model parameters against the tens to hundreds of millions of the deep NR and FR families, the gap in model size spans roughly seven orders of magnitude, while its runtime cost of ∼ 0.13 GFLOPS per image pair is two to three orders of magnitude below that of the deep competitors. Moreover, by embedding the viewing distance directly into the operator scale, PreSPA produces scores on a stable perceptual scale by construction and avoids the post-hoc five-parameter VQEG logistic rectification [13] required by the other methods. This makes PreSPA suitable for real-time deployment without dedicated hardware accelerators, the nat-ural regime of PR-IQA (broadcasting, streaming, restoration monitoring). A detailed per-method breakdown of parameter counts and FLOPS, including the VQEG overhead, is reported in the Supplementary Material. VI. R ESULTS AND DISCUSSION 
+
+A key property of the framework is how the scalar μ
+
+models cross-regional perceptual interactions. By measuring the reference–distortion gradient error only over reliable areas (ΩC ) and diffusing it over weakly-structured ones ( ΩH ), μ
+
+captures the perceptual leakage of edge degradations into neighbouring sensitive zones, improving alignment with sub-jective scores in low-texture regions around prominent objects, PROPOSAL2026 12 
+
+where edge-focused metrics underestimate degradation. Nor-malizing over the edge-point count keeps the behaviour stable across scenes of varying edge density. The structural index Qstruct remains informative without the reference because natural-image gradients are highly self-predictable: the local second-order structure captured by the 
+
+ϕ20 and ϕ02 bases is well explained by its neighbourhood, so distortions that disrupt this regularity (blur, incoherent noise, blocking) raise the prediction residual in proportion to perceived degradation. The scalar μ enters only as a noise prior setting the absolute scale of this residual, explaining why so little reference information recovers most of the accuracy of a full-reference comparison on structural distortions. The results reveal an interpretable dichotomy: PreSPA is highly competitive on structural distortions (blur, noise, compression, PIPAL restoration artefacts) but degrades on distortions that alter colour, hue, or contrast while leaving the gradient geometry intact, abundant in TID2013 and KADID-10K. This follows directly from analysing the luminance gradient field, and the fact that failures fall exactly where the structural assumption is violated confirms that the model behaves according to its principles. It also suggests a self-contained extension: a chromatic gradient channel would ad-dress colour distortions without altering the structural core. Finally, the absence of learned weights yields a cross-dataset advantage. Deep models excel in-distribution but degrade under distribution shift, as seen in the drop of several of them on PIPAL, whereas PreSPA applies the same three fixed parameters to all six benchmarks with a markedly more stable ranking. Since its only data-dependent quantities ( τ and a) are physically or statistically grounded rather than fitted on sub-jective scores, this predictability often outweighs a marginally higher in-distribution correlation when the distortion type is unknown a priori. VII. C ONCLUSION 
+
+We introduced PreSPA, a Partial-Reference IQA framework that reduces the reference to a single scalar prior μ, prop-agated to an otherwise fully No-Reference analysis. Quality is decomposed into a structural index Qstruct , from a Hermite-Gauss self-prediction of the distorted gradient field interpreted as a normalised channel capacity, and a texture index Qt driven by μ, encoding the perceptual leakage of edge degradations into surrounding regions. Sharing a perceptual scale through a viewing-distance-dependent kernel, the two indices are merged by a low-order affine fusion, giving a model with three interpretable parameters and no learned weights. Evaluated on six benchmarks, PreSPA rivals or surpasses leading No-Reference deep models and approaches Full-Reference accuracy on structurally dominated distortions, at about 0.13 GFLOPS per image pair. It inherits from BELE the edge–texture decomposition and the calibration-free treatment of viewing distance, being, to our knowledge, the first Partial-Reference method to embed the viewing distance into the operator scale and dispense with the VQEG rectification, while its training-free design yields stable cross-dataset behaviour. Operating on the luminance gradient field, PreSPA is less sensitive to distortions that alter colour or contrast while preserving gradient geometry. Future work will add a chro-matic gradient channel to cover such artefacts and investigate adaptive estimation of μ without a reference, moving towards the fully No-Reference regime. REFERENCES [1] Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, “Image quality assessment: from error visibility to structural similarity,” IEEE Trans. on Image Processing , vol. 13, no. 4, pp. 600–612, Apr. 2004. [2] H. R. Sheikh, M. F. Sabir, and A. C. Bovik, “A statistical evaluation of recent Full Reference image quality assessment algorithms,” IEEE Trans. on Image Processing , vol. 15, no. 11, pp. 3441–3452, Nov. 2006. [Online]. Available: live.ece.utexas.edu/research/quality/subjective.htm [3] L. S. Chow and R. Paramesran, “Review of medical image quality assessment,” Biomedical Signal Processing and Control , vol. 27, pp. 145–154, 2016. [Online]. Available: https://www.sciencedirect.com/ science/article/pii/S1746809416300180 [4] S. Su, Q. Yan, Y. Zhu, C. Zhang, X. Ge, J. Sun, and Y. Zhang, “Blindly assess image quality in the wild guided by a self-adaptive hyper network,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2020. [5] J. Ke, Q. Wang, Y. Wang, P. Milanfar, and F. Yang, “Musiq: Multi-scale image quality transformer,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , October 2021, pp. 5148–5157. [6] C. Chen, J. Mo, J. Hou, H. Wu, L. Liao, W. Sun, Q. Yan, and W. Lin, “Topiq: A top-down approach from semantics to distortions for image quality assessment,” IEEE Transactions on Image Processing , vol. 33, pp. 2404–2418, 2024. [7] J. Wang, K. C. Chan, and C. C. Loy, “Exploring clip for assessing the look and feel of images,” Proceedings of the AAAI Conference on Artificial Intelligence , vol. 37, no. 2, pp. 2555–2563, Jun. 2023. [Online]. Available: https://ojs.aaai.org/index.php/AAAI/article/view/25353 [8] Z. Wang and E. P. Simoncelli, “Reduced-reference image quality as-sessment using a wavelet-domain natural image statistic model,” Proc. of SPIE Human Vision and Electronic Imaging X , vol. 5666, pp. 149– 159, Mar. 2005. [9] R. Soundararajan and A. C. Bovik, “RRED indices: Reduced reference entropic differencing for image quality assessment,” IEEE Transactions on Image Processing , vol. 21, no. 2, pp. 517–526, Feb. 2012. [10] D. Marr, Vision: A Computational Investigation into the Human Repre-sentation and Processing of Visual Information . The MIT Press, 2010. [11] P. Giannitrapani, E. D. D. Claudio, and G. Jacovitti, “Bele: Blur equivalent linearized estimator,” 2025. [Online]. Available: https://arxiv.org/abs/2503.00503 [12] P. Giannitrapani, E. D. Di Claudio, and G. Jacovitti, “Full-reference calibration-free image quality assessment,” Signal Processing: Image Communication , vol. 130, p. 117212, 2025. [Online]. Available: https://www.sciencedirect.com/science/article/pii/S0923596524001139 [13] VQEG, “Final report from the video quality experts group on the validation of objective models of video quality assessment,” Video Quality Experts Group, http://www.vqeg.org, Tech. Rep., Mar. 2000. [14] S. Winkler, “Issues in vision modeling for perceptual video quality assessment,” Signal Processing , vol. 78, no. 2, pp. 231–252, Feb. 1999. [15] D. M. Chandler and S. Hemami, “VSNR: a wavelet-based visual signal-to-noise ratio for natural images,” IEEE Trans. on Image Processing ,vol. 16, no. 9, pp. 2284 –2298, Sept. 2007. [16] D. M. Chandler, K. H. Lim, and S. S. Hemami, “Effects of spatial correlations and global precedence on the visual fidelity of distorted images,” in Proc. SPIE , vol. 6057, 2006, pp. 60 570F–60 570F–15. [Online]. Available: http://dx.doi.org/10.1117/12.655442 [17] E. Vu and D. Chandler, “Visual fixation patterns when judging image quality: Effects of distortion type, amount, and subject experience,” in 
+
+Image Analysis and Interpretation, 2008. SSIAI 2008. IEEE Southwest Symposium on , Mar. 2008, pp. 73–76. [18] P. Cavanagh, “Visual cognition,” Vision Research , vol. 51, no. 13, pp. 1538 – 1551, 2011, vision Research 50th Anniversary Issue: Part 2. [19] L. Zhang, D. Zhang, M. Xuanqin, and D. Zhang, “FSIM: A feature similarity index for image quality assessment,” IEEE Trans. on Image Processing , vol. 20, no. 8, pp. 2378–2386, Aug. 2011. [20] W. Xue, L. Zhang, X. Mou, and A. Bovik, “Gradient magnitude similarity deviation: A highly efficient perceptual image quality index,” 
+
+IEEE Trans. on Image Processing , vol. 23, no. 2, pp. 684–695, Feb. 2014. PROPOSAL2026 13 
+
+[21] E. C. Larson and D. M. Chandler, “Most apparent distortion: full-reference image quality assessment and the role of strategy,” J. Electron. Imaging , vol. 9, no. 1, pp. 011 006/1–21, Jan. 2010. [22] H. R. Sheikh and A. C. Bovik, “Image information and visual quality,” 
+
+IEEE Trans. on Image Processing , vol. 15, no. 2, pp. 430–444, Feb. 2006. [23] Z. Wang, E. Simoncelli, and A. Bovik, “Multi-scale structural similarity for image quality assessment,” in Proc. of the 37th IEEE Asilomar Conference on Signal, Systems and Computer , vol. 2. IEEE Comp. Soc., Nov. 2003, pp. 1398–1402. [24] X. Yu, C. G. Bampis, P. Gupta, and A. C. Bovik, “Predicting the quality of images compressed after distortion in two steps,” IEEE Transactions on Image Processing , vol. 28, no. 12, pp. 5757–5770, 2019. [25] G. Yang, D. Li, F. Lu, Y. Liao, and W. Yang, “Rvsim: a feature similarity method for full-reference image quality assessment,” EURASIP Journal on Image and Video Processing , vol. 2018, no. 1, p. 6, Jan 2018. [Online]. Available: https://doi.org/10.1186/s13640-018-0246-1 [26] D. Varga, “Saliency-guided local full-reference image quality assess-ment,” Signals , vol. 3, no. 3, pp. 483–496, 2022. [27] ——, “Full-reference image quality assessment based on gr¨ unwald– letnikov derivative, image gradients, and visual saliency,” Electronics ,vol. 11, no. 4, p. 559, 2022. [28] G. Jinjin, C. Haoming, C. Haoyu, Y. Xiaoxing, J. S. Ren, and D. Chao, “Pipal: A large-scale image quality assessment dataset for perceptual image restoration,” in Computer Vision – ECCV 2020 , A. Vedaldi, H. Bischof, T. Brox, and J.-M. Frahm, Eds. Cham: Springer Inter-national Publishing, 2020, pp. 633–651. [29] K. Ding, K. Ma, S. Wang, and E. P. Simoncelli, “Image quality assess-ment: Unifying structure and texture similarity,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 44, no. 5, pp. 2567– 2581, 2022. [30] R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, “The unreasonable effectiveness of deep features as a perceptual metric,” in 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , June 2018. [31] E. Prashnani, H. Cai, Y. Mostofi, and P. Sen, “Pieapp: Perceptual image-error assessment through pairwise preference,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,June 2018. [32] L. Cao, W. Sun, X. Min, J. Jia, Z. Zhang, Z. Chen, Y. Zhu, L. Liu, Q. Chen, J. Chen, and G. Zhai, “Sg-jnd: Semantic-guided just noticeable distortion predictor for image compression,” in 2024 IEEE International Conference on Image Processing (ICIP) , 2024, pp. 1139–1145. [33] M. Cheon, S.-J. Yoon, B. Kang, and J. Lee, “Perceptual image quality assessment with transformers,” in Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR) Workshops ,June 2021, pp. 433–442. [34] H. Oh, J. Kim, T. Kim, and S. Lee, “Convolved quality transformer: Image quality assessment via long-range interaction between local perception,” IEEE Access , vol. 10, pp. 102 968–102 980, 2022. [35] S. Lao, Y. Gong, S. Shi, S. Yang, T. Wu, J. Wang, W. Xia, and Y. Yang, “Attentions help cnns see better: Attention-based hybrid image quality assessment network,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , June 2022, pp. 1140–1149. [36] H. Wu, Z. Zhang, W. Zhang, C. Chen, L. Liao, C. Li, Y. Gao, A. Wang, E. Zhang, W. Sun, Q. Yan, X. Min, G. Zhai, and W. Lin, “Q-Align: Teaching LMMs for visual scoring via discrete text-defined levels,” in 
+
+Proc. of the 41st Int. Conf. on Machine Learning (ICML) , 2024. [37] H. Zhu, X. Sui, B. Chen, X. Liu, P. Chen, Y. Fang, and S. Wang, “Adaptive image quality assessment via teaching large multimodal model to compare,” in Advances in Neural Information Processing Systems (NeurIPS) , 2024. [38] A. K. Moorthy and A. C. Bovik, “Blind image quality assessment: From natural scene statistics to perceptual quality,” vol. 20, no. 12, Dec. 2011, pp. 3350–3364. [39] M. A. Saad, A. C. Bovik, and C. Charrier, “Blind image quality assessment: A natural scene statistics approach in the DCT domain,” 
+
+IEEE Transactions on Image Processing , vol. 21, no. 8, pp. 3339–3352, Aug 2012. [40] A. Mittal, A. K. Moorthy, and A. C. Bovik, “No-reference image quality assessment in the spatial domain,” IEEE Transactions on Image Processing , vol. 21, no. 12, pp. 4695–4708, Dec 2012. [41] A. Mittal, R. Soundararajan, and A. C. Bovik, “Making a “completely blind” image quality analyzer,” IEEE Signal Processing Letters , vol. 20, no. 3, pp. 209–212, 2013. [42] L. Kang, P. Ye, Y. Li, and D. Doermann, “Convolutional neural networks for no-reference image quality assessment,” in Proc. of the IEEE Conf. on Computer Vision and Pattern Recognition (CVPR) , 2014, pp. 1733– 1740. [43] S. Yang, T. Wu, S. Shi, S. Lao, Y. Gong, M. Cao, J. Wang, and Y. Yang, “MANIQA: Multi-dimension attention network for no-reference image quality assessment,” in Proc. of the IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR) Workshops , 2022, pp. 1191–1200. [44] A. Saha, S. Mishra, and A. C. Bovik, “Re-IQA: Unsupervised learning for image quality assessment in the wild,” in Proc. of the IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR) , 2023, pp. 5846–5855. [45] L. Agnolucci, L. Galteri, M. Bertini, and A. Del Bimbo, “ARNIQA: Learning distortion manifold for image quality assessment,” in Proc. of the IEEE/CVF Winter Conf. on Applications of Computer Vision (WACV) , 2024, pp. 189–198. [46] S. Athar and Z. Wang, “A comprehensive performance evaluation of image quality assessment algorithms,” IEEE Access , vol. 7, pp. 140 030– 140 070, 2019. [47] K. Gu, G. Zhai, X. Yang, W. Zhang, and L. Liang, “No-reference image quality assessment metric by combining free energy theory and structural degradation model,” in 2013 IEEE Int. Conf. on Multimedia and Expo (ICME) , July 2013, pp. 1–6. [48] L. Capodiferro, G. Jacovitti, and E. D. Di Claudio, “Two-dimensional approach to full-reference image quality assessment based on positional structural information,” IEEE Trans. on Image Processing , vol. 21, no. 2, pp. 505–516, Feb. 2012. [49] K. Gu, M. Liu, G. Zhai, X. Yang, and W. Zhang, “Quality assessment considering viewing distance and image resolution,” IEEE Transactions on Broadcasting , vol. 61, no. 3, pp. 520–531, 2015. [50] S. Bosse, D. Maniry, K. Muller, T. Wiegand, and W. Samek, “Deep neural networks for no-reference and full-reference image quality as-sessment,” IEEE Transactions on Image Processing , vol. 27, no. 1, pp. 206–219, 2018. [51] H. Landau, “Sampling, data transmission, and the Nyquist rate,” Pro-ceedings of the IEEE , vol. 55, no. 10, pp. 1701–1706, 1967. [52] E. D. Di Claudio, P. Giannitrapani, and G. Jacovitti, “Predicting blur vi-sual discomfort for natural scenes by the loss of positional information,” 
+
+Vision Research , vol. 189, pp. 33–45, 2021. [53] E. D. Di Claudio, G. Jacovitti, and A. Laurenti, “Maximum Likelihood orientation estimation of 1-D patterns in Laguerre-Gauss subspaces,” 
+
+IEEE Trans. on Image Processing , vol. 19, no. 5, pp. 1113–1125, May 2010. [54] F. W. Campbell and D. G. Green, “Optical and retinal factors affecting visual resolution,” The Journal of physiology , vol. 181, no. 3, pp. 576– 93, 1965. [55] J. Mannos and D. Sakrison, “The effects of a visual fidelity criterion of the encoding of images,” IEEE Trans. on Information Theory , vol. 20, no. 4, pp. 525–536, Jul. 1974. [56] J. G. Daugman, “Six formal properties of two-dimensional anisotropic visual filters: structural principles and frequency/orientation selectivity,” 
+
+IEEE Trans. Syst., Man, Cybern. , vol. 13, pp. 882–887, 1983. [57] A. Neri and G. Jacovitti, “Maximum likelihood localization of 2-D patterns in the Gauss-Laguerre transform domain: theoretic framework and preliminary results,” IEEE Trans. on Image Processing , vol. 13, no. 1, pp. 72–86, Jan. 2004. [58] N. Ponomarenko, L. Jin, O. Ieremeiev, V. Lukin, K. Egiazarian, J. Astola, B. Vozel, K. Chehdi, M. Carli, F. Battisti, and C.-C. J. Kuo], “Image database TID2013: Peculiarities, results and perspectives,” Signal Pro-cessing: Image Communication , vol. 30, pp. 57 – 77, 2015. [59] D. Jayaraman, A. Mittal, A. K. Moorthy, and A. C. Bovik, “Objective quality assessment of multiply distorted images,” in 2012 Conference Record of the Forty Sixth Asilomar Conference on Signals, Systems and Computers (ASILOMAR) , 2012, pp. 1693–1697. [60] H. Lin, V. Hosu, and D. Saupe, “Deepfl-iqa: Weak supervision for deep iqa feature learning,” arXiv preprint arXiv:2001.08113 , 2020. [61] H. Zheng, H. Yang, J. Fu, Z.-J. Zha, and J. Luo, “Learning conditional knowledge distillation for degraded-reference image quality assessment,” in Proc. of the IEEE/CVF Int. Conf. on Computer Vision (ICCV) , 2021, pp. 10 242–10 251.

@@ -1,0 +1,288 @@
+Title: MambaRefine-CD: MambaVision with Region-Boundary Temporal Refinement
+
+URL Source: https://arxiv.org/pdf/2607.04403v1
+
+Published Time: Tue, 07 Jul 2026 02:18:21 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# MambaRefine-CD: MambaVision with Region-Boundary Temporal Refinement 
+
+Dineth Perera 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka e21291@eng.pdn.ac.lk Thaariq Firdous 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka e21139@eng.pdn.ac.lk Oshadha Samarakoon 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka e21345@eng.pdn.ac.lk Roshan Godaliyadda 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka roshang@eng.pdn.ac.lk Parakrama Ekanayake 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka mpbe@eng.pdn.ac.lk Vijitha Herath 
+
+University of Peradeniya 
+
+Peradeniya, Sri Lanka vijitha@eng.pdn.ac.lk 
+
+Abstract —Binary change detection in remote sensing re-quires both complete changed-region localization and accurate boundary delineation. We present MambaRefine-CD, a region-boundary temporal refinement framework built on a shared MambaVision encoder. The proposed D-RBI module constructs temporal evidence from paired features, absolute differences, and signed differences, then separates it into region and Sobel-conditioned boundary streams. Region features are enhanced with CRAM-lite and decoded by an adaptive receptive-field FPN, while the finest boundary stream guides a bounded residual refinement of the coarse prediction. Experiments on DSIFN-CD and WHU-CD show strong changed-class F1 and IoU under verified evaluation settings, and ablations support the contribution of signed temporal evidence and the full region-boundary refinement pipeline.Code available here. 
+
+Index Terms —Remote sensing, change detection, MambaV-ision, state-space models, temporal feature fusion, boundary refinement, adaptive receptive-field FPN. 
+
+I. I NTRODUCTION 
+
+Remote-sensing change detection (CD) estimates a binary change mask from two co-registered images acquired over the same area at different times. The task underpins urban expansion monitoring, disaster assessment, land-cover analy-sis, and infrastructure management. In practice, binary CD is difficult because the model must compare two observations while being invariant to nuisance variation from illumination shifts, seasonal changes, shadows, sensor differences, and small registration errors. These effects are most visible near object boundaries, where a model may detect the changed region but still produce shifted, fragmented, or over-smoothed masks. Deep CD methods have evolved along three main directions. Convolutional Siamese networks compare bi-temporal images through early fusion or feature differencing, as in FC-EF, FC-Siam-conc, and FC-Siam-diff [1]. Later CNN encoder-decoder models improve localization through skip connections, dense feature reuse, and multi-scale attention [2]–[4]. These models are effective because convolutions provide useful locality and translation bias. Their context modeling is still bounded by the receptive field, which can limit reasoning about spatially distributed changes. Transformer-based methods address long-range interaction more directly. BIT models bi-temporal to-kens with a Transformer encoder [5], and ChangeFormer uses a hierarchical Siamese Transformer for dense CD [6]. Wijenayake et al. [7] further demonstrate that precise spatio-temporal feature fusion yields gains over standard differencing strategies. Despite this progress, attention-based models carry high memory and compute cost at dense resolution, and stronger global representations do not automatically resolve boundary localization errors. Recent visual state-space models (SSMs) provide a different route. Mamba introduces selective state-space sequence mod-eling with linear complexity [8], and VMamba adapts it to vision through two-dimensional selective scanning [9]. Mam-baVision develops a hybrid Mamba-Transformer backbone for visual recognition and dense prediction tasks [10]. Mamba-based CD models, including ChangeMamba [11], HAM-CD [12], and Mamba-CD [13], show that SSM backbones are competitive for binary and semantic change detection. Wijenayake et al. in Mamba-FCS [14] further demonstrate that combining frequency-domain fusion with change-guided attention and a SeK-inspired loss improves semantic CD. However, applying a Mamba-based encoder alone is not a complete solution. A CD model must still construct temporal evidence from both images and preserve fine boundaries in the output mask. A controlled benchmark of SSM backbones for remote-sensing segmentation [15] found that boundary delineation remains the dominant failure mode under domain shift, suggesting that encoder scaling alone is insufficient for boundary-sensitive tasks. We propose MambaRefine-CD , a MambaVision-based ar-chitecture for binary remote-sensing CD. The model builds temporal features using raw paired features, absolute dif-ference, and signed difference, giving the decoder access to both magnitude-based and direction-aware evidence. The core novelty is D-RBI , which applies two separate learned gating mechanisms to temporal features before decoding. A 
+
+> arXiv:2607.04403v1 [eess.IV] 5 Jul 2026
+
+region gate produces stable changed-area responses, and a Sobel-conditioned boundary gate selects contour-sensitive evi-dence. These two pathways are combined through an adaptive receptive-field decoder and refined by a bounded residual head that applies a controlled correction to coarse logits near boundaries. The contributions of this paper are:  
+
+> •
+
+We propose MambaRefine-CD, a MambaVision-based binary change detection framework that combines shared bi-temporal encoding with explicit region-boundary tem-poral refinement.  
+
+> •
+
+We introduce D-RBI, a lightweight differential region-boundary interaction module that constructs temporal evidence from paired features, absolute difference, and signed difference, and separates the representation into region-aware and boundary-aware streams.  
+
+> •
+
+We design a bounded boundary residual refinement head that applies controlled corrections to coarse logits near predicted boundary regions, reducing the risk of over-writing the global changed-region prediction. The remainder of the paper is organized as follows. Sec-tion II reviews related work. Section III presents the proposed method. Section IV describes the datasets, metrics, results, ablations, and limitations. Section V concludes the paper. II. R ELATED WORK 
+
+A. Convolutional and Transformer-Based Change Detection 
+
+Early deep CD models used convolutional Siamese en-coders with feature differencing or concatenation for tempo-ral comparison [1]. Later encoder-decoder models improved localization through skip connections, dense feature reuse, and multi-scale aggregation [2]–[4]. These CNN methods are efficient and translation-equivariant, but their effective receptive field can limit long-range reasoning over spatially distributed changes. Transformer-based CD methods address global context more directly. BIT represents bi-temporal features as semantic to-kens for temporal reasoning [5], while ChangeFormer uses a hierarchical Siamese Transformer with an MLP decoder for dense prediction [6]. Ratnayake et al. also show that attention and improved loss design can benefit CD architectures [16]. However, attention-based models remain expensive at high resolution, and stronger global modeling does not by itself guarantee accurate boundary delineation. 
+
+B. State Space Models for Remote Sensing 
+
+Mamba introduces selective SSM sequence modeling with linear complexity [8], and VMamba adapts this idea to vision using two-dimensional selective scanning [9]. MambaVision further develops a hybrid Mamba-Transformer backbone with strong accuracy-efficiency trade-offs for vision tasks [10]. Recent CD models have started adopting these backbones. ChangeMamba integrates VMamba into a bi-temporal archi-tecture [11], and HAM-CD adds hybrid attention to improve fine-grained local modeling [12]. Wijenayake et al. explore spectral fusion and change-guided attention for semantic CD in Mamba-FCS [14], and precise spatio-temporal fusion for binary CD [7]. Mamba-CD [13] is the closest related work, using change region-aware attention and gated recursive context refinement. In contrast, MambaRefine-CD constructs temporal evidence from paired features, absolute difference, and signed difference before decoding, then separates the fused representation into region and boundary streams through D-RBI. CRAM-lite is used only as a lightweight residual modulation on D-RBI region features, while the main temporal decomposition is performed by D-RBI. These works show that SSM backbones are promising for remote-sensing CD, but most focus on region-level detection and do not explicitly decouple boundary-sensitive cues from region evidence. 
+
+C. Boundary-Aware Modeling and Temporal Feature Con-struction 
+
+Boundary precision is a long-standing challenge in dense prediction. Boundary loss penalizes contour errors di-rectly [17], Gated-SCNN uses a dedicated shape stream [18], and BASNet follows a coarse-to-fine boundary-aware de-sign [19]. In remote sensing, boundary-aware multi-task learn-ing has been studied for aerial dense prediction [20], and BSCNet uses boundary-aware semantic context for sharper CD edges [21]. Most CD methods compare bi-temporal features mainly through absolute differencing |F2 − F1|. This captures change magnitude but discards temporal direction, so appearance and disappearance can become indistinguishable. Wasalathilaka et al. also report that boundary delineation remains a dominant failure mode for SSM backbones under domain shift [15]. MambaRefine-CD addresses these issues by preserving signed temporal evidence through F2−F1 and separating the temporal descriptor into region and boundary pathways before decod-ing. III. M ETHODOLOGY 
+
+A. Overview 
+
+MambaRefine-CD predicts a binary change map from a bi-temporal pair (I1, I 2). As shown in Fig. 1, the model follows four steps. A shared MambaVision encoder extracts paired multi-scale features, D-RBI builds temporal evidence and separates it into region and boundary streams, ARF-FPN decodes the region stream into a coarse logit map, and a bounded residual head uses the boundary stream to refine uncertain contours. Thus, region features determine the main changed area, while Sobel-conditioned boundary features provide a controlled correction signal. 
+
+B. Shared MambaVision Encoding 
+
+Both images pass through the same patch embedding and shared MambaVision encoder: 
+
+{F ℓ 
+
+> 1
+
+}4 
+
+> ℓ=1
+
+= E(I1), {F ℓ 
+
+> 2
+
+}4 
+
+> ℓ=1
+
+= E(I2), (1) where ℓ indexes the four encoder stages at scales 
+
+{1/4, 1/8, 1/16 , 1/32 }. In Fig. 1, each stage output from the Fig. 1. Overall architecture of MambaRefine-CD. Two bi-temporal images are processed by a shared MambaVision encoder. Same-scale features are fused by D-RBI modules, region features are decoded by ARF-FPN, and the finest boundary stream guides a bounded residual refinement of the coarse prediction. 
+
+first image is paired with the same-scale output from the sec-ond image. Weight sharing keeps both images in one feature space, so the following temporal differences mainly represent scene change rather than encoder mismatch. We use pretrained MambaVision-S as the default trainable backbone [10]. 
+
+C. Differential Region–Boundary Interaction 
+
+At each scale ℓ, D-RBI receives the paired features F ℓ 
+
+> 1
+
+and 
+
+F ℓ 
+
+> 2
+
+. The differential feature construction block in Fig. 1 forms four streams: 
+
+Xℓ = F ℓ 
+
+> 1
+
+, F ℓ 
+
+> 2
+
+, |F ℓ 
+
+> 2
+
+− F ℓ 
+
+> 1
+
+|, F ℓ 
+
+> 2
+
+− F ℓ
+
+> 1
+
+ . (2) The first two terms preserve the original temporal features, the absolute difference gives change magnitude, and the signed difference keeps temporal direction. The concat node C stacks these streams along the channel dimension. The projection block then compresses the stacked evidence: 
+
+Dℓ = ϕℓ(Xℓ), (3) where ϕℓ(·) is the scale-specific 1 × 1 convolution shown in the diagram. The resulting differential feature Dℓ is the shared descriptor from which both region and boundary responses are generated. 
+
+Region gate. The upper branch in D-RBI computes a region gate from Dℓ:
+
+Gℓr = σ ψrℓ (Dℓ) , Rℓ = Gℓr ⊙ Dℓ. (4) Here, ψrℓ (·) denotes the lightweight convolutional gate and ⊙
+
+denotes element-wise multiplication. This equation means that the learned gate selects the parts of Dℓ useful for changed-region localization. The output Rℓ is the red region feature sent to the ARF-FPN decoder in Fig. 1. 
+
+Boundary gate. The lower branch computes a boundary gate from a feature-level Sobel response: 
+
+Sℓ = Sobel( Dℓ), Gℓb = σ ψbℓ (Sℓ) . (5) The Sobel operator is applied to the differential feature Dℓ, not to the raw image. Thus, the edge cue is tied to temporal change evidence rather than ordinary image texture. The boundary feature is 
+
+Bℓ = Gℓb ⊙ Dℓ. (6) This is the blue boundary feature in Fig. 1. Each D-RBI block therefore outputs a region feature Rℓ for decoding and a boundary feature Bℓ for residual refinement. 
+
+D. CRAM-lite 
+
+CRAM-lite is a lightweight residual spatial modulation block applied to the region stream at the first three encoder scales. Inspired by change-region-aware attention in Mamba-CD [13], it predicts a spatial map from the D-RBI region feature and applies residual gating: 
+
+eRℓ = Rℓ · (1 + αA ℓ), (7) where Aℓ ∈ [0 , 1] is the learned modulation map and α is initialized to 0.5. In the diagram, this block refines the region feature before decoding. CRAM-lite does not replace D-RBI; the main temporal decomposition is still performed by region-boundary separation. 
+
+E. Adaptive Receptive-Field Decoder 
+
+The decoder operates on the CRAM-lite refined region stream. Since CRAM-lite is applied only to the first three scales, we set eR4 = R4. The decoder input is { eRℓ}4
+
+> ℓ=1
+
+. Each scale is processed by an adaptive receptive-field block with parallel dilated depthwise convolutions: 
+
+d ∈ { 1, 2, 4, 8}. (8) These branches give the decoder both local detail and wider spatial context. The multi-scale ARF-FPN block in Fig. 1 fuses the four region features in a top-down manner, and the coarse prediction head produces 
+
+Pc = hcoarse 
+
+
+
+ARF -FPN( { eRℓ}4
+
+> ℓ=1
+
+)
+
+
+
+, (9) where Pc is the coarse change logit map. This map is the region-level prediction before boundary correction. F. Bounded Boundary Residual Refinement 
+
+The refinement branch uses the selected finest-scale bound-ary feature B1, the coarse logit Pc, and an edge cue from the coarse prediction: 
+
+Ec = Sobel( σ(Pc)) . (10) In Fig. 1, Ec is the Sobel block applied to the coarse logits after sigmoid. The boundary aggregation block concatenates the boundary feature, coarse logit, and coarse edge cue: 
+
+∆P = href ([ B1, P c, E c]) . (11) The refinement head predicts a residual correction rather than a new mask. The final logit is 
+
+Pf = Pc + 0 .1 tanh(∆ P ). (12) The tanh bounds the residual and the scale factor keeps the update small, so boundary evidence refines the coarse prediction without overwriting it. The final probability map is ˆY = σ(Pf ), (13) which is thresholded to obtain the binary change map. 
+
+G. Training Objective 
+
+The full model is trained with final, coarse, and boundary supervision: 
+
+L = LBCE + LDice + 0 .4 Lcoarse + 0 .1 Lboundary . (14) BCE and Dice supervise the final prediction Pf , while the coarse loss supervises Pc to stabilize the region decoder. The boundary term applies a Sobel-edge ℓ1 loss to encourage contour consistency. The auxiliary weights keep the main BCE and Dice objective dominant, and ablations without full supervision disable the coarse and boundary losses. IV. E XPERIMENTS 
+
+A. Datasets and Protocols 
+
+We evaluate MambaRefine-CD on DSIFN-CD [22] and WHU-CD [23]. DSIFN-CD contains high-resolution bi-temporal image pairs from Chinese cities. Our verified DSIFN protocol uses explicit split files with 2 758/394/789 train/validation/test images; the test set is evaluated as 3 156 deterministic tiles. For WHU-CD, the verified project split contains 6096 training, 762 validation, and 762 test patches. Evaluation uses 256 ×256 patches and the validation-selected threshold of 0.55. 
+
+B. Implementation and Metrics 
+
+Models are trained with AdamW, a cosine schedule, 2 500 warmup iterations, batch size 8, 256 ×256 crops, gradient clipping at 0.5, AMP, and EMA inference. Training uses random horizontal and vertical flips only. The full model uses MambaVision-S unless stated otherwise. For the verified DSIFN result, the 50k-iteration EMA checkpoint is evaluated at threshold 0.5. For WHU-CD, the verified threshold is 0.55. We report changed-class Precision (Pre), Recall (Rec), F1, IoU, and Overall Accuracy (OA). F1 and IoU are emphasized because OA is dominated by unchanged pixels. 
+
+C. Boundary Metrics 
+
+BF1 is computed by extracting binary boundaries from the predicted and ground-truth masks and matching boundary pixels within a fixed tolerance. The boundary evaluation script uses a 3-pixel tolerance for BF1. BIoU is computed as the IoU between boundary bands obtained around the predicted and ground-truth contours with the same 3-pixel band. Trimap F1-3px computes changed-class F1 only inside a three-pixel band around the ground-truth boundary. 
+
+D. Results and Literature Comparison 
+
+Tables I and III compare MambaRefine-CD with compact sets of representative methods. Literature values are taken from the cited recent comparison table [13], parameter counts are shown only when verified. Colored numbers mark the best, second-best, and third-best values within each metric column. On DSIFN-CD, MambaRefine-CD achieves 95.67% F1 and 91.71% IoU on average across three canonical full-model runs. These results are comparable to the Mamba-CD values reported by Peng et al. [13], which are 95.61% F1 and 91.69% IoU. However, because DSIFN-CD protocols differ across papers, this comparison should not be interpreted as a defini-tive same-protocol improvement. We therefore emphasize the verified split details and changed-class metrics, while reporting OA for completeness. Peng et al.’s Mamba-CD [13] is a closely related re-cent Mamba-based change detection method. On WHU-CD, MambaRefine-CD achieves 95.34% F1 and 91.10% IoU on average across three runs, compared with 95.20% F1 and 90.83% IoU reported by Mamba-CD. This indicates com-petitive changed-region overlap, while Mamba-CD retains higher precision and OA. The best single WHU-CD run of MambaRefine-CD further reaches 95.53% F1 and 91.45% IoU, suggesting that the proposed region-boundary refinement design is competitive with recent Mamba-based methods. 
+
+E. Ablation Study 
+
+Table II reports clean-split DSIFN ablations. The MambaV-ision encoder gives the largest gain over the SimpleCNN base-line. Unsigned D-RBI alone gives only a small and unstable change, while signed temporal difference improves the D-RBI design. ARF-FPN gives a modest positive gain. The boundary residual head alone does not improve the model by itself. The full model improves after combining boundary residual refinement with CRAM-Lite, coarse auxiliary supervision, and boundary loss this supports the full region-boundary refine-ment pipeline, not every individual module independently. Single-run ablations are reported where repeated runs were unavailable. 
+
+F. Boundary Evaluation 
+
+Table IV reports the boundary metrics defined in Sec-tion IV-C. Its region metrics come from the checkpoints used for boundary evaluation, while Table II reports the main ablation runs, so A1 and A4 may differ slightly across the two tables. (a) DSIFN-CD (b) WHU-CD Fig. 2. Qualitative results on DSIFN-CD and WHU-CD. Each panel shows the bi-temporal input pair, ground truth, prediction, and error map. White, black, red, and green denote true positives, true negatives, false positives, and false negatives, respectively. TABLE I CONTEXTUAL DSIFN-CD COMPARISON . L ITERATURE VALUES ARE FROM 
+
+PENG ET AL . [13]; RANKINGS ARE NOT STRICT SAME -SPLIT SOTA  
+
+> CLAIMS BECAUSE
+
+DSIFN-CD SPLIT PROTOCOLS DIFFER ACROSS PAPERS .
+
+Model Pre Rec F1 IoU OA FC-Siam-Conc [1] 66.45 54.21 59.71 42.56 87.57 SNUNet [3] 60.60 72.89 66.18 49.45 87.34 ChangeFormer [6] 88.48 84.94 86.67 76.48 95.56 BiFA 73.99 68.87 71.34 55.45 90.80 FTAN 90.54 88.61 89.56 81.10 –ADSFNet 94.79 95.24 95.01 90.50 98.30 
+
+Mamba-CD [13] 95.60 95.61 95.61 91.69 98.51 
+
+MambaRefine-CD 95.47 95.87 95.67 91.71 96.98 
+
+TABLE II ABLATION ON DSIFN-CD CLEAN SPLIT . A0–A6 USE 50K ITERATIONS .
+
+ID Variant Main Added Component Params (M) F1 IoU OA A0 FPN Baseline SimpleCNN encoder 7.84 76.63 62.12 83.80 A1 MambaVision-S + FPN MambaVision encoder 53.54 93.21 87.28 95.72 A2 + D-RBI unsigned Absolute-diff D-RBI 54.98 93.33 87.50 95.35 A3 + Signed Diff Signed temporal stream 55.34 94.28 89.19 95.99 A4 + ARF-FPN Adaptive RF decoder 65.12 94.36 89.32 96.05 A5 + Boundary Residual Bounded residual head 65.19 93.59 87.94 95.53 A6 Full Model CRAM-Lite + aux/bnd. loss 65.40 95.67 91.71 96.98 
+
+The full MambaRefine-CD pipeline improves BF1 from 61.36% to 71.94% and BIoU from 38.41% to 47.39% over the MambaVision-FPN baseline. This supports the proposed region-boundary refinement design. The A5 result further shows that boundary residual refinement is most effective when combined with signed temporal modeling, ARF-FPN decoding, CRAM-lite modulation, and boundary-aware super-vision. 
+
+G. Backbone Scaling 
+
+Table V compares backbone scaling. MambaVision-B pro-vides only marginal gains over MambaVision-S with substan-tially more parameters, so MambaVision-S is used as the main backbone, while tiny and base variants show the accuracy-efficiency trade-off. 
+
+TABLE III WHU-CD COMPARISON WITH REPRESENTATIVE METHODS . L ITERATURE VALUES ARE FROM PENG ET AL . [13]; OUR RESULT IS THE AVERAGE OF THREE FULL -MODEL EMA RUNS .
+
+Method Pre Rec F1 IoU OA FC-EF [1] 71.63 67.25 69.37 53.11 97.61 STANet 79.37 85.50 82.32 69.95 98.52 SNUNet [3] 85.60 81.49 83.50 71.67 98.71 IFNet 96.91 73.19 83.40 71.52 98.83 ChangeFormer [6] 91.83 88.02 89.88 81.63 99.12 BiFA 95.15 93.60 94.37 89.34 99.56 
+
+RSM-CD 93.37 90.42 91.87 84.96 –SChanger 94.62 91.83 93.20 87.27 –CDMamba 95.58 92.01 93.76 88.26 99.51 Mamba-CD [13] 96.52 93.91 95.20 90.83 99.62 
+
+MambaRefine-CD 95.79 94.90 95.34 91.10 99.56 
+
+TABLE IV BOUNDARY -AWARE EVALUATION OF MAMBA REFINE -CD VARIANTS USING BF1, BI OU AND 3-PIXEL TRIMAP F1. 
+
+Variant F1 IoU BF1 BIoU Trimap F1 3px 
+
+A1 MambaVision-FPN 93.21 87.28 61.36 38.41 68.02 A4 + ARF-FPN 93.71 88.16 65.94 42.06 70.27 A5 + Boundary Residual 93.59 87.94 65.14 41.37 69.98 A6 Full Model 95.67 91.71 71.94 47.39 72.93 
+
+WHU Full Model 95.15 90.76 89.49 71.37 87.01 
+
+H. Qualitative Results 
+
+Fig. 2 provides a visual comparison on DSIFN-CD and WHU-CD. The examples highlight changed-region complete-ness, boundary consistency, false positives, and false negatives. 
+
+I. Discussion and Limitations 
+
+The DSIFN-CD and WHU-CD results show that MambaRefine-CD achieves strong changed-class F1 and IoU under verified evaluation settings while remaining competitive with recent Mamba-based methods. The main contribution is not only the final score, but the region-boundary temporal refinement design. D-RBI separates region evidence from Sobel-conditioned boundary evidence, and the bounded residual branch refines uncertain boundary logits without dominating the main prediction. TABLE V PARAMETERS AND GFLOP S ARE REPORTED FOR THE FULL 
+
+MAMBA REFINE -CD MODEL USING EACH MAMBA VISION BACKBONE VARIANT .                    
+
+> Backbone Params (M) GFLOPs F1 IoU OA MambaVision-T 46.80 50.05 94.58 89.72 96.24 MambaVision-S 65.40 64.08 95.67 91.71 96.98 MambaVision-B 113.44 109.15 95.77 91.89 97.07
+
+The DSIFN-CD literature comparison should be interpreted conservatively because published works may use different patch-level splits. Table I is therefore a contextual comparison rather than a strict same-split SOTA ranking. The boundary evaluation in Table IV supports the role of the full region-boundary refinement pipeline. However, direct boundary-metric comparison against Mamba-CD is not reported because official prediction masks or checkpoints were not available in our experimental setup. Future work will evaluate learned boundary priors, perform same-protocol baseline re-evaluation, and extend the analysis to additional CD benchmarks. V. C ONCLUSION 
+
+This paper presented MambaRefine-CD, a MambaVision-based binary change detection model with explicit region-boundary refinement. The method combines signed temporal evidence in D-RBI, ARF-FPN decoding, CRAM-lite modula-tion, and bounded residual correction for boundary refinement. Experiments on DSIFN-CD and WHU-CD show strong changed-class F1 and IoU under verified protocols, with com-petitive performance against recent Mamba-based methods. Ablations indicate that the full combination of signed temporal modeling, auxiliary supervision, boundary loss, and residual refinement is more effective than using the boundary branch alone. REFERENCES [1] R. C. Daudt, B. Le Saux, and A. Boulch, “Fully convolutional siamese networks for change detection,” in Proceedings of the IEEE International Conference on Image Processing (ICIP) , 2018, pp. 4063–4067. [2] O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” in International Conference on Medical Image Computing and Computer-Assisted Intervention (MIC-CAI) , 2015, pp. 234–241. [3] S. Fang, K. Li, J. Shao, and Z. Li, “Snunet-cd: A densely connected siamese network for change detection of vhr images,” IEEE Geoscience and Remote Sensing Letters , vol. 19, pp. 1–5, 2022. [4] J. Chen, Z. Yuan, J. Peng, L. Chen, H. Huang, J. Zhu, Y. Liu, and H. Li, “Dasnet: Dual attentive fully convolutional siamese networks for change detection in high-resolution satellite images,” IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , vol. 14, pp. 1194–1206, 2021. [5] H. Chen, Z. Qi, and Z. Shi, “Remote sensing image change detection with transformers,” IEEE Transactions on Geoscience and Remote Sensing , vol. 60, pp. 1–14, 2022. [6] W. G. C. Bandara and V. M. Patel, “A transformer-based siamese network for change detection,” in IEEE International Geoscience and Remote Sensing Symposium (IGARSS) , 2022, pp. 207–210. [7] W. Wijenayake, R. Ratnayake, D. Sumanasekara, N. Wasalathilaka, M. Piratheepan, G. Godaliyadda, M. Ekanayake, and H. Herath, “Pre-cision spatio-temporal feature fusion for robust remote sensing change detection,” in 2025 IEEE 19th International Conference on Industrial and Information Systems (ICIIS) , vol. 19, 2026, pp. 557–562. [8] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” arXiv preprint arXiv:2312.00752 , 2023. [9] Y. Liu, Y. Tian, Y. Zhao, H. Yu, L. Xie, Y. Wang, Q. Ye, J. Jiao, and Y. Liu, “Vmamba: Visual state space model,” in Advances in Neural Information Processing Systems (NeurIPS) , 2024. [10] A. Hatamizadeh and J. Kautz, “Mambavision: A hybrid mamba-transformer vision backbone,” in Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) , 2025. [11] H. Chen, J. Song, C. Han, J. Xia, and N. Yokoya, “Changemamba: Re-mote sensing change detection with spatiotemporal state space model,” 
+
+IEEE Transactions on Geoscience and Remote Sensing , 2024. [12] G. Li, P. Han, W. Wang, T. Mu, Z. Xiao, and X. Li, “Ham-cd: Hybrid attention mamba for remote sensing change detection,” IEEE Transactions on Geoscience and Remote Sensing , vol. 64, pp. 1–18, 2026. [13] A. Peng, L. Zhuo, L. Wang, H. Zhang, and H. Xu, “Mamba-cd: Mamba-based change detection network for remote sensing images with change region-aware attention and recursive context refinement mechanism,” 
+
+IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , vol. 19, pp. 4288–4300, 2026. [14] B. Wijenayake, A. Ratnayake, P. Sumanasekara, R. Godaliyadda, P. Ekanayake, V. Herath, and N. Wasalathilaka, “Mamba-fcs: Joint spatio-frequency feature fusion, change-guided attention, and sek in-spired loss for enhanced semantic change detection in remote sensing,” 
+
+IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , vol. 19, pp. 7680–7698, 2026. [15] N. Wasalathilaka, D. Perera, O. Samarakoon, B. Wijenayake, R. Go-daliyadda, V. Herath, and P. Ekanayake, “A controlled benchmark of visual state-space backbones with domain-shift and boundary analysis for remote-sensing segmentation,” arXiv preprint arXiv:2604.18721 ,2026. [16] R. Ratnayake, W. Wijenayake, D. Sumanasekara, G. Godaliyadda, H. Herath, and M. Ekanayake, “Enhanced scannet with cbam and dice loss for semantic change detection,” in 2025 Moratuwa Engineering Research Conference (MERCon) , 2025, pp. 84–89. [17] H. Kervadec, J. Bouchtiba, C. Desrosiers, E. Granger, J. Dolz, and I. B. Ayed, “Boundary loss for highly unbalanced segmentation,” in 
+
+International Conference on Medical Imaging with Deep Learning (MIDL) , 2019, pp. 285–296. [18] T. Takikawa, D. Acuna, V. Jampani, and S. Fidler, “Gated-scnn: Gated shape cnns for semantic segmentation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2019, pp. 5229– 5238. [19] X. Qin, Z. Zhang, C. Huang, M. Dehghan, O. R. Zaiane, and M. Jager-sand, “Basnet: Boundary-aware salient object detection,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 2019, pp. 7479–7489. [20] Y. Wang, W. Ding, R. Zhang, and H. Li, “Boundary-aware multi-task learning for remote sensing imagery,” IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , vol. 14, pp. 951–963, 2021. [21] W. Zhou, G. Guo, H. Song, X. Zhang, and K. Zhang, “Learning boundary-aware semantic context network for remote sensing change detection,” IEEE Journal of Selected Topics in Applied Earth Observa-tions and Remote Sensing , vol. 19, pp. 4177–4188, 2026. [22] Q. Shi, M. Liu, S. Li, X. Liu, F. Wang, and L. Zhang, “Deeply supervised image fusion network for change detection in high resolution bi-temporal remote sensing images,” Information Fusion , vol. 83–84, pp. 43–58, 2022. [23] S. Ji, S. Wei, and M. Lu, “Fully convolutional networks for multisource building extraction from an open aerial and satellite imagery data set,” 
+
+IEEE Transactions on Geoscience and Remote Sensing , vol. 57, no. 1, pp. 574–586, 2019.
