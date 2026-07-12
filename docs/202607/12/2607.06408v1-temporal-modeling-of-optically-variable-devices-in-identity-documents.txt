@@ -1,0 +1,321 @@
+Title: Temporal Modeling of Optically Variable Devices in Identity Documents
+
+URL Source: https://arxiv.org/pdf/2607.06408v1
+
+Published Time: Wed, 08 Jul 2026 01:27:18 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Temporal Modeling of Optically Variable Devices in Identity Documents 
+
+Glen Pouliquen 1,2 , Joseph Chazalon 2 , Guillaume Chiron 1 ,Oriol Ramos Terrades 3 , Thierry Géraud 2 , and Ahmad Montaser Awal 1 
+
+> 1
+
+IDnow Research Center, Cesson-Sévigné, France 
+
+name.surname@idnow.io  
+
+> 2
+
+EPITA Research Lab. (LRE), Le Kremlin-Bicêtre, France 
+
+name.surname@epita.fr  
+
+> 3
+
+Computer Vision Center (CVC), Barcelona, Spain 
+
+oriolrt@cvc.uab.cat 
+
+Abstract. Robust remote verification of identity documents relies on analyzing faint, transparent security features like Optically Variable De-vices (OVDs), or “holograms” , within user-captured videos under uncon-trolled conditions. Current systems, however, face critical limitations: existing methods often treat video frames in isolation, neglecting the intrinsic dynamic nature of OVDs and leaving systems vulnerable to swapping attacks, or focus on general holographic presence and lack the ability to verify specific OVD types. Moreover, the economic infeasibility of frame-by-frame video annotation makes supervised training imprac-tical. In this work, we introduce two novel approaches for verifying the dynamic behavior of transparent OVDs protecting the holder’s portrait, specifically designed for open-set scenarios where attack types are un-known during training. We demonstrate that these approaches can be trained without any attack samples in a self-supervised setting, surpass-ing previous state-of-the-art methods on public datasets while adher-ing strictly to industrial constraints. Our results confirm that modeling temporal dynamics is essential for defeating sophisticated attacks un-der realistic conditions, and underscores the promise of sequence mod-eling and anomaly detection for OVD verification. Code is available at 
+
+https://github.com/EPITAResearchLab/pouliquen.26.icdar .
+
+Keywords: Identity Documents · OVD Verification · Fraud Detection 
+
+· Sequence Modeling · Anomaly Detection 
+
+## 1 Introduction 
+
+This paper addresses the automated verification of Optically Variable Devices (OVDs) on identity documents captured with commodity smartphones in remote Know Your Customer (KYC) scenarios. Such scenarios are increasingly common in various applications, such as opening a bank account. The overall process typically involves the user capturing a short video of their identity document, which is then analyzed by an automated system to verify its authenticity. Other arXiv:2607.06408v1 [cs.CV] 7 Jul 2026 2 Pouliquen et al. 
+
+security measures are integrated into the process, such as liveness checks to ensure the user is present and prevents the use of static images, as well as safeguards against digital content injection, but are beyond the scope of this work. Ultimately, this global KYC process consists in binding an online identity to a physical document, which serves as the primary source of truth for the holder’s identity. OVDs, often referred to as holograms , are critical visible security features, particularly when they overlap and protect the photo portrait linking the docu-ment to its holder. While current industrial pipelines rely heavily on attack de-tection (e.g., identifying screen recaptures or photocopies), they provide limited guarantees that the expected OVD is actually present and behaves as specified. Furthermore, attack scenarios are inherently unpredictable, and training samples for such attacks are scarce. his data scarcity severely restricts the performance of existing approaches in realistic settings, as demonstrated by the recent MIDV-DynAttack dataset study [15], which highlights that dynamic attacks should primarily be used for evaluation rather than training. In this work, we adopt a complementary perspective based on model verifi-cation rather than specific attack detection. We aim to verify that the OVD in the portrait region is consistent with its expected visual behavior under realis-e.g. print two templates from a Legit video, 
+
+> and capture them while swapping.
+> LEGIT SAMPLE - Progressive transitions
+> FROM MIDV-DYNATTACK DATASET  MIDV-HOLO AND
+> STATIC ATTACK - Reduced coverage
+> SWAP ATTACK - Unknown transitions
+> DYNAMIC ATTACK - Outside the manifold
+
+Fig. 1. Importance of sequence-level modeling, and complementary directions for OVD verification to detect advanced attacks from the MIDV-DynAttack dataset [15]. Temporal Modeling of Optically Variable Devices in Identity Documents 3
+
+tic capture constraints—such as short, low-frame-rate clips from heterogeneous devices—and in the absence of fraud samples during training, which is critical for industrial applications. As detailed in Section 2, the few existing approaches capable of handling an open attack space still rely on attack samples for training. Moreover, they typically focus on frame-level analysis or global video features at the pixel level, failing to model the dynamics of the OVD, which is a funda-mental aspect of its security design, and thus leaving the system vulnerable to several attacks. This work addresses these limitations with the following contributions: 1. We introduce two approaches—a discriminative span-based classifier that learns from synthetically corrupted sequences, and a generative masked sequence model that uses reconstruction error in an embedding space as an anomaly score—for verifying the dynamic behavior of transparent OVDs; 2. We demonstrate through extensive evaluation on the MIDV-Holo [12] and MIDV-DynAttack [15] datasets that these methods surpass the previous state-of-the-art while being trained in a self-supervised manner without attack samples, strictly adhering to industrial constraints. Ultimately, the Masked Sequence Modeling (MSM) we introduce aims to learn a proper manifold of some OVD’s dynamics and to verify the two essential properties: conformity to the expected visual behavior (i.e., correct color or shape changes) and variety of appearances (i.e., sufficient change) to ensure the target is not a static counterfeit, as illustrated in Figure 1. The remainder of this paper is organized as follows: Section 2 reviews related work in document fraud detection, Section 3 details our proposed architectures and training methodologies, Section 4 presents the experimental setup and re-sults, followed by conclusions in Section 5. 
+
+## 2 Related Work 
+
+This section reviews existing approaches for Optically Variable Device (OVD) verification. As mentioned in the introduction, we assume that the acquisi-tion channel is secured, so that digital content injection (such as deep fakes or computer-generated graphics) cannot be directly sent for verification. This does not prevent screens or other substitutes from being used as attack vectors, but we do not address such cases specifically as 1. Presentation Attack Detection (PAD) is a mature field with established solutions for detecting such digital replays [5]; and 2. we believe that such approaches complement a precise verification of the expected security features of the document, in an open-set setting where exact attack implementation details are not known in advance. Consequently, we focus on the subsequent challenge: detecting physical counterfeits—manipulations of the document itself and tampering with acquisition conditions—which bypass standard liveness/PAD checks. 
+
+Evolution of Datasets and Benchmarks. Public benchmarks for identity docu-ment verification have evolved from static tasks like text alteration detection [3, 6] to presentation attack detection (PAD) involving printed copies or screen 4 Pouliquen et al. 
+
+replays [9, 13]. However, verification of holographic security features remains under-explored compared to face morphing or splicing. To date, the only pub-lic datasets explicitly targeting OVD verification are MIDV-Holo [12] and its extension MIDV-DynAttack [15], which include static and dynamic holographic attacks, respectively. Consequently, OVD verification is a nascent research topic that is still consolidating. 
+
+Early Approaches Relying on Extensive Annotation. Early methods for holo-gram verification relied on handcrafted features, such as color histograms and gradient statistics, to detect expected patterns [1]. More recent deep learning ap-proaches employ direct classifiers trained on frame-level annotations [11]. While effective on isolated, non-transparent OVDs found on some parts of banknotes or passports, such systems cannot be generalized to the transparent OVDs over-lapping the portrait. These are more challenging to analyze and more critical for security, unless extensive frame-level annotations are available for training. As a result, such supervised approaches were largely superseded in subsequent works. 
+
+Detection of Holographic Content Against Static Attacks. Shifting from modeling the collection of expected frame appearances and processing frames in isolation, two approaches proposed recovering the mask of the OVD layer of a document from a video. Kada et al. [7] first proposed a technique computing per-pixel color statistics over accurately registered video frames, producing a partial OVD mask for each video and enabling control over the resulting shape. Koliaskina et al. [12] applied a similar technique to design a hologram detector, aiming to defeat static document copies featured in the MIDV-Holo dataset they released. Pouliquen 
+
+et al. [14] proposed a weakly-supervised contrastive framework that learns a dispersive representation of genuine OVD representations. While providing a first, practical answer to such attacks, these approaches do not model the specific visual appearance of the target OVD nor its temporal transitions, making them susceptible to dynamic attacks such as a simple holographic layer applied to a printed copy. 
+
+Facing Dynamic Attacks. Dynamic attacks, as defined by Pouliquen et al. [15], encompass a wide range of manipulations that can be applied to the document or the acquisition conditions, such that the light reflection of the document may exhibit some degree of resemblance to the expected OVD behavior, without ac-tually being the target OVD. Because such attacks defeat holographic detectors, these authors proposed assessing both the conformity of OVD appearances to the expected visual behavior and the variety of appearances to ensure that the target is not a static counterfeit. They proposed HoloVerif [15], a method based on a pipeline comprised of background subtraction—which improves the focus on the OVD signal—, pseudo-labeling of frames likely to contain Valid OVD content vs Non-Valid frames which do not, and finally estimating the average of Valid 
+
+frames as a proxy for classifying the video as genuine or attack. Despite its abil-ity to counter a wider range of attacks, HoloVerif treats video inputs primarily Temporal Modeling of Optically Variable Devices in Identity Documents 5
+
+as bags of frames, neglecting the fine-grained temporal dynamics that consti-tute the essence of OVD security. As a result, it remains vulnerable to swapping attacks, where several static counterfeits (with different OVD appearances) are printed and swapped during video capture, and achieves limited performance on other dynamic attacks. Furthermore, it still relies on attack samples for training and calibration, which limits its applicability in real-world scenarios. Our work addresses this gap by modeling the transition between OVD appearances over time, trained exclusively on genuine samples. 
+
+## 3 Proposed Methods 
+
+This section introduces two methods for video-level OVD verification designed around three shared principles: transition awareness , and attack-free , self-supervised training. Unlike prior frame-level approaches, both methods process temporal frame spans (groups of 5-10 consecutive frames) to model the dynamics of holographic transitions. Crucially, they are trained in a self-supervised manner exclusively on legitimate videos, avoiding the reliance on curated attack samples which are scarce and unpredictable in real-world scenarios. We explore two distinct paradigms to achieve this: 1. HoloVerif-Span , a discriminative baseline extending HoloVerif [15] to temporal spans (5 frames) using a VideoMAE [10] backbone. It learns to distinguish genuine transitions from anomalies by training against synthetically corrupted versions of legiti-mate sequences. 2. Masked Sequence Modeling (MSM) , a generative ap-proach inspired by BERT [4] which leverages WSL [14] as a frame encoder. It frames verification as an Out-of-Distribution (OOD) detection task, learning to reconstruct masked portions of valid OVD sequences and flagging reconstruction errors as anomalies, thus eliminating the need for (synthetic) negative samples during training. 
+
+3.1 HoloVerif-Span — Discriminative approach 
+
+HoloVerif-Span (Figure 2) is a sequence-level extension of HoloVerif [15] which maintains its core principle: a binary classifier is trained on sub-video elements ( spans ) that are either left intact or corrupted, and assigned pseudo-labels ( Valid /Non-Valid ) accordingly. At inference, the final video-level verdict (Legit /Non-Legit ) is obtained through aggregation of span-level classifier outputs to produce a single video-level score. We preserve the overall pipeline structure, including background subtraction and asymmetric augmentation of Valid and 
+
+Non-Valid samples, while redesigning each component to operate on tempo-ral spans rather than isolated frames. Crucially, these modifications enable the model to train on legitimate samples only. 
+
+Backbone. The frame-level MobileViT backbone is replaced by a VideoMAE [10] encoder capable of capturing OVD transition dynamics directly from short clips. 6 Pouliquen et al.  
+
+> Fig. 2. HoloVerif-Span overview. The OVD ROI is extracted and preprocessed via background subtraction. During training, temporal spans are pseudo-labeled as Valid or Non-Valid using synthetic corruptions, and a VideoMAE classifier is trained on these spans. At inference, a sliding window produces per-span scores aggregated into a video-level verdict.
+
+Span Sources, Pseudo-labeling and Pre-Augmentations. Spans of five consecutive ROI frames are extracted from rectified videos sampled at 15 fps. Valid spans are sampled from ROI regions covering the target OVD. Non-Valid spans originate from two complementary sources: 
+
+– ROI-based negatives: regions that do not contain the target OVD — either because no hologram is present, or because the region covers a different OVD region. 
+
+– Temporal corruptions of Valid spans: synthesized by disrupting the nat-ural temporal structure of genuine holographic transitions via (i) frame repeti-tion — frames are selected and repeated to simulate static or buffered content; (ii) temporal shuffling — frames are randomly permuted, destroying transi-tion order; (iii) freeze simulation — a single frame is repeated across the full span, mimicking a static replay. Each strategy preserves per-frame OVD ap-pearance while destroying temporal coherence, forcing the classifier to learn sequence-level rather than frame-level cues. Unlike HoloVerif, where pseudo-labels are assigned at the frame level by thresh-olding luminance variance, pseudo-labels here are assigned at the span level based on the ROI source and corruption type. 
+
+Post-Augmentations. Background subtraction is adapted to operate on spans by computing the temporal median across the entire span, effectively isolating dynamic holographic content while suppressing the static background. All spans then undergo a shared set of photometric augmentations designed to emulate Temporal Modeling of Optically Variable Devices in Identity Documents 7
+
+realistic capture conditions: color jitter (brightness, contrast, saturation, hue), mild Gaussian blur to approximate motion blur and defocus, random equal-ization, autocontrast, sharpness adjustment, posterization, and small erased patches to simulate sensor or compression artifacts. Synthetic shadows and lo-calized brightness variations are additionally applied using plasma-based oper-ators [8], producing complex, spatially-varying illumination effects. A custom transform further simulates holographic reflections in Non-Valid spans: bright-ness is modulated by plasma-like fractal fields masked by random silhouettes drawn from the Quick !Draw! dataset [2], producing spatially-structured high-lights that closely resemble OVD optical artifacts. Together, these augmentations prevent the model from relying on global brightness cues while enriching it with hologram-like visual patterns during training. Valid and Non-Valid spans subse-quently receive asymmetric spatial treatment. Valid spans are resized to 224 ×224 
+
+to preserve fine holographic patterns. Non-Valid spans are subjected to random resized crops, flips, small rotations, and additional photometric perturbations, increasing their diversity without altering their temporal invalidity. 
+
+Training. The VideoMAE encoder (22M parameters) is fine-tuned with binary cross-entropy to classify spans as Valid or Non-Valid . Training uses AdamW with a learning rate of 10 −4, cosine decay with a 10% linear warm-up, and a batch size of 64. Convergence is reached in three epochs per fold. 
+
+Inference. At inference time, a sliding window of width 5 frames is applied over the input video sequence, yielding a per-span legitimacy score from the classifier. These scores are then aggregated via averaging to produce a single video-level legitimacy score, which can be thresholded for a binary decision or used to compute an ROC curve. 
+
+Limitations. While this approach effectively leverages temporal information, provides a practical solution to the absence of real attacks in the training set, and serves as a comparison baseline for previous state-of-the-art, it suffers from two limitations which motivate our second, generative approach: 1. HoloVerif-S-pan ’s attack coverage is inherently limited by the quality and diversity of the hardcoded augmentations, weakly calibrating the boundaries around the OVD representation manifold; and 2. its learned representation, optimized to discrim-inate between Valid and Non-Valid spans, does not ensure a diverse represen-tation of genuine OVD appearances. This limits the use of embedding diversity as a proxy for dynamic appearance variety , potentially restricting its ability to detect simpler, static attacks. 
+
+3.2 Masked Sequence Modeling — Generative approach 
+
+Masked Sequence Modeling (MSM) is a generative approach that frames OVD verification as an Out-of-Distribution (OOD) detection problem (Figure 3). Rather than training a discriminative classifier with synthetic negatives, MSM learns to model the manifold of legitimate OVD transitions and detects attacks 8 Pouliquen et al. INPUT RECTIFIED VIDEO  
+
+> tt+9
+
+ROI Sequence [TRAIN MODE] Backprop only on masked embeddings   
+
+> [INFERENCE MODE] OOD via inference on unaltered full embeddings
+
+... 
+
+Full embeddings Seq2Seq model Projector (train WSL) Altered embeddings Reconstructed embeddings via MSM LOSS (Cosine) 
+
+> On chosen elements only
+
+... 
+
+... 
+
+... 
+
+12RANDOM SELECTION FOR BACKPROPAGATION (p=0.8) Zeroed at transformer level (p=0.8) Noised (p=0.1) Unaltered (p=0.1) Alteration rules applied to the masked elements (BERT like) 
+
+Fig. 3. Masked Sequence Modeling (MSM) pipeline. A frozen projector encodes ROI frames into OVD-focused embeddings. During training, embeddings are randomly masked and the Seq2Seq model learns to reconstruct them from legitimate sequences only. At inference, reconstruction error serves as the anomaly score. 
+
+as deviations from this learned distribution. This is achieved through a two-stage architecture: a frame-level projector optimized for OVD content represen-tation extracts embeddings, and a transformer encoder is trained to reconstruct masked embedding spans extracted from legitimate video sequences only. The transformer encoder provides a contextualized representation of OVD dynamics, effectively learning the underlying physical laws governing its behavior. At inference, the method computes two complementary criteria at the span level (sequences of 10 frames), which are later aggregated at the video level: Re-constructability measures how well the model (trained exclusively on spans from legitimate samples) can reconstruct a given span’s representation. It as-sumes that different OVD dynamics will deviate from the learned manifold and yield high reconstruction errors, hence serving as a dynamic appearance confor-mity check to detect attacks with incorrect dynamics. Similarity assesses the temporal diversity among frames in the learned embedding space. It serves as a proxy for dynamic appearance variety to detect static template attacks that might otherwise achieve low reconstruction error due to their stable nature. Temporal Modeling of Optically Variable Devices in Identity Documents 9
+
+Stage 1: Training the Projector. The projector serves as a frame-level encoder that captures hologram-specific visual features and produces per-frame embed-dings. To remain consistent with the “Legit Only Training” constraint, the pro-jector is expected to be pretrained on a large dataset (e.g., ImageNet, CLIP) regardless of the chosen backbone (e.g., MobileViT, DINOv2), and then fine-tuned on holographic content following the Weakly Supervised Learning (WSL) approach [14]. This approach samples neighboring pairs of frames from the same video and optimizes a contrastive loss to pull their embeddings together while pushing apart embeddings from distant frames. This encourages the model to learn a representation that captures the underlying structure of OVD appear-ances and their temporal evolution, while being robust to noise and irrelevant background features. Once trained, the projector part of the pipeline is frozen. 
+
+Stage 2: Training the Seq2Seq Model. The sequence-to-sequence (Seq2Seq) model is trained using a masked reconstruction objective that forces the model to pre-dict masked frame embeddings from the visible temporal context. This training procedure naturally encourages the model to learn temporal dependencies be-tween holographic states. The key insight is that valid transitions within genuine OVDs are predictable from their context, whereas attack-induced transitions will not be, as they do not follow the temporal dynamics observed during training. The masking strategy follows a VideoMAE-like [10] high masking ratio com-bined with a BERT-inspired [4] corruption protocol adapted to the continuous embedding domain. Approximately 80% of the embeddings in a sequence are ran-domly selected for alteration, while the remaining elements are left untouched and excluded from the loss computation. Among those selected elements, 80% are zeroed at the transformer level, 10% are corrupted with Gaussian noise (stan-dard deviation of 0.1), and 10% are left unaltered. This distribution mirrors the original BERT masking strategy adapted to the continuous embedding domain. During training, data augmentation includes random temporal flipping ( p =0.5), which reverses the sequence order and teaches the model that transitions are valid in both temporal directions. The forward pass consists of applying the masking operation to produce altered embeddings and a binary mask, passing the altered sequence through the model to obtain reconstructed embeddings, and computing the reconstruction loss between the reconstructed and original embeddings on masked positions only. The total loss combines two complementary reconstruction objectives for each frame embedding: a Mean Squared Error (MSE) loss that penalizes absolute reconstruction differences on masked positions, and a cosine distance loss that enforces directional similarity in the embedding space. The total loss is computed as a weighted sum of both terms with default weights of 1.0 each. We found that combining these two losses facilitated learning convergence. 
+
+Inference. At inference, videos are processed in spans of 10 frames, and the same projector is applied to extract frame embeddings. The trained Seq2Seq model is then used to reconstruct embeddings for each span (without masking) and com-pute the two criteria: Reconstructability , measured as the cosine similarity 10 Pouliquen et al. 
+
+between the reconstructed and original embeddings across the span, later aver-aged over spans to produce a video-level score; and Similarity , computed as the mean pairwise cosine similarity between frame embeddings within the span, averaged across spans to produce a video-level score. The final decision is made by fitting an envelope model (we use a Gaussian Model in the experiments reported here for illustrative purposes) over the joint 2D space of Reconstructability and Similarity on a validation set composed of legitimate samples only. A query video is classified ( Legit /Non-Legit ) based on its likelihood of belonging to this envelope, as illustrated in Figure 5. An ROC curve can be computed by varying the decision threshold on this likelihood score. 
+
+Limitations. A key limitation of the MSM approach lies in its cascaded ar-chitecture, which stacks three distinct models: the projector (frame encoder), the sequence-to-sequence masked reconstruction model, and the final decision model. Each stage depends on the output quality of the previous one, meaning that errors can propagate and compound through the pipeline. In particular, if the projector fails to adequately isolate holographic content from the back-ground or document template, the downstream embeddings will carry irrelevant or noisy information. This degrades both the reconstruction model’s ability to learn meaningful transition patterns and the decision model’s capacity to dis-criminate legitimate from anomalous sequences. The overall system therefore relies on the strong assumption that the projector produces embeddings that faithfully capture OVD-specific visual features which are both discriminative and robust to noise. This is a non-trivial requirement given the weak OVD sig-nal, the diversity of OVD designs, and the limited availability of training data for this specific domain. 
+
+## 4 Experiments 
+
+Methods We evaluate prior state-of-the-art methods under both Legit-only and 
+
+Legit/Non-Legit training regimes. We then focus on our two proposed methods, which are specifically designed for the Legit-only setting—a key objective of this work, as it aligns with industrial requirements where genuine data is abundant but attack samples are scarce. 
+
+Existing methods (trainable from both Legits and Non-Legits): 
+
+– MIDV-Holo-Baseline [12] computes per-pixel chromatic variance in HSV space and applies handcrafted thresholds to detect holographic activity, serv-ing as a signal-processing baseline. No real training is performed, only cali-bration. 
+
+– WSL [14] (MobileViT backbone) learns discriminative frame-level holographic representations via contrastive triplet sampling from video-level labels only. 
+
+– HoloVerif [15] (MobileViT backbone) combines temporal background sub-traction with pseudo-labeling and targeted asymmetric augmentation. It cur-rently represents the state of the art on MIDV-DynAttack. Temporal Modeling of Optically Variable Devices in Identity Documents 11 
+
+Our proposed methods (designed for training on Legits only): 
+
+– HoloVerif-Span (VideoMAE backbone) is a sequence-level discriminative method classifying temporal spans of five frames, with Non-Valid spans syn-thesized from legitimate recordings via temporal corruptions (Section 3.1). 
+
+– MSM is a generative anomaly detection method combining the WSL frame encoder (MobileViT backbone) with a Masked Sequence Modeling recon-struction head and a single Gaussian model fitted exclusively on legitimate validation embeddings (Section 3.2). 
+
+Datasets The evaluation is performed on two complementary public bench-marks: 
+
+– MIDV-Holo [12]: A standard benchmark containing genuine identity doc-uments with OVDs captured under varied conditions. It contains 700 videos — 300 legitimate and 400 non-legitimate (mostly static template attacks). We use the identity-disjoint splits proposed in [14, 15]. 
+
+– MIDV-DynAttack [15]: An extension featuring over 1,200 attack videos spanning three main categories: 
+
+• Static attacks (550 videos): Printed documents, plastic copies with or without reflections, laser and LED lighting attacks. 
+
+• Static-swap attacks (200 videos): Alternation between multiple static templates to simulate holographic behavior. 
+
+• Dynamic attacks (450 videos): Real holograms overlaid on fraudulent documents, including plain hologram foils, leaf patterns, double stickers, masks, and decorative holograms. 
+
+Calibration Decision thresholds are determined from the validation set which contains only Legit samples. We use the 95th and 99th percentiles of the score distribution on the validation set as candidate operating points, corresponding to target False Positive Rates (FPR) of 5% and 1%, respectively. When non-Legit samples are available at validation time, a ROC curve can be constructed and an operational point selected in order to balance the True Acceptance Rate (TAR) against the False Rejection Rate (FRR). All reported AUC values use the threshold-free metric, ensuring comparability regardless of the calibration strategy. 
+
+Metrics We report the Area Under the ROC Curve (AUC) as the primary metric, enabling threshold-independent comparison across methods and attack types. All experiments are repeated over 5-fold cross-validation, reporting mean 
+
+± standard deviation. AUC values are computed per attack type and aggregated as a weighted mean over all attack videos (“Mix” column). 12 Pouliquen et al. 
+
+Table 1. Uncalibrated results (mean AUC, 5 folds) for different training regimes (with only Legits or not) on MIDV-Holo and MIDV-DynAttack datasets (test split).                                                                                                                                                       
+
+> MIDV-Holo (L vs A) MIDV-Holo (L) vs MIDV-DynAttack (A) Vanilla Photo Rep. Static Static-swap Dynamic Mix #Vids. Legit/Attack →60L+60A 60L+20A 60L+110A 60L+40A 60L+60A 60L+380A
+> Methods ↓AUC AUC AUC AUC AUC AUC
+> SOTA methods - Trained on Legits + Non-Legits .
+> MIDV-Holo-Baseline [12] 93.4 ±1.9 74.8 ±2.3 77.2 ±2.2 48.5 ±3.4 8.8 ±2.4 57.3 ±1.2 WSL [14] 99.2 ±0.9 98.4 ±1.1 95.7 ±2.1 74.8 ±8.2 60.7 ±4.7 84.1 ±2.9 HoloVerif [15] 99.3 ±0.6 94.3 ±2.3 98.6 ±0.9 79.2 ±3.7 92.7 ±1.9 94.4 ±1.2
+> SOTA methods - Trained only on Legits
+> WSL [14] 98.7 ±1.0 97.8 ±1.3 95.2 ±2.2 80.6 ±7.0 61.6 ±9.1 84.7 ±4.4 HoloVerif [15] 52.9 ±4.3 42.7 ±4.1 80.9 ±4.5 62.2 ±10.9 73.1 ±7.6 68.7 ±5.9
+> Proposed methods - Trained only on Legits
+> MSM (ours) 94.8 ±3.1 89.7 ±6.1 93.5 ±4.2 92.3 ±4.5 85.6 ±6.7 91.1 ±3.8 HoloVerif Span (ours) 80.4 ±6.4 84.5 ±4.6 96.5 ±2.4 96.9 ±1.7 98.6 ±1.3 93.4 ±2.6
+
+Results Table 1 presents uncalibrated results in order to compare the raw potentials of our methods versus the state-of-the-art. Since MIDV-DynAttack contains only non-Legit samples (negative class), Legits from MIDV-Holo are used as the positive class for AUC computation. Figure 4 shows the correspond-ing ROC curves. Table 2 show calibrated results at given operational points in order to illustrate explicit performances (true/false rejections), aligning with the evaluation protocol defined in [15]. 
+
+Performances of SOTA methods (original configuration). When including non-Legits during training (and/or calibration), MIDV-Holo-Baseline achieves strong performance on MIDV-Holo Vanilla (93.4% AUC) but collapses on dynamic at-tacks (8.8% AUC): chromatic variance alone cannot distinguish genuine OVD reflections from holographic foils exhibiting similar optical signatures. WSL im-proves robustness (84.1% overall) but similarly struggles on dynamic attacks (60.7% AUC), where frame-level representations saturate. HoloVerif sets the su-pervised upper bound at 94.4% overall AUC, benefiting from explicit sequence-level augmentation and background subtraction. 
+
+Impact of the training regime on SOTA methods. WSL transfers remarkably well to the legit-only regime (84.7% overall AUC, vs. 84.1% with non-legit data), confirming that its contrastive training objective generalizes without requiring explicit fraud supervision. This makes WSL the most practical legit-only base-line: it requires no additional design effort and degrades gracefully. In contrast, HoloVerif degrades substantially (68.7% overall AUC) when deprived of non-legit data, as its discriminative pseudo-labeling was designed to contrast legitimate and fraudulent patterns explicitly. Temporal Modeling of Optically Variable Devices in Identity Documents 13 
+
+Table 2. Calibrated results (mean Fscore, Specificity and Recall reported over 5 folds) reported on MIDV-Holo and MIDV-DynAttack datasets (test split). Numbers for the SOTA methods (calibrated by Fscore maximization on the validation set) slightly dif-fers from [15] due to improved augmentation parameters. Our proposed methods are calibrated according to OOD thresholds of 95% and 99% (Legit correctly classified from the validation set). Specificities close to their respective OOD thresholds show a good generalization between splits.                                                                                                                                                                
+
+> MIDV-Holo (L+A) MIDV-DynAttack (A) Vanilla Photo Rep. Static Static-swap Dynamic #Vids. Legit/Attack →120 L+A 60 L 60 A 20 A 110 A 40 A 90 A
+> Methods ↓Fscore Specificity Recall Recall Recall Recall Recall
+> SOTA methods - Trained/Calibrated on Legits + Non-Legits – Maximizing Fscore MIDV-Holo-Baseline [12] 84.8 ±3.2 84.9 ±9.6 85.0 ±11.6 38.0 ±20.8 72.4 ±3.1 19.5 ±7.6 3.1 ±3.1 WSL [14] 95.8 ±2.7 95.3 ±2.8 96.3 ±5.8 88.0 ±12.5 79.3 ±11.2 16.5 ±13.5 4.2 ±4.4 HoloVerif [15] 95.9 ±1.5 94.2 ±3.3 97.3 ±3.0 67.0 ±21.7 92.5 ±3.7 35.0 ±7.5 68.9 ±7.9
+> Proposed methods — Trained/Calibrated on Legits only – OOD@99 / OOD@95
+> MSM@99 (ours) 96.2 ±3.4 72.0 ±9.7 34.0 ±25.2 60.7 ±18.7 54.0 ±10.1 58.4 ±17.1 MSM@95 (ours) 92.6 ±1.8 83.3 ±8.8 56.0 ±24.0 73.6 ±13.1 71.0 ±13.6 67.1 ±12.0 HoloVerif-Span@99 (ours) 99.0 ±1.5 19.0 ±8.1 24.0 ±2.2 67.3 ±13.2 49.5 ±16.5 87.3 ±6.6 HoloVerif-Span@95 (ours) 94.6 ±1.8 35.3 ±10.0 44.0 ±10.2 85.1 ±7.5 81.5 ±8.0 94.4 ±3.0
+
+Competitiveness of our methods trained exclusively on Legits. Both proposed methods, trained without any fraudulent sample, achieve competitive perfor-mance against fully supervised methods. HoloVerif-Span reaches 93.4% overall AUC and MSM 91.1%, both substantially above the strongest legit-only baseline WSL (84.7%), and closing to within one point of the supervised upper bound HoloVerif (94.4%). Table 2 confirms these trends under real operational conditions. The speci-ficities measured on the test set closely match the targeted OOD thresholds de-rived from the validation set (OOD@99: ∼96.2–99%; OOD@95: ∼92.6–94.6%), demonstrating good generalization of the calibration protocol across splits — with a slightly larger gap for MSM. On dynamic attacks, HoloVerif-Span@95 achieves 94.4% Recall, substantially outperforming the supervised HoloVerif (68.9%), while both proposed methods significantly outperform all baselines on swap attacks. However, recall on static template attacks and Photo Replacement remains lower, particularly at the strict OOD@99 threshold, showing limited dis-criminability of temporal features in this setting. Figure 5 illustrates the GM decision space of the MSM: static attacks clus-ter in the low-similarity region (near-zero intra-span variation), while dynamic attacks exhibit higher overlap with legitimate sequences, consistent with the harder detection rates in this category. 
+
+Capture condition sensitivity. The performance gap of HoloVerif-Span on MIDV-Holo Vanilla, with an AUC of 80% (19 point bellow HoloVerif) surfaces a broader challenge: methods trained on MIDV-Holo legitimate videos may be sensitive to the capture conditions of that specific campaign. Future benchmarks should 14 Pouliquen et al. 0.0 0.2 0.4 0.6 0.8 1.0 
+
+False Positive Rate (FPR) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate (Recall)
+
+MIDV-Holo Vanilla (Static Frauds)      
+
+> HoloVerif (AUC 0.53 ± 0.04)
+> WSL (AUC 0.99 ± 0.01)
+> HoloVerif-Span (AUC 0.80 ± 0.06)
+> MSM (AUC 0.95 ± 0.03)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+False Positive Rate (FPR) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate (Recall)
+
+MIDV-DynAttack (Static, Swap & Dynamic Frauds)                         
+
+> HoloVerif (AUC 0.75 ± 0.07)
+> WSL (AUC 0.80 ± 0.06)
+> HoloVerif-Span (AUC 0.97 ± 0.02)
+> MSM (AUC 0.90 ± 0.04)
+> 0.00 0.01 0.02 0.03 0.04 0.05
+> False Positive Rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate  MIDV-Holo (FPR 0.05)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> False Positive Rate
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> True Positive Rate  MIDV-Holo (Recall 0.95)
+> 0.00 0.01 0.02 0.03 0.04 0.05
+> False Positive Rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate  MIDV-DynAttack (FPR 0.05)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> False Positive Rate
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> True Positive Rate  MIDV-DynAttack (Recall 0.95)
+
+Fig. 4. ROC curves for all methods trained exclusively on legitimate videos, on MIDV-Holo and MIDV-DynAttack. Top row: full ROC curves on MIDV-Holo static template frauds (left) and MIDV-DynAttack covering static template, swap, and dynamic at-tacks (right). Since MIDV-DynAttack contains only non-Legit samples, Legits from MIDV-Holo are used as the negative class for AUC computation. Bottom row: zoomed operating-point view at FPR ≤ 0.05 (left) and TPR ≥ 0.95 (right). Shaded bands denote ±1 std over 5 folds. 
+
+systematically vary acquisition devices, lighting rigs, and document nationalities to disentangle method robustness from dataset-specific biases. 
+
+Transition modeling as a learnable signal. The central finding of this evaluation is that genuine OVD temporal dynamics constitute a learnable and discrimi-native signal, accessible from legitimate data alone. Notably, learning temporal dynamics finally provides a way to detect swapping attack, while strongly rein-forcing the detection rate of dynamic attacks. Frame-level methods fail on swap and dynamic attacks by design: WSL stagnates at 74.8% and 60.7% AUC even with non-legit supervision. Transition modeling closes this gap from legitimate data alone — HoloVerif-Span reaches 96.9% (+22.1 pts) and 98.6% (+37.9 pts), with MSM independently confirming the trend (92.3%, 85.6%). 
+
+Complementarity of Generic Holographic Detectors and Temporal Models. The HoloVerif-Span outperforms all methods on transition-based attacks — Static-swap (96.9% AUC, +17.7 pts vs. supervised SOTA) and Dynamic (98.6% AUC, +5.9 pts) — but underperforms on static attacks (MIDV-Holo Vanilla: 80.4% AUC), where no temporal discontinuity is available. MSM, on the other hand, is consistent across all attack types (Static: 93.5%, Swap: 92.3%, Dynamic: 85.6% Temporal Modeling of Optically Variable Devices in Identity Documents 15 error GM GM GM center (μ) GM density 
+
+Fig. 5. MSM decision space (first fold). Each point represents a video projected onto the (Reconstructability, Similarity) plane. Left: GMM fitted (k=1) on legitimate validation samples only — materialized by its density and boundaries. Right: Attack videos (from the test set) are overlaid — static attacks cluster in the low-similarity bottom region, while dynamic attacks show similar similarity but higher reconstruction error (right). 
+
+AUC), demonstrating that a model trained exclusively on legitimate sequences can generalize to unseen fraud categories — any deviation from the learned legitimate distribution is flagged, regardless of the attack nature. 
+
+## 5 Conclusion 
+
+We addressed Optically Variable Device (OVD) verification for remote KYC using short smartphone videos under an open-set threat model. In this challeng-ing scenario, fraud samples are scarce, capture conditions are uncontrolled, and the OVD signal is weak and noisy compared to the static background (suffer-ing from transparency, spatial/temporal sparsity, and light reflections). Previous methods either relied on heavily supervised training with attack samples, which are unavailable in production, or focused on static frame-level properties, leaving them vulnerable to swapping attacks and unable to verify the dynamic nature of OVDs. We proposed two novel approaches for modeling OVD dynamics: HoloVerif-Span, a discriminative span classifier trained with synthetic temporal corrup-tions, and MSM, a generative masked sequence model that learns the manifold of genuine OVD dynamics via reconstruction in an embedding space. Crucially, both methods are trained exclusively on legitimate samples without any attack supervision nor manual frame-level labeling. They demonstrate strong perfor-mance on the MIDV-Holo and MIDV-DynAttack datasets, approaching previous state-of-the-art methods that rely on attack samples for training, while finally defeating swapping attacks and exhibiting robustness across all attack types. 16 Pouliquen et al. 
+
+Overall, this confirms the importance of sequence-level temporal modeling for OVD verification and the viability of Legit-only training. Although the performance of proposed methods on static attacks is slightly lower than the previous WSL approach — acting as a generic OVD detector — combining both kind of approache is a straightforward way to improve robustness across the attack spectrum, as they are complementary in their detection capa-bilities. Furthermore, the proposed MSM approach provides a unique theoretical advantage: by defining verification through reconstructability and similarity , it offers a unified framework that enforces both the conformity of visual patterns and the necessity of dynamic change. This allows it to reject static counterfeits and dynamic anomalies based on principled deviations from the genuine man-ifold, rather than relying on discriminative boundaries learned from synthetic corruptions. Both HoloVerif-Span and MSM are highly promising approaches for practical deployment since they do not require anticipating specific attack implementa-tions and can be trained on abundant production data without costly annotation. However, the performance of both methods is still constrained by the quality of frame-level representations, which must be sufficiently focused on the OVD sig-nal and robust to noise. Currently, the diversity of training data is limited to a single OVD model. Future work should focus on improving the frame-level pro-jector and acquiring more diverse OVD data—either genuine or synthetic—to enhance representation learning, which is the main bottleneck of all approaches. 
+
+> This project has received funding from the European Union’s Horizon Europe research and innovation program under Grant Agreement No 101189689.
+
+## References 
+
+[1] A. Hartl, J. Grubert, D. Schmalstieg, and G. Reitmayr. “Mobile interac-tive hologram verification”. In: IEEE Int. Symp. on Mixed and Augmented Reality (ISMAR) . 2013, pp. 75–82. doi : 10.1109/ISMAR.2013.6671766 .[2] J. Jongejan, H. Rowley, T. Kawashima, J. Kim, and N. Fox-Gieg. The Quick, Draw! Dataset . https://github.com/googlecreativelab/quickdraw-dataset . 2017. [3] V. V. Arlazarov, K. Bulatov, T. Chernov, and V. L. Arlazarov. “MIDV-500: A Dataset for Identity Documents Analysis and Recognition on Mobile Devices in Video Stream”. In: Computer Optics 43 (2019). doi : 10.18287/ 2412-6179-2019-43-5-818-824 .[4] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova. “Bert: Pre-training of deep bidirectional transformers for language understanding”. In: Proc. NAACL-HLT . 2019, pp. 4171–4186. [5] S. Marcel, M. S. Nixon, J. Fierrez, and N. Evans, eds. Handbook of Biomet-ric Anti-Spoofing: Presentation Attack Detection . Advances in Computer Vision and Pattern Recognition. Springer, 2019. doi : 10.1007/978- 3-319-92627-8 .Temporal Modeling of Optically Variable Devices in Identity Documents 17 
+
+[6] A. Soares, R. N. Junior, and B. Bezerra. “BID Dataset: a challenge dataset for document processing tasks”. In: Proc. Conf. on Graphics, Patterns and Images (SIBGRAPI) . 2020, pp. 143–146. doi : 10.5753/sibgrapi.est. 2020.12997 .[7] O. Kada, C. Kurtz, C. van Kieu, and N. Vincent. “Hologram Detection for Identity Document Authentication”. In: Proc. Int. Conf. on Pattern Recognition and Artificial Intelligence (ICPRAI) . 2022, pp. 346–357. doi :
+
+10.1007/978-3-031-09037-0_29 .[8] A. Nicolaou, V. Christlein, E. Riba, J. Shi, G. Vogeler, and M. Seuret. “TorMentor: Deterministic dynamic-path, data augmentations with frac-tals”. In: Proc. CVPR . 2022, pp. 2707–2711. [9] D. V. Polevoy, I. V. Sigareva, D. M. Ershova, V. V. Arlazarov, D. P. Nikolaev, Z. Ming, M. M. Luqman, and J.-C. Burie. “Document Liveness Challenge Dataset (DLC-2021)”. In: Journal of Imaging 8 (2022), p. 181. 
+
+doi : 10.3390/jimaging8070181 .[10] Z. Tong, Y. Song, J. Wang, and L. Wang. “Videomae: Masked autoen-coders are data-efficient learners for self-supervised video pre-training”. In: 
+
+NeurIPS 35 (2022), pp. 10078–10093. [11] M.-N. Chapel, M. Al-Ghadi, and J.-C. Burie. “Authentication of Holo-grams with Mixed Patterns by Direct LBP Comparison”. In: IEEE Int. Workshop on Multimedia Signal Processing (MMSP) . 2023, pp. 1–6. doi :
+
+10.1109/MMSP59012.2023.10337669 .[12] L. I. Koliaskina, E. V. Emelianova, D. V. Tropin, V. V. Popov, K. B. Bulatov, D. P. Nikolaev, and V. V. Arlazarov. “MIDV-Holo: A Dataset for ID Document Hologram Detection in a Video Stream”. In: Proc. ICDAR .2023, pp. 486–503. doi : 10.1007/978-3-031-41682-8_30 .[13] E.-J. Park, S.-Y. Back, J. Kim, and S. S. Woo. “KID34K: A Dataset for Online Identity Card Fraud Detection”. In: Proc. ACM Int. Conf. on Infor-mation and Knowledge Management (CIKM) . 2023, pp. 5381–5385. doi :
+
+10.1145/3583780.3615122 .[14] G. Pouliquen, G. Chiron, J. Chazalon, T. Géraud, and A. M. Awal. “Weakly Supervised Training for Hologram Verification in Identity Documents”. In: 
+
+Proc. ICDAR . 2024, pp. 17–33. doi : 10.1007/978-3-031-70533-5_2 .[15] G. Pouliquen, J. Chazalon, G. Chiron, T. Géraud, and A. M. Awal. “Verifi-cation of Dynamic Holographic Behavior in Identity Documents”. In: Proc. ICDAR . 2025, pp. 323–339. doi : 10.1007/978-3-032-04624-6_19 .
