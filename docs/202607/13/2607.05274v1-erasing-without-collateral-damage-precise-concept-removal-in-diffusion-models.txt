@@ -1,0 +1,769 @@
+Title: Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2607.05274v1
+
+Published Time: Tue, 07 Jul 2026 03:46:04 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models 
+
+Parth Upman 1, Nishita Jain 2, and Shreyank N Gowda 1 
+
+> 1
+
+School of Computer Science, University of Nottingham, Nottingham, NG8 1BB, UK  
+
+> 2
+
+Department of Computing, Imperial College London, London, SW7 2AZ, UK 
+
+{psxpu1,shreyank.narayanagowda}@nottingham.ac.uk 
+
+Abstract. Training-free concept erasure is an attractive mechanism for controlling text-to-image diffusion models, but precise erasure often comes at the cost of damaging semantically related non-target concepts. Exist-ing value-space methods remove the component of each cross-attention value along the target concept direction, implicitly treating target iden-tity and shared visual structure as the same signal. We argue that this is the source of much of the collateral damage in prior preservation. We introduce CARE , a closed-form concept erasure operator that re-places the raw target direction with a kept-subspace-aware direction computed from a small bank of retained concept anchors. The result-ing edit is applied directly in cross-attention value space, requires no model fine-tuning, and adds only a negligible offline computation. A sin-gle shrinkage parameter controls the erase–preserve trade-off. We fur-ther show that the operator admits a minimum-disturbance interpre-tation and, in its projection form, leaves the kept subspace invariant. Experiments under the standard concept-erasure protocol show that our method preserves non-target concepts more faithfully while maintaining competitive erasure across instance, style, and celebrity concepts. Code: 
+
+https://github.com/parthupman/care 
+
+Keywords: Concept Erasure · Diffusion Models · Generative AI Safety 
+
+## 1 Introduction 
+
+Text-to-image diffusion models have become a practical interface for visual con-tent creation, generating high-quality images from natural language prompts across objects, scenes, styles, identities, and abstract concepts [6,13,26,29]. Their success relies partly on large-scale image-text pretraining and web-scale data col-lection [27,32], but this scale also creates a deployment problem: models trained on weakly curated corpora can reproduce copyrighted characters, distinctive artistic styles, public figures, unsafe content, or other concepts that a model owner may wish to restrict [2, 4, 23, 31]. Since retraining a released model from scratch for every newly identified concept is rarely practical, concept erasure has become an important problem for controllable generative modelling: remove a target concept while preserving the rest of the model’s visual knowledge.  
+
+> arXiv:2607.05274v1 [cs.CV] 6 Jul 2026 2Upman et al.
+
+The central difficulty is that concept erasure is not simply about weaken-ing generation. A useful method must be both effective and specific: prompts containing the target concept should no longer render it, while prompts for non-target concepts should remain faithful to the original model. These goals are naturally in tension. Removing a cartoon character should not damage other cartoon characters; erasing an artist style should not flatten related painterly styles; suppressing one public figure should not degrade face generation more broadly. The challenge is therefore to erase without collateral damage .Existing erasure methods approach this trade-off in different ways. Training-based methods fine-tune the diffusion model or attach lightweight modules to forget the target concept [9, 16, 19, 20, 39]. They can achieve strong erasure, but usually require per-concept optimization and preserve the prior only through reg-ularization, anchor losses, or adapters. Closed-form weight-editing methods avoid iterative fine-tuning by solving for changes to cross-attention projections [10,11], but the edit is still baked into model weights and typically depends on an ex-plicitly specified preserve set. Training-free methods intervene during genera-tion through classifier-free guidance, negative prompting, safety guidance, or prompt/embedding manipulation [14, 31, 38]. These are attractive for deploy-ment, but can be too coarse to separate a target concept from nearby non-target concepts that share visual structure. A particularly promising direction is to edit internal representations rather than weights or prompts. Cross-attention layers mediate how text tokens influ-ence image latents in latent diffusion models [29]. AdaVD shows that intervening in the value space of these layers provides a fast and training-free surface for con-cept erasure: it removes the component of each cross-attention value along the recorded target value direction, with an adaptive gate controlling when the edit is applied [36]. However, the raw target direction need not represent only the concept to be removed. It can also contain structure shared with concepts that should be preserved: shape and texture statistics shared by characters, colour and brushstroke patterns shared by artists, or the generic face manifold shared by identities. Removing the full target direction therefore risks removing more than the target, which is precisely where prior preservation fails. We address this issue with CARE , short for Covariance-Aware Retained-subspace Erasure . CARE keeps the same training-free value-space interven-tion surface as AdaVD, but changes the direction of erasure. Instead of eras-ing along the raw target value, CARE builds a small bank of retained concept anchors and uses their covariance structure to compute a kept-subspace-aware direction. This direction down-weights components of the target that lie in high-variance retained directions, while preserving components that distinguish the target from retained concepts. The resulting operator is closed-form, applied di-rectly to cross-attention values, requires no model fine-tuning, and adds only a small offline computation. The shrinkage parameter in CARE exposes a continuous erase–preserve trade-off. In one limit, the retained covariance becomes negligible and CARE recovers standard value-space erasure. In the other, the operator approaches a projection Abbreviated paper title 3
+
+that removes the target component outside the retained subspace. This connects concept erasure to minimum-disturbance projection and covariance-weighted dis-crimination: the CARE direction can be viewed as a Fisher/Mahalanobis-style discriminative direction under a retained-concept covariance metric [8, 17, 21]. Computationally, it is obtained through a low-rank Woodbury solve, avoid-ing any large matrix inverse and preserving the training-free character of the method [3, 37]. In summary, CARE reframes concept erasure as choosing the right direction to forget. Rather than asking only how strongly to remove a target, we ask which part of the target direction should be removed at all. Our contributions are: 
+
+– We identify shared target-retain structure as a source of collateral damage in value-space concept erasure, and introduce a covariance-aware retained-subspace direction for training-free concept removal. 
+
+– We derive CARE as a closed-form erase–preserve operator with a single shrinkage parameter, recovering standard value-space erasure as a limiting case and yielding a kept-subspace invariance property in its projection form. 
+
+– We evaluate CARE under the standard concept-erasure protocol across in-stance, style, and celebrity removal, showing improved non-target preserva-tion with matched or competitive erasure. 
+
+## 2 Related Work 
+
+Text-to-image diffusion and concept control. Modern text-to-image sys-tems build on diffusion models [6, 13, 24, 33] and latent diffusion architectures that make high-resolution generation practical [26, 29]. Large-scale image-text pretraining enables open-ended prompt following and broad visual coverage [27, 28, 30, 32], but also exposes models to copyrighted, offensive, private, and other-wise sensitive visual concepts [2, 4]. Prompt-level filters and safety guidance can help, but are brittle to prompt modifications, jailbreaks, or adversarially chosen inputs [23, 25, 31, 34]. This motivates concept-erasure methods that intervene in the generative process itself, rather than relying only on input or output filtering. 
+
+Concept erasure and model editing. A major line of work edits model pa-rameters so that a target concept is forgotten. Erased Stable Diffusion fine-tunes the model with negative guidance [9], Concept Ablation maps the target toward a generic anchor [16], and Forget-Me-Not suppresses target attention maps during fine-tuning [39]. More recent methods improve scalability and locality through lightweight or concept-specific modules, including SPM [20], MACE [19], and Receler [15]; benchmarks such as UnlearnCanvas further emphasize evaluation of both forgetting and preservation [40]. These methods can achieve strong era-sure, but usually require per-concept optimization, additional parameters, or edited checkpoints, with preservation encouraged through regularization or an-chor losses rather than enforced by the edit structure. 
+
+Closed-form and training-free interventions. To reduce fine-tuning cost, closed-form methods edit cross-attention projections directly. Unified Concept 4 Upman et al. 
+
+Editing solves for weight changes that map targets away while preserving speci-fied concepts [10], and RECE studies reliable and efficient concept erasure in text-to-image models [11]. These approaches avoid iterative fine-tuning, but still modify model weights and depend on an explicit preserve set or penalty. Training-free generation-time methods instead intervene during sampling, for example through classifier-free guidance, safety guidance, negative prompting, SuppressEOT, or adaptive guards [14, 18, 31, 38]. They are attractive for de-ployment, but guidance- or embedding-space interventions can be too coarse to separate a target concept from nearby non-target concepts that share visual structure. 
+
+Cross-attention, value space, and retained subspaces. Cross-attention controls how text conditions image latents in diffusion models, building on transformer attention [29, 35]. Image-editing methods have exploited this struc-ture by manipulating attention maps or text-conditioning signals during gen-eration [1, 5, 12, 22]. Closest to our work is AdaVD, which observes that cross-attention values act as a visual “what” pathway and erases a target by removing the component of each value vector along the recorded target direction [36]. CARE keeps this fast, closed-form, training-free value-space intervention, but changes the direction of erasure: instead of using the raw target value, it com-putes a covariance-aware direction from retained anchors, down-weighting com-ponents important for concepts that should remain intact. 
+
+Covariance-aware directions. Our formulation is related to classical dis-criminative projection and covariance whitening. Fisher’s linear discriminant and Mahalanobis distance define directions using covariance information [8, 21]; shrinkage covariance improves conditioning in high dimensions [17]; and the Woodbury identity enables efficient low-rank inverse computation [37]. Subspace-constrained editing has also been used to preserve behaviour during model edit-ing, for example in recent language-model editing work [7]. We use these tools not as a classifier or weight-editing constraint, but as a closed-form erasure direc-tion: retained anchors define the covariance structure to protect, and the target is removed relative to that structure. 
+
+## 3 Method 
+
+We study training-free concept erasure for a frozen text-to-image diffusion model. Given a target concept c, the goal is to prevent the model from rendering c while preserving its ability to generate non-target concepts. We focus on inference-time edits inside the cross-attention layers of the denoising U-Net, where text tokens influence the visual content written into the latent image representation. Our method, CARE (Covariance-Aware Retained-subspace Erasure), keeps the same intervention surface as value-space erasure, but replaces the raw target direction with a retained-subspace-aware direction computed from a small bank of kept concepts. Figure 1 gives an overview. Abbreviated paper title 5Prompt 
+
+> ⋯
+> Frozen
+> encoder /
+> value proj.
+> (no editing)
+> t
+> b
+
+₁
+
+> b
+
+₂
+
+> b_M
+> Target (record)
+> ⋯
+> Anchors / bank (record)
+> ⋯
+> ⋯
+> ⋯
+
+⋮
+
+> B
+
+∈ R^{M ×d} 
+
+> Record target and anchor value
+> representations (no edits to prompt).
+
+U-Net     
+
+> Cross -
+> Attn
+> Cross -
+> Attn
+> Cross -
+> Attn
+> z_t z_{t−1}
+> t
+> B
+> CARE intervenes at cross -attention
+> value space during sampling.
+
+B
+
+t
+
+> γ
+> shrinkage
+> d
+> Value space
+> t
+> d
+> retained
+> subspace
+> v
+
+−
+
+> gate
+
+→   
+
+> v'
+> Compute retained -subspace -aware direction d
+> and apply gated value update.
+> d=Equation 5
+> d
+> Equation 6
+
+Fig. 1: Overview of CARE. Given a target concept and a small bank of retained an-chors, CARE records their value-space representations from the frozen text encoder and value projections, without editing the prompt or model weights. During sam-pling, CARE intervenes inside the cross-attention value space of the diffusion U-Net. The retained-anchor bank defines a covariance-aware direction d =   1 
+
+> M
+
+B⊤B + γI −1 t,which down-weights components shared with retained concepts. The final value update applies a gated subtraction along this direction, suppressing the target-specific compo-nent while reducing collateral changes to retained concepts. 
+
+3.1 Value-Space Erasure Preliminaries 
+
+Latent diffusion models inject text conditioning through cross-attention lay-ers [29]. For a given cross-attention layer, let vj ∈ RD denote the value vector corresponding to token position j in the prompt. Existing value-space erasure records a target value tj ∈ RD for concept c and removes the component of vj
+
+along tj :
+
+verase 
+
+j = vj − δ(cos( tj , v j )) ⟨tj , v j ⟩⟨tj , t j ⟩ tj , (1) where δ(·) is a token-wise gate that activates erasure when the prompt value is sufficiently aligned with the target direction: 
+
+δ(x) = s
+
+1 + exp {− p(x − ϵ)} . (2) This edit is fast and training-free, but it treats tj as if it contains only the target concept. In practice, tj can also contain structure shared with concepts that should be preserved, such as cartoon structure, artistic texture, or the generic face manifold. CARE addresses this by changing the erasure direction. 6 Upman et al. 
+
+3.2 Retained Anchor Bank 
+
+For each target concept, CARE constructs a small bank of retained concept an-chors. These anchors represent concepts that should remain stable after erasure. For a given cross-attention layer and token position j, we record the value vectors of M retained anchors and collect them as 
+
+Bj =
+
+
+
+b⊤
+
+> j, 1
+
+b⊤
+
+> j, 2
+
+...
+
+b⊤
+
+> j,M
+
+ ∈ RM ×D , (3) where bj,m is the value vector of the m-th retained anchor at token position 
+
+j. The target value tj and retained-anchor values are recorded offline using the frozen text encoder and value projections. No model weights are updated. 
+
+3.3 Covariance-Aware Erasure Direction 
+
+The anchor bank describes directions in value space that are important for re-tained concepts. CARE uses this structure to compute an erasure direction that remains aligned with the target while down-weighting components shared with retained concepts. We define the retained-anchor covariance as 
+
+ΣR,j = 1
+
+M B⊤ 
+
+> j
+
+Bj + γI D , (4) where γ > 0 is a shrinkage parameter. CARE replaces the raw target direction 
+
+tj with 
+
+dj = Σ−1 
+
+> R,j
+
+tj . (5) This direction suppresses components of tj that lie in high-variance retained-anchor directions, while preserving components that distinguish the target from the retained anchors. Direct inversion of ΣR,j is unnecessary: since M ≪ D, dj
+
+is computed efficiently with a low-rank Woodbury solve over an M × M matrix. The full derivation is provided in the supplementary material. 
+
+3.4 CARE Value Update 
+
+Given the covariance-aware direction dj , CARE applies the same gated rank-one removal form as value-space erasure: 
+
+vCARE  
+
+> j
+
+= vj − δ(cos( tj , v j )) ⟨dj , v j ⟩⟨dj , d j ⟩ dj . (6) The gate remains based on the raw target similarity cos( tj , v j ), preserving com-patibility with prior value-space erasure. The selectivity of CARE comes from the erasure coefficient ⟨dj , v j ⟩: if a prompt value does not contain the target-specific component, its projection onto dj is small, and the update has little effect. The update is applied independently at each edited cross-attention layer and token position, except for the first token position, which is skipped following prior value-space erasure. Abbreviated paper title 7
+
+3.5 Erase–Preserve Trade-off 
+
+The shrinkage parameter γ controls the erase–preserve trade-off. When γ → ∞ ,the covariance term becomes negligible and Σ−1 
+
+> R,j
+
+tj ∝ tj , so CARE recovers standard raw target-direction erasure as a limiting case. As γ decreases, retained-anchor covariance has a stronger effect and directions important for retained concepts are increasingly down-weighted. Thus large γ favours erasure strength, while smaller γ favours preservation of retained structure. CARE is training-free. It does not update the U-Net, the text encoder, or any cross-attention projection weights. Its only additional cost over raw value-space erasure is the offline construction of dj , after which inference uses the same type of gated rank-one subtraction. Additional details, including the Woodbury computation, the projection-form invariance property, and the multi-concept extension, are provided in the supplementary material. 
+
+## 4 Experiments 
+
+We evaluate CARE on training-free concept erasure for text-to-image diffusion models. The goal is to remove a target concept while preserving the model’s ability to generate non-target concepts. We follow the evaluation protocol used by prior concept-erasure methods, reporting CLIP score (CS) for erased concepts and FID for retained concepts. Lower CS indicates stronger erasure of the target concept, while lower FID indicates better preservation of non-target concepts. 
+
+4.1 Experimental Setup Model and sampling. All experiments are conducted on Stable Diffusion v1.4 using the DPM-Solver sampler with 30 denoising steps and classifier-free guid-ance scale 7.5, following the standard AdaVD protocol [36]. CARE is applied at inference time only. It does not update the text encoder, the UNet, or any cross-attention projection weights. 
+
+Evaluation protocol. We evaluate three categories of concept erasure: in-stances, art styles, and celebrities. For instance erasure, we evaluate single- and multi-concept removal using Snoopy, Mickey, and Spongebob as erased concepts, with Pikachu, Dog, and Legislator used as non-target probes. For art-style era-sure, we erase Van Gogh, Picasso, and Monet, and evaluate preservation on the remaining styles and held-out artists. For celebrity erasure, we erase Bruce Lee, Marilyn Monroe, and Melania Trump, and evaluate preservation on non-target identities. Unless otherwise stated, all main results use the same number of templates and samples as the standard protocol. The ablation studies use reduced-scope runs with 15 templates, NS=10, seed 0. 
+
+Baselines and metrics. We compare against training-based erasure methods, including Concept Ablation [16], MACE [19], and SPM [20], and training-free methods, including negative prompting, SLD [31], and AdaVD [36]. Baseline rows are transcribed from the AdaVD evaluation protocol, while CARE rows are produced under the same evaluation surface. In each table, target concepts are evaluated by CS ↓, and non-target concepts are evaluated by FID ↓.8 Upman et al. 
+
+Table 1: Quantitative comparison of single- and multi-instance concept erasure. Each target concept is evaluated by CLIP score (CS, lower is better), while non-target con-cepts are evaluated by FID (lower is better). Best results are shown in bold and second-best results are underlined. 
+
+Concept Snoopy Mickey Spongebob Pikachu Dog Legislator 
+
+SD v1.4 28.51 26.57 27.43 – – –
+
+Erase Snoopy 
+
+CS ↓ FID ↓ FID ↓ FID ↓ FID ↓ FID ↓
+
+ConAbl [16] 25.38 38.44 41.59 29.68 27.76 27.36 MACE [19] 20.78 118.01 111.90 81.99 43.27 65.97 SPM [20] 23.89 33.06 34.70 23.89 19.61 18.26 NP [31] 23.66 59.58 78.74 52.37 67.51 55.22 SLD [31] 27.84 48.12 55.36 38.74 41.95 49.08 AdaVD [36] 20.28 5.72 8.56 5.79 2.32 6.07 
+
+Ours (γ = 0 .5) 19.42 4.43 7.42 4.74 1.95 5.32 
+
+Erase Snoopy and Mickey 
+
+CS ↓ CS ↓ FID ↓ FID ↓ FID ↓ FID ↓
+
+ConAbl [16] 24.26 24.08 46.32 39.63 30.57 27.49 MACE [19] 20.74 20.71 51.49 110.67 52.07 77.13 SPM [20] 23.16 22.81 41.58 31.77 21.96 23.69 NP [31] 23.59 24.85 81.41 50.10 65.93 58.88 SLD [31] 27.76 26.74 54.59 39.24 41.62 50.13 AdaVD [36] 20.29 19.93 9.34 5.84 2.41 6.43 
+
+Ours (γ = 0 .5) 19.45 22.55 7.47 4.98 2.18 5.34 
+
+Erase Snoopy and Mickey and Spongebob 
+
+CS ↓ CS ↓ CS ↓ FID ↓ FID ↓ FID ↓
+
+ConAbl [16] 23.94 23.64 25.04 51.20 31.59 30.03 MACE [19] 20.48 20.50 21.59 99.68 47.46 70.38 SPM [20] 22.81 22.35 20.82 39.83 22.68 25.31 NP [31] 24.29 24.76 25.31 64.75 65.10 59.33 SLD [31] 27.84 26.71 27.60 39.41 42.32 49.88 AdaVD [36] 19.39 19.73 20.34 6.86 2.79 7.26 
+
+Ours (γ = 0 .5) 19.45 22.56 18.40 6.86 2.27 5.55 
+
+4.2 Instance Concept Erasure 
+
+Table 1 reports single- and multi-instance erasure. In the single-concept setting, CARE gives a clear improvement over AdaVD. When erasing Snoopy, CARE re-duces the target CS from 20.28 to 19.42. More importantly, it improves preserva-tion for every retained concept: Mickey FID decreases from 5.72 to 4.43, Sponge-bob from 8.56 to 7.42, Pikachu from 5.79 to 4.74, Dog from 2.32 to 1.95, and Legislator from 6.07 to 5.32. CARE strengthens erasure while reducing collateral changes across all retained probes. The multi-concept setting is more nuanced. When erasing Snoopy and Mickey jointly, CARE improves Snoopy erasure from Abbreviated paper title 9
+
+20.29 to 19.45, but Mickey erasure weakens from 19.93 to 22.55. At the same time, preservation improves consistently: Spongebob FID decreases from 9.34 to 7.47, Pikachu from 5.84 to 4.98, Dog from 2.41 to 2.18, and Legislator from 6.43 to 5.34. When erasing Snoopy, Mickey, and Spongebob jointly, CARE improves Spongebob erasure substantially, reducing CS from 20.34 to 18.40, and improves retained Dog and Legislator FID from 2.79 to 2.27 and 7.26 to 5.55 respectively. However, Mickey remains harder to erase in the multi-target setting. These results show the intended behaviour of CARE. It is not designed to maximize erasure strength at any cost. Instead, it shifts the operating point to-ward better preservation, often with matched or improved erasure. This is espe-cially important in concept-erasure settings where the target concept is visually close to concepts that should remain intact. 
+
+4.3 Art-Style Erasure 
+
+Table 2 reports art-style erasure. This is the strongest setting for CARE. When erasing Van Gogh, CARE achieves the best target CS, reducing it from AdaVD’s 24.87 to 23.63. It also improves preservation for Picasso, Monet, and Caravaggio, reducing FID from 6.82 to 5.86, 2.66 to 2.44, and 6.84 to 4.80 respectively. The only exception is Andy Warhol, where CARE obtains 8.59 compared with AdaVD’s 8.36, a small difference. For Picasso erasure, CARE matches AdaVD’s target CS at 26.99, while im-proving all retained-style FIDs. Van Gogh FID decreases from 5.49 to 5.18, Monet from 2.33 to 1.69, Andy Warhol from 9.38 to 7.53, and Caravaggio from 7.05 to 4.36. Although negative prompting obtains a lower Picasso CS, it severely damages non-target styles, with retained FIDs above 90 in several columns. CARE therefore gives a much better erase–preserve operating point. For Monet erasure, CARE reduces target CS from 26.30 to 24.58, close to the strongest erasure baselines, while giving the best preservation across all retained styles. Van Gogh FID decreases from 6.94 to 5.85, Picasso from 6.50 to 5.46, Andy Warhol from 8.46 to 7.21, and Caravaggio from 7.19 to 4.22. Overall, the style results strongly support the central claim of the method: retained-subspace-aware erasure can reduce collateral damage while maintaining competitive target removal. 
+
+4.4 Celebrity Concept Erasure 
+
+Table 3 evaluates celebrity erasure. This setting is challenging because identities share a strong face prior, so removing one identity can easily affect others. CARE performs well in this regime. When erasing Bruce Lee, CARE improves target erasure from AdaVD’s 20.67 to 18.42. It also improves all retained identity FIDs reported in the table: Marilyn Monroe improves from 6.68 to 3.29, Melania Trump from 5.08 to 4.37, Anne Hathaway from 6.39 to 5.07, and Tom Cruise from 13.11 to 5.89. This is a strong example of the benefit of separating target-specific identity from shared face structure. 10 Upman et al. 
+
+Table 2: Quantitative comparison of art-style concept erasure. Target concepts are evaluated by CLIP score (CS, lower is better), while non-target concepts are evaluated by FID (lower is better). Best results are shown in bold and second-best results are underlined. 
+
+Concept Van Gogh Picasso Monet Andy Warhol Caravaggio 
+
+SD v1.4 29.21 29.06 29.02 – –
+
+Erase Van Gogh 
+
+CS ↓ FID ↓ FID ↓ FID ↓ FID ↓
+
+ConAbl [16] 28.80 71.71 138.72 70.30 73.10 MACE [19] 27.74 65.77 69.79 83.37 75.41 SPM [20] 24.78 62.25 32.27 58.30 61.50 NP [31] 24.90 141.56 124.52 127.85 136.32 SLD [31] 27.48 103.96 109.11 103.89 119.32 AdaVD [36] 24.87 6.82 2.66 8.36 6.84 Ours (γ = 0 .2) 23.63 5.86 2.44 8.59 4.80 
+
+Erase Picasso 
+
+FID ↓ CS ↓ FID ↓ FID ↓ FID ↓
+
+ConAbl [16] 58.62 27.72 140.34 73.35 67.44 MACE [19] 60.46 27.11 49.92 76.10 72.85 SPM [20] 38.79 26.69 7.76 52.00 51.40 NP [31] 111.35 26.14 91.11 116.24 121.82 SLD [31] 98.21 27.03 93.01 97.00 110.05 AdaVD [36] 5.49 26.99 2.33 9.38 7.05 Ours (γ = 0 .2) 5.18 26.99 1.69 7.53 4.36 
+
+Erase Monet 
+
+FID ↓ FID ↓ CS ↓ FID ↓ FID ↓
+
+ConAbl [16] 141.52 132.10 24.53 208.38 186.26 MACE [19] 76.90 69.35 26.89 88.35 81.72 SPM [20] 41.03 29.71 27.00 31.90 25.99 NP [31] 137.21 126.75 24.47 127.22 135.83 SLD [31] 94.48 92.88 25.73 100.90 114.87 AdaVD [36] 6.94 6.50 26.30 8.46 7.19 Ours (γ = 0 .2) 5.85 5.46 24.58 7.21 4.22 
+
+When erasing Marilyn Monroe, CARE again improves target erasure, re-ducing CS from 19.87 to 17.73. It also improves preservation on the retained identities: Bruce Lee FID decreases from 7.88 to 5.92, Melania Trump from 4.46 to 4.36, Anne Hathaway from 5.43 to 5.01, and Tom Cruise from 9.33 to 4.53. Compared with methods such as MACE or SPM, which can strongly suppress the target but substantially distort retained identities, CARE provides a more balanced operating point. For Melania Trump, CARE reduces the target CS from 23.28 to 21.90, while improving most retained FIDs. Bruce Lee improves from 7.32 to 6.33, Mari-Abbreviated paper title 11 
+
+Table 3: Quantitative comparison of celebrity concept erasure. For the erased concept, CLIP score (CS, lower is better) measures erasure efficacy. For non-target concepts, FID (lower is better) measures prior preservation. Greyed entries are not the primary metric for that block. Best results are shown in bold and second-best results are underlined. 
+
+Concept Bruce Lee Marilyn Monroe Melania Trump Anne Hathaway Tom Cruise 
+
+CS FID CS FID CS FID CS FID CS FID SD v1.4 30.77 – 27.70 – 29.80 – 31.96 – 31.12 –
+
+Erase Bruce Lee 
+
+CS ↓ FID CS FID ↓ CS FID ↓ CS FID ↓ CS FID ↓
+
+ConAbl [16] 31.35 87.57 28.23 57.79 29.77 40.95 29.77 40.95 30.97 53.53 MACE [19] 25.04 131.29 28.13 74.80 30.07 68.83 31.91 75.05 28.13 71.20 SPM [20] 27.75 123.67 27.71 26.89 29.81 7.83 31.96 9.46 31.13 28.54 NP [31] 24.70 150.85 26.84 102.67 28.94 82.13 30.34 89.60 29.67 89.92 SLD [31] 28.22 102.26 26.29 87.15 29.43 84.32 30.97 85.37 29.32 94.07 AdaVD [36] 20.67 138.70 27.70 6.68 29.82 5.08 31.97 6.39 31.10 13.11 CARE (ours) 18.42 135.65 27.73 3.29 29.65 4.37 31.95 5.07 31.13 5.89 
+
+Erase Marilyn Monroe 
+
+CS FID ↓ CS ↓ FID CS FID ↓ CS FID ↓ CS FID ↓
+
+ConAbl [16] 30.88 66.97 28.75 88.45 29.69 51.52 32.05 58.57 31.10 54.13 MACE [19] 31.30 76.23 19.52 148.34 31.93 71.05 30.16 74.90 31.52 73.06 SPM [20] 30.76 32.70 21.87 145.81 29.83 25.27 31.96 22.86 31.10 19.34 NP [31] 29.50 113.12 25.86 149.95 29.29 87.27 29.42 98.86 30.02 86.70 SLD [31] 29.59 87.83 26.70 98.51 28.81 107.42 29.25 102.13 30.35 81.12 AdaVD [36] 30.73 7.88 19.87 116.94 29.80 4.46 31.93 5.43 31.13 9.33 CARE (ours) 30.64 5.92 17.73 112.11 29.66 4.36 31.96 5.01 31.15 4.53 
+
+Erase Melania Trump 
+
+CS FID ↓ CS FID ↓ CS ↓ FID CS FID ↓ CS FID ↓
+
+ConAbl [16] 30.62 54.46 28.14 59.10 29.89 79.04 31.94 58.65 31.00 54.50 MACE [19] 31.30 78.07 27.84 71.34 20.71 122.42 31.94 73.49 31.41 71.09 SPM [20] 30.79 14.08 27.63 30.40 23.12 129.68 31.86 28.85 31.10 22.35 NP [31] 29.38 115.35 27.63 103.83 23.73 131.73 28.72 106.04 30.27 106.00 SLD [31] 29.55 90.69 26.24 93.93 25.45 103.52 28.43 104.48 30.47 88.31 AdaVD [36] 30.75 7.32 27.69 6.86 23.28 96.66 31.95 6.52 31.08 5.74 CARE (ours) 30.61 6.33 27.70 4.06 21.90 96.22 31.95 6.85 31.22 4.38 
+
+lyn Monroe from 6.86 to 4.06, and Tom Cruise from 5.74 to 4.38. Anne Hath-away slightly worsens from 6.52 to 6.85. This case illustrates the limits of a preservation-oriented operator: when the target is highly entangled with retained identities, CARE still improves the overall trade-off, but does not uniformly dom-inate every retained probe. 
+
+4.5 Qualitative Analysis 
+
+Figure 2 and Figure 3 provide qualitative examples of CARE. Each panel is a 
+
+3 × 3 montage, where columns correspond to SD v1.4, AdaVD, and CARE, and rows correspond to the erased target followed by two bystander concepts. These examples use a single template and seed, and are intended to illustrate the same 12 Upman et al. 
+
+Fig. 2: Qualitative celebrity erasure. Each 3 × 3 panel shows columns as SD v1.4 original, AdaVD, and CARE, and rows as erased target, bystander 1, and bystander 2. Left: erase Bruce Lee, with Marilyn Monroe and Tom Cruise as bystanders. Centre: erase Marilyn Monroe, with Bruce Lee and Tom Cruise as bystanders. Right: erase Melania Trump, with Marilyn Monroe and Anne Hathaway as bystanders. The edited columns suppress the target identity in the first row, while CARE better preserves the bystander identities, consistent with the FID improvements in Table 3. 
+
+Fig. 3: Qualitative style and instance erasure. Each 3 × 3 panel shows columns as SD v1.4 original, AdaVD, and CARE, and rows as erased target, bystander 1, and bystander 2. Left: erase Van Gogh style, with Picasso and Monet as bystanders. Centre: erase Picasso style, with Van Gogh and Monet as bystanders. Right: erase Snoopy, with Mickey Mouse and Pikachu as bystanders. CARE suppresses the target style or character while preserving the retained bystanders, matching the preservation trends reported in Tables 2 and 6. 
+
+erase–preserve behaviour measured quantitatively in Tables 3, 2, and 6. Across the examples, the target concept is visibly suppressed by the edited methods, while CARE better preserves the visual identity or style of the bystander rows. This is especially apparent for celebrity and style erasure, where the retained concepts share substantial structure with the erased target. 
+
+4.6 Efficiency 
+
+Table 4 reports the computational cost of CARE compared with prior methods. Training-based methods such as Concept Ablation, SPM, and MACE require Abbreviated paper title 13                                    
+
+> Table 4: Time consumption of 10-concept erasure. Times are reported in seconds for 10 generated images on one NVIDIA A40, following AdaVD [36]. Baseline rows are transcribed from AdaVD. CARE is closed-form and training-free; instead of absolute A40 timing, we report the measured overhead: a 1.2s offline retained-subspace build,
+> +0 .7% per-image generation overhead, and zero fine-tuning.
+> Method Data Preparation Model Finetune Image Generation Time
+> ConAbl [16] 9290 1120 0.9 10419 ESD [9] ––––SPM [20] 072850 1.7 72867 MACE [19] 303 232 0.9 544 NP [31] ––––SLD [31] 001.4 14 AdaVD [36] 401.8 22 CARE (ours) 1.2 0+0 .7% 22
+
+model fine-tuning or additional preparation. In contrast, CARE is closed-form and training-free. It has zero model fine-tuning time, matching AdaVD in this respect. The only additional computation is an offline retained-subspace con-struction, measured at 1.2 seconds, and a small per-image generation overhead of +0 .7% . The total runtime is therefore effectively the same as AdaVD, while providing a retained-subspace-aware erasure direction. 
+
+4.7 Ablation Studies Effect of the shrinkage parameter. The left side of Table 5 evaluates the shrinkage parameter γ on a separable concept, Bruce Lee, and an entangled con-cept, Melania Trump. Very small values of γ over-protect the retained subspace and collapse erasure: for Bruce Lee, γ = 0 .05 and γ = 0 .10 give CS values near 30, close to the unedited model, even though FID is low. This confirms that preservation alone is not sufficient; the target must still be removed. For Bruce Lee, γ = 0 .20 gives the best erasure in the ablation, reducing CS to 17.19 com-pared with AdaVD’s 18.95, while also improving the Tom Cruise probe FID from 11.72 to 6.53. For Melania Trump, which is more entangled with the retained face subspace, larger values of γ improve erasure more strongly. This supports the interpretation of γ as an erase–preserve dial: smaller values favour preservation, while larger values recover stronger target removal. 
+
+Anchor-bank composition. The right side of Table 5 studies the retained anchor bank. The blind disjoint bank gives the strongest overall result among bank types, with CS 17.19 and FID 6.53. Random anchors weaken both erasure and preservation, unrelated anchors especially hurt FID, and related anchors perform worst, increasing CS to 22.88 and FID to 9.98. This is consistent with the method’s motivation. If the anchor bank is too close to the target identity, the protected subspace absorbs the target-specific direction and erasure becomes 14 Upman et al. 
+
+Table 5: Ablation studies. Left: effect of the shrinkage parameter γ on erasure CS ↓
+
+and probe FID ↓ for a separable concept, Bruce Lee with Tom Cruise as probe, and an entangled concept, Melania Trump with Anne Hathaway as probe. Right: effect of anchor-bank composition and bank size M for Bruce Lee erasure. All ablations use reduced-scope runs with 15 templates, NS=10, seed 0, and the same evaluation setting. Bold indicates the best result in each column. The star marks the deployed setting. 
+
+γ Bruce Lee Melania Trump 
+
+CS ↓ FID ↓ CS ↓ FID ↓
+
+AdaVD (γ → ∞ ) 18.95 11.72 22.33 6.93 0.05 29.99 4.09 29.46 4.21 
+
+0.10 30.01 4.42 29.39 4.35 0.20 ⋆ 17.19 6.53 21.59 5.09 0.50 17.27 7.56 21.17 5.64 1.00 17.65 10.06 20.99 5.33 (a) Shrinkage sensitivity.                         
+
+> Bank type CS ↓FID ↓MCS ↓FID ↓
+> blind (disjoint) 17.19 6.53 217.96 6.13 random 19.02 6.85 416.44 5.72
+> unrelated 19.04 8.77 617.19 6.53 related 22.88 9.98 817.25 6.25 10 17.34 5.83
+
+(b) Anchor-bank composition and size. 
+
+weaker. A useful anchor bank should capture shared non-target structure while remaining disjoint from the target identity. 
+
+Anchor-bank size. The bank-size ablation shows that CARE is not highly sensitive to the exact number of anchors. With M = 2 , CS is 17.96 and FID is 6.13. For M ∈ { 4, 6, 8, 10 }, CS remains between 16.44 and 17.34, and FID remains between 5.72 and 6.53. We use M = 6 as a conservative default because it provides stable behaviour with low overhead. 
+
+## 5 Conclusion 
+
+We presented CARE, a training-free concept-erasure method for text-to-image diffusion models that removes unwanted concepts while reducing collateral dam-age to non-target generations. CARE is motivated by the observation that the raw target direction used in value-space erasure can mix target-specific identity with visual structure shared by concepts that should be preserved. Instead of erasing along this raw direction, CARE computes a covariance-aware retained-subspace direction from a small bank of kept concept anchors, yielding a closed-form operator with no model fine-tuning and negligible offline overhead. Across instance, style, and celebrity erasure, CARE improves prior preservation while maintaining matched or competitive erasure, with the strongest gains on con-cepts whose target-specific component is separable from the retained subspace. More entangled cases expose the expected erase–preserve trade-off, which CARE controls through the shrinkage parameter γ. Overall, CARE reframes concept erasure as choosing the right direction to forget: suppressing specific unwanted concepts without broadly degrading the generative prior. Abbreviated paper title 15 
+
+## References 
+
+1. Avrahami, O., Lischinski, D., Fried, O.: Blended latent diffusion. In: ACM Trans-actions on Graphics. vol. 42, pp. 1–11 (2023) 4 2. Birhane, A., Prabhu, V.U., Kahembwe, E.: Multimodal datasets: Misogyny, pornography, and malignant stereotypes. arXiv preprint arXiv:2110.01963 (2021) 1, 3 3. Boyd, S., Vandenberghe, L.: Convex Optimization. Cambridge University Press (2004) 3 4. Carlini, N., Hayes, J., Nasr, M., Jagielski, M., Sehwag, V., Tramer, F., Balle, B., Ippolito, D., Wallace, E.: Extracting training data from diffusion models. In: USENIX Security Symposium. pp. 5253–5270 (2023) 1, 3 5. Chefer, H., Alaluf, Y., Vinker, Y., Wolf, L., Cohen-Or, D.: Attend-and-excite: Attention-based semantic guidance for text-to-image diffusion models. In: ACM Transactions on Graphics. vol. 42, pp. 1–10 (2023) 4 6. Dhariwal, P., Nichol, A.: Diffusion models beat gans on image synthesis. In: Ad-vances in Neural Information Processing Systems. vol. 34, pp. 8780–8794 (2021) 1, 37. Fang, J., Jiang, H., Wang, K., Ma, Y., Shi, J., Wang, X., He, X., Chua, T.S.: AlphaEdit: Null-space constrained knowledge editing for language models. In: In-ternational Conference on Learning Representations (2025) 4 8. Fisher, R.A.: The use of multiple measurements in taxonomic problems. Annals of Eugenics 7(2), 179–188 (1936) 3, 4 9. Gandikota, R., Materzyńska, J., Fiotto-Kaufman, J., Bau, D.: Erasing concepts from diffusion models. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 2426–2436 (2023) 2, 3, 13 10. Gandikota, R., Orgad, H., Belinkov, Y., Materzyńska, J., Bau, D.: Unified concept editing in diffusion models. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 5111–5120 (2024) 2, 4 11. Gong, C., Chen, K., Wei, Z., Chen, J., Jiang, Y.G.: Reliable and efficient con-cept erasure of text-to-image diffusion models. In: Proceedings of the European Conference on Computer Vision (2024) 2, 4 12. Hertz, A., Mokady, R., Tenenbaum, J., Aberman, K., Pritch, Y., Cohen-Or, D.: Prompt-to-prompt image editing with cross-attention control. In: International Conference on Learning Representations (2023) 4 13. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. In: Advances in Neural Information Processing Systems. vol. 33, pp. 6840–6851 (2020) 1, 3 14. Ho, J., Salimans, T.: Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 (2022) 2, 4 15. Huang, C.P., Chang, K.P., Tsai, C.T., Lai, Y.H., Yang, F.E., Wang, Y.C.F.: Re-celer: Reliable concept erasing of text-to-image diffusion models via lightweight erasers. In: Proceedings of the European Conference on Computer Vision (2024) 3 16. Kumari, N., Zhang, B., Wang, S.Y., Shechtman, E., Zhang, R., Zhu, J.Y.: Ablat-ing concepts in text-to-image diffusion models. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 22634–22645 (2023) 2, 3, 7, 8, 10, 11, 13, 22 17. Ledoit, O., Wolf, M.: A well-conditioned estimator for large-dimensional covariance matrices. Journal of Multivariate Analysis 88 (2), 365–411 (2004) 3, 4 18. Li, S., van de Weijer, J., Hu, T., Khan, F.S., Hou, Q., Wang, Y., Yang, J.: Get what you want, not what you don’t: Image content suppression for text-to-image 16 Upman et al. diffusion models. In: International Conference on Learning Representations (2024) 419. Lu, S., Wang, Z., Li, L., Liu, Y., Kong, A.W.K.: MACE: Mass concept erasure in diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6430–6440 (2024) 2, 3, 7, 8, 10, 11, 13, 22 20. Lyu, M., Yang, Y., Hong, H., Chen, H., Jin, X., He, Y., Xue, H., Han, J., Ding, G.: One-dimensional adapter to rule them all: Concepts, diffusion models and erasing applications. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 7559–7568 (2024) 2, 3, 7, 8, 10, 11, 13, 22 21. Mahalanobis, P.C.: On the generalised distance in statistics. Proceedings of the National Institute of Sciences of India 2(1), 49–55 (1936) 3, 4 22. Mokady, R., Hertz, A., Aberman, K., Pritch, Y., Cohen-Or, D.: Null-text inver-sion for editing real images using guided diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6038– 6047 (2023) 4 23. Mustafa, A.B., Ye, Z., Lu, Y., Pound, M.P., Gowda, S.N.: Low-effort jailbreak at-tacks against text-to-image safety filters. In: Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition. pp. 8590–8599 (2026) 1, 324. Nichol, A.Q., Dhariwal, P.: Improved denoising diffusion probabilistic models. In: International Conference on Machine Learning. pp. 8162–8171 (2021) 3 25. Pham, M., Marshall, K.O., Cohen, N., Mittal, G., Hegde, C.: Circumventing con-cept erasure methods for text-to-image generative models. In: International Con-ference on Learning Representations (2024) 3 26. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: SDXL: Improving latent diffusion models for high-resolution im-age synthesis. In: International Conference on Learning Representations (2024) 1, 327. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: International Conference on Machine Learning. pp. 8748–8763 (2021) 1, 3 28. Ramesh, A., Dhariwal, P., Nichol, A., Chu, C., Chen, M.: Hierarchical text-conditional image generation with CLIP latents. arXiv preprint arXiv:2204.06125 (2022) 3 29. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 10684–10695 (2022) 1, 2, 3, 4, 5 30. Saharia, C., Chan, W., Saxena, S., Li, L., Whang, J., Denton, E.L., Ghasemipour, K., Gontijo Lopes, R., Karagol Ayan, B., Salimans, T., Ho, J., Fleet, D.J., Norouzi, M.: Photorealistic text-to-image diffusion models with deep language understand-ing. In: Advances in Neural Information Processing Systems. vol. 35, pp. 36479– 36494 (2022) 3 31. Schramowski, P., Brack, M., Deiseroth, B., Kersting, K.: Safe latent diffusion: Mitigating inappropriate degeneration in diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 22522– 22531 (2023) 1, 2, 3, 4, 7, 8, 10, 11, 13, 22 32. Schuhmann, C., Beaumont, R., Vencu, R., Gordon, C., Wightman, R., Cherti, M., Coombes, T., Katta, A., Mullis, C., Wortsman, M., Schramowski, P., Kundurthy, Abbreviated paper title 17 S., Crowson, K., Schmidt, L., Kaczmarczyk, R., Jitsev, J.: LAION-5b: An open large-scale dataset for training next generation image-text models. In: Advances in Neural Information Processing Systems. vol. 35, pp. 25278–25294 (2022) 1, 3 33. Song, Y., Sohl-Dickstein, J., Kingma, D.P., Kumar, A., Ermon, S., Poole, B.: Score-based generative modeling through stochastic differential equations. In: Interna-tional Conference on Learning Representations (2021) 3 34. Tsai, Y.L., Hsu, C.Y., Xie, C., Lin, C.H., Chen, J.Y., Li, B., Chen, P.Y., Yu, C.M., Huang, C.Y.: Ring-a-bell! how reliable are concept removal methods for diffusion models? In: International Conference on Learning Representations (2024) 3 35. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., Polosukhin, I.: Attention is all you need. In: Advances in Neural Information Processing Systems. vol. 30 (2017) 4 36. Wang, Y., Li, O., Mu, T., Hao, Y., Liu, K., Wang, X., He, X.: Precise, fast, and low-cost concept erasure in value space: Orthogonal complement matters. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 28759–28768 (2025) 2, 4, 7, 8, 10, 11, 13, 22 37. Woodbury, M.A.: Inverting modified matrices. Tech. Rep. Memorandum Report 42, Statistical Research Group, Princeton University (1950) 3, 4 38. Yoon, J., Yu, S., Patil, V., Yao, H., Bansal, M.: SAFREE: Training-free and adap-tive guard for safe text-to-image and video generation. In: International Conference on Learning Representations (2025) 2, 4 39. Zhang, E., Wang, K., Xu, X., Wang, Z., Shi, H.: Forget-me-not: Learning to forget in text-to-image diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops. pp. 1755–1764 (2024) 2, 340. Zhang, Y., Fan, C., Zhang, Y., Yao, Y., Jia, J., Liu, J., Zhang, G., Liu, G., Kom-pella, R.R., Liu, X., Liu, S.: Unlearncanvas: A stylized image dataset to benchmark machine unlearning for diffusion models. In: Advances in Neural Information Pro-cessing Systems, Datasets and Benchmarks Track (2024) 3 18 Upman et al. 
+
+## A Additional Method Details 
+
+This section provides additional details for CARE that were omitted from the main paper for space: the low-rank Woodbury computation, the hard projection form and its kept-subspace invariance property, and the multi-concept extension. 
+
+A.1 Efficient Woodbury Computation 
+
+The CARE direction is defined in the main paper as 
+
+dj = Σ−1 
+
+> R,j
+
+tj , ΣR,j = 1
+
+M B⊤ 
+
+> j
+
+Bj + γI D . (7) Directly inverting ΣR,j ∈ RD×D is unnecessary and inefficient. Since the num-ber of retained anchors M is small compared with the value dimension D, we compute dj using the Woodbury identity: 
+
+dj = 1
+
+γ
+
+"
+
+tj − 1
+
+γ B⊤
+
+> j
+
+
+
+M I M + 1
+
+γ Bj B⊤
+
+> j
+
+−1
+
+Bj tj
+
+#
+
+. (8) Thus the only matrix inverse is over an M × M matrix. The direction dj is com-puted once and cached for each edited cross-attention layer and token position. During sampling, CARE therefore has the same form of inference-time update as raw value-space erasure, with dj replacing tj .
+
+A.2 Projection Form and Kept-Subspace Invariance 
+
+CARE also admits a hard projection form that clarifies the preservation mecha-nism. Let Rj ∈ RD×r be an orthonormal basis for the retained subspace obtained from the anchor bank Bj . The retained-subspace-orthogonal component of the target is 
+
+t⊥ 
+
+> j
+
+=  ID − Rj R⊤
+
+> j
+
+ tj . (9) Using t⊥ 
+
+> j
+
+as the erasure direction yields 
+
+vproj  
+
+> j
+
+= vj − δ(cos( tj , v j )) ⟨t⊥ 
+
+> j
+
+, v j ⟩⟨t⊥ 
+
+> j
+
+, t ⊥ 
+
+> j
+
+⟩ t⊥ 
+
+> j
+
+. (10) This projection form leaves any value vector lying in the retained subspace un-changed. If w ∈ span( Rj ), then 
+
+⟨t⊥ 
+
+> j
+
+, w ⟩ =  ID − Rj R⊤
+
+> j
+
+ tj , w = 0 , (11) because t⊥ 
+
+> j
+
+lies in the orthogonal complement of span( Rj ). Therefore, the update coefficient in Eq. (10) vanishes for any retained-subspace vector w. This gives an exact kept-subspace invariance property for the projection form. The covariance-aware direction used by CARE in the main paper can be viewed as a soft version of this projection. Rather than deleting retained direc-tions outright, it down-weights them according to the retained-anchor covari-ance. This avoids the brittleness of a hard subspace cutoff while still reducing interference with retained concepts. Abbreviated paper title 19 
+
+A.3 Multi-Concept Erasure 
+
+CARE extends naturally to multiple target concepts. Suppose we wish to erase a set of target concepts 
+
+C = {c1, . . . , c K }. (12) For each target concept ck, we record a target value t(k) 
+
+> j
+
+and compute a covariance-aware direction 
+
+d(k) 
+
+> j
+
+=
+
+ 1
+
+M B⊤ 
+
+> j
+
+Bj + γI D
+
+−1
+
+t(k) 
+
+> j
+
+, (13) using the same retained anchor bank. The multi-concept CARE update is then 
+
+vCARE  
+
+> j
+
+= vj −
+
+> K
+
+X
+
+> k=1
+
+δ
+
+
+
+cos( t(k) 
+
+> j
+
+, v j )
+
+ ⟨d(k) 
+
+> j
+
+, v j ⟩⟨d(k) 
+
+> j
+
+, d (k) 
+
+> j
+
+⟩ d(k) 
+
+> j
+
+. (14) In practice, the directions can be orthonormalized per token before summation, following standard multi-concept value-space erasure, to reduce redundancy be-tween closely related target concepts. 
+
+A.4 Computational Cost 
+
+CARE does not update the U-Net, the text encoder, or any cross-attention pro-jection weights. The additional computation relative to raw value-space erasure is the offline construction of dj for each edited layer and token position. Because Eq. (8) only requires an M × M inverse, this cost is small when the retained bank contains few anchors. Once dj is cached, inference consists of the same gated rank-one subtraction used in standard value-space erasure. 
+
+## B Additional Theoretical Properties 
+
+We provide a few simple properties of CARE that clarify the behaviour of the proposed operator. These results are not required to implement the method, but they help explain why the covariance-aware direction gives a controllable erase–preserve trade-off. 
+
+B.1 Minimum-Disturbance Interpretation 
+
+The CARE update can be interpreted as the smallest change to a value vector that reduces its component along the erasure direction. 
+
+Proposition 1 (Minimum-disturbance value update). Let dj̸ = 0 be a fixed erasure direction and let δ ∈ [0 , 1] be a scalar gate. The CARE update 
+
+v′ 
+
+> j
+
+= vj − δ ⟨dj , v j ⟩⟨dj , d j ⟩ dj (15) 20 Upman et al. 
+
+is the solution of 
+
+min 
+
+> z∈RD
+
+∥z − vj ∥22 s.t. ⟨dj , z ⟩ = (1 − δ)⟨dj , v j ⟩. (16) 
+
+In particular, when δ = 1 , the update is the closest vector to vj whose component along dj is completely removed. Proof. The constraint requires the edited value z to have a prescribed inner product with dj . The closest point to vj satisfying this affine constraint must lie on the line vj − αd j . Substituting z = vj − αd j into the constraint gives 
+
+⟨dj , v j ⟩ − α⟨dj , d j ⟩ = (1 − δ)⟨dj , v j ⟩. (17) Solving for α yields 
+
+α = δ ⟨dj , v j ⟩⟨dj , d j ⟩ , (18) which gives the CARE update. 
+
+B.2 Relation to Raw Value-Space Erasure 
+
+CARE recovers standard value-space erasure as a limiting case when the retained covariance is suppressed. 
+
+Proposition 2 (Raw erasure as a limiting case). Let 
+
+dj (γ) = 
+
+ 1
+
+M B⊤ 
+
+> j
+
+Bj + γI D
+
+−1
+
+tj . (19) 
+
+As γ → ∞ , the CARE update converges to the raw value-space erasure update using direction tj .Proof. For large γ,
+
+ 1
+
+M B⊤ 
+
+> j
+
+Bj + γI D
+
+−1
+
+= 1
+
+γ ID + O(γ−2). (20) Therefore, 
+
+dj (γ) = 1
+
+γ tj + O(γ−2). (21) The CARE update is invariant to non-zero rescaling of the erasure direction, since 
+
+⟨αd j , v j ⟩⟨αd j , αd j ⟩ αd j = ⟨dj , v j ⟩⟨dj , d j ⟩ dj (22) for any α̸ = 0 . Hence, as γ → ∞ , CARE becomes equivalent to erasing along tj .Abbreviated paper title 21 
+
+B.3 Hard-Projection Limit and Retained-Subspace Invariance 
+
+CARE also approaches a hard projection away from the retained-anchor sub-space when the shrinkage parameter becomes small. 
+
+Proposition 3 (Hard-projection limit). Let Rj ∈ RD×r be an orthonormal basis for the subspace spanned by the retained anchors, and define 
+
+t⊥ 
+
+> j
+
+= ( ID − Rj R⊤ 
+
+> j
+
+)tj . (23) 
+
+If t⊥
+
+> j
+
+̸ = 0 , then as γ → 0, the CARE direction becomes equivalent, up to scale, to t⊥ 
+
+> j
+
+.Proof. Let the eigendecomposition of 1 
+
+> M
+
+B⊤ 
+
+> j
+
+Bj be 
+
+1
+
+M B⊤ 
+
+> j
+
+Bj = Ur ΛU ⊤ 
+
+> r
+
+, (24) where Ur spans the retained-anchor subspace and Λ contains the non-zero eigen-values. Decompose the target as 
+
+tj = Ur U ⊤ 
+
+> r
+
+tj + t⊥ 
+
+> j
+
+. (25) Then 
+
+dj (γ) = Ur (Λ + γI )−1U ⊤ 
+
+> r
+
+tj + 1
+
+γ t⊥ 
+
+> j
+
+. (26) As γ → 0, the orthogonal component 1 
+
+> γ
+
+t⊥ 
+
+> j
+
+dominates whenever t⊥
+
+> j
+
+̸ = 0 . Since the value update is invariant to rescaling of dj , the effective erasure direction converges to t⊥ 
+
+> j
+
+.
+
+Corollary 1 (Retained-subspace invariance). In the hard-projection form, any value vector w ∈ span( Rj ) is left unchanged by the erasure update. Proof. The hard-projection direction is t⊥ 
+
+> j
+
+= ( ID − Rj R⊤ 
+
+> j
+
+)tj , which lies in the orthogonal complement of span( Rj ). Therefore, for any w ∈ span( Rj ),
+
+⟨t⊥ 
+
+> j
+
+, w ⟩ = 0 . (27) The projection coefficient in the erasure update is therefore zero, so the update leaves w unchanged. 22 Upman et al. 
+
+Table 6: Detailed quantitative comparison of single- and multi-instance concept era-sure. For erased concepts, CLIP score (CS, lower is better) measures erasure efficacy. For non-target concepts, FID (lower is better) measures prior preservation. Greyed entries are not the primary metric for that block. Best results are shown in bold and second-best results are underlined. 
+
+Method Snoopy Mickey Spongebob Pikachu Dog Legislator 
+
+CS FID CS FID CS FID CS FID CS FID CS FID SD v1.4 28.49 – 26.50 – 27.30 – 27.41 – 24.27 – 23.73 –
+
+Erase Snoopy 
+
+CS ↓ FID CS FID ↓ CS FID ↓ CS FID ↓ CS FID ↓ CS FID ↓
+
+ConAbl [16] 25.38 103.80 26.80 38.44 27.02 41.59 27.57 29.68 24.32 27.76 23.48 27.36 MACE [19] 20.78 169.22 22.95 118.01 23.33 111.90 25.77 81.99 23.96 43.27 22.25 65.97 SPM [20] 23.89 122.63 26.60 33.06 27.12 34.70 27.51 23.89 24.24 19.61 23.70 18.26 NP [31] 23.66 125.98 26.14 59.58 26.66 78.74 27.36 52.37 23.89 67.51 22.16 55.22 SLD [31] 27.84 64.78 26.46 48.12 27.52 55.36 27.33 38.74 24.03 41.95 22.80 49.08 AdaVD [36] 20.28 120.46 26.53 5.72 27.25 8.56 27.40 5.79 24.27 2.32 23.77 6.07 CARE (ours) 19.42 108.95 23.92 4.43 22.74 7.42 25.86 4.74 24.24 1.95 22.14 5.32 
+
+Erase Snoopy and Mickey 
+
+CS ↓ FID CS ↓ FID CS FID ↓ CS FID ↓ CS FID ↓ CS FID ↓
+
+ConAbl [16] 24.26 119.96 24.08 96.94 27.02 46.32 27.75 39.63 23.98 30.57 23.33 27.49 MACE [19] 20.74 171.16 20.71 140.50 25.87 51.49 25.87 110.67 23.82 52.07 21.70 77.13 SPM [20] 23.16 128.08 22.81 115.02 26.92 41.58 27.45 31.77 24.13 21.96 23.60 23.69 NP [31] 23.59 124.10 24.85 83.68 26.69 81.41 27.27 50.10 23.62 65.93 23.84 58.88 SLD [31] 27.76 59.97 26.74 50.16 27.53 54.59 27.29 39.24 23.97 41.62 22.66 50.13 AdaVD [36] 20.29 121.12 19.93 108.22 27.27 9.34 27.42 5.84 24.26 2.41 23.73 6.43 CARE (ours) 19.45 108.77 22.55 83.35 27.24 7.47 27.87 4.98 24.12 2.18 23.24 5.34 
+
+Erase Snoopy and Mickey and Spongebob 
+
+CS ↓ FID CS ↓ FID CS ↓ FID CS FID ↓ CS FID ↓ CS FID ↓
+
+ConAbl [16] 23.94 126.70 23.64 105.07 25.04 108.67 27.76 51.20 23.83 31.59 23.17 30.03 MACE [19] 20.48 172.80 20.50 143.66 21.59 120.87 24.38 99.68 23.70 47.46 21.74 70.38 SPM [20] 22.81 133.06 22.35 121.85 20.82 152.72 27.45 39.83 24.10 22.68 23.52 25.31 NP [31] 24.29 129.75 24.76 89.74 25.31 106.30 27.28 64.75 23.55 65.10 21.63 59.33 SLD [31] 27.84 58.16 26.71 49.70 27.60 54.61 27.35 39.41 23.90 42.32 22.46 49.88 AdaVD [36] 19.39 124.49 19.73 112.97 20.34 118.47 27.42 6.85 24.27 2.79 23.76 7.26 CARE (ours) 19.45 108.67 22.56 84.47 18.40 81.82 27.14 6.83 24.23 2.27 21.54 5.55 
+
+## C Additional Instance Erasure Results 
+
+Table 6 provides the full instance-erasure results corresponding to the compact comparison in the main paper. Unlike the main table, which reports only the primary metric for each concept in each erasure setting, this table includes both CLIP score (CS) and FID for every concept. This makes it possible to inspect both sides of the erase–preserve trade-off: for erased concepts, lower CS indi-cates stronger removal, while for non-target concepts, lower FID indicates better preservation of the original model’s generation behaviour. Abbreviated paper title 23 
+
+Greyed entries are included for completeness but are not the primary metric for that block. For example, when erasing Snoopy, the Snoopy CS column mea-sures erasure efficacy, while the FID columns for Mickey, Spongebob, Pikachu, Dog, and Legislator measure preservation. Conversely, the Snoopy FID and the non-target CS columns are secondary diagnostic values and are therefore greyed out. This layout follows the same interpretation used in the main paper and helps avoid comparing metrics that are not meaningful for the corresponding target/non-target role. Overall, the detailed results support the trends reported in the main pa-per. CARE improves single-concept Snoopy erasure while reducing FID for all retained concepts. In the multi-concept settings, CARE consistently improves retained-concept FID over AdaVD, although Mickey erasure remains weaker when Mickey is erased jointly with other targets. These results illustrate the intended behaviour of CARE: it shifts the operating point toward stronger prior preservation while maintaining competitive target removal. 
+
+## D Discussion 
+
+The results highlight the intended behaviour of CARE: it improves the speci-ficity of value-space concept erasure by changing the direction of removal rather than simply increasing the strength of suppression. Across instance, style, and celebrity erasure, CARE consistently reduces changes to retained concepts while maintaining competitive target removal. This is especially clear in settings where the target has a distinguishable component relative to the retained anchors, such as Snoopy, art styles, Bruce Lee, and Marilyn Monroe. In these cases, the retained-anchor covariance helps separate target-specific information from shared visual structure, allowing CARE to suppress the target without unnec-essarily disturbing nearby concepts. The multi-concept and identity-erasure settings further illustrate the role of the erase–preserve trade-off. When target concepts are visually close to retained concepts, or when multiple related targets are erased jointly, a purely aggressive erasure direction can improve target suppression at the cost of broader prior degradation. CARE instead favours a more preservation-aware operating point. This is why some settings show a small reduction in erasure strength for one tar-get while improving retained-concept FID across the remaining probes. Rather than treating this as a failure mode, we view it as the central advantage of the method: CARE exposes a controllable mechanism for deciding how much of the target direction should be removed once shared retained structure is accounted for. This behaviour is consistent with the design of the operator. Standard value-space erasure removes the component of each value vector along the raw target direction, implicitly assuming that this direction contains only the concept to be erased. CARE relaxes this assumption by estimating which components of the target direction overlap with retained concepts and down-weighting those com-ponents before applying the value update. The result is a closed-form, training-24 Upman et al. 
+
+free erasure method that preserves the practical efficiency of AdaVD-style value editing while adding an explicit mechanism for prior preservation. Overall, CARE should be understood as a more selective value-space erasure operator. It does not require model fine-tuning, edited checkpoints, or addi-tional trainable modules, and it introduces only a small offline computation to construct the retained-subspace-aware direction. Its empirical gains are there-fore most meaningful in deployment settings where concept erasure must be fast, lightweight, and local, but where preserving semantically related non-target con-cepts is as important as removing the target itself.

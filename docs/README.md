@@ -6,62 +6,44 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-12
-- 运行时间：2026-07-12 21:20:22 UTC
+- 最新运行日期：2026-07-13
+- 运行时间：2026-07-13 21:49:09 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：7
-- 速读区：7
+- 本次总论文数：7
+- 精读区：3
+- 速读区：4
 
 ### 今日简报（AI）
-深入研究了音视频伪造定位领域的两篇高分论文。音视频时间伪造定位是当前研究热点，跨模态协同与边界校准是关键。建议关注音视频伪造检测技术在社交媒体和新闻验证中的应用潜力。
-- 详情：[/202607/12/README](/202607/12/README)
+- 今日共生成 7 篇推荐（精读 3 篇，速读 4 篇）
+- 精读：《UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization》（9.0/10）, 《Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models》（8.0/10）
+- 速读：《Secure-by-Disguise: A Systematic Evaluation of Image Disguising for Confidential Medical Image Modeling》（7.0/10）, 《REBASE: Reference-Background Subspace Elimination for Training-Free In-Context Segmentation》（7.0/10）, 《Consistent and Editable: A Balanced Framework for Text-Guided Video Editing》（6.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202607/13/README](/202607/13/README)
 
 ### 精读区论文标签
-1. [EVAS: Efficient Multimodal Temporal Forgery Localization via Audio-Visual Synergy and Steered Boundary Calibration](/202607/12/2607.04472v1-evas-efficient-multimodal-temporal-forgery-localization-via-audio-visual-synergy-and-steered-boundary-calibration)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：用于定位伪造视频片段的多模态框架
-2. [UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization](/202607/12/2607.04498v1-uniskip-mamba-a-frequency-aware-state-space-model-for-audio-visual-temporal-forgery-localization)  
+1. [UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization](/202607/13/2607.04498v1-uniskip-mamba-a-frequency-aware-state-space-model-for-audio-visual-temporal-forgery-localization)  
    标签：评分：9.0/10、query:img-f
-   evidence：直接处理多媒体中的时序伪造定位，匹配篡改区域检测。
-3. [Making Implicit Preservation Intent Explicit in Conversational Image Editing](/202607/12/2607.07051v1-making-implicit-preservation-intent-explicit-in-conversational-image-editing)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：会话式图像编辑，保留被遮挡内容
-4. [Face-trace: Open-Set Attribution and Progressive Discovery of Synthetic Face Generators](/202607/12/2607.07545v1-face-trace-open-set-attribution-and-progressive-discovery-of-synthetic-face-generators)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：处理合成图像取证用于检测图像操纵
-5. [Repurposing CLIP to Localize at Pixel Level](/202607/12/2607.05253v1-repurposing-clip-to-localize-at-pixel-level)  
+   evidence：专注于音视频时序伪造定位，直接匹配伪造区域检测。
+2. [Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models](/202607/13/2607.05274v1-erasing-without-collateral-damage-precise-concept-removal-in-diffusion-models)  
    标签：评分：8.0/10、query:imgfor
-   evidence：使用CLIP进行像素级定位的物体分割
-6. [REVIVE: A Multi-Modal Framework for Vandalism Detection and Recovery in Autonomous Vehicles](/202607/12/2607.05649v1-revive-a-multi-modal-framework-for-vandalism-detection-and-recovery-in-autonomous-vehicles)  
+   evidence：扩散模型中精确概念擦除技术用于图像编辑
+3. [TILDE: TILt-based Distributional Erasure for Concept Unlearning](/202607/13/2607.06432v1-tilde-tilt-based-distributional-erasure-for-concept-unlearning)  
    标签：评分：8.0/10、query:imgfor
-   evidence：检测和分割被破坏图像区域以进行恢复
-7. [Temporal Modeling of Optically Variable Devices in Identity Documents](/202607/12/2607.06408v1-temporal-modeling-of-optically-variable-devices-in-identity-documents)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：引入时间建模验证身份证件中的光学可变器件，是一种数字取证技术。
+   evidence：概念遗忘方法用于图像生成模型的安全部署
 
 ### 速读区论文标签
-1. [Analysis-by-Proxy: Localization Signals in VLMs Operating as Condition Encoders](/202607/12/2607.06445v1-analysis-by-proxy-localization-signals-in-vlms-operating-as-condition-encoders)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：研究作为条件编码器的VLM在图像编辑中的定位信号，与区域定位相关。
-2. [StructuredEdit: Constraint-Aware Graphic Design Editing via Differentiable Parameter Propagation](/202607/12/2607.04612v1-structurededit-constraint-aware-graphic-design-editing-via-differentiable-parameter-propagation)  
+1. [Secure-by-Disguise: A Systematic Evaluation of Image Disguising for Confidential Medical Image Modeling](/202607/13/2607.08867v1-secure-by-disguise-a-systematic-evaluation-of-image-disguising-for-confidential-medical-image-modeling)  
    标签：评分：7.0/10、query:imgfor
-   evidence：通过参数操作进行结构化图像编辑的技术。
-3. [A Good Initialization is All You Need for Faithful Visual Attribution](/202607/12/2607.06726v1-a-good-initialization-is-all-you-need-for-faithful-visual-attribution)  
+   evidence：评估用于隐私保护图像分析的图像伪装技术
+2. [REBASE: Reference-Background Subspace Elimination for Training-Free In-Context Segmentation](/202607/13/2607.09082v1-rebase-reference-background-subspace-elimination-for-training-free-in-context-segmentation)  
    标签：评分：7.0/10、query:imgfor
-   evidence：基于扰动的局部化方法，用于识别模型预测中的重要图像区域。
-4. [FSDC-DETR: A Frequency-Spatial Domain Collaborative DETR for Small Object Detection](/202607/12/2607.05176v1-fsdc-detr-a-frequency-spatial-domain-collaborative-detr-for-small-object-detection)  
+   evidence：用于图像区域定位的无训练分割框架。
+3. [Consistent and Editable: A Balanced Framework for Text-Guided Video Editing](/202607/13/2607.05056v1-consistent-and-editable-a-balanced-framework-for-text-guided-video-editing)  
    标签：评分：6.0/10、query:imgfor
-   evidence：使用频域-空域协作的小目标检测
-5. [FSDC-DETR: A Frequency-Spatial Domain Collaborative DETR for Small Object Detection](/202607/12/2607.05176v2-fsdc-detr-a-frequency-spatial-domain-collaborative-detr-for-small-object-detection)  
+   evidence：涉及视频编辑技术，与最新图像编辑进展相关。
+4. [Partial-Reference IQA Based on Hermite-Gauss Structural Prediction and Texture Deviation](/202607/13/2607.08563v2-partial-reference-iqa-based-on-hermite-gauss-structural-prediction-and-texture-deviation)  
    标签：评分：6.0/10、query:imgfor
-   evidence：使用频率-空间融合进行物体检测，该方法可用于区域定位任务。
-6. [SSA-3DGS: Unsupervised Removal of Screen-Space Artifacts for 3D Gaussian Splatting](/202607/12/2607.05598v1-ssa-3dgs-unsupervised-removal-of-screen-space-artifacts-for-3d-gaussian-splatting)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：无监督去除水印等伪影用于图像取证
-7. [ScaleSurfer: multi-scale anatomical segmentation and parcellation of the human brain](/202607/12/biorxiv-10-64898-2026-07-01-735927-v1-scalesurfer-multi-scale-anatomical-segmentation-and-parcellation-of-the-human-brain)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于脑部MRI的多尺度解剖分割
+   evidence：分析结构偏差的图像质量评估，可用于篡改取证分析
 
 
 <div class="dpr-home-promo-card">

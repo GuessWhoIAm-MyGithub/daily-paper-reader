@@ -1,0 +1,468 @@
+Title: UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization
+
+URL Source: https://arxiv.org/pdf/2607.04498v1
+
+Published Time: Tue, 07 Jul 2026 02:34:01 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+> 1
+
+# UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization 
+
+Cangjin Qiu ∗, Quan Zhang ∗, Dan Jiang, and Ke Zhang †
+
+Abstract —With the proliferation of AI-generated content, so-phisticated multimedia manipulation has raised critical concerns about malicious applications such as opinion manipulation and evidence fabrication, making Audio-Visual Temporal Forgery Localization (AV-TFL) an urgent research frontier. Existing TFL methods have progressed along two main paradigms: Transformer-based temporal modeling and channel-wise multi-modal fusion. While these approaches capture temporal depen-dencies and cross-modal correlations, they process all frequency components indiscriminately, leading to overfitting on high-frequency noise and limited robustness under real-world data degradation. Through systematic frequency domain analysis, we find that forgery-discriminative patterns concentrate in the low/mid-frequency range (normalized frequency 0–0.15), while high-frequency components primarily introduce noise—removing them even improves detection performance by +1.4%. Based on this phenomenon, we propose UniSkip-Mamba, a frequency-aware State Space Model framework that incorporates Unified Multimodal Sequence Fusion to preserve cross-modal phase relationships, and Skip-Scanning Mamba Blocks that implement frequency-aware regularization through a novel Group-Scan-Merge mechanism, naturally biasing learning toward discrimina-tive low/mid-frequency patterns (0–0.15) while maintaining rep-resentational completeness. We achieve state-of-the-art (SOTA) performance: 63.4% AP@0.95 on LAV-DF (+9.8% improvement) and 63.58% mAP on AV-Deepfake1M (+14.32% improvement), with 6 × faster inference. Our frequency-domain analysis pro-vides theoretical justification from a signal processing perspective for why skip-scanning inherently improves both accuracy and robustness. 
+
+Index Terms —Temporal forgery localization, Mamba, Unified sequence. 
+
+I. I NTRODUCTION 
+
+The proliferation of Artificial Intelligence Generated Con-tent (AIGC) [1]–[3] has enabled sophisticated multimedia manipulation, raising critical concerns about malicious appli-cations such as opinion manipulation and evidence fabrica-tion. While the multimedia forensics community has made significant progress in Deepfake detection [4]–[8], existing methods predominantly rely on binary classification, failing to identify where manipulation occurs temporally. This limitation severely constrains their utility in practical scenarios such as judicial forensics and content moderation, where precise temporal boundaries of forged segments are indispensable. Consequently, Audio-Visual Temporal Forgery Localization (AV-TFL) has emerged as a critical research frontier. Before addressing the technical challenges of AV-TFL, we pose a fundamental question: In which frequency bands 
+
+∗Cangjin Qiu and Quan Zhang contributed equally to this work. 
+
+†Corresponding author: Ke Zhang. Cangjin Qiu and Ke Zhang are with Soochow University, Suzhou, China. Quan Zhang and Dan Jiang are with Tsinghua University, Beijing, China. 
+
+Fig. 1. Motivating Observation: Frequency Band Contribution Analysis. 
+
+We systematically remove each frequency band from input features and measure performance impact (mAP@0.95). Key findings: (1) Low/mid-frequency bands (0–0.15) are critical for detection, with removal causing up to 92.8% performance drop; (2) High-frequency removal (> 0.15 )has minimal impact ( −0.7% to +1 .4% ), with stride-4 models actually improving—confirming that high frequencies introduce noise rather than discriminative information. This motivates our Skip-Scanning design as a frequency-aware regularization strategy. Comprehensive experimental setup and detailed analysis in Section IV-G. 
+
+does discriminative forgery information reside? Through spec-tral analysis and systematic ablation experiments, we reveal that forgery-discriminative patterns concentrate in low/mid-frequency bands (normalized frequency 0–0.15) . Removing these bands causes 56–93% performance drop, while remov-ing high frequencies ( >0.15) has negligible impact—stride-4 models even improve by +1.4% when high frequencies are filtered. This demonstrates that high-frequency components, which capture frame-level variations such as compression artifacts, primarily introduce noise rather than discriminative information. This frequency-domain insight exposes a critical blind spot in existing approaches: current methods process all fre-quency components indiscriminately, capturing both useful low-frequency patterns and harmful high-frequency noise. As we demonstrate in Section IV-D, this leads to severe robust-ness degradation under real-world quality losses. Furthermore, existing TFL methods [9], [10] employ channel-wise con-catenation that rigidly aligns modalities, preventing detection of asynchronous artifacts. Whether using Transformers [11] or recent Mamba adaptations [12], [13], they all employ 
+
+> arXiv:2607.04498v1 [cs.CV] 5 Jul 2026 2
+
+dense scanning, amplifying the high-frequency noise identified above. To address these challenges, we propose UniSkip-Mamba ,a framework grounded in frequency-principled design . It leverages the Mamba backbone with O(T ) complexity to efficiently model the extended sequences where low-frequency patterns manifest. Central to our design is the Unified Se-quence Representation , which serializes audio-visual features to preserve cross-modal phase relationships, enabling detection of asynchronous forgeries with arbitrary temporal offsets. Furthermore, we introduce Skip-Scanning via Group-Scan-Merge , a novel mechanism implementing structural low-pass regularization. By aligning the scanning stride with the dis-criminative band (0–0.15) identified above, it naturally filters high-frequency noise while retaining representational com-pleteness, achieving simultaneous improvements in accuracy, speed ( 2×), and robustness. The main contributions of this paper are summarized as follows:  
+
+> •
+
+We propose UniSkip-Mamba , an efficient SSM frame-work achieving linear complexity O(T ), effectively over-coming Transformer bottlenecks for long-range temporal modeling in AV-TFL.  
+
+> •
+
+We present comprehensive frequency-principled anal-ysis combining theoretical predictions with empirical validation, revealing that discriminative information con-centrates in low/mid-frequency bands (0–0.15) and theo-retically justifying stride-2 as optimal structural regular-ization.  
+
+> •
+
+We achieve SOTA performance : 63.4% AP@0.95 on LAV-DF (+9.8%) and 63.58% mAP on AV-Deepfake1M (+14.32%), with 6× faster inference and superior robust-ness. II. RELATED WORK 
+
+A. Temporal Forgery Localization 
+
+Early multimedia forensics approaches [4]–[8] focused pri-marily on binary classification, often failing to provide precise temporal boundaries. To address this, architectures from Tem-poral Action Localization (TAL), such as ActionFormer [11] and TriDet [14], were repurposed as strong baselines. Subse-quently, dedicated TFL frameworks emerged to tackle spe-cific forgery challenges: UMMAFormer [9] integrates tem-poral abnormality attention; DiMoDif [15] leverages cross-modal differentiation to capture lip-speech inconsistencies; and UniCaCLF [10] employs context-aware contrastive learn-ing. However, these SOTA methods predominantly rely on Transformer backbones. Despite their effectiveness, they suffer from quadratic computational complexity O(T 2), creating significant efficiency bottlenecks for long video sequences. 
+
+B. State Space Models 
+
+State Space Models (SSMs) have evolved from early struc-tured variants (e.g., S4 [16], H3 [17], Gated State Space [18]) to the recent Mamba [19] and Mamba2 [20], which achieve Transformer-level performance with linear complexity O(T )
+
+via selective scanning. In the visual domain, architectures such as ViM [12], VMamba [21], and Video Mamba Suite [13] have successfully adapted bidirectional scanning for image and video analysis, while MambaTAD [22] explored temporal action localization. However, the application of Mamba to TFL remains largely unexplored. Crucially, existing visual Mamba architectures [12], [13], [21], [22] typically employ fixed dense scanning (stride=1), which limits their flexibility in handling multi-scale artifacts inherent in forgery localization. This gap motivates the development of adaptive scanning strategies tailored for TFL. Recently, Mamba has been explored for multimodal tasks. AVS-Mamba [23] and MUG [24] introduce Mamba for audio-visual segmentation and parsing, respectively. Unlike our work which focuses on temporal forgery localization via frequency-aware scanning, these methods primarily address spatial-temporal grouping for segmentation masks. Similarly, LC-Mamba [25] explores local window shifts for frame interpo-lation. Our UniSkip-Mamba distinguishes itself by identifying the specific spectral redundancy in deepfakes and proposing 
+
+skip-scanning as a structural regularizer, rather than a generic efficiency booster. 
+
+C. Multimodal Fusion in Deepfake Detection 
+
+To detect sophisticated audio-visual inconsistencies (e.g., lip-speech desynchronization), leveraging multimodal cues is paramount. While early works explored late fusion, SOTA frameworks [9], [10], [26]–[28] predominantly adopt early fusion via channel-wise concatenation. However, this approach inherently suffers from rigid frame alignment: it forces audio and visual features to align strictly at the same time step, restricting the model’s ability to detect asynchronous arti-facts where critical correlations between visual anomalies and auditory cues span across temporal offsets. Recent attempts to address this limitation remain constrained by the archi-tectural assumptions of their underlying temporal backbones, highlighting the need for more flexible fusion strategies that can naturally accommodate asynchronous cross-modal corre-lations. III. M ETHODOLOGY 
+
+The overall architecture of our proposed UniSkip-Mamba framework is illustrated in Fig. 2. The framework consists of four key components: (1) feature extraction using pre-trained encoders, (2) unified multimodal sequence fusion with modality embeddings, (3) hierarchical skip-scanning Mamba backbone for efficient temporal modeling, and (4) detection head for boundary regression. We detail each component in the following subsections. 
+
+A. Problem Formulation & Preliminaries 
+
+Problem Formulation. Given an input video, we aim to localize forged segments S = {(sj , e j , c j )}Nj=1 , where 
+
+sj , e j , c j denote the start time, end time, and forgery category, respectively. As shown in Fig. 2, we first extract visual features 
+
+Fv ∈ RB×Cv ×T and audio features Fa ∈ RB×Ca×T using 3             
+
+> Fig. 2. UniSkip-Mamba Framework Architecture. Given input video and audio, pre-trained backbones extract features that are fused via our Unified Sequence Generation Module—concatenating modalities temporally (not channel-wise) with learnable modality embeddings. The unified sequence Finput ∈RB×2T×Ca
+> is processed through a hierarchical backbone with stem blocks and five progressive downsampling branches. Each branch stage concludes with a 2×
+> downsampling operation (indicated by ↓2×), progressively reducing the sequence length from L= 2 Tto L=T / 16 . Each stage employs Skip-Scanning Mamba blocks for efficient temporal modeling. The detection head produces final forgery localization predictions with precise temporal boundaries.
+
+pre-trained encoders, where B denotes batch size, Cv and Ca
+
+are feature dimensions, and T is the temporal length. Our goal is to map these heterogeneous streams into a unified representation for precise boundary regression. 
+
+Bidirectional Mamba Backbone. To efficiently model long-range dependencies, we leverage the Mamba architec-ture [19], specifically the Decomposed Bidirectional Mamba (DBM) block [13]. Unlike Transformers with O(T 2) complex-ity, Mamba employs a selective scan mechanism with linear complexity O(T ). It discretizes the continuous state space equation h′(t) = Ah (t) + Bx(t) into a recurrent form hk =¯Ah k−1 + ¯Bxk, where system matrices are input-dependent. To capture non-causal context essential for TFL, the DBM block processes sequences in both forward and backward directions, fusing the outputs to incorporate comprehensive temporal context. This serves as the fundamental building unit of our UniSkip-Mamba. 
+
+B. Unified Multi-Modal Fusion 
+
+To effectively model the cross-modal inconsistencies in-herent in audio-visual forgeries, a principled fusion strategy is essential. As shown in the Unified Sequence Generation Module of Fig. 2, we transform the separate audio and visual streams into a single, modality-aware sequence. First, assuming both modalities are synchronized to a se-quence length T , we align the visual features Fv ∈ RB×Cv ×T
+
+to the audio feature dimension Ca using a linear projection layer: 
+
+F′ 
+
+> v
+
+= Linear Cv →Ca (Fv ) ∈ RB×Ca×T . (1) Then, instead of channel-wise concatenation, we concate-nate the aligned features along the temporal dimension to construct a unified sequence: 
+
+Funified = Concat temporal (F′ 
+
+> v
+
+, Fa) ∈ RB×Ca×2T . (2) Finally, to explicitly inform the model of each token’s ori-gin, learnable modality embeddings are introduced. A modal-ity ID sequence is created and passed through an embedding layer to generate the modality vectors Emodal ∈ RB×2T ×Ca ,which are then added element-wise to the unified sequence. The final modality-aware sequence Finput , which serves as the input to our backbone, is formulated as: 
+
+Finput = Permute (Funified ) + Emodal ∈ RB×2T ×Ca , (3) where Permute (·) transposes the last two dimensions to match the input requirements of the backbone. 4
+
+Algorithm 1 Efficient Skip-Scanning Mamba (S-Mamba) Block 
+
+Require: Input sequence Xin ∈ RB×L×C (where L = 2 T for the first layer), Skip step p, Bidirectional Mamba DBM (·)
+
+Ensure: Output sequence Xout ∈ RB×L×C 
+
+> 1:
+
+function GROUPING (X, p ) 
+
+> 2:
+
+B, L, C ← X.shape  
+
+> 3:
+
+X ← Reshape (X, (B, L/p, p, C )) ▷ Split sequence into p interleaved groups  
+
+> 4:
+
+X ← Permute (X, (0 , 2, 1, 3)) ▷ To (B, p, L/p, C ) 
+
+> 5:
+
+X ← Reshape (X, (B · p, L/p, C )) ▷ Stack groups into batch dim  
+
+> 6:
+
+return X 
+
+> 7:
+
+end function  
+
+> 8:
+
+function MERGING (X, B, L, C, p ) 
+
+> 9:
+
+X ← Reshape (X, (B, p, L/p, C ))  
+
+> 10:
+
+X ← Permute (X, (0 , 2, 1, 3)) ▷ To (B, L/p, p, C ) 
+
+> 11:
+
+X ← Reshape (X, (B, L, C )) ▷ Restore original unified sequence  
+
+> 12:
+
+return X 
+
+> 13:
+
+end function  
+
+> 14:
+
+Xnorm ← LayerNorm (Xin ) 
+
+> 15:
+
+Xgrouped ← GROUPING (Xnorm , p ) ▷ Reduce effective length for efficiency  
+
+> 16:
+
+Xscanned ← DBM (Xgrouped ) ▷ Process sub-sequences in parallel  
+
+> 17:
+
+Xmerged ← MERGING (Xscanned , B, L, C, p ) 
+
+> 18:
+
+Xout ← Xin + Dropout (Xmerged ) ▷ Residual connection  
+
+> 19:
+
+return Xout 
+
+This fusion method offers two key advantages. First, cre-ating a single temporal sequence is naturally aligned with the architecture of our Mamba backbone, facilitating effective cross-modal temporal modeling. Second, the explicit modality embeddings provide a strong, differentiable prior, allowing the model to more efficiently learn forgery patterns instead of discovering modality information implicitly. 
+
+C. Efficient Skip-Scanning Mamba Block 
+
+Motivation: The Granularity–Efficiency Trade-off. Tem-poral forgery artifacts exhibit significant diversity in duration and scale. Micro-level artifacts require dense temporal sam-pling to capture subtle frame-level inconsistencies, whereas macro-level inconsistencies, such as prolonged audio-visual desynchronization, span much longer durations and primarily manifest in low and mid-frequency temporal patterns. A stan-dard Mamba block scans the sequence step-by-step (stride 1). While this captures all temporal details, it is computationally redundant for detecting macro-level anomalies. More critically, dense scanning can lead to overfitting on high-frequency frame-level variations—including both genuine motion dy-namics and compression artifacts—making the model vulner-able to noise in degraded data. To resolve this, we propose the 
+
+Skip-Scanning mechanism, which introduces a configurable     
+
+> Fig. 3. Illustration of our proposed Efficient Skip-Scanning Mamba (S-Mamba) Block. It introduces a “Group-Scan-Merge” mechanism: splitting the input sequence into pgroups to enable efficient parallel scanning with reduced sequence lengths, effectively acting as a temporal regularizer.
+
+stride parameter p to trade off temporal granularity for ef-ficiency and long-range robustness. Our comprehensive fre-quency domain analysis (Section IV-G) validates this design, revealing that discriminative forgery patterns primarily reside in low and mid-frequency bands (normalized frequency 0-0.15), while high-frequency components often introduce noise that hinders robustness. 
+
+Mechanism: Group-Scan-Merge. As detailed in Algo-rithm 1, our S-Mamba block processes the input sequence 
+
+X ∈ RB×L×C through a three-stage pipeline: 
+
+a) Grouping: Instead of scanning the sequence linearly, we first reshape and permute the input X into p parallel sub-sequences. Mathematically, X is transformed into a tensor of shape (B · p) × (L/p ) × C. This operation effectively de-interleaves the original sequence, grouping tokens that are spaced p steps apart. 
+
+b) Parallel Scanning: These sub-sequences are then treated as independent batch elements and fed into a shared Bidirectional State Space Model. Specifically, we adopt the 
+
+Decomposed Bidirectional Mamba (DBM) architecture [13], which processes each sub-sequence in both forward and back-ward directions to ensure comprehensive temporal context awareness. By processing shorter sequences of length L/p , the SSM can propagate information over longer effective temporal distances with reduced computational overhead. 
+
+c) Merging: Finally, the processed sub-sequences are interleaved back to the original order to restore the full temporal resolution RB×L×C . This ensures that the local 5
+
+temporal structure is preserved while global context has been integrated via the strided scan. 
+
+D. Hierarchical Skip-Scanning Mamba Backbone 
+
+The unified, modality-aware sequence Finput is processed by our backbone. Unlike traditional dense-scanning ap-proaches [12], [13], [21], [22] that process every frame se-quentially, we introduce a hierarchical architecture equipped with our novel Efficient Skip-Scanning Mamba (S-Mamba) 
+
+blocks. This design is tailored to address the dual challenges of computational efficiency and multi-scale context modeling inherent in TFL. 
+
+1) Hierarchical Architecture: Our backbone follows a hi-erarchical design composed of two main stages: the Stem and the Branch .
+
+Stem. The initial part of the backbone is the Stem, which operates on the full-resolution input sequence without down-sampling. It consists of a series of S-Mamba blocks config-ured to extract fine-grained temporal features at the original sampling rate. This stage captures both low-frequency se-mantic patterns and mid-frequency dynamic transitions, which our frequency domain analysis IV-G reveals to be the most discriminative components for forgery detection. The dense sampling in the Stem is crucial for identifying subtle forgery artifacts, such as micro-expression inconsistencies or brief audio glitches, which require precise temporal alignment. 
+
+Branch. Following the Stem, the Branch consists of multi-ple stages. Each stage contains one or more S-Mamba blocks, but critically, each stage concludes with a downsampling operation that halves the temporal sequence length. This progressive downsampling structure allows the deeper layers of the backbone to possess a larger effective receptive field, enabling them to model longer-range temporal dependencies and capture coarse-grained, multi-scale contextual information essential for detecting sustained forgery patterns. The number of blocks in the Stem and in each Branch stage are config-urable hyperparameters, allowing for flexible scaling of the model’s capacity. 
+
+E. Theoretical Analysis 
+
+We provide a theoretical foundation for our design choices from computational complexity, state-space dynamics, and sig-nal processing perspectives. This analysis establishes a priori 
+
+design principles and testable predictions that are empirically validated in SectionIV. 
+
+1) Computational Complexity: The standard Mamba scan has complexity O(L · dstate ). Under skip-scanning with stride 
+
+p, we partition the sequence into p groups of length L/p , pro-cessed in parallel. While the asymptotic complexity remains 
+
+O(L·dstate ), the reduction in sequential dependency depth from 
+
+L to L/p trades sequential overhead for parallel width. 
+
+Prediction (Efficiency): On modern GPUs limited by se-quential recurrence latency, stride-p scanning should yield inference speedups approaching linear scaling with p (e.g., 
+
+∼ 2× for p = 2 ). 
+
+2) Unified Sequence as Phase Preserver: From a signal processing perspective, cross-modal forgery detection requires modeling phase relationships (e.g., audio-visual synchroniza-tion) between modalities. Channel-wise fusion xt = [ vt; at]
+
+forces rigid temporal alignment, structurally constraining cor-relation modeling to local windows |∆t| ≤ R (where R is the effective receptive field). Thus, long-range desynchronization (∆t > R ) becomes theoretically undetectable. In contrast, our unified sequence 
+
+[V1, . . . , VT , A1, . . . , AT ] converts cross-modal correlation into a long-range dependency problem . The SSM can model correlations between vt and at+k for arbitrary temporal lags 
+
+k within a single forward pass. 
+
+Prediction (Phase Modeling): The unified representation should exhibit superior capability in detecting asynchronous forgeries with large temporal offsets compared to channel-wise baselines, which are structurally bound by local alignment constraints. 
+
+3) Skip-Scanning: Frequency-Aware Regularization: 
+
+Mechanism Clarification. Skip-scanning via Group-Scan-Merge is architecturally distinct from pooling or downsampling: it retains representations for all tokens 
+
+while modifying the scanning topology. We analyze this as structured regularization affecting the model’s learned inductive bias. 
+
+State-Space Perspective. Under stride-p scanning, the re-currence within each group operates with effective state tran-sition matrix ¯Askip = ¯Ap. Since ¯A = exp(∆ A) is typically contractive (i.e., ∥ ¯A∥ < 1 for well-trained SSMs), we have 
+
+∥ ¯Ap∥ = ∥ ¯A∥p, which decays exponentially with p. For instance, if ∥ ¯A∥ = 0 .8, then stride-2 yields ∥ ¯A2∥ = 0 .64 
+
+(20% reduction) and stride-4 yields 0.41 (49% reduction). This exponential scaling implies that skip-scanning accelerates the decay of high-frequency state dynamics , biasing the model to down-weight short-term temporal jitter. 
+
+Frequency-Domain Analysis & Optimal Stride Selection. 
+
+The effective temporal sampling rate within each group is reduced by factor p, yielding an approximate effective Nyquist frequency f eff  
+
+> N
+
+(p) ≈ 1/(2 p) (normalized). Crucially, this is a functional approximation rather than physical downsam-pling, as our Group-Scan-Merge mechanism retains all tokens via parallel processing. The Nyquist-like constraint emerges specifically from the reduced recurrence depth within each group, which effectively limits the upper bound of temporal frequencies that can be captured during the scanning process. Based on this spectral property, we consider the hypoth-esis that discriminative forgery patterns—such as semantic-level inconsistencies, prosodic mismatches, and audio-visual synchronization drift—are inherently low/mid-frequency tem-poral phenomena. This hypothesis is biologically motivated by human perception, where the detection of semantic dis-continuities and synchronization errors typically operates at timescales of 50–200ms. In the context of feature sequences extracted at 6.25Hz (our AV-Deepfake1M setting), these physi-cal timescales map to normalized frequencies of approximately 0.05–0.2. Consequently, we posit that the critical discrimina-tive band satisfies fd ≲ 0.2.6
+
+Under this hypothesis, we can theoretically rank stride choices:  
+
+> •
+
+Stride 2 (f eff  
+
+> N
+
+≈ 0.25 ): Optimal. The discriminative band-width ( fd ≲ 0.2) is fully preserved with a safety margin, while higher-frequency noise is naturally attenuated.  
+
+> •
+
+Stride 4 (f eff  
+
+> N
+
+≈ 0.125 ): Aggressive. It risks attenuating discriminative cues if fd approaches or exceeds 0.125 ,potentially causing information loss. 
+
+Prediction (Frequency Selectivity): If our hypothesis holds, then: 1) Removing low/mid-frequency components ( f < fd)should cause severe performance degradation across all models. 2) Removing high-frequency components ( f > f eff  
+
+> N
+
+) should have a minimal or even positive impact on stride-p
+
+models, as these frequencies are already down-weighted by the architecture. 3) Stride-4 should exhibit increased sensitivity to mid-frequency removal compared to stride-2, as f eff  
+
+> N
+
+(4) < f d.
+
+Prediction (Robustness): Models with larger strides ( p > 
+
+1) possess a low-pass inductive bias. They should exhibit superior robustness to data perturbations that primarily corrupt high-frequency details (e.g., compression artifacts, additive noise, blur) compared to the dense-scanning baseline. 
+
+Soft Regularization Paradigm. Critically, our mechanism differs from conventional hard-filtering. Rather than discarding high-frequency components at the input level, skip-scanning implements a form of soft structural regularization . By al-tering the scanning topology, we introduce an inductive bias that accelerates the decay of state dynamics, as mathematically derived in the Supplementary Material. This effectively biases the learning process toward robust, low-frequency temporal patterns. Importantly, the Group-Scan-Merge architecture re-tains the full representational capacity to encode fine-grained details via all-token retention. This design enables the model to prioritize stable semantic features for detection while adap-tively attending to high-frequency cues only when explicitly required by the loss function, such as for precise boundary refinement. IV. E XPERIMENTAL 
+
+A. Datasets 
+
+We conduct extensive experiments on two challenging datasets, covering a wide spectrum of forgery scenarios.  
+
+> •
+
+LAV-DF [29] : A large-scale multimodal forgery dataset comprising 136,304 videos. It features four data types: pristine, visual-only tampering, audio-only tampering, and audio-visual tampering. The forged segments are typically short, with durations ranging from 0 to 1.6 seconds.  
+
+> •
+
+AV-Deepfake1M [30] : The largest multimodal forgery dataset. To ensure the validity of audio-visual temporal localization, we excluded silent videos, resulting in a refined training set of 1,091,420 videos and a validation set of 56,907 videos. We use the validation set for testing as the official test set metadata is withheld. 
+
+B. Implementation Details 
+
+Feature Extraction. Following previous works [9], we utilize pre-extracted features to ensure a fair comparison. For the LAV-DF [29] dataset, we use the two-stream TSN network pretrained on ActivityNet [31] to extract visual features (4096-dim), combining RGB and optical flow. For audio, we employ a pre-trained BYOL-A model [32] trained on AudioSet [33], yielding 2048-dim features. For the AV-Deepfake1M [30] 
+
+dataset, we adopt more advanced feature extractors: Video-MAE V2-Small [34] (distilled from Giant) is used for visual features (384-dim), and Wav2Vec 2.0 [35] (XLS-R-300M) is used for audio features (1024-dim). 
+
+1) Model Configuration.: Our hierarchical Mamba back-bone is configured with an architecture of [2 , 2, 5] blocks for the embedding, stem, and branch stages, respectively. The hidden dimension C is set to 512. We investigate skip-scanning strides of p ∈ {1, 2, 4} to analyze the trade-off between granularity and efficiency, where p = 1 represents dense scanning (Full Scan). 
+
+2) Training Settings.: The model is implemented in Py-Torch 2.1.2 with CUDA 11.8. We train the network end-to-end using the AdamW optimizer with an initial learning rate of 1 × 10 −4 and weight decay of 0.05 . A cosine annealing schedule with warmup is employed. Training runs for 50 epochs with a batch size of 16. All experiments are conducted on NVIDIA Tesla V100-SXM2 (32GB) GPUs. 
+
+C. Main Results and Analysis 
+
+Tables I and II present comprehensive comparisons with SOTA methods on LAV-DF [29] and AV-Deepfake1M [30]. Our analysis reveals several key findings demonstrating the effectiveness of UniSkip-Mamba. 
+
+1) Performance on LAV-DF: On LAV-DF [29], our stride 2 model achieves 63.4% AP@0.95 , representing a +9.8% absolute improvement over the previous best method Uni-CaCLF [10] (53.6%). This substantial gain at the most strin-gent IoU threshold demonstrates that skip-scanning enables exceptionally precise boundary localization. The improvement is even more pronounced compared to UMMAFormer [9] (+25.8%) and DiMoDif [15] (+42.8%). Our method also achieves 97.1% AP@0.75 (+4.0% over UniCaCLF) and 
+
+86.2% average mAP (+4.7% over UniCaCLF), demonstrating consistent superiority across all IoU thresholds. Comparing scanning strides, stride 2 (63.4% AP@0.95) slightly outperforms stride 1 (63.0%), confirming that temporal subsampling acts as beneficial regularization. Combined with stride 2’s 2 × inference speedup (Section IV-E), this establishes it as the optimal configuration. 
+
+2) Performance on AV-Deepfake1M: On the larger AV-Deepfake1M dataset [30], UniSkip-Mamba demonstrates even more substantial improvements. Our stride 2 model achieves remarkable gains over DiMoDif [15]: +3.67% AP@0.5 ,
+
++5.85% AP@0.75 , +23.98% AP@0.9 , +23.77% AP@0.95 ,and +14.32% average mAP . The progressively larger gains at higher IoU thresholds reveal a critical advantage: while DiMoDif detects forgeries at a coarse level, our method excels at pinpointing exact temporal boundaries. 7
+
+TABLE I TEMPORAL FORGERY LOCALIZATION RESULTS ON LAV-DF [29]. M ODALITY DENOTES THE MODEL ’S INPUT TYPE WITH V BEING VISUAL AND A AUDIO .
+
+BOLD INDICATES BEST AND UNDERLINE SECOND TO BEST PERFORMANCE . W E REPORT M AP AS THE AVERAGE OF AP AT DIFFERENT THRESHOLDS .Method Modality AP@0.5 AP@0.75 AP@0.95 Avg. AR@100 AR@50 AR@20 AR@10 MDS [27] AV 12.8 1.6 0.0 4.8 37.9 36.7 34.4 32.2 AVFusion [26] AV 65.4 23.9 0.1 29.8 63.0 59.3 54.8 52.1 BA-TFD [28] AV 76.9 38.5 0.3 38.6 66.9 64.1 60.8 58.4 BA-TFD+ [29] AV 96.3 85.0 4.4 61.9 81.6 80.5 79.4 78.8 TriDet [14] V 96.3 86.8 23.6 68.9 91.0 90.4 89.7 88.7 ActionMamba [36] V 97.6 94.6 39.1 77.1 85.1 85.0 84.9 84.5 UMMAFormer [9] AV 98.8 95.5 37.6 77.3 92.4 92.5 92.5 92.1 DiMoDif [15] AV 95.5 87.9 20.6 68.0 94.2 93.7 92.7 91.4 UniCaCLF [10] AV 97.8 93.1 53.6 81.5 94.6 94.0 93.8 93.2 
+
+UniSkip-Mamba (stride=1) AV 98.5 96.7 63.0 86.0 94.3 93.6 92.9 92.3 UniSkip-Mamba (stride=2) AV 98.6 97.1 63.4 86.2 93.7 92.6 91.7 91.3 TABLE II TEMPORAL FORGERY LOCALIZATION RESULTS ON AV-D EEPFAKE 1M [30]. M ODALITY DENOTES THE MODEL ’S INPUT TYPE WITH V BEING VISUAL AND 
+
+A AUDIO . BOLD INDICATES BEST AND UNDERLINE SECOND TO BEST PERFORMANCE . * R EPORTS VALIDATION PERFORMANCE .Method Modality AP@0.5 AP@0.75 AP@0.9 AP@0.95 Avg. AR@50 AR@20 AR@10 AR@5 MesoInception4 [37] V 08.50 05.16 01.89 00.50 04.01 39.27 39.00 35.78 24.59 ActionFormer+VideoMAEv2 [11], [34] V 20.24 05.73 00.57 00.07 06.65 19.97 19.81 19.11 17.80 BA-TFD [28] AV 37.37 06.34 00.19 00.02 10.98 45.55 35.95 30.66 26.82 BA-TFD+ [29] AV 44.42 13.64 00.48 00.03 14.64 48.86 40.37 34.67 29.88 UMMAFormer [9] AV 51.64 28.07 07.65 01.58 22.24 44.07 43.45 42.09 40.27 DiMoDif [15] AV 86.93 75.95 28.72 05.43 49.26 81.57 80.25 78.84 76.64 
+
+UniSkip-Mamba (stride=1) AV 87.2 75.3 43.7 22.0 57.1 78.1 75.9 73.7 69.7 UniSkip-Mamba (stride=2) AV 90.60 81.80 52.70 29.20 63.58 80.90 79.30 77.50 74.70 UniSkip-Mamba (stride=4) AV 90.50 80.70 50.60 27.60 62.35 78.80 77.20 75.50 72.80 
+
+Compared to UMMAFormer [9], the improvement is even more striking: +27.62% AP@0.95 and +41.34% average mAP . This validates our hypothesis that Mamba’s linear complexity enables effective long-range temporal modeling, whereas Transformer’s quadratic complexity forces compro-mises in sequence length or model capacity. Notably, stride 2 shows a substantial advantage over stride 1 on this larger dataset (+6.48% mAP vs. +0.2% on LAV-DF), suggesting that skip-scanning’s regularization effect becomes more pronounced on diverse, large-scale data where models are prone to overfitting high-frequency noise. Stride 4 (62.35% mAP) also significantly outperforms stride 1 (57.1% mAP), confirming that temporal subsampling consistently improves generalization. 
+
+3) Key Insights: Skip-Scanning as Regularization. The consistent performance gains of stride 2 over stride 1, partic-ularly on large-scale data, provide strong empirical evidence that skip-scanning acts as structural regularization. Our fre-quency domain analysis (Section IV-G) provides theoretical justification, showing that stride 2 naturally attenuates high-frequency noise while preserving discriminative low and mid-frequency patterns. 
+
+Mamba vs. Transformer. The dramatic improvements over UMMAFormer [9] demonstrate that Mamba’s linear complex-ity fundamentally enables better long-range temporal modeling for forgery detection, eliminating the sequence length vs. model capacity trade-off inherent in Transformers. 
+
+Multimodal Advantage. Our method significantly outper-forms DiMoDif [15] (+23.77% AP@0.95), which also uses audio-visual information through specialized speech models. Our unified sequence representation with modality embed-dings provides a more flexible framework that captures di-verse cross-modal discrepancies beyond lip-sync errors, in-cluding temporal desynchronization, prosodic inconsistencies, and quality mismatches. In summary, UniSkip-Mamba establishes new SOTA results on both benchmarks, with particularly dramatic improvements at high-precision metrics. The consistent superiority of stride 2 validates our core innovation: skip-scanning is not a com-promise for efficiency, but a principled regularization strategy that improves both accuracy and speed. 
+
+D. Robustness Evaluation 
+
+To comprehensively evaluate real-world stability, we con-duct robustness tests under various cross-modal perturbations on 1,000 sampled videos from AV-Deepfake1M [30] validation set. We report mAP@0.95 , the most rigorous metric for precise boundary localization under degradation, comparing UniSkip-Mamba stride ∈ {1, 2, 4} against SOTA method DiMoDif [15]. 
+
+Perturbation Settings. We applied 10 types of degrada-tions with 5 intensity levels. Detailed parameter settings are provided in the Supplementary Material. Results Analysis. 
+
+Figure 4 reveals three critical findings: 
+
+(1) Skip-Scanning Provides Consistent Robustness Gains. Across all 10 perturbation types, stride 2 and stride 4 consistently outperform stride 1 by 5-8% absolute mAP .This validates our hypothesis that temporal subsampling 8          
+
+> Fig. 4. Robustness evaluation under cross-modal perturbations. We report mAP@0.95 across 5 intensity levels for 10 degradation types (7 visual, 3 audio).
+> (a)-(g) Visual perturbations: Gaussian noise, blur, compression, occlusion, saturation, contrast. (h)-(j) Audio perturbations: noise, compression, reverberation. Skip-scanning models (stride >1) consistently outperform dense scanning (stride 1), demonstrating superior resilience. DiMoDif [15] achieves <5% mAP across all settings (omitted for clarity).
+
+acts as frequency-aware regularization—reducing sensitivity to high-frequency perturbations while preserving discrimina-tive low/mid-frequency patterns (Section IV-G). The natural filtering effect prevents performance degradation when high-frequency details are corrupted. 
+
+(2) Superior Resilience Under Severe Degradation. At extreme perturbation levels (Block Occlusion level 5, Video Compression CRF 51), stride 1 degrades catastrophically to 15.9% and 18.1%, while stride 4 maintains 22.4% and 20.5%—demonstrating 1.4 × better resilience . The sparse scanning mechanism effectively bypasses local corruptions and reconstructs forgery context from remaining reliable frames. Similarly, under intense audio noise (level 5), stride 1 drops to 4.43% while stride 2 retains 9.76%, doubling robustness by filtering transient noise and focusing on underlying prosodic inconsistencies. 
+
+(3) Dramatic Advantage Over SOTA. DiMoDif [15] achieves < 5% mAP@0.95 across all conditions, highlighting the extreme difficulty of precise boundary localization under degradation. Our framework’s unique capability stems from frequency-principled design: stride=2’s Nyquist frequency (0.25 Hz) acts as a natural barrier—perturbations corrupting high-frequency components ( > 0.25 Hz) cannot affect the model’s decision-making process, providing provable robust-ness grounded in signal processing theory. 
+
+E. Computational Efficiency and Scalability Analysis 
+
+To demonstrate the practical superiority of our proposed 
+
+Uni-Mamba framework over traditional Transformer-based methods, we conducted a comprehensive evaluation of com-putational efficiency. We selected UMMAFormer [9], a SOTA Transformer-based TFL model, as the baseline. The compari-son focuses on three critical dimensions: Training Efficiency, Inference Latency, and Batch Scalability. All experiments were performed on a single NVIDIA Tesla V100-SXM2-32GB GPU. 
+
+Training Efficiency: Speed vs. Memory. We first evalu-ated the training time and GPU memory consumption across varying input sequence lengths ( T ∈ [576 , 4608] ). As illus-trated in Fig. 5a, our method consistently outperforms UM-MAFormer [9] in terms of speed. Notably, the stride 1 variant achieves a speedup of 3× to 5 × compared to the baseline. For instance, at T = 4608 , our model completes a forward-backward pass in just 138ms , whereas UMMAFormer requires 
+
+983ms . This significant reduction in training latency allows for much faster experimental iteration. While our method exhibits a slightly higher memory footprint at extreme sequence lengths (e.g., 1.67GB vs. 0.85GB at T = 4608 ) due to the bidirectional state expansion, this cost is well within the capacity of modern GPUs and is justified by the substantial gain in training speed. 
+
+Inference Latency and Real-time Capability. In real-world forensic applications, low latency is paramount. We measured the inference time across sequence lengths up to 9216 frames. As shown in Fig. 5b, UMMAFormer [9] suffers from a quadratic increase in latency, reaching 600ms at T =9216 , which hinders real-time processing. In stark contrast, our stride 1 model maintains an impressively low latency of 97.4ms at the same length, representing a 6× speedup .Even the stride 2 variant remains significantly faster than the baseline, ensuring stability for long-form video analysis. 
+
+Scalability: Batch Size and Throughput. Finally, we assessed the model’s scalability by increasing the batch size until Out-Of-Memory (OOM) occurred, with sequence length fixed at T = 2304 . The results, presented in Fig. 5c, highlight the superior throughput of our approach. UMMAFormer [9] encounters OOM at a batch size of 32 , limiting its maximum viable batch size to 16 . Conversely, our stride 1 and stride 4 
+
+variants scale efficiently up to a batch size of 56 , crashing only at 64. This represents a 3.5 × improvement in parallel pro-9
+
+(a) Training Efficiency (b) Inference Latency (c) Batch Scalability                                             
+
+> Fig. 5. Comprehensive Efficiency Analysis. (a) Comparison of training time and memory usage across sequence lengths. (b) Inference latency on ultra-long sequences. (c) Scalability test showing peak memory and OOM thresholds under increasing batch sizes. Our UniSkip-Mamba demonstrates superior speed and scalability compared to the UMMAFormer [9] baseline. TABLE III COMPREHENSIVE ABLATION STUDY ON LAV-DF. W E SYSTEMATICALLY EVALUATE FUSION STRATEGIES ,MODALITY EMBEDDINGS ,
+> SKIP -SCANNING ,AND CRITICALLY ,THE BACKBONE -FUSION COMPATIBILITY . R ESULTS DEMONSTRATE THAT UNIFIED SEQUENCE REQUIRES ARCHITECTURAL SYNERGY WITH MAMBA ’S LINEAR COMPLEXITY AND POSITION -AGNOSTIC STATE PROPAGATION .
+> Method Fusion Mod. Emb. Skip Scan AP@0.95
+> Transformer Backbone
+> UMMAFormer [9] Channel ××37.6 UMMAFormer + Unified Unified ✓×34.6
+> Mamba Backbone (Ours)
+> ActionMamba [36] Channel ××39.1 Variant A Channel ×✓36.7 Variant B Channel ✓×34.7 Variant C Unified ××43.3 UniSkip-Mamba (full-scan) Unified ✓×63.0
+> UniSkip-Mamba (stride=2) Unified ✓✓63.4
+
+cessing capacity. Furthermore, at a batch size of 1, our method occupies only 0.653 GB of video memory, compared to 1.951 GB for UMMAFormer. Consequently, our method achieves a maximum throughput of approximately 25 samples/sec , far exceeding the 7.3 samples/sec of the baseline. In conclusion, these results demonstrate that UniSkip-Mamba addresses the critical efficiency bottlenecks of existing TFL frameworks. By offering high throughput, low latency, and excellent scalability, it provides a practical and robust solution for large-scale multimedia forensics. 
+
+F. Ablation Study 
+
+We conduct a comprehensive ablation study on LAV-DF to validate our core components and, critically, the architectural synergy between unified sequence fusion and the Mamba backbone. Results are reported as AP@0.95 in Table III. 
+
+1) Backbone-Fusion Compatibility: A Critical Negative Result. To validate that unified sequence representation is not universally beneficial but requires architectural compatibility, we conducted a controlled experiment: applying unified se-quence fusion to the Transformer-based UMMAFormer [9] baseline. 
+
+Results: As shown in the first block of Table III, UMMAFormer with unified sequence achieves only 34.6% AP@0.95 (with modality embeddings), underperforming its original channel-concatenation baseline (37.6%, −3.0% abso-lute). In stark contrast, our Mamba-based framework with the same unified fusion achieves 63.0% ( +82% relative improve-ment over Transformer+Unified). 
+
+Analysis: This counterintuitive result reveals a fundamental insight: unified sequence representation demands architectural compatibility . We identify three factors explaining Trans-former’s failure: 1) Quadratic Complexity Bottleneck: Doubling sequence length from T to 2T increases self-attention complexity from O(T 2) to O(4 T 2), causing training instability and underfitting on long sequences. 2) Position Encoding Mismatch: Transformer’s sinusoidal position encoding assumes sequential temporal ordering. In unified sequences, audio frame at position T and video frame at position 0 represent the same timestamp but are encoded as T steps apart, breaking temporal correspondence. 3) Locality Bias: Transformers learn locality bias during training. Unified sequences require modeling correla-tions between vt (position t) and at (position T + t), spanning T positions—beyond typical attention patterns. 
+
+Why Mamba Succeeds: In contrast, Mamba’s state-space formulation naturally accommodates unified sequences through: 1) Linear complexity O(2 T ) scaling gracefully; 2) Position-agnostic state propagation ht = ¯Ah t−1 + ¯Bx t
+
+without absolute position dependence; 3) Selective scanning with input-dependent gating adap-tively focusing on intra-modal vs. cross-modal patterns. This ablation validates that our contributions are synergistic :unified sequence fusion and Mamba backbone are mutually enabling, not independent improvements. 
+
+2) Component-wise Analysis: Unified Sequence vs. Chan-nel Concatenation. Comparing ActionMamba (39.1%) with Variant C (43.3%), switching to unified sequence yields 10                    
+
+> TABLE IV FREQUENCY BAND ABLATION STUDY . P ERFORMANCE CHANGE WHEN REMOVING EACH FREQUENCY BAND . N EGATIVE VALUES INDICATE PERFORMANCE DROP ;POSITIVE VALUES INDICATE IMPROVEMENT .
+> Model Remove Low Remove Mid Remove High
+> (0-0.05) (0.05-0.15) (>0.15 )Stride 1 -81.3% -92.8% -20.3% Stride 2 -56.3% -72.4% -0.7% Stride 4 -72.4% -79.7% +1.4%
+
++4 .2% gain. This confirms that serializing audio-visual fea-tures enables better long-range cross modal dependency mod-eling by breaking rigid frame alignment constraints. 
+
+Impact of Modality Embedding. Adding modality embed-dings to unified sequence (UniSkip-Mamba full-scan) dramat-ically boosts performance to 63.0% ( +19 .7% over Variant C). In contrast, adding them to channel concatenation (Variant B) degrades performance to 34.7%. This indicates embeddings act as a critical compass for the unified sequence to distin-guish modalities, whereas they introduce confusion in channel-separated inputs. 
+
+Skip Scanning as Regularization. Applying stride-2 skip-scanning to our full model further improves AP@0.95 to 63.4% ( +0 .4% ). However, applying it to channel concatena-tion (Variant A) hurts performance (36.7%, −2.4% vs. Action-Mamba). This suggests skip-scanning works synergistically with unified sequences as a temporal regularizer, filtering high-frequency noise while preserving context, but causes information loss in rigid channel structures. 
+
+G. Frequency Domain Analysis 
+
+To understand why skip-scanning achieves superior robust-ness, we analyze which frequency bands contain discriminative information and how scanning stride influences frequency sensitivity on 1,000 AV-Deepfake1M samples. 
+
+Experimental Setup. We apply band-pass filters to isolate three frequency ranges in normalized frequency units: Low 
+
+(0-0.05, semantic patterns like speaker identity), Mid (0.05-0.15, dynamic transitions like audio-visual synchronization), and High (> 0.15 , frame-level details like compression arti-facts). We measure performance drop (mAP@0.95) when each band is removed during inference. Detailed methodology in 
+
+Supplementary .
+
+Key Findings. Table IV reveals three critical insights: 
+
+(1) Low/Mid Frequencies are Critical. Removing low or mid-frequency components causes catastrophic degradation (56-93% drop), confirming that semantic-level patterns (scene context, speaker identity) and dynamic transitions (audio-visual synchronization, prosodic rhythms) are fundamental to forgery detection. Stride 1’s extreme sensitivity to mid-frequency removal (-92.8%) indicates heavy reliance on frame-to-frame dynamics, which can be both a strength (capturing subtle transitions) and a weakness (vulnerable to noise). 
+
+(2) High Frequencies Introduce Noise. High-frequency removal has minimal impact (-0.7% to +1.4%). Remarkably, stride 4 improves by +1.4% when high frequencies are re-moved, providing strong evidence that fine-grained frame-level details contribute little to discrimination and may even introduce noise that hinders performance. This validates skip-scanning as beneficial regularization rather than information loss. 
+
+(3) Nyquist Criterion Validation. The results align per-fectly with sampling theory. Stride=4 (Nyquist frequency 
+
+fN = 0 .125 Hz) shows improvement when high frequencies removed but suffers -79.7% drop when mid frequencies re-moved—precisely because fN = 0 .125 < 0.15 (discriminative band upper bound), causing aliasing and information loss. In contrast, stride=2 ( fN = 0 .25 Hz) shows only -0.7% change for high-frequency removal and -72.4% for mid-frequency removal—the smallest degradation among all models. This confirms stride=2 provides the optimal sampling rate : fully preserving the discriminative band (0-0.15 Hz) while naturally attenuating high-frequency noise. 
+
+Design Implications. These findings provide theoretical justification for our skip-scanning design from signal process-ing perspective. The optimal stride ( p = 2 ) is not an arbitrary hyperparameter but a principled decision derived from the Nyquist-Shannon sampling theorem applied to the empirically-determined discriminative frequency band. This explains why stride=2 simultaneously improves accuracy, robustness, and efficiency—a frequency-aware design validated by both the-ory and experiments. Complete frequency spectrum analysis, noise sensitivity results, and cross-dataset comparisons are in 
+
+Supplementary .V. C ONCLUSION 
+
+In this paper, we presented UniSkip-Mamba , a novel and efficient framework for AV-TFL. By rethinking the temporal modeling paradigm from a frequency-domain perspective, we addressed the twin challenges of computational efficiency and robust cross-modal learning. Our proposed Unified Sequence Representation breaks the rigid frame-alignment constraints of traditional channel concatenation, enabling flexible model-ing of asynchronous cross-modal dependencies. Furthermore, our Efficient Skip-Scanning Mamba Block introduces a con-figurable stride mechanism that not only accelerates inference by up to 6 × but also acts as a structural regularizer, naturally filtering out high-frequency noise while preserving discrim-inative forgery patterns. Extensive experiments on LAV-DF and AV-Deepfake1M benchmarks demonstrate that UniSkip-Mamba achieves state-of-the-art localization accuracy, partic-ularly in high-precision regimes, while significantly reducing computational costs. 
+
+Limitation and Future Work. While our skip-scanning strategy excels at capturing long-range dependencies and sup-pressing noise, it may inherently attenuate extremely short-duration artifacts (e.g., single-frame glitches) that reside purely in the high-frequency band. Future work could explore adap-tive stride selection mechanisms or multi-scale fusion strate-gies to dynamically balance fine-grained detection with long-term context modeling. Additionally, extending this unified efficient framework to other multi-modal understanding tasks, such as audio-visual event localization, remains a promising direction. 11 
+
+REFERENCES [1] N. Aldausari, A. Sowmya, N. Marcus, and G. Mohammadi, “Video generative adversarial networks: a review,” ACM Computing Surveys (CSUR) , vol. 55, no. 2, pp. 1–25, 2022. [2] J. Cai, C. Li, X. Tao, C. Yuan, and Y.-W. Tai, “Devit: Deformed vision transformers in video inpainting,” in Proceedings of the 30th ACM international conference on multimedia , 2022, pp. 779–789. [3] Y. Wang and Z. Zhao, “Fastlts: Non-autoregressive end-to-end un-constrained lip-to-speech synthesis,” in Proceedings of the 30th ACM International Conference on Multimedia , 2022, pp. 5678–5687. [4] J. Deng, T. Mao, D. Yan, L. Dong, and M. Dong, “Detection of synthetic speech based on spectrum defects,” in Proceedings of the 1st International Workshop on Deepfake Detection for Audio Multimedia ,2022, pp. 3–8. [5] I.-Y. Kwak, S. Choi, J. Yang, Y. Lee, S. Han, and S. Oh, “Low-quality fake audio detection through frequency feature masking,” in Proceedings of the 1st International Workshop on Deepfake Detection for Audio Multimedia , 2022, pp. 9–17. [6] D. Zhang, F. Lin, Y. Hua, P. Wang, D. Zeng, and S. Ge, “Deepfake video detection with spatiotemporal dropout transformer,” in Proceedings of the 30th ACM international conference on multimedia , 2022, pp. 5833– 5841. [7] H. Zhao, W. Zhou, D. Chen, T. Wei, W. Zhang, and N. Yu, “Multi-attentional deepfake detection,” in Proceedings of the IEEE/CVF confer-ence on computer vision and pattern recognition , 2021, pp. 2185–2194. [8] Y. Zhou and S.-N. Lim, “Joint audio-visual deepfake detection,” in 
+
+Proceedings of the IEEE/CVF international conference on computer vision , 2021, pp. 14 800–14 809. [9] R. Zhang, H. Wang, M. Du, H. Liu, Y. Zhou, and Q. Zeng, “Um-maformer: A universal multimodal-adaptive transformer framework for temporal forgery localization,” in Proceedings of the 31st ACM Inter-national Conference on Multimedia , 2023, pp. 8749–8759. [10] Q. Yin, W. Lu, X. Luo, and X. Cao, “Context-aware tfl: A universal context-aware contrastive learning framework for temporal forgery lo-calization,” arXiv preprint arXiv:2506.08493 , 2025. [11] C.-L. Zhang, J. Wu, and Y. Li, “Actionformer: Localizing moments of actions with transformers,” in European Conference on Computer Vision .Springer, 2022, pp. 492–510. [12] L. Zhu, B. Liao, Q. Zhang, X. Wang, W. Liu, and X. Wang, “Vision mamba: Efficient visual representation learning with bidirectional state space model,” arXiv preprint arXiv:2401.09417 , 2024. [13] G. Chen, Y. Huang, J. Xu, B. Pei, Z. Chen, Z. Li, J. Wang, K. Li, T. Lu, and L. Wang, “Video mamba suite: State space model as a versatile alternative for video understanding,” CoRR , 2024. [14] D. Shi, Y. Zhong, Q. Cao, L. Ma, J. Li, and D. Tao, “Tridet: Temporal action detection with relative boundary modeling,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,2023, pp. 18 857–18 866. [15] C. Koutlis and S. Papadopoulos, “Dimodif: Discourse modality-information differentiation for audio-visual deepfake detection and lo-calization,” arXiv preprint arXiv:2411.10193 , 2024. [16] A. Gu, K. Goel, and C. R´ e, “Efficiently modeling long sequences with structured state spaces,” arXiv preprint arXiv:2111.00396 , 2021. [17] D. Y. Fu, T. Dao, K. K. Saab, A. W. Thomas, A. Rudra, and C. R´ e, “Hungry hungry hippos: Towards language modeling with state space models,” arXiv preprint arXiv:2212.14052 , 2022. [18] H. Mehta, A. Gupta, A. Cutkosky, and B. Neyshabur, “Long range language modeling via gated state spaces,” arXiv preprint arXiv:2206.13947 , 2022. [19] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” arXiv preprint arXiv:2312.00752 , 2023. [20] T. Dao and A. Gu, “Transformers are ssms: Generalized models and ef-ficient algorithms through structured state space duality,” arXiv preprint arXiv:2405.21060 , 2024. [21] Y. Liu, Y. Tian, Y. Zhao, H. Yu, L. Xie, Y. Wang, Q. Ye, J. Jiao, and Y. Liu, “Vmamba: Visual state space model,” Advances in neural information processing systems , vol. 37, pp. 103 031–103 063, 2024. [22] H. Lu, Y. Yu, S. Lu, D. Rajan, B. P. Ng, A. C. Kot, and X. Jiang, “Mambatad: When state-space models meet long-range temporal action detection,” arXiv preprint arXiv:2511.17929 , 2025. [23] S. Gong, Y. Zhuge, L. Zhang, Y. Wang, P. Zhang, L. Wang, and H. Lu, “Avs-mamba: Exploring temporal and multi-modal mamba for audio-visual segmentation,” IEEE Transactions on Multimedia , 2025. [24] L. Wang, B. Zhu, Y. Chen, Y. Zhang, M. Tang, and J. Wang, “Mug: Pseudo labeling augmented audio-visual mamba network for audio-visual video parsing,” arXiv preprint arXiv:2507.01384 , 2025. [25] M. W. Jeong and C. E. Rhee, “Lc-mamba: Local and continuous mamba with shifted windows for frame interpolation,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 17 671– 17 681. [26] A. Bagchi, J. Mahmood, D. Fernandes, and R. K. Sarvadevabhatla, “Hear me out: Fusional approaches for audio augmented temporal action localization,” arXiv preprint arXiv:2106.14118 , 2021. [27] K. Chugh, P. Gupta, A. Dhall, and R. Subramanian, “Not made for each other-audio-visual dissonance-based deepfake detection and local-ization,” in Proceedings of the 28th ACM international conference on multimedia , 2020, pp. 439–447. [28] Z. Cai, K. Stefanov, A. Dhall, and M. Hayat, “Do you really mean that? content driven audio-visual deepfake dataset and multimodal method for temporal forgery localization,” in 2022 International Conference on Digital Image Computing: Techniques and Applications (DICTA) .IEEE, 2022, pp. 1–10. [29] Z. Cai, S. Ghosh, A. Dhall, T. Gedeon, K. Stefanov, and M. Hayat, “Glitch in the matrix: A large scale benchmark for content driven audio– visual forgery detection and localization,” Computer Vision and Image Understanding , vol. 236, p. 103818, 2023. [30] Z. Cai, S. Ghosh, A. P. Adatia, M. Hayat, A. Dhall, T. Gedeon, and K. Stefanov, “Av-deepfake1m: A large-scale llm-driven audio-visual deepfake dataset,” in Proceedings of the 32nd ACM International Conference on Multimedia , 2024, pp. 7414–7423. [31] F. Caba Heilbron, V. Escorcia, B. Ghanem, and J. Carlos Niebles, “Activitynet: A large-scale video benchmark for human activity under-standing,” in Proceedings of the ieee conference on computer vision and pattern recognition , 2015, pp. 961–970. [32] D. Niizumi, D. Takeuchi, Y. Ohishi, N. Harada, and K. Kashino, “Byol for audio: Self-supervised learning for general-purpose audio represen-tation,” in 2021 International Joint Conference on Neural Networks (IJCNN) . IEEE, 2021, pp. 1–8. [33] J. F. Gemmeke, D. P. Ellis, D. Freedman, A. Jansen, W. Lawrence, R. C. Moore, M. Plakal, and M. Ritter, “Audio set: An ontology and human-labeled dataset for audio events,” in 2017 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 2017, pp. 776–780. [34] L. Wang, B. Huang, Z. Zhao, Z. Tong, Y. He, Y. Wang, Y. Wang, and Y. Qiao, “Videomae v2: Scaling video masked autoencoders with dual masking,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2023, pp. 14 549–14 560. [35] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representations,” 
+
+Advances in neural information processing systems , vol. 33, pp. 12 449– 12 460, 2020. [36] J. Wen, D. Liu, and B. Zheng, “Actionmamba: Action spatial–temporal aggregation network based on mamba and gcn for skeleton-based action recognition,” Electronics , vol. 14, no. 18, p. 3610, 2025. [37] D. Afchar, V. Nozick, J. Yamagishi, and I. Echizen, “Mesonet: a compact facial video forgery detection network,” in 2018 IEEE international workshop on information forensics and security (WIFS) . IEEE, 2018, pp. 1–7.
