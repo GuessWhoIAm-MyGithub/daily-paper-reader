@@ -6,44 +6,47 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-13
-- 运行时间：2026-07-13 21:49:09 UTC
+- 最新运行日期：2026-07-14
+- 运行时间：2026-07-14 20:34:29 UTC
 - 运行状态：成功
-- 本次总论文数：7
-- 精读区：3
-- 速读区：4
+- 本次总论文数：9
+- 精读区：4
+- 速读区：5
 
 ### 今日简报（AI）
-- 今日共生成 7 篇推荐（精读 3 篇，速读 4 篇）
-- 精读：《UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization》（9.0/10）, 《Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models》（8.0/10）
-- 速读：《Secure-by-Disguise: A Systematic Evaluation of Image Disguising for Confidential Medical Image Modeling》（7.0/10）, 《REBASE: Reference-Background Subspace Elimination for Training-Free In-Context Segmentation》（7.0/10）, 《Consistent and Editable: A Balanced Framework for Text-Guided Video Editing》（6.0/10）
-- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202607/13/README](/202607/13/README)
+今天成功精读了9篇前沿论文，其中两篇高分研究聚焦于音频-视频伪造定位和合成图像检测。最值得看的方向是利用频率感知模型和噪声残差聚类技术，精准识别媒体伪造内容。建议普通读者关注这些技术在反欺诈和信息验证中的实际应用，以增强对网络虚假信息的防范意识。
+- 详情：[/202607/14/README](/202607/14/README)
 
 ### 精读区论文标签
-1. [UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization](/202607/13/2607.04498v1-uniskip-mamba-a-frequency-aware-state-space-model-for-audio-visual-temporal-forgery-localization)  
-   标签：评分：9.0/10、query:img-f
-   evidence：专注于音视频时序伪造定位，直接匹配伪造区域检测。
-2. [Erasing Without Collateral Damage: Precise Concept Removal in Diffusion Models](/202607/13/2607.05274v1-erasing-without-collateral-damage-precise-concept-removal-in-diffusion-models)  
+1. [UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization](/202607/14/2607.04498v1-uniskip-mamba-a-frequency-aware-state-space-model-for-audio-visual-temporal-forgery-localization)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：用于检测和定位音视频伪造的频率感知模型
+2. [Effective Synthetic Image Detection via Noise Residual Clustering](/202607/14/2607.10695v1-effective-synthetic-image-detection-via-noise-residual-clustering)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：使用噪声残差聚类无训练检测合成图像
+3. [h-Flow: Flexible Flow-based Image Editing via Doob's h-Transform](/202607/14/2607.10800v1-h-flow-flexible-flow-based-image-editing-via-doobs-h-transform)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：基于h变换的流式图像编辑
+4. [LLM-Guided Program Evolution for Targeted Black-Box Attacks on Perceptual Hash Algorithms](/202607/14/2607.11472v1-llm-guided-program-evolution-for-targeted-black-box-attacks-on-perceptual-hash-algorithms)  
    标签：评分：8.0/10、query:imgfor
-   evidence：扩散模型中精确概念擦除技术用于图像编辑
-3. [TILDE: TILt-based Distributional Erasure for Concept Unlearning](/202607/13/2607.06432v1-tilde-tilt-based-distributional-erasure-for-concept-unlearning)  
-   标签：评分：8.0/10、query:imgfor
-   evidence：概念遗忘方法用于图像生成模型的安全部署
+   evidence：攻击用于图像伪造检测的感知哈希算法
 
 ### 速读区论文标签
-1. [Secure-by-Disguise: A Systematic Evaluation of Image Disguising for Confidential Medical Image Modeling](/202607/13/2607.08867v1-secure-by-disguise-a-systematic-evaluation-of-image-disguising-for-confidential-medical-image-modeling)  
+1. [VocaDet: Sample-Driven Open-Vocabulary Object Detection and Segmentation via Visual Tokenization and Vector Database Retrieval](/202607/14/2607.08541v1-vocadet-sample-driven-open-vocabulary-object-detection-and-segmentation-via-visual-tokenization-and-vector-database-retrieval)  
    标签：评分：7.0/10、query:imgfor
-   evidence：评估用于隐私保护图像分析的图像伪装技术
-2. [REBASE: Reference-Background Subspace Elimination for Training-Free In-Context Segmentation](/202607/13/2607.09082v1-rebase-reference-background-subspace-elimination-for-training-free-in-context-segmentation)  
+   evidence：开放词汇对象检测与分割用于区域定位
+2. [What Pixels Are Enough? SEAMS: Sufficiency Saliency via MSE-Preservation Soft-Masks](/202607/14/2607.09164v1-what-pixels-are-enough-seams-sufficiency-saliency-via-mse-preservation-soft-masks)  
    标签：评分：7.0/10、query:imgfor
-   evidence：用于图像区域定位的无训练分割框架。
-3. [Consistent and Editable: A Balanced Framework for Text-Guided Video Editing](/202607/13/2607.05056v1-consistent-and-editable-a-balanced-framework-for-text-guided-video-editing)  
+   evidence：用于定位对模型行为重要图像区域的显著性方法。
+3. [NucleiSky enables cross-scale multimodal registration of microscopy data using nuclei constellations](/202607/14/biorxiv-10-64898-2026-06-29-735028-v2-nucleisky-enables-cross-scale-multimodal-registration-of-microscopy-data-using-nuclei-constellations)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：利用核星座在较大参考图像中定位查询区域
+4. [Text guidance is powerful but prompt-sensitive for weakly-supervised leaf symptom segmentation](/202607/14/biorxiv-10-64898-2026-07-10-737680-v1-text-guidance-is-powerful-but-prompt-sensitive-for-weakly-supervised-leaf-symptom-segmentation)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：用于定位图像区域的弱监督分割方法
+5. [Structured Evidence Selection for Weakly Supervised Video Anomaly Detection](/202607/14/2607.10298v1-structured-evidence-selection-for-weakly-supervised-video-anomaly-detection)  
    标签：评分：6.0/10、query:imgfor
-   evidence：涉及视频编辑技术，与最新图像编辑进展相关。
-4. [Partial-Reference IQA Based on Hermite-Gauss Structural Prediction and Texture Deviation](/202607/13/2607.08563v2-partial-reference-iqa-based-on-hermite-gauss-structural-prediction-and-texture-deviation)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：分析结构偏差的图像质量评估，可用于篡改取证分析
+   evidence：结构化证据选择用于异常定位
 
 
 <div class="dpr-home-promo-card">

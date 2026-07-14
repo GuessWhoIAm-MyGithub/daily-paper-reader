@@ -1,0 +1,273 @@
+Title: LLM-Guided Program Evolution for Targeted Black-Box Attacks on Perceptual Hash Algorithms
+
+URL Source: https://arxiv.org/pdf/2607.11472v1
+
+Published Time: Tue, 14 Jul 2026 03:11:58 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# LLM-Guided Program Evolution for Targeted Black-Box Attacks on Perceptual Hash Algorithms 
+
+Aleksei S. Krylov 1,2[0009 −0009 −7990 −6895] , Denis S. Rakhov 2[0009 −0005 −2915 −7225] ,Veronica Veselova 3[0009 −0003 −9508 −0698] , Dmitry Bolokhov 3[1111 −2222 −3333 −4444] ,and Oleg Y. Rogov 1,3,4,5[2222 −− 3333 −4444 −5555]  
+
+> 1
+
+MIPT  
+
+> 2
+
+Sberbank  
+
+> 3
+
+Central University  
+
+> 4
+
+AIRI  
+
+> 5
+
+MTUCI-Labs 
+
+Abstract. Perceptual hash algorithms (PHAs) are widely deployed to detect image forgery under benign transformations, yet their robustness against adversarially chosen perturbations remains poorly understood and rarely comes with provable guarantees. We propose a novel evo-lutionary framework based on GigaEvo and OpenEvolve for targeted second-image attacks on perceptual hash algorithms. We assess attack performance using a composite score that jointly accounts for the frac-tion of adversarial images whose normalized Hamming distance to the target hash falls below threshold p (Attack Success Rate), the number of queries issued to the hash function, and the L2 distortion relative to the original image. Experiments on four deployed PHAs (pHash, PDQ, PhotoDNA, NeuralHash) across 30 ImageNet image pairs demonstrate that our evolutionary approach achieves comparable or better ASR than existing black-box baselines using substantially fewer queries to the hash function, while simultaneously producing adversarial images with lower L2 distortion relative to the originals. The best evolved programs reduce the pre-defined composite attack score relative to the best optimized seed by 41.2% for NeuralHash, 38.3% for PDQ, 34.0% for pHash, and 8.1% for PhotoDNA. Unlike gradient-based methods, our framework re-quires no internal knowledge of PHA architectures and naturally handles the non-differentiable, discretized nature of hash outputs. These results reveal previously unreported vulnerabilities in widely deployed content-moderation pipelines and motivate the development of provably robust perceptual hashing schemes. 
+
+Keywords: perceptual hash algorithms · perceptual hash functions ·
+
+hashes · black-box attacks · targeted collision · program evolution · safety 
+
+· large language models · adversarial robustness arXiv:2607.11472v1 [cs.CR] 13 Jul 2026 2 A. Krylov et al. 
+
+## 1 Introduction 
+
+Perceptual hash algorithms (PHAs) map multimedia objects to short binary strings so that perceptually similar inputs yield nearby hashes under Hamming distance. This functionality makes PHAs attractive for large-scale near-duplicate search [12], copyright enforcement, and safety applications such as client- or server-side detection of known harmful imagery [9]. In contrast to cryptographic hashing-where a single-bit change should avalanche-perceptual hashing is inten-tionally stable under benign content-preserving transformations (e.g., resizing, compression, mild blur), while remaining discriminative across distinct content. Popular deployed designs include DCT-based global hashes (pHash, PDQ) [17, 6], gradient aggregation schemes (PhotoDNA-like) [14, 4, 3], and neural embed-ding approaches (NeuralHash-like) [5]. This stability–discrimination tension is not merely an engineering trade-off: it is a mathematical constraint that becomes security-critical when an adversary can choose inputs. A substantial empirical literature demonstrates that many PHAs are robust to common non-adversarial edits [27, 2]. However, recent work has also established that robustness under benign transformations does not imply robustness against adversarial pertur-bations, including gradient-based hash-evasion attacks in white-box settings [8, 25] and practical attacks spanning inversion and evasion regimes [20]. Moreover, for certain semantic classes (notably faces), the effective hash space can be far smaller than the nominal bit-length would suggest [18]. These results raise a foundational question: what can we prove about the robustness of a perceptual hash, and what instance-wise guarantees can a deployed system offer? The cen-tral obstacle is that PHAs combine continuous feature extraction with discrete quantization. Quantization is indispensable for fast indexing and compact stor-age, but it turns small feature changes into potentially large Hamming changes whenever a coordinate crosses a threshold. While this viewpoint is implicit in en-gineering descriptions of pHash/PDQ and related schemes [17, 6], it has not been systematically developed into a sharp, per-instance robustness theory. In this pa-per we provide a systematic empirical study of targeted second-image attacks on perceptual hash algorithms through the lens of evolutionary computation. Concretely, we make the following contributions. First, we propose a black-box evolutionary attack framework built on GigaEvo[15] and OpenEvolve[21, 24] that searches for adversarial perturbations of a source image such that the resulting hash closely matches that of a designated target image. Second, we evaluate the framework against four deployed PHAs — pHash, PDQ, PhotoDNA, and NeuralHash — on 30 ImageNet image pairs, demonstrating that our approach consistently achieves higher ASR than existing black-box baselines while produc-ing adversarial images with lower L2 distortion relative to their originals. Third, we show that evolutionary search is particularly well-suited to this problem: it requires no gradient information, no knowledge of internal PHA parameters, and naturally accommodates the non-differentiable, discrete structure of hash out-puts. Together, these results deepen our understanding of the practical attack surface of deployed PHAs and highlight the need for robustness guarantees that account for adversarially chosen inputs. LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 3
+
+## 2 Related Work 
+
+2.1 Perceptual Hash Algorithms 
+
+Perceptual Hash Algorithms, shortly PHAs, have emerged as powerful tech-nology to limit the redistribution of multimedia content (e.g. images) [9]. We consider the most popular of them (Table 1):                          
+
+> Table 1. Comparison of perceptual hashing algorithms used in instant messaging plat-forms. Algorithm Developer Release Scale Feature Extraction Hash Length
+> pHash Open Source 2008 Global 2D DCT 64 bits
+> PDQ Meta 2019 Global 2D DCT 256 bits
+> PhotoDNA Microsoft 2009 Mid-scale 6×6Grid Gradients 1152 bits
+> NeuralHash Apple 2021 Pixel-scale Deep CNN 96 bits
+
+2.2 Robustness of the Perceptual Hash Algorithms 
+
+Previous research has challenged the robustness of these perceptual hashing al-gorithms from various perspectives. The first of these studies proved that PHAs are resistant to resizing, recoloring, cropping, and blurring transformations [2, 27]. Nevertheless, vulnerabilities to adversarial attack were detected. Initially, researchers construct white-box gradient-based approaches [8, 25]. They have shown that although perceptual hashing-based detection systems may be cryp-tographically well-proven, they remain susceptible to complex collision attacks, which pose significant risks to user privacy and could facilitate surveillance far beyond the intended scope of CSAM detection. Furthermore, another study has shown that for certain image categories like faces, the effective hash space of Neu-ralHash (96-bit) is constrained, making random collisions likely in sets of only 
+
+216 images [18]. Adversarial attacks comprise two main groups: hash-inversion attacks and hash-evasion attacks. Hash-inversion attacks aim at inverting the hash function to obtain the original image from the hash [20]. Hash-evasion at-tacks may be targeted and untargeted. In case of targeted attacks, researchers aim to obtain the hash of the target image for the current image utilizing visually imperceptible changes [22]. During an untargeted attack, it is enough to get a large difference in hashes with a small difference in images. To improve the qual-ity of attacks, researchers also utilize multiresolution perturbation, where each perturbation element can affect image regions of adjustable scales [29]. Authors of this paper introduce three levels of perturbations: Global-scale, Mid-scale and Pixel-scale. Moreover, Atkscopes [29] demonstrate a substantial improvement in efficiency, compared to previous attacks with mismatched scales by Prokos [22]. 4 A. Krylov et al.                 
+
+> xs
+> ht=H(xt)
+> Seed portfolio
+> SimBA ·NES
+> ·ZO-SignSGD Prokos ·
+> ATKScopes
+> Per-hash config. optimization
+> rank by S
+> LLM program evolution
+> GigaEvolve / OpenEvolve
+> External evaluator
+> ASR , L 2,LPIPS , Q, S
+> Best evolved x′
+> d(H(x′), h t)≤
+> τ0
+> Black-box hash oracle O: returns d
+> only, counts queries, enforces budget B
+> queries / d
+> external score S(selection)
+
+Fig. 1. Proposed framework. Per-hash tuned seed attacks seed LLM-guided program evolution against the black-box oracle O returning only the hash distance d. A single external evaluator scores each candidate with S (lower is better). 
+
+2.3 LLM–based evolution 
+
+Evolutionary computation has a well–established tradition in combinatorial opti-mization. Its integration with large language models represents an emerging and rapidly advancing paradigm. One of the first significant papers in this domain was the AlphaEvolve paper [21]. The authors achieved state–of–the–art results in the code generation task. After that, OpenEvolve framework was presented as an open source implementation of Google DeepMind’s AlphaEvolve [24]. And other researchers have presented GigaEvo, an open-source framework for LLM–driven evolutionary computation with modular implementations of key components: MAP–Elites quality diversity algorithms, asynchronous DAG–based evaluation pipelines, LLM mutation operators with bidirectional lineage tracking, and flexi-ble configuration management - enabling rapid prototyping and improving upon prior results [15]. Beyond code generation and optimization, LLM-guided evo-lutionary search has also been applied to the automated design of methods, for example in uncertainty quantification [23]. To the best of our knowledge, no prior work has applied LLM-driven quality-diversity evolution to adversarial attacks on perceptual hashing algorithms. The present work introduces this approach in the context of targeted second-preimage collision attacks. 
+
+## 3 Method 
+
+Targeted Second-Image Attack Formulation. Let xs be a source image, xt
+
+a target image, and ht = H(xt) the target hash. A targeted second-image attack searches for an adversarial image x′ close to xs such that 
+
+d(H(x′), h t) ≤ τ0, (1) where d is Hamming distance for binary hashes and L1 distance for PhotoDNA descriptors. The target image is used by the benchmark only to compute ht.Candidate attacks receive the source image, the target hash through an ora-cle, the matching threshold, and query feedback; they do not receive gradients, internal hash features, or the target image itself. LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 5                  
+
+> Table 2. Perceptual hashing algorithms considered in the study. Hash Descriptor Distance Threshold τ0Dominant feature scale pHash 64-bit binary Hamming 12 Global DCT structure PDQ 256-bit binary Hamming 92 Global DCT structure PhotoDNA 144-dimensional numeric descriptor (1152 bits)
+> L13855 Mid-scale gradient structure NeuralHash 96-bit binary Hamming 17 Neural image embedding
+
+Matching Thresholds. The matching threshold τ0 is fixed per hash and is not optimized by the attack. We use the operating points summarized in Table 2: 12 for pHash, 92 for PDQ, 3855 for PhotoDNA, and 17 for NeuralHash. A run is counted as successful only when the externally recomputed distance is within the corresponding threshold. 
+
+Hash Similarity Loss. For a set of N image pairs, attack success rate is 
+
+ASR = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1
+
+
+
+min  
+
+> j
+
+d(H(x′ 
+
+> i,j
+
+), h t,i ) ≤ τ0
+
+
+
+, (2) where j indexes candidates observed during the attack. The oracle tracks the best hash-distance candidate during a run, and attacks return an xbest image for external evaluation. Using the best observed candidate avoids penalizing an attack whose final iterate is worse than an earlier candidate. 
+
+Visual Distortion Constraint. Visual cost is measured by pixel-space L2
+
+and LPIPS [28]. Query cost is the number of hash-oracle calls. The main ranking criterion is the implementation score 
+
+S = L2 + 0 .02 Q
+
+max(ASR , 0.05) . (3) In the implementation, a technical zero-success penalty is added: 
+
+S ← S + 10000 · 1[ASR = 0] . (4) Lower score is better. The means in Eq. 3 are computed over all evaluated pairs, including failures. The denominator penalizes low-ASR attacks; among successful attacks, the numerator favors lower L2 distortion and fewer queries. The coefficient 0.02 = 1 /50 gives 50 extra oracle calls the same score cost as one unit of L2. The zero-success penalty prevents attacks with no collisions from being ranked as plausible low-distortion candidates. LPIPS is reported separately and is not part of S in the current benchmark tables, so a lower score should not be read as perceptual closeness when LPIPS remains high. 
+
+Optimization via Evolutionary Search. All attacks are executed through a common functional interface, 
+
+run_attack (xs, O, θ, B, r ) → R, (5) 6 A. Krylov et al.         
+
+> Table 3. Metrics reported by the external evaluator. Metric Meaning Direction ASR Fraction of image pairs for which the returned candidate reaches the target matching threshold. Higher
+> L2Euclidean distance between the source image and the returned candidate in RGB pixel space. Lower LPIPS Learned perceptual image patch similarity between the source image and the returned candidate. Lower Queries Number of hash-oracle calls spent by the attack; the initial source-to-target distance is not counted. Lower Final hash distance Distance between the returned candidate hash and the target hash after external recomputation. Lower
+> SComposite score used for configuration optimization and program evolution. Lower
+
+where O is the hash oracle, θ are attack parameters, B is the query budget, 
+
+r is a random seed, and R contains the best image found by the attack. This deliberately simple contract is used for both hand-written baselines and LLM-generated Python programs. The oracle is the only source of feedback. It stores the target hash, clips candidate images to the valid pixel range, counts queries, enforces the budget, and returns only the current distance to the target hash. This is a graded-distance black-box oracle, not a hard-label match/no-match API; hard-label and rate-limited settings are outside the present evaluation. The initial distance from xs to ht is computed when the oracle is created but is not counted as an attack query. During the run the oracle maintains a best-so-far candidate by hash distance. The evaluator is the final source of truth. After an attack returns, it recom-putes H(xbest ), success, final hash distance, L2, LPIPS when requested, query count, and score. It does not trust success flags or metrics reported by the at-tack itself. This is especially important for program evolution: generated code can search for better candidates, but it cannot improve the reported result by changing bookkeeping or output formatting. The same evaluator is used for orig-inal baselines, optimized configurations, and evolved programs. 
+
+Configuration optimization. Configuration optimization is performed inde-pendently for each hash using the Optuna framework [1] with a tree-structured Parzen estimator sampler [26]. The first phase searches for configurations that reach the threshold reliably; the second phase ranks configurations by the score in Eq. 3. This two-phase design avoids selecting visually clean attacks that rarely collide, while still preferring lower distortion and fewer queries once success is achieved. It also makes the comparison fair across hashes with different descrip-tor lengths, distance distributions, and useful perturbation scales. The resulting optimized configurations form the seed context for the LLM-evolution stage. LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 7          
+
+> Table 4. Integration of the two program-evolution backends. Property GigaEvolve OpenEvolve Seed context Optimized attack implementations, cleaned public parameters, empirical hash-specific notes, and the same evaluator contract. The same seed context, loaded into the OpenEvolve program database and mutation prompt. Candidate contract Candidate must expose
+> run_attack and return an image that can be evaluated externally. Same contract; malformed or failing candidates receive penalty metrics. Objective interface Uses the EvoHash evaluation package directly with lower S
+> treated as better. Exposes combined_score=-S
+> because OpenEvolve maximizes its framework-native score. Search structure Stores lineage and evaluation outputs for generated candidates. Uses MAP-Elites-style archive, islands, and behavior features based on ASR, L2, and queries. Final artifact A Python attack program scored by the external evaluator. A Python attack program scored by the external evaluator.
+
+Program evolution. For each hash, GigaEvolve and OpenEvolve receive the optimized attack implementations, empirical notes, and the evaluator contract. Candidate programs are generated by LLM mutation and executed on the bench-mark image pairs. A valid candidate must implement the interface in Eq. 5; invalid programs, runtime failures, and malformed results are assigned penalty scores by the evaluator. OpenEvolve maximizes a framework-native score, so the adapter exposes −S while preserving all original metrics for analysis. GigaEvolve uses the same evaluator and stores candidate lineage during search. The evolved changes are algorithmic rather than cosmetic: the search basis, update schedule, restarts, clipping strategy, plateau handling, and post-success refinement can all be modified by the generated code, but the scoring function and benchmark pairs remain external to the candidate program. 
+
+Seed Algorithm Portfolio. The seed portfolio contains five attacks. SimBA tests signed basis directions greedily [11]. NES estimates a gradient from random perturbations [13]. ZO-SignSGD is a local zeroth-order sign-gradient baseline related to query-efficient sign-gradient black-box attacks [19]. The Prokos seed is an adaptation of the targeted perceptual-hash attack family introduced by Prokos et al. [22]. ATKScopes uses multiresolution perturbations optimized with Adam [16] and is the strongest scale-aware seed in the portfolio [29]. Each seed attack is evaluated in an original configuration and in a per-hash optimized configuration. 8 A. Krylov et al. 
+
+## 4 Dataset 
+
+All image pairs are sampled from ImageNet [7]. The benchmark contains 30 pairs and is used for hyperparameter optimization, program evolution, and reported comparisons. All images are resized to 256 × 256 using bilinear interpolation and represented in RGB with pixel values in [0 , 1] when computing L2. The reported tables correspond to the public benchmark split used by the evaluation artifacts. Because the same 30 pairs are used for search and reporting, the results should be interpreted as controlled benchmark evidence rather than a deployment-scale generalization claim. 
+
+## 5 Experiments 
+
+5.1 Stage 1: ASR Maximization via Hyperparameter Optimization 
+
+The first experimental stage evaluates the five hand-written seed attacks for each hash under the hash-specific query budget. This stage prioritizes reliable threshold reaching, as measured by Eq. 2, and provides the original seed results summarized in Table 6. 
+
+5.2 Stage 2: Joint Quality–Efficiency Optimization via Composite Score 
+
+The second stage tunes attack configurations independently for each hash and ranks viable candidates by the composite score in Eq. 3. The score combines pixel-space L2, query count, and ASR, while LPIPS is retained as a separate reporting metric. The optimized configurations form the seed programs for the evolution stage. 
+
+5.3 Stage 3: LLM-Driven Evolutionary Search 
+
+The third stage uses GigaEvolve and OpenEvolve to mutate Python attack pro-grams rather than only scalar parameters. Every generated candidate is evalu-ated by the same external evaluator on the 30-pair benchmark. Invalid programs, runtime failures, malformed results, and zero-success candidates receive evalua-tor penalties rather than manually curated scores. 
+
+Evolution search configuration. Program evolution is budgeted to approxi-mately 1,000 candidate programs per hash per backend. OpenEvolve runs 1,000 
+
+iterations with one candidate per iteration; GigaEvolve runs 100 iterations with up to 10 candidates per iteration. Both backends use the same mutation model, Qwen3.6-27B served in FP8. Each candidate is evaluated on the same 30-pair benchmark under the hash-specific query budget, so the numbers in Tables 7 and 8 correspond to a single evolution run with a single random seed per hash per backend; cross-seed variance is not reported in this study. The seed-configuration stage (Stage 2) and the evolution stage were not run under a matched total-evaluation budget, so the comparison against optimized seeds is not compute-matched; a compute-matched seed search is left to future work. LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 9          
+
+> Table 5. Optimization and evolution protocol. Stage Protocol Original seed evaluation Run five hand-written black-box seed attacks for each hash whenever the implementation is available under the hash-specific budget. Configuration optimization Tune attack hyperparameters independently for each hash and rank candidates by Safter first requiring reliable threshold-reaching behavior. Program evolution Use optimized attack programs as seeds for GigaEvolve and OpenEvolve; evaluate generated candidates on the 30-pair benchmark. Metric recomputation Recompute ASR, L2, LPIPS, queries, final hash distance, and Sfrom returned images with the same external evaluator.
+
+5.4 Baselines Single-Stage Soft-Label Attacks The single-stage soft-label baselines are SimBA, NES, and ZO-SignSGD. They use oracle distance feedback through-out the attack and are evaluated in original and optimized configurations when available. 
+
+PHA Attack Systems We use Prokos and ATKScopes. Prokos represents prior targeted hash-attack methodology, while ATKScopes supplies the strongest scale-aware seed in this benchmark. The standard query budgets are 10,000 queries per pair for pHash and PDQ, 20,000 for PhotoDNA, and 30,000 for NeuralHash. LPIPS is computed only for reporting, not for search. NeuralHash receives asymmetric treatment for two reasons. First, in preliminary original-configuration runs on NeuralHash only ATKScopes reached a non-trivial success rate (ASR 0.50 ); the other four seeds did not exceed ASR 0.13 (NES 0.00 , Prokos 0.03 , SimBA 0.13 , ZO-SignSGD 
+
+0.03 ), so tuning them offered little prospect of a viable configuration. Second, NeuralHash is substantially more expensive per query in the current implemen-tation, which makes full hyperparameter optimization of low-ASR seeds not cost-effective. We therefore report full configuration optimization for NeuralHash only for ATKScopes and retain the other seeds as original baselines. 
+
+## 6 Results 
+
+6.1 Main Results 
+
+Table 6 summarizes the best original and optimized seed configurations. Table 7 reports the evolved candidates, and Table 8 compares the best evolved program with the best optimized seed. 10 A. Krylov et al. 
+
+The results in this section are in-sample benchmark-selection results: the same 30 pairs are used for tuning, evolution, and reporting. ASR values should therefore be read as small-sample counts. ASR values of 1.00, 0.83, 0.70, and 0.67 correspond to 30/30, 25/30, 21/30, and 20/30 successes; Wilson 95% intervals are [0.89, 1.00], [0.66, 0.93], [0.52, 0.83], and [0.49, 0.81], respectively. 
+
+Table 6. Best seed attacks before and after configuration optimization. Lower score is better; ∆S is computed between the best original score and the best optimized score in the row. Hash Best original Sorig ASR Best optimized Sopt ASR ∆S 
+
+pHash ATKScopes 111.3 0.90 ATKScopes 86.1 1.00 22.7% PDQ Prokos 87.6 1.00 ATKScopes 44.2 1.00 49.5% PhotoDNA SimBA 163.8 1.00 SimBA 153.6 1.00 6.2% NeuralHash ATKScopes 1021.8 0.50 ATKScopes 654.9 0.70 35.9% 
+
+Table 7. Evolved attack candidates. Hash Candidate ASR L2 LPIPS Queries S
+
+pHash OpenEvolve 1.00 27.38 0.150 1471 56.80 pHash GigaEvolve 1.00 38.94 0.082 910 57.13 PDQ OpenEvolve 1.00 13.80 0.111 676 27.31 PDQ GigaEvolve 1.00 25.48 0.101 628 38.04 PhotoDNA GigaEvolve 1.00 104.50 0.572 1836 141.22 PhotoDNA OpenEvolve 1.00 100.45 0.596 2297 146.40 NeuralHash GigaEvolve 0.83 133.07 0.697 9382 384.84 NeuralHash OpenEvolve 0.67 127.22 0.682 7396 412.72 
+
+Table 8. Best optimized seed versus best evolved attack. Improvement is score reduc-tion. Hash Best optimized seed Sopt Best evolved Sevo Improvement pHash ATKScopes 86.08 OpenEvolve 56.80 34.0% PDQ ATKScopes 44.25 OpenEvolve 27.31 38.3% PhotoDNA SimBA 153.64 GigaEvolve 141.22 8.1% NeuralHash ATKScopes 654.89 GigaEvolve 384.84 41.2% 
+
+The main conclusion is not that evolution always improves every individual metric. The improvement is in the composite score. Relative to the best opti-mized seed, the best-by-score evolved program improves all reported raw axes for LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 11 
+
+PDQ and NeuralHash, while pHash and PhotoDNA trade more queries for lower visual cost. For NeuralHash, only ATKScopes receives full seed-configuration op-timization (the other four seeds did not exceed ASR 0.13 in their original config-urations, as noted in Section 5), so the 41.2% reduction is against the optimized ATKScopes seed rather than a fully optimized five-seed portfolio; the evolved ASR remains 25/30. For PhotoDNA and NeuralHash, LPIPS remains high, so these attacks should be interpreted as benchmark collisions rather than visually imperceptible examples. 
+
+6.2 Program-Level Changes 
+
+The evolved programs were not mere parameter variants. Table 9 summarizes the main structural changes found in the final candidates. The recurring pat-tern is hash-specific search-space adaptation followed by a refinement phase that reduces distortion after reaching the collision threshold. 
+
+Table 9. Qualitative changes introduced by evolved attack programs. Hash Candidate Ancestor Main program-level changes pHash OpenEvolve ATKScopes Collision post-processing; smaller-L2 selection; DCT coefficient shrinkage; luminance-consistent projection pHash GigaEvolve ATKScopes Sequential low-frequency DCT traversal; decaying step size; gradient clipping; final L2
+
+refinement PDQ OpenEvolve ATKScopes Luminance-oriented search; coordinate importance estimates; DCT delta scaling; small-coefficient pruning PDQ GigaEvolve ATKScopes Single grayscale DCT variable shared across channels; normalized RGB perturbation scale PhotoDNA GigaEvolve ATKScopes Central-crop PhotoDNA search; patch-DCT coordinates; plateau handling while preserving optimizer state PhotoDNA OpenEvolve SimBA Adaptive SimBA step; local refinement over successful coordinates; greedy DCT-component reduction NeuralHash GigaEvolve ATKScopes Multi-coordinate DCT probes; adaptive step expansion/shrinkage; binary search back to source after success NeuralHash OpenEvolve ATKScopes Probing step; multi-coordinate restarts near threshold; accumulated successful DCT perturbations 
+
+Figure 2 illustrates the OpenEvolve search trajectory. The plotted value is the best score observed so far along the champion chain, normalized by the score 12 A. Krylov et al. 
+
+of the initial seed program for the corresponding hash. Values below 1.0 indicate a lower-score candidate during program evolution. 0.0 0.2 0.4 0.6 0.8 1.0    
+
+> Normalized search progress
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Relative score
+> pHash PDQ PhotoDNA NeuralHash
+
+Fig. 2. Normalized OpenEvolve champion score during program evolution. Lower val-ues indicate improvement over the initial seed program. 
+
+## 7 Discussion 
+
+Program evolution improves beyond seed tuning. Configuration optimiza-tion substantially improves pHash, PDQ, and NeuralHash, but evolved programs still reduce the final score for every hash. This indicates that the useful search space includes algorithmic changes rather than only scalar hyperparameters. 
+
+The improvement is score-level, not metric-wise monotonic. The evolved candidates do not always reduce L2, LPIPS, and query count simultaneously. For example, a candidate may spend more queries to obtain a substantially cleaner image, or may preserve ASR while reducing distortion. Reporting all metrics is therefore necessary. The composite score should be interpreted as a ranking criterion, not as a replacement for the individual measurements. 
+
+Hash geometry matters. pHash and PDQ are easier targets in this bench-mark once attacks operate in a suitable low-frequency search space. PhotoDNA requires larger perturbations, but evolved candidates still reduce score relative to optimized seeds. NeuralHash is the hardest target in this benchmark: its best evolved ASR is 0.83, and it requires substantially more queries than the classical hashes. This is consistent with the fact that the useful geometry is less directly aligned with simple DCT threshold comparisons. 
+
+The two evolution backends are complementary. OpenEvolve gives the best score for pHash and PDQ, while the GigaEvo-based pipeline gives the best score for PhotoDNA and NeuralHash. This suggests that the benefit is not tied LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 13 
+
+to a single evolution backend. The common driver is the ability to generate and evaluate program-level attack variants under a strict external metric. 
+
+Defensive interpretation. The benchmark should be read as an audit pro-tocol, not only as a catalog of attacks. A perceptual-hash system that appears robust against default attack settings may look different after per-hash hyper-parameter tuning and program evolution. This means that threshold selection, preprocessing, and consistency checks should be evaluated against strengthened attacks rather than against natural transformations or fixed baselines alone. The present study does not claim deployment-ready defense parameters; such parameters require domain-specific false-positive and benign-recall evaluation at substantially larger scale. 
+
+## 8 Conclusion 
+
+We presented a unified black-box framework for targeted second-image attacks on perceptual image hashes and used it to evaluate fixed seed attacks, opti-mized configurations, and LLM-evolved attack programs. On the in-sample 30-pair benchmark, the best evolved candidates reduce the composite score rela-tive to the best optimized seed by 34.0% for pHash, 38.3% for PDQ, 8.1% for PhotoDNA, and 41.2% for NeuralHash. The results support a narrower claim: under this controlled evaluator, searching over attack programs can find lower-score candidates than tuning fixed black-box attacks alone. Held-out evaluation, repeated evolution runs, and compute-matched seed tuning are needed before claiming generalization. 
+
+## 9 Limitations 
+
+The study is empirical and depends on the available hash implementations and preprocessing. Industrial deployments may use different thresholds, rate limits, and decision logic. The benchmark contains 30 ImageNet pairs and the same split is used for search and reporting, so the results are controlled benchmark evidence rather than deployment-scale generalization. NeuralHash is computationally ex-pensive in the current framework; only ATKScopes receives full configuration optimization for that hash, as the remaining seeds did not exceed ASR 0.13 at baseline. The reported evolution results come from a single evolution run with a single random seed per hash per backend, so cross-seed variance and paired significance are not reported. The experiments cover targeted second-image col-lisions only, not untargeted evasion or hash inversion. 
+
+## 10 Future Work 
+
+Future work should evaluate larger and more diverse image sets, including do-mains whose low-level statistics differ from ImageNet. A second direction is 14 A. Krylov et al. 
+
+to extend the same evaluator to untargeted evasion objectives and to realis-tic API constraints such as rate limits, latency, hard-label feedback, and noisy feedback. A third direction is defensive evaluation: the evolved attacks can be used to test preprocessing, threshold selection, and consistency checks under a stronger benchmark than fixed default attacks. Finally, equipping deployed hash-matching decisions with calibrated uncertainty estimates or statistical guaran-tees, as studied in the uncertainty-quantification literature [10], is a promising direction toward the instance-wise guarantees motivated in the introduction. 
+
+## References 
+
+1. Akiba, T., Sano, S., Yanase, T., Ohta, T., Koyama, M.: Optuna: A next-generation hyperparameter optimization framework (2019), https://arxiv.org/abs/1907.10902 2. Alkhowaiter, M., Almubarak, K., Zou, C.: Evaluating perceptual hashing algo-rithms in detecting image manipulation over social media platforms. In: 2022 IEEE International Conference on Cyber Security and Resilience (CSR). pp. 149–156 (2022). https://doi.org/10.1109/CSR54599.2022.9850288 3. Arthur, C.: Twitter to introduce photodna system to block child abuse images. The Guardian 22 (2013) 4. Burgett, G.: Photodna lets google, fb and others hunt down child pornography without looking at your photos. PetaPixel, August (2014) 5. Cobbe, J.: Data protection, eprivacy, and the prospects for apple’s on-device csam detection system in europe. SocArXiv (2021) 6. Davis, A., Rosen, G.: Open-sourcing photo-and video-matching technology to make the internet safer. Facebook Newsroom (2019) 7. Deng, J., et al.: Imagenet: A large-scale hierarchical image database. In: 2009 IEEE Conference on Computer Vision and Pattern Recognition. pp. 248–255 (2009). https://doi.org/10.1109/CVPR.2009.5206848 8. Dolhansky, B., Canton-Ferrer, C.: Adversarial collision attacks on image hashing functions. ArXiv abs/2011.09473 (2020), https://api.semanticscholar.org/CorpusID:227013585 9. Farid, H.: An overview of perceptual hashing. Journal of Online Trust and Safety 
+
+1(1) (2021) 10. Fishkov, A., Schweighofer, K., Ielanskyi, M., Kotelevskii, N., Guizani, M., Panov, M.: Uncertainty quantification for regression using proper scoring rules (2025), https://arxiv.org/abs/2509.26610 11. Guo, C., Gardner, J.R., You, Y., Wilson, A.G., Weinberger, K.Q.: Simple black-box adversarial attacks (2019), https://arxiv.org/abs/1905.07121 12. Ignatov, D.I., Kuznetsov, S.O.: Frequent itemset mining for clustering near dupli-cate web documents. In: Rudolph, S., Dau, F., Kuznetsov, S.O. (eds.) Conceptual Structures: Leveraging Semantic Technologies. pp. 185–200. Springer Berlin Hei-delberg, Berlin, Heidelberg (2009) 13. Ilyas, A., Engstrom, L., Athalye, A., Lin, J.: Black-box adversarial attacks with limited queries and information (2018), https://arxiv.org/abs/1804.08598 14. Ith, T.: Microsoft’s photodna: Protecting children and businesses in the cloud. Retrieved from Microsoft News Center: https://news. microsoft. com/features/microsofts-photodna-protecting-children-and-businesses-in-the-cloud (2015) LLM-Guided Program Evolution for Targeted Black-Box Attacks on PHAs 15 15. Khrulkov, V., et al.: Gigaevo: An open source optimization framework powered by llms and evolution algorithms (2025), https://arxiv.org/abs/2511.17592 16. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization (2017), https://arxiv.org/abs/1412.6980 17. Klinger, E., Starkweather, D.: phash: The open source perceptual hash library (2013) 18. Leblanc-Albarel, D., Preneel, B.: Black-box collision attacks on widely deployed perceptual hash functions. Cryptology ePrint Archive, Paper 2024/1869 (2024), https://eprint.iacr.org/2024/1869 19. Liu, S., Chen, P.Y., Chen, X., Hong, M.: signSGD via zeroth-order oracle. In: International Conference on Learning Representations (2019), https://openreview.net/forum?id=BJe-DsC5Fm 20. Madden, J., Bhavsar, M., Dorje, L., Li, X.: Robustness of practical percep-tual hashing algorithms to hash-evasion and hash-inversion attacks (2024), https://arxiv.org/abs/2406.00918 21. Novikov, A., et al.: Alphaevolve: A coding agent for scientific and algorithmic discovery (2025), https://arxiv.org/abs/2506.13131 22. Prokos, J., et al.: Squint hard enough: Attacking perceptual hashing with ad-versarial machine learning. In: 32nd USENIX Security Symposium (USENIX Security 23). pp. 211–228. USENIX Association, Anaheim, CA (Aug 2023), https://www.usenix.org/conference/usenixsecurity23/presentation/prokos 23. Seleznyov, M., Korbut, D., Moskvoretskii, V., Somov, O., Panchenko, A., Tu-tubalina, E.: Evolutionary search for automated design of uncertainty quantifi-cation methods. In: T.Y.S.S., S., Rodriguez, J.D., de Gibert, O. (eds.) Proceed-ings of the 64th Annual Meeting of the Association for Computational Lin-guistics (Volume 4: Student Research Workshop). pp. 1280–1290. Association for Computational Linguistics, San Diego, California, United States (Jul 2026). https://doi.org/10.18653/v1/2026.acl-srw.115, https://aclanthology.org/2026.acl-srw.115/ 24. Sharma, A.: Openevolve: an open-source evolutionary coding agent (2025), https://github.com/algorithmicsuperintelligence/openevolve 25. Struppek, L., Hintersdorf, D., Neider, D., Kersting, K.: Learning to break deep perceptual hashing: The use case neuralhash. In: 2022 ACM Conference on Fairness Accountability and Transparency. p. 58–69. FAccT ’22, ACM (Jun 2022). https://doi.org/10.1145/3531146.3533073, http://dx.doi.org/10.1145/3531146.3533073 26. Watanabe, S.: Tree-structured parzen estimator: Understanding its algo-rithm components and their roles for better empirical performance (2025), https://arxiv.org/abs/2304.11127 27. Zauner, C.: Implementation and benchmarking of perceptual image hash functions (2010), https://api.semanticscholar.org/CorpusID:17075066 28. Zhang, R., Isola, P., Efros, A.A., Shechtman, E., Wang, O.: The un-reasonable effectiveness of deep features as a perceptual metric (2018), https://arxiv.org/abs/1801.03924 29. Zhang, Y., et al.: Atkscopes: Multiresolution adversarial perturbation as a unified attack on perceptual hashing and beyond. In: 34th USENIX Security Symposium (USENIX Security 25). pp. 5913–5930. USENIX Association, Seattle, WA (Aug 2025), https://www.usenix.org/conference/usenixsecurity25/presentation/zhang-yushu
