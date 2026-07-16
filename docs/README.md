@@ -6,47 +6,56 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-14
-- 运行时间：2026-07-14 20:34:29 UTC
+- 最新运行日期：2026-07-16
+- 运行时间：2026-07-16 21:25:33 UTC
 - 运行状态：成功
-- 本次总论文数：9
-- 精读区：4
-- 速读区：5
+- 本次总论文数：11
+- 精读区：5
+- 速读区：6
 
 ### 今日简报（AI）
-今天成功精读了9篇前沿论文，其中两篇高分研究聚焦于音频-视频伪造定位和合成图像检测。最值得看的方向是利用频率感知模型和噪声残差聚类技术，精准识别媒体伪造内容。建议普通读者关注这些技术在反欺诈和信息验证中的实际应用，以增强对网络虚假信息的防范意识。
-- 详情：[/202607/14/README](/202607/14/README)
+- 今日共生成 11 篇推荐（精读 5 篇，速读 6 篇）
+- 精读：《Video Transformer for Remote Identity Document Hologram Detection》（9.0/10）, 《Watermark Forensics for Generative Models: An Information-Theoretic Perspective》（9.0/10）
+- 速读：《Enhancing In-context Panoramic Generation via Geometric-aware Pretraining》（6.0/10）, 《RaMark: Radioactive Watermarking for Generated Tabular Data》（6.0/10）, 《Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection》（6.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202607/16/README](/202607/16/README)
 
 ### 精读区论文标签
-1. [UniSkip-Mamba: A Frequency-Aware State Space Model for Audio-Visual Temporal Forgery Localization](/202607/14/2607.04498v1-uniskip-mamba-a-frequency-aware-state-space-model-for-audio-visual-temporal-forgery-localization)  
+1. [Video Transformer for Remote Identity Document Hologram Detection](/202607/16/2607.11419v1-video-transformer-for-remote-identity-document-hologram-detection)  
    标签：评分：9.0/10、query:imgfor
-   evidence：用于检测和定位音视频伪造的频率感知模型
-2. [Effective Synthetic Image Detection via Noise Residual Clustering](/202607/14/2607.10695v1-effective-synthetic-image-detection-via-noise-residual-clustering)  
+   evidence：通过视频分析检测身份证件伪造
+2. [Watermark Forensics for Generative Models: An Information-Theoretic Perspective](/202607/16/2607.13003v1-watermark-forensics-for-generative-models-an-information-theoretic-perspective)  
    标签：评分：9.0/10、query:imgfor
-   evidence：使用噪声残差聚类无训练检测合成图像
-3. [h-Flow: Flexible Flow-based Image Editing via Doob's h-Transform](/202607/14/2607.10800v1-h-flow-flexible-flow-based-image-editing-via-doobs-h-transform)  
+   evidence：用于定位编辑部分的水印取证
+3. [Continuously Evolving Deepfake Detection: An Architecture and Public-Benchmark Evaluation of a Dynamic Detection System](/202607/16/2607.13234v1-continuously-evolving-deepfake-detection-an-architecture-and-public-benchmark-evaluation-of-a-dynamic-detection-system)  
    标签：评分：9.0/10、query:imgfor
-   evidence：基于h变换的流式图像编辑
-4. [LLM-Guided Program Evolution for Targeted Black-Box Attacks on Perceptual Hash Algorithms](/202607/14/2607.11472v1-llm-guided-program-evolution-for-targeted-black-box-attacks-on-perceptual-hash-algorithms)  
+   evidence：涉及图像篡改（深度伪造）的检测
+4. [DNA: Dual-stage Native Attribution for Generated Image Source Tracing](/202607/16/2607.13685v1-dna-dual-stage-native-attribution-for-generated-image-source-tracing)  
+   标签：评分：9.0/10、query:imgfor
+   evidence：数字取证中生成图像的来源追踪
+5. [DiTailed: Ensuring Visual Object Consistency in Text-Image-to-Image Flow Matching Models](/202607/16/2607.12539v1-ditailed-ensuring-visual-object-consistency-in-text-image-to-image-flow-matching-models)  
    标签：评分：8.0/10、query:imgfor
-   evidence：攻击用于图像伪造检测的感知哈希算法
+   evidence：确保文本引导图像编辑中的一致性
 
 ### 速读区论文标签
-1. [VocaDet: Sample-Driven Open-Vocabulary Object Detection and Segmentation via Visual Tokenization and Vector Database Retrieval](/202607/14/2607.08541v1-vocadet-sample-driven-open-vocabulary-object-detection-and-segmentation-via-visual-tokenization-and-vector-database-retrieval)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：开放词汇对象检测与分割用于区域定位
-2. [What Pixels Are Enough? SEAMS: Sufficiency Saliency via MSE-Preservation Soft-Masks](/202607/14/2607.09164v1-what-pixels-are-enough-seams-sufficiency-saliency-via-mse-preservation-soft-masks)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：用于定位对模型行为重要图像区域的显著性方法。
-3. [NucleiSky enables cross-scale multimodal registration of microscopy data using nuclei constellations](/202607/14/biorxiv-10-64898-2026-06-29-735028-v2-nucleisky-enables-cross-scale-multimodal-registration-of-microscopy-data-using-nuclei-constellations)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：利用核星座在较大参考图像中定位查询区域
-4. [Text guidance is powerful but prompt-sensitive for weakly-supervised leaf symptom segmentation](/202607/14/biorxiv-10-64898-2026-07-10-737680-v1-text-guidance-is-powerful-but-prompt-sensitive-for-weakly-supervised-leaf-symptom-segmentation)  
-   标签：评分：7.0/10、query:imgfor
-   evidence：用于定位图像区域的弱监督分割方法
-5. [Structured Evidence Selection for Weakly Supervised Video Anomaly Detection](/202607/14/2607.10298v1-structured-evidence-selection-for-weakly-supervised-video-anomaly-detection)  
+1. [Enhancing In-context Panoramic Generation via Geometric-aware Pretraining](/202607/16/2607.08765v1-enhancing-in-context-panoramic-generation-via-geometric-aware-pretraining)  
    标签：评分：6.0/10、query:imgfor
-   evidence：结构化证据选择用于异常定位
+   evidence：涉及图像编辑技术，如修复和风格转移。
+2. [RaMark: Radioactive Watermarking for Generated Tabular Data](/202607/16/2607.09000v1-ramark-radioactive-watermarking-for-generated-tabular-data)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：用于数据完整性的水印，一种操纵检测形式。
+3. [Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection](/202607/16/2607.10329v1-imperceptible-and-reversible-adversarial-examples-against-vision-language-models-for-privacy-protection)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：使用对抗性编辑来分析和逆向图像过程。
+4. [GFR-SAM: Training-Free Referring Camouflaged Object Segmentation via Cross-Image Prompting](/202607/16/2607.11732v1-gfr-sam-training-free-referring-camouflaged-object-segmentation-via-cross-image-prompting)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：用于定位图像中伪装区域的分割框架
+5. [Statistical Non-linear Reconstruction Loss for Image Anomaly Detection](/202607/16/2607.12866v1-statistical-non-linear-reconstruction-loss-for-image-anomaly-detection)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：用于异常检测的重建损失，适用于检测图像编辑。
+6. [Classpose drives the discovery of colorectal cancer phenotypes in clinical grade whole slide images](/202607/16/biorxiv-10-64898-2025-12-18-695211-v2-classpose-drives-the-discovery-of-colorectal-cancer-phenotypes-in-clinical-grade-whole-slide-images)  
+   标签：评分：6.0/10、query:imgfor
+   evidence：用于医学图像中定位的细胞分割和表型分析框架。
 
 
 <div class="dpr-home-promo-card">

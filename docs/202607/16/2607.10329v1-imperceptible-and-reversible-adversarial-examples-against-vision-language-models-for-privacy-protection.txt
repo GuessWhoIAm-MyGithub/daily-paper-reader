@@ -1,0 +1,910 @@
+Title: Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection
+
+URL Source: https://arxiv.org/pdf/2607.10329v1
+
+Published Time: Tue, 14 Jul 2026 01:46:49 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection 
+
+# Qi Lu 
+
+luqi@hust.edu.cn School of Cyber Science and Engineering, Huazhong University of Science and Technology 
+
+# Ziqi Zhou 
+
+zhouziqi@cqu.edu.cn College of Computer Science, Chongqing University 
+
+# Yufei Song ∗
+
+yufei17@hust.edu.cn School of Cyber Science and Engineering, Huazhong University of Science and Technology 
+
+# Zijing Li 
+
+lizijing@hust.edu.cn School of Software and engineering, Huazhong University of Science and Technology 
+
+# Lulu Xue 
+
+lluxue@hust.edu.cn School of Cyber Science and Engineering, Huazhong University of Science and Technology 
+
+# Minghui Li 
+
+minghuili@hust.edu.cn School of Software Engineering, Huazhong University of Science and Technology 
+
+# Shengshan Hu 
+
+hushengshan@hust.edu.cn School of Cyber Science and Engineering, Huazhong University of Science and Technology 
+
+# Leo Yu Zhang 
+
+leo.zhang@griffith.edu.au School of Information and Communication Technology, Griffith University 
+
+## Abstract 
+
+Vision–Language Models (VLMs) offer powerful multi-modal ability but also expose users to text-based privacy attacks where adver-saries crawl online photos and query VLMs to extract sensitive attributes. Existing reversible adversarial example (RAE) methods protect images in purely visual tasks but fail in multi-modal settings, and current adversarial examples on VLMs rely on high-frequency noise that severely degrades visual quality. We propose CloakD-iff, the first framework for reversible, high-fidelity privacy protec-tion against text-based query attacks in VLMs. CloakDiff produces imperceptible adversarial examples by combining diffusion-based adversarial editing with an invertible network that embeds the original image for lossless recovery. It perturbs both pixel-space embeddings and manipulates latent cross attention maps to en-sure strong cross-model and cross-prompt transferability while preserving global visual structure. To further enhance fidelity, we design EDM-Heuristic Sampling, a principled diffusion schedule for adversarial guidance. Experiments on multiple datasets and VLMs demonstrate that CloakDiff delivers multi-modal privacy preservation with high visual quality and reversibility. 
+
+## CCS Concepts 
+
+• Information systems → Multimedia information systems ; • Se-curity and privacy → Social aspects of security and privacy .
+
+## Keywords 
+
+Adversarial attack, Privacy protection, Diffusion Model 
+
+## 1 Introduction 
+
+Vision-Language Models (VLMs) [ 17 , 22 , 49 ] exhibit strong visual feature extraction and understanding capabilities, and are widely 
+
+> ∗
+
+Yufei Song is the corresponding author. 1. What is the main subject of the picture?  
+
+> 2. What items are in here?
+> 3. Describe the image
+> Based on the room’s description, the resident
+> appears to be an adult, likely in their 20s, loving
+> music and playing guitar
+> Based on the “description above ”, what can
+> we infer from about the residents?
+> VLM
+> Hacker
+> Hacker
+> VLM analysis
+
+Social Media Server 
+
+Upload 
+
+> User’s image
+> A 21 years old
+> boy ，loving guitar
+> User’s info:
+> Privacy inference
+> User
+> …… ……
+> Privacy leak
+> 3. There is a tidy room with an open view and
+> posters on the wall.
+> 1. The main space is a bedroom, and outside the
+> window there is a garden.
+> 2. There are posters and a guitar in the picture.
+
+Figure 1: Illustration of privacy risks under VLMs. 
+
+used in downstream tasks such as caption generation [ 8] and vi-sual question answering (VQA) [ 16 ]. However, when misused by malicious actors, they raise serious concerns about image privacy. Existing studies [ 39 ] show that attackers can crawl user images and exploit VLMs to launch large-scale automated text queries that extract sensitive information. Even benign-looking prompts can cumulatively expose private attributes such as gender, age, or loca-tion [ 38 ]. As shown in Fig. 1, an attacker exploits a photo the user shared for decoration advice, obtains cues like “a poster” and “a guitar,” and infers the user is in his twenties [45]. To defend against such attacks, a practical privacy protection method should preserve the image’s utility for legitimate users while preventing unauthorized models from inferring private cues. Since the threat arises from machine perception rather than human arXiv:2607.10329v1 [cs.CV] 11 Jul 2026 Qi Lu et al. Benign Our sAdvD iffVLM Anyattack 
+
+Figure 2: Comparison of adversarial attacks for VLMs. 
+
+perception, adversarial examples [ 42 , 56 , 59 ] are a natural starting point: they can disrupt model predictions while introducing lim-ited perceptual changes to the image [ 35 , 37 , 47 ]. However, merely fooling the model is not sufficient for real-world privacy protection. In many scenarios, the original image still needs to be faithfully restored in trusted environments, making reversibility highly de-sirable. This motivates reversible adversarial examples (RAEs) [ 62 ], which combine adversarial protection with reversible data hiding to enable both privacy defense and lossless recovery. A natural question therefore is whether adversarial examples can be repurposed as a practical privacy protection mechanism against VLMs. Prior studies suggest a promising starting point: VLMs are vulnerable to adversarial examples. AttackVLM [ 54 ] introduced transferable black-box attacks on VLMs, and Anyattack [ 51 ] further improved attack performance with a self-supervised perturbation generator. These advances demonstrate that adversarial examples can effectively mislead VLMs. However, they remain inadequate for privacy protection in practice, as they typically introduce high-frequency [ 58 , 60 ] perturbations that noticeably degrade image quality (see Fig. 2). In addition, privacy protection in multimodal settings must remain effective under diverse prompts and across different model architectures. Therefore, the central challenge is: 
+
+How to achieve cross-model and cross-prompt privacy preservation while maintaining high visual quality? 
+
+Inspired by prior studies on unrestricted adversarial examples 
+
+(UAEs) [ 12 , 50 ], which are capable of producing adversarial exam-ples without noticeable noise while maintaining high visual quality, we explore their potential for privacy protection in VLMs. AdvDif-fVLM [ 9] first applied UAE to VLMs, using a set of visual encoders from CLIP [ 55 ] as surrogate models and ensemble gradient esti-mation to enhance transferability. However, the heavy disruption to the sampling process produces low-quality images, as shown in Fig. 2. Moreover, its end-to-end generation lacks explicit noise encoding, rendering existing RAE methods inapplicable. In this work, we propose CloakDiff, the first privacy-preserving framework designed to defend against text-based query attacks in VLMs. Given a user-uploaded image, CloakDiff sequentially pro-cesses it through a diffusion model [ 43 ] and an Invertible Neu-ral Network (INN) [ 2 , 13 ], producing imperceptible yet reversible adversarial examples. CloakDiff exhibits three key properties: 1 
+
+Cross-model and cross-prompt privacy protection. CloakDiff injects adversarial semantics into the sampling process via adversar-ial guided editing. In the pixel domain, CloakDiff shifts the original embeddings to disrupt semantic representations, while in the latent domain it alters cross attention maps to achieve fine-grained disrup-tion of multi-modal alignments, thereby enhancing transferability. 2 High visual fidelity. CloakDiff preserves the global structure by maintaining the self-attention maps during sampling, ensuring visual fidelity and perceptual quality. 3 Reversibility. CloakDiff treats the original image as secret image and adversarial example as cover image to generate RAE. In revealing phase, the RAE alone suffices to recover the original image. Furthermore, we introduce 
+
+EDM-Heuristic Sampling (EHS), a tailored diffusion schedule for adversarial guided sampling. EHS improves image quality while providing a principled formulation from the perspective of score matching. Our main contributions are summarized as follows: 
+
+• We present the first defense against text-based query attacks in vision-language models by generating imperceptible and re-versible adversarial examples for image privacy protection. 
+
+• We leverage a diffusion model for adversarial example generation by manipulating attention maps during sampling, and further de-velop a customized scheduling strategy for adversarially guided editing with theoretical justification. 
+
+• Experiments on multiple datasets and models show that CloakD-iff achieves strong cross-model and cross-prompt effectiveness while preserving high visual fidelity and reversibility. 
+
+## 2 Related Works 2.1 Adversarial Examples against VLMs 
+
+VLMs initially align visual and textual embeddings in a shared rep-resentation space. Subsequent models introduce fusion mechanisms such as query transformers [ 17 ] and cross attention modules [ 1], while recent systems integrate large-scale vision encoders [ 5 ] into pretrained LLMs [ 22 ]. Robustness evaluation of VLMs increasingly centers on adversarial attacks [ 36 , 42 , 48 , 57 , 63 ]. Prior work [ 52 , 55 ]studies adversarial robustness in classification and retrieval sce-narios. AttackVLM [ 54 ] introduces the first query-based black-box attack for VQA, motivating later research on black-box transfer attacks. Among these, Anyattack [ 51 ] reports the strongest perfor-mance by pretraining a noise generator. AdvDiffVLM [ 9] generates UAEs using a diffusion model tailored for VLMs, but the perturba-tions substantially degrade visual fidelity. Consequently, existing attacks often produce visually distorted examples, limiting their practicality in privacy-preserving applications. 
+
+## 2.2 Image Steganography 
+
+Image steganography hides a secret image within a cover image while ensuring both imperceptibility and recoverability. Recent work adapts this idea to construct RAEs by embedding adversarial noise that can later be removed to restore the original image. Com-pared with traditional techniques, deep learning–based steganogra-phy offers higher capacity and stronger concealment [ 32 ]. Invertible neural networks (INNs) [ 28 ] are particularly well suited to image hiding because they jointly model forward and inverse mappings through shared parameters. Hi-Net [ 13 ] demonstrates the feasibility Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection 
+
+of hiding full-resolution images using INNs. However, to our knowl-edge, no prior work investigates leveraging deep steganography to build reversible adversarial examples. 
+
+## 3 Problem Statement 
+
+We define image privacy as: Information in an image that can be either directly identified from visual content or indirectly inferred from visual cues, scene context, and external world knowledge, and ultimately linked to an identified or identifiable natural person [ 39 ]. Unlike conventional visual privacy settings [ 19 ] that focus on the explicit presence of people, this definition also encompasses inferen-tial privacy leakage arising from non human subjects, surrounding objects, and traces of daily life. Under this definition, we consider a user-side privacy protection scheme with black-box access to the attacker’s VLM and prompts. Given an original image 𝑥 orig , the scheme produces a privacy-protected image 𝑥 pro , satisfying three below key properties: 
+
+(I) 𝑥 pro should ensure cross-model and cross-prompt pri-vacy protection. It should consistently suppress private attribute inference under unseen attack models and arbitrary natural lan-guage prompts, so that an attacker cannot reliably recover sensitive user attributes even when varying the VLM architecture, alignment scheme, reasoning strategy, or query prompt. 
+
+(II) 𝑥 pro should preserve high visual fidelity. It should remain visually consistent with 𝑥 orig while retaining natural appearance, semantic integrity, and perceptual quality, thereby remaining suit-able for routine scenarios such as browsing, sharing, uploading, and compressed transmission. 
+
+(III) 𝑥 pro should support direct recovery of 𝑥 orig . The user should be able to reconstruct a high quality image 𝑥 rev orig from 𝑥 pro 
+
+alone, without any auxiliary information, thereby enabling re-versible privacy protection from public release back to trusted use. 
+
+## 4 Methodology 
+
+In multi-modal scenarios, existing adversarial example generation methods typically inject high-frequency noise directly into images, which substantially degrades perceptual quality [ 51 ]. We therefore leverage diffusion models [ 30 ] to generate imperceptible adversar-ial images. Specifically, we perform feature alignment in the pixel space with a pretrained encoder, and control cross attention in the latent space to enable adversarial guided editing , thereby injecting adversarial semantics into the original image during sampling. Fur-thermore, to better preserve image structure and fidelity, we retain self attention map and introduce a tailored sampling schedule. The overall pipeline is illustrated in Fig. 3. 
+
+## 4.1 Adversarial Guided Editing 
+
+Diffusion models generate images by progressively denoising latent variables during the sampling process, while generating adversarial examples involves gradually injecting adversarial information into this process. Unlike conventional image editing methods [ 15 , 21 ]that follow user textual instructions, our approach focuses on inject-ing adversarial information into the sampling process. We call this process as adversarial guided editing. Adversarial guided editing operates jointly in the pixel space and latent space, progressively injecting adversarial semantics via a score-matching strategy. Given an original image 𝑥 orig , the edited output is denoted as 𝑥 adv .The pixel-space guidance dominates the adversarial editing pro-cess. Pretrained encoder provides a unified embedding space for image-text alignment, a natural way to degrade semantics is to shift the encoder feature embedding of 𝑥 adv away from that of 𝑥 orig .Empirically, we find that aligning 𝑥 adv toward a target embedding is more effective than merely diverging from its original represen-tation. Let 𝑓 𝜙 (·) denote the CLIP image encoder. The pixel-space adversarial guidance Lpixel is formulated as: 
+
+Lpixel = − 𝑓 𝜙 (𝑥 adv )∥𝑓 𝜙 (𝑥 adv )∥ 2
+
+> ⊤
+
+· 𝑓 𝜙 (𝑥 tgt )∥𝑓 𝜙 (𝑥 tgt )∥ 2
+
+, (1) where 𝑥 tgt is the target image as a shift anchor (see Sec. 5 for details). While pixel-space guidance directly disrupts semantics, latent-space guidance perturbs the underlying multi-modal alignment more delicately. Previous work [ 21 ] shows that manipulating cross attention maps in the latent space effectively enables textual instruc-tions to control image semantics. Inspired by this, we perturb the cross attention maps during sampling to disrupt the fine-grained alignment between image and text modalities. As shown in Fig. 4, this strategy significantly impairs multi-modal consistency even under black-box VLMs, demonstrating strong transferability. Dif-fusion model adopts Classifier-Free Guidance (CFG) [ 11 ] to modify the noise prediction by interpolating between unconditional and conditional outputs: 
+
+𝜖 cfg  
+
+> 𝜃
+
+(𝑥 𝑡 ) = 𝜖 𝜃 (𝑥 𝑡 | ∅) + 𝑔 
+
+
+
+𝜖 𝜃 (𝑥 𝑡 | 𝑐 ) − 𝜖 𝜃 (𝑥 𝑡 | ∅) 
+
+
+
+, (2) where 𝑔 is the guidance scale. Following Eq. (2), the conditional branch is guided by 𝑐 , a text prompt generated via a pretrained captioner [ 25 ]. To preserve essential caption semantics, we employ the template strategy proposed in [ 46 ]. Based on the conditional noise prediction, we define the latent-space adversarial guidance : 
+
+Llatent = − 1
+
+𝐿 𝑐 · 𝐻 𝑐 𝐿 𝑐 ∑︁ 
+
+> 𝑙 =1
+> 𝐻 𝑐
+
+∑︁ 
+
+> ℎ=1
+
+
+
+𝐴 𝑙,ℎ  
+
+> c
+
+(𝑥 adv ) − 𝐴 𝑙,ℎ  
+
+> c
+
+(𝑥 orig )
+
+ 
+
+> 2
+
+, (3) where 𝐿 𝑐 and 𝐻 𝑐 respectively denote the number of cross atten-tion layers and heads, and 𝐴 𝑙,ℎ  
+
+> cross
+
+(𝑥 ) represents the cross attention map at layer 𝑙 , head ℎ during the generation. Eq. (3) enforces a pre-cise deviation between the cross attention maps of 𝑥 adv and those of 𝑥 orig , thereby corrupting multi-modal semantics. To enhance reconstruction precision, we adopt Null-Text Optimization (NTO): 
+
+ˆ∅ = ∅ − 𝛼 1
+
+𝜕 𝜕 ∅ 𝑥 rever − 𝑥 recon (∅) 22 , (4) where 𝛼 1 is the update step size, ˆ∅ denotes the optimized uncondi-tional text embedding, and 𝑥 rever , 𝑥 recon (∅) represent the original and reconstructed latent variables. 
+
+## 4.2 Self-Attention Based Retention 
+
+As discussed in Sec. 1, a major challenge in generating 𝑥 adv with diffusion models lies in maintaining visual fidelity while injecting adversarial semantics. Prior work [ 44 ] shows that the transferability of adversarial examples mainly stems from perturbing key regions, rather than making brute-force changes across the entire image. Motivated by this, we introduce a self-attention based visual reten-tion mechanism that constrains adversarial guided editing to local Qi Lu et al. Orig 
+
+## Adv 
+
+## orig 
+
+## adv 
+
+## rev 
+
+## Step1 
+
+## ：Adv example generation  Step2: RAE generation 
+
+## 𝑬 
+
+## 𝑬  v
+
+## ෤v
+
+## 𝑝𝑢𝑙𝑙 
+
+Pixel Space 
+
+## Adversarial guided sampling 
+
+∅𝑡 −2 ∅𝑡 −3 ∅𝑡 −4 ∅𝑡 −5 ∅1 ∅0
+
+## 𝑥 1
+
+∗ 𝑥 0
+
+∗
+
+## 𝑥 𝑡 −1
+
+∗ …
+
+## 𝑥 𝑡 −2
+
+∗
+
+Cross -
+
+Attention 
+
+Self -
+
+Attention 
+
+## 𝑥 𝑡 −3
+
+∗ 𝑥 𝑡 −4
+
+∗
+
+## 𝑥 1 𝑥 0𝑥 𝑡 −1
+
+## …
+
+## 𝑥 𝑡 −2 𝑥 𝑡 −3 𝑥 𝑡 −4 𝑥 2
+
+## 𝑥 2
+
+∗
+
+## 𝑥 1 𝑥 0𝑥 𝑡 −1
+
+## …
+
+## 𝑥 𝑡 −2 𝑥 𝑡 −3 𝑥 𝑡 −4 𝑥 2
+
+S-A
+
+S-A
+
+Denoising U -Net 
+
+∅𝑡 −2 ∅𝑡 −3 ∅𝑡 −4 ∅𝑡 −5 ∅1 ∅0
+
+## a tidy room 
+
+## with guitar 
+
+C-A
+
+C-A
+
+Null -Text Optimize 
+
+𝐴𝑑𝑑 𝑝𝑒𝑟𝑡𝑢𝑟𝑏𝑎𝑡𝑖𝑜𝑛 𝑣𝑒𝑐𝑡𝑜𝑟  Latent Space 
+
+Invertible neural network 
+
+## rae 
+
+VLM 
+
+I can see a guitar in the photo, 
+
+and there are ……, …… 
+
+orig 
+
+Disclose privacy from photo desc. 
+
+Privacy protected! 
+
+VLM 
+
+I see a cat on the sofa from 
+
+the photo 
+
+rae 
+
+imperceptible 
+
+High -
+
+quality 
+
+Recovery 
+
+pull  push  𝑬  Clip vision encoder  𝒙 𝒕  Latent variables  ∅𝒕  Per -timestamp Unconditional textual embedding 
+
+Figure 3: The framework of CloakDiff: the first privacy-preserving method for image protection under VLMs. 0 1 2 3 4
+
+> Sample Index
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> Layer ID
+> 20
+> 40
+> 60
+> 80
+> 100
+
+(a) Activation of 𝑥 orig 0 1 2 3 4 
+
+> Sample Index
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> Layer ID
+> 20
+> 40
+> 60
+> 80
+> 100
+
+(b) Activation of 𝑥 adv 
+
+Figure 4: Visualization of hidden states in LLaVA [ 22 ], reveal-ing how visual and textual modalities interact. The y-axis is the final-token activation across layers during inference, and the colors indicate activation values. 
+
+key regions while preserving global structure. This design improves perceptual quality without sacrificing protection performance. Self-attention mechanism plays a central role in coupling edited and non-edited regions [ 21 ] in diffusion model. By regulating self-attention maps, we can achieve fine-grained local editing while maintaining global consistency. We therefore add a visual retention constraint as a compensatory term Lretain to adversarial guided edit-ing. This term encourages the self-attention maps during sampling to remain close to those of the original reconstruction, balancing visual fidelity and adversarial effectiveness: 
+
+Lretain = 1
+
+𝐿 𝑠 · 𝐻 𝑠 𝐿 𝑠 ∑︁ 
+
+> 𝑙 =1
+> 𝐻 𝑠
+
+∑︁ 
+
+> ℎ=1
+
+
+
+𝐴 𝑙,ℎ  
+
+> s
+
+(𝑥 adv ) − 𝐴 𝑙,ℎ  
+
+> s
+
+(𝑥 orig )
+
+ 
+
+> 2
+
+. (5) Here, 𝐴 𝑙,ℎ  
+
+> self
+
+(·) represents the self-attention map at layer 𝑙 , head ℎ.
+
+## 4.3 EDM-Heuristic Sampling 
+
+Sampling schedules [ 31 ] play a critical role in the quality of images generated by diffusion models. Diffusion models generate data by gradually denoising a noisy sample. At each step 𝑡 , a scaling factor 𝛼 𝑡 ∈ ( 0, 1) controls the noise level. From the score-matching perspective [ 34 ], the model learns the gradient of the log-density of noisy data, i.e., the score function 𝑠 𝜃 (𝑥 𝑡 , 𝑡 ). The reverse sampling step is then formulated as: 
+
+𝑥 𝑡 −1 = 1
+
+√𝛼 𝑡 
+
+(𝑥 𝑡 + ( 1 − 𝛼 𝑡 )𝑠 𝜃 (𝑥 𝑡 , 𝑡 )) + 𝜎 𝑡 𝑧 , (6) where 𝑧 ∼ N ( 0, 𝐼 ) introduces stochasticity, and 𝜎 𝑡 controls the noise level. In our context, adversarial guided editing modifies 𝑥 𝑡 ,thereby affecting both the trajectory of the sampling process and the resulting image quality, highlighting the need for customized schedules tailored to adversarial guided sampling. To address this issue, we draw inspiration from EDM [ 14 ], which decouples diffusion training from sampling and allows training-free schedule design. Building on this insight, we propose EDM-Heuristic Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection 0 5 10 15 20 
+
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> EDM-Heuristic Sampling (N=20)
+> rho=1
+> rho=2
+> rho=3
+> rho=4
+> rho=5
+> rho=6
+> rho=7
+> rho=8
+
+Figure 5: This figure illustrates the positions in the model’s original latent space corresponding to different EHS sam-pling steps. Sampling schedules under different 𝜌 control the density of ¯𝛼 syn  
+
+> 𝑡
+
+across different noise levels: a larger 𝜌 yields smaller selected values of ¯𝛼 syn  
+
+> 𝑡
+
+, consistent with Theorem I. 
+
+Sampling (EHS), an adaptive and nonlinear time discretization strat-egy. Intuitively, under the same total number of sampling steps, EHS tends to select larger values of ¯𝛼 𝑡 ( Eq. (6)), corresponding to latent states with lower noise. Since the derivative of the reverse 
+
+ordinary differential equation (ODE) varies rapidly for large values of ¯𝛼 𝑡 in the 𝛼 -space [ 14 ], leading to exponential amplification of sampling errors. Denser sampling is required to accurately inject adversarial information under such high-error conditions, consis-tent with the design philosophy of EDM. We transform the noise scale as 𝑢 = 𝜎 1/𝜌 , sample uniformly in 𝑢 , and map the samples to the signal-to-noise (SNR) domain: 
+
+¯𝛼 𝑡 = 11 +  𝑢 max + 𝑡 𝑁 −1 (𝑢 min − 𝑢 max )2𝜌 , (7) where 𝑢 max = 𝜎 1/𝜌 
+
+> max
+
+, 𝑢 min = 𝜎 1/𝜌 
+
+> min
+
+. 𝑁 is the total number of sampling steps and 𝑡 range from 0 to 𝑁 − 1 , with 𝜌 controls the convexity of the schedule. To adjust the convexity of the sequence, we apply a symmetric inversion with linear interpolation to the ¯𝛼 𝑡 sequence to obtain the final series ¯𝛼 syn  
+
+> 𝑡
+
+. This yields a nonlinear, density-controlled time discretization based on ¯𝛼 syn  
+
+> 𝑡
+
+, as shown in Fig. 5. 
+
+Theorem I : Let ¯𝛼 syn  
+
+> 𝑡
+
+(𝜌 ) denote the EHS sequence as a function of the exponent parameter 𝜌 . Then, for each fixed 𝑡 , ¯𝛼 syn  
+
+> 𝑡
+
+(𝜌 ) is monotonically decreasing in 𝜌 :if 𝜌 1 < 𝜌 2, ¯𝛼 syn  
+
+> 𝑡
+
+(𝜌 1) ≥ ¯𝛼 syn  
+
+> 𝑡
+
+(𝜌 2).
+
+This theorem enables users to control the noise level at each edit-ing step via a single parameter 𝜌 , allowing for flexible adaptation. From the perspective of score matching, EHS describes adversarial guided sampling as: 
+
+𝑠 adv  
+
+> 𝜃
+
+( ˜𝑥 𝑡 , 𝑡 ) = 𝑠 𝜃 ( ˜𝑥 𝑡 , 𝑡 ) − 𝛼 2∑︁ 
+
+> 𝑘
+
+𝜆 𝑘 ∇ ˜𝑥 𝑡 L𝑘 ( ˜𝑥 𝑡 ) , (8) 
+
+˜𝑥 𝑡 −1 = 1
+
+√𝛼 𝑡 
+
+
+
+˜𝑥 𝑡 + ( 1 − 𝛼 𝑡 )𝑠 adv  
+
+> 𝜃
+
+( ˜𝑥 𝑡 , 𝑡 )
+
+
+
++ 𝜎 𝑡 𝑧 , (9) where 𝑘 ∈ { pixel , latent , attn }, 𝜆 𝑘 are the corresponding weight-ing coefficients, 𝛼 2 scales the adversarial term, and ˜𝑥 𝑡 denotes the perturbed latent variable. 
+
+## 4.4 INN-Based Reversible Steganography 
+
+Existing RAE methods ensure reversibility by embedding explicit noise representations into the cover image. In contrast, 𝑥 adv is pro-duced through a generative diffusion process rather than direct perturbation of 𝑥 orig , and thus lacks an explicit noise encoding. Consequently, conventional methods cannot be directly applied for reconstruction. To address this limitation, we introduce an INN-based reversible steganography method that embeds 𝑥 orig directly into 𝑥 adv using an invertible neural network. This design enables high quality recovery of the original image while maintaining vi-sual fidelity. Specifically, we adopt the architecture proposed in [ 13 ], denoted as 𝐹 INN , which jointly models the concealing and revealing phases as the forward and inverse propagations of the same net-work. During the concealing stage, 𝐹 INN takes the adversarial image 
+
+𝑥 adv and the original image 𝑥 orig as inputs to produce a reversible adversarial example 𝑥 rae , which ultimately serves as the privacy protected image 𝑥 pro :
+
+𝑥 pro = 𝑥 rae = 𝐹 INN (𝑥 adv , 𝑥 orig ) . (10) The generated 𝑥 rae is visually imperceptible from 𝑥 orig and achieves high perceptual quality. In the revealing phase, the original image can be exactly reconstructed from 𝑥 rae alone by applying the inverse propagation of 𝐹 INN :
+
+𝑥 rev orig = 𝐹 −1INN (𝑥 rae ) . (11) In practice, recovered 𝑥 rev orig closely approximates 𝑥 orig (see Tab. 2), ensuring high quality reversibility. 
+
+Algorithm 1 CloakDiff 
+
+Input: User’s image 𝑥 orig , target image 𝑥 tgt , pretrained diffusion model, CLIP encoder 𝑓 𝜙 , INN model 𝐹 INN , total sampling steps 
+
+𝑁 , EHS parameter 𝜌 , loss weights {𝜆 𝑘 }𝑘 ∈ { pixel ,latent ,retain } , step sizes 𝛼 1, adversarial scale 𝛼 2, conditioned caption 𝑐 , total itera-tion epochs 𝐾 
+
+Output: 𝑥 rae  
+
+> 1:
+
+// Phase 1: Adversarial Guided Sampling  
+
+> 2:
+
+Compute { ¯𝛼 syn  
+
+> 𝑡
+
+}𝑁 −1 
+
+> 𝑡 =0
+
+via Eq. (7) with parameter 𝜌  
+
+> 3:
+
+Encode 𝑥 orig to latent and Initialize ˜𝑥 𝑁 −1 
+
+> 4:
+
+Optimize unconditional embedding ∅ via Eq. (4)  
+
+> 5:
+
+for 𝑖 = 𝐾 to 1 do  
+
+> 6:
+
+for 𝑡 = 𝑁 − 1 to 0 do  
+
+> 7:
+
+Extract cross attention and self-attention maps  
+
+> 8:
+
+Compute Lk via Eq. (1) (3) (5)  
+
+> 9:
+
+Compute adversarial guided score via Eq. (8)  
+
+> 10:
+
+Update: ˜𝑥 𝑡 −1 via Eq. (9)  
+
+> 11:
+
+end for  
+
+> 12:
+
+end for  
+
+> 13:
+
+Decode 𝑥 adv to pixel space  
+
+> 14:
+
+// Phase 2: INN-Based Reversible Steganography  
+
+> 15:
+
+Generate 𝑥 rae ← Embed 𝑥 orig into 𝑥 adv via Eq. (10)  
+
+> 16:
+
+return 𝑥 rae Qi Lu et al. 
+
+Table 1: CloakDiff’s protection performance evaluated on nine VLMs and two datasets. For all metrics in the table, smaller values indicate stronger protection performance. To unify the scale, all relevant metrics are normalized to the 0–100. Model ImageNet MS-COCO 
+
+BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE BLIP 64.25 44.10 41.91 59.17 63.23 45.18 77.92 60.24 56.54 73.71 75.41 61.91 BLIP-2 47.71 35.59 27.21 47.31 48.04 44.75 46.50 34.49 30.33 46.85 49.73 44.54 InstructBLIP 56.29 33.36 23.31 47.26 48.51 36.38 57.89 36.22 25.07 49.06 50.35 42.09 Flamingo 34.27 16.15 6.91 28.74 28.98 23.10 39.74 18.88 6.34 32.13 32.49 28.66 Unidiffuser 37.10 16.29 13.57 31.85 34.88 14.86 36.35 13.09 11.40 28.87 33.16 16.32 LLaVA 53.09 31.05 21.51 44.48 45.61 32.29 59.41 37.47 26.01 50.95 51.85 41.92 MiniGPT-4 39.41 10.74 17.96 27.82 26.34 19.96 39.88 11.60 22.23 25.83 25.74 20.18 Qwen 51.03 27.09 21.44 47.84 46.48 42.98 48.19 23.00 16.34 43.03 41.10 38.24 Internvl 48.06 23.91 16.51 40.21 40.93 35.94 46.58 21.43 14.50 40.70 40.11 29.42 User Uploaded User Uploaded User Uploaded User Uploaded  
+
+> A bush of yellow flowers
+> in front of a fence
+
+# 𝐀 orig ： 
+
+> Ablack and white cat
+> sitting on a fence
+
+# 𝐀 rae ：  
+
+> Abrown leather belt on
+> top of a wooden table
+
+# 𝐀 orig ：
+
+> A close up view of a
+> baseball bat
+
+# 𝐀 rae ：  
+
+> This is a menu from La
+> Cocina de Remedios
+
+# 𝐀 orig ：
+
+> I'm not sure
+
+# 𝐀 rae ：  
+
+> Two Jellyfish Swimming
+> in the Blue Ocean
+
+# 𝐀 orig ： 
+
+> Blue ocean with a shadow
+> of a person swimming
+
+# 𝐀 rae ：
+
+Figure 6: From left to right: BLIP, UniDiffuser, Flamingo, and LLaVA. Shown are reversible adversarial examples generated by CloakDiff, where "Orig:" and "RAE:" denote outputs from the original and reversible adversarial images, respectively. Table 2: Comparison of visual quality and recovery quality. ‘CloakDiff-ADV’ denotes 𝑥 adv without steganography, so re-covery quality is unavailable (‘—’), while ‘CloakDiff-RAE’ denotes 𝑥 rae . Blue indicates the best result, and gray indicates the second-best. The same with Tab. 3. Method Visual Quality Recovery Quality LPIPS FID SSIM PSNR RMSE                               
+
+> DP-RAE [62] 14.37 93.27 0.97 37.84 4.20 Anyattack [51] 30.18 159.03 0.98 42.08 0.0014 AttackVLM [54] 13.54 85.29 0.98 41.20 0.0021 AdvDiffVLM [9] 20.90 133.38 0.99 44.38 0.0004
+> CloakDiff-ADV 10.76 73.08 —— —— ——
+> CloakDiff-RAE 10.85 73.09 0.99 44.37 0.0004
+
+## 5 Experiments 5.1 Experimental Setup 
+
+Models and Datasets. We evaluate CloakDiff on two datasets, the ImageNet [ 7] compatible NIPS 2017 adversarial competition dataset [ 27 ] and MS-COCO [ 20 ], following [ 9] and [ 51 ]. Target im-ages 𝑥 tgt are generated using MS-COCO captions as reference texts and synthesized with Stable Diffusion [ 30 ]. We assess our method on nine VLMs covering representative architectures: BLIP [ 18 ], BLIP-2 [ 17 ], InstructBLIP [ 6 ], Flamingo [ 1], UniDiffuser [ 4], MiniGPT-4 [ 61 ], LLaVA [ 22 ], Qwen2.5-VL (7B Instruct) [ 3], and InternVL (3-5-8B) [ 41 ]. For each 𝑥 rae , models are evaluated on 10 randomly sampled text prompts 𝑡 from a candidate pool. Details of the model and datasets can be found in the appendix. 
+
+Evaluation Metrics. To assess protection performance, we mea-sure the similarity between captions generated by the VLMs for 
+
+𝑥 rae and 𝑥 orig , using standard image captioning metrics, BLEU ↓,CIDEr ↓, METEOR ↓, ROUGE-L ↓, and SPICE ↓, following [ 51 ]. For visual fidelity, we adopt LPIPS [ 53 ] ↓ and FID [ 10 ] ↓ to assess 𝑥 rae ,following [ 9]. For recovery quality of 𝑥 rev orig , we use SSIM ↑, PSNR ↑,and RMSE ↓. In all evaluations, ↑ indicates that higher values are better, while ↓ indicates that lower values are better. 
+
+Parameter Setting. We use Stable Diffusion [ 30 ] as the diffusion model and ViT-B/32 as CLIP encoder 𝑓 𝜙 . The total sampling steps 𝑁 
+
+are set to 20, and the EHS parameter 𝜌 is 3. We set the loss weights to 𝜆 pixel = 50 , 𝜆 latent = 200 , and 𝜆 retain = 100 𝐾 by default. The optimization step size 𝛼 1 is set to 1𝑒 −1, the adversarial scale 𝛼 2 is set to 1𝑒 −2. And the iteration 𝐾 is set to 50 by default. Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection 
+
+Table 3: Comparison of different privacy-preserving methods and multi-modal adversarial attacks in terms of protection performance across four vision-language models. All metrics are lower-is-better and normalized to 0 – 100. (a) BLIP Method BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE 
+
+DP-RAE [62] 81.12 67.32 64.90 77.67 79.43 73.18 Anyattack [51] 70.36 49.69 48.23 65.79 69.63 53.53 AttackVLM [54] 75.43 60.13 56.55 70.89 72.94 60.38 AdvDiffVLM [9] 69.72 47.37 44.88 64.44 68.23 48.36 
+
+CloakDiff-ADV 63.78 43.19 41.69 58.95 62.49 43.56 
+
+CloakDiff-RAE 64.25 44.10 41.91 59.17 63.23 45.18 
+
+(b) Unidiffuser Method BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE 
+
+DP-RAE [62] 70.56 52.76 50.05 69.33 69.45 51.29 Anyattack [51] 52.24 30.51 29.01 48.52 50.02 33.07 AttackVLM [54] 46.00 29.41 29.20 48.40 44.75 34.15 AdvDiffVLM [9] 55.33 32.97 29.73 51.95 52.81 42.89 
+
+CloakDiff-ADV 35.22 15.34 12.38 30.19 32.71 14.22 
+
+CloakDiff-RAE 37.10 16.29 13.57 31.85 34.88 14.86 
+
+(c) LLaVA Method BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE 
+
+DP-RAE [62] 72.48 57.39 48.92 68.15 68.88 65.84 Anyattack [51] 60.73 40.02 29.34 53.13 54.00 52.89 AttackVLM [54] 66.17 48.46 37.96 60.04 60.87 56.55 AdvDiffVLM [9] 59.46 36.90 25.23 49.60 50.10 38.42 
+
+CloakDiff-ADV 53.04 30.55 21.21 44.53 45.80 32.06 
+
+CloakDiff-RAE 53.09 31.05 21.51 44.48 45.61 32.29 
+
+(d) Qwen Method BLEU-1 BLEU-4 CIDEr METEOR ROUGEL SPICE 
+
+DP-RAE [62] 75.18 64.02 65.37 77.41 79.46 73.11 Anyattack [51] 60.46 49.21 48.73 65.12 69.08 53.44 AttackVLM [54] 75.44 60.03 56.89 70.83 72.65 60.71 AdvDiffVLM [9] 69.32 47.66 45.02 64.18 68.37 48.91 
+
+CloakDiff-ADV 49.15 26.64 20.28 47.01 45.99 41.03 
+
+CloakDiff-RAE 51.03 27.09 21.44 47.84 46.48 42.98 w/o A w/o B w/o C Ours 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> Protection(%)
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(a) Module 10 20 40 50 80 100  
+
+> 50
+> 55
+> 60
+> 65
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(b) 𝜆 pixel 25K 50K 100K 200K 400K 500K  
+
+> 45
+> 50
+> 55
+> 60
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(c) 𝜆 latent 50 100 150 200 300 500  
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(d) 𝜆 retain 1e-3 5e-3 5e-2 1e-1 2e-1 5e-1 
+
+> 50
+> 52
+> 54
+> 56
+> 58
+> 60
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(e) Optimization Step 𝛼 11e-3 5e-3 1e-2 5e-2 1e-1 2e-1  
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Protection
+> LPIPS
+
+(f) Adversarial Scale 𝛼 21 2 3 4 5 6 7 8 
+
+> 45
+> 50
+> 55
+> 60
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(g) EHS Parameter 𝜌 10 20 40 50 80 100  
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> Protection
+> LPIPS
+> 0
+> 5
+> 10
+> 15
+> 20
+
+(h) Iteration 𝐾 
+
+Figure 7: Ablation study of CloakDiff on BLIP. ‘Protection’ is computed as the average of the six corresponding metrics. The left y-axis represents the value of ‘Protection’, while the right y-axis represents the value of ‘LPIPS’. 
+
+## 5.2 Overall Performance 
+
+To evaluate the capability of CloakDiff, we rescale all six metrics to a uniform range of 0 – 100. All VLMs generate deterministic text outputs to guarantee reproducibility. As shown in Tab. 1, CloakD-iff consistently achieves strong performance across both datasets and all models, leading to a significant reduction in text similarity. The method remains effective even against robust and SOTA mod-els such as Qwen and InternVL, demonstrating the cross-model and cross-prompt protection capability of CloakDiff. For fidelity evaluation of 𝑥 rae , we adopt two widely used metrics: LPIPS for perceptual similarity and FID for distributional similarity between 
+
+𝑥 orig and 𝑥 rae . As shown in Tab. 2, the results confirm that CloakDiff generates 𝑥 rae with high visual fidelity. During recovery, we eval-uate the reconstruction quality of 𝑥 rev orig against 𝑥 orig . As shown in Tab. 2, the restored images maintain high fidelity, avoiding any irreversible degradation. To further assess the privacy protection capability of CloakDiff, we evaluate it on the Visual Inference Pri-vacy dataset [ 39 ]. CloakDiff also extends naturally to the setting of explicit attribute inference. As shown in Tab. 4, CloakDiff reduces the average performance of VLMs by 45%, demonstrating strong efficacy in mitigating inference on sensitive attributes. As shown in Fig. 6, samples protected by CloakDiff exhibit high visual fidelity while substantially disrupting the outputs of VLMs, demonstrating its strong protective efficacy across different model architectures. Qi Lu et al. 
+
+Table 4: Evaluation of CloakDiff on the VIP dataset for five sensitive attributes, including Sex (SEX), Income (INC), Edu-cation (EDU), Occupation (OCC), and Marital Status (MAR). Setting A: Users upload 𝑥 orig , Setting B: Users upload 𝑥 rae .Model Setting SEX INC EDU OCC MAR                                  
+
+> MiniGPT-4 Setting A 0.28 0.18 0.21 0.33 0.18 Setting B 0.14 0.06 0.13 0.19 0.19 Qwen2.5 Setting A 0.42 0.34 0.52 0.39 0.26 Setting B 0.28 0.24 0.36 0.18 0.16 LLaVA Setting A 0.32 0.36 0.43 0.31 0.17 Setting B 0.14 0.15 0.38 0.07 0.12
+
+## 5.3 Comparison Study 
+
+To evaluate the effectiveness of CloakDiff as a privacy-preserving framework, we compare it with several representative baselines. We include multi-modal adversarial attack methods such as Any-attack [ 51 ], AttackVLM [ 54 ], and reversible adversarial examples (RAE) in multi-modal settings. Since these approaches only gener-ate adversarial examples, we apply the same INN-based reversible steganography method as CloakDiff to obtain the final 𝑥 rae . And we further compare against the SOTA DP-RAE [ 62 ], which adopts a traditional reversible data hiding method. For evaluation, we use Im-ageNet as the clean image dataset and select three VLMs: BLIP, Uni-Diffuser, and LLaVA. As shown in Tab. 3, CloakDiff-ADV achieves the strongest protection performance. When the original image 
+
+𝑥 orig is embedded into the adversarial image 𝑥 adv , CloakDiff-RAE slightly decreases compared to the direct use of 𝑥 adv . For visual qual-ity, we measure perceptual fidelity between 𝑥 rae and 𝑥 orig , as shown in Tab. 2. Anyattack and AttackVLM inject high-frequency noise, yielding substantially higher LPIPS and FID. AdvDiffVLM targets imperceptibility but its heavy sampling disruption still produces noticeable degradation. CloakDiff significantly outperforms base-line methods across multiple metrics of visual quality and recovery quality, highlighting its superiority in real world applications. 
+
+## 5.4 Ablation Study 
+
+Effect of Each Module : We consider three modules: (A) Adversarial-Guided Editing, (B) Self-Attention-Based Retention, and (C) EDM-Heuristic Sampling, as shown in Fig. 7 (a). To assess the effect of module C, we compare it with the default DDIM [33] scheduler. 
+
+Effect of the Loss Weights 𝜆 : As shown in Fig. 7 (b)–(d), increasing 
+
+𝜆 pixel or 𝜆 latent improves protection performance but reduces image quality. In contrast, a smaller 𝜆 retain can enhance perceptual quality, whereas an overly large value diminishes the adversarial semantics. 
+
+Effect of the Unconditional Text Embedding Step Size 𝛼 1: As discussed in Sec. 4, improving the reconstruction accuracy of the original image enhances its protection. Fig. 7 (e) shows that a small 
+
+𝛼 1 fails to converge within the given number of steps, whereas a large 𝛼 1 shifts the initial semantics of the unconditional text. 
+
+Effect of the Adversarial Scale 𝛼 2: From a score-matching per-spective, 𝛼 2 controls the relative weighting between adversarial and original scores, thereby determining the strength of adversarial guidance. It effectively acts as the step size for latent perturbation updates. As 𝛼 2 increases, protection improves but visual fidelity degrades, as shown in Fig. 7 (f). 
+
+Table 5: Protection and Time Trade-off under Different Steps. 
+
+Sampling Steps 20 15 10 8Protection Performance 36.21 39.82 43.43 44.87 Time Cost 19.08s 14.26s 11.07s 9.32s 
+
+Table 6: Quantitative comparison under different samplers. EHS (Ours) DDIM EDM DPM DPM++                     
+
+> LPIPS 10.85 13.12 13.52 14.09 13.27 Protection Performance MiniGPT-4 23.71 25.88 27.35 26.52 26.05 Qwen2.5 39.48 43.96 41.17 48.97 44.31 LLaVA 38.01 44.48 39.49 43.21 43.57
+
+Effect of the EHS Parameter 𝜌 : As described in Theorem 1, under EHS scheduling, the sampling coefficient 𝛼 𝑡 decreases monoton-ically with 𝜌 , allowing control over the sampling density across different SNR levels through a single parameter. As shown in Fig. 7 (g), small 𝜌 values lead to excessive early sampling jumps and in-formation loss. Increasing 𝜌 initially improves both protection and perceptual quality, but beyond a certain point, the effects saturate. 
+
+Effect of the number of iteration 𝐾 : Iteration 𝐾 controls how often the latent variable is updated. As shown in Fig. 7 (h), both protection and image degradation increase monotonically with 𝐾 .
+
+## 5.5 Evaluation of EHS 
+
+EHS is not merely a form of hyperparameter search. Compared with existing samplers, including DDIM, EDM [ 14 ], DPM [ 23 ], and DPM++ [ 24 ], our method consistently achieves superior perfor-mance, as shown in Tab. 6. In addition, by adjusting the number of sampling steps, CloakDiff reduces generation time without notice-able degradation in protection performance, as shown in Tab. 5. 
+
+## 5.6 Real World Performance 
+
+In this subsection, we evaluate CloakDiff under real world con-ditions. We consider a scenario in which users upload images to client applications, and the service provider applies CloakDiff to the uploaded images. In practice, CloakDiff protected images may be subject to compression during network transmission, and attackers may further deploy additional defenses. For transmission induced compression, we consider three widely used formats, PNG [ 29 ], JPEG [ 40 ], and WebP [ 26 ]. As shown in Tab. 7, CloakDiff still enables high quality recovery, although visual quality degrades slightly. We further examine whether common preprocessing defenses can sup-press adversarial perturbations and thereby circumvent CloakDiff. We evaluate four representative methods on BLIP and LLaVA. Bit Reduction squeezes features by lowering pixel bit depth. DiffPure maps images into the latent space and removes adversarial noise through diffusion based denoising. STL projects images onto a low dimensional manifold before inference. We also consider network compression as an additional perturbation to the protected images. As shown in Fig. 8, these defenses have only a marginal effect on the protection offered by CloakDiff. 
+
+## 6 Conclusion and Limitation 
+
+In this paper, we present CloakDiff, the first framework for pri-vacy protection against text-based query attacks in VLM-driven Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection 
+
+Table 7: Recovery quality of 𝑥 rev orig under different compression schemes in real world network environments. Metric w/o Compression PNG JPEG WebP 
+
+SSIM 0.99 0.94 0.83 0.94 PSNR 44.37 36.35 30.29 36.35 RMSE 0.0004 0.0639 1.0723 0.0741 BR DP STL JP    
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Protection(%)
+> RAE w/o Preprocess
+> RAE w Preprocess BR DP JP STL
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Protection(%)
+> RAE w/o Preprocess
+> RAE w Preprocess
+
+Figure 8: Defense performance of CloakDiff on BLIP (left) and LLaVA (right). ‘w’ denotes with defense, and ‘w/o’ denotes without defense. 
+
+social media. It generates imperceptible yet reversible adversarial examples by combining diffusion-based adversarial editing with an invertible network for lossless recovery. CloakDiff perturbs pixel embeddings and latent cross attention map to induce fine-grained multi-modal semantic distortion. Adversarial cues are progressively injected along the sampling trajectory, while self-attention reten-tion loss preserves global structure and visual fidelity. We further design a tailored adversarial-guided diffusion schedule with a theo-retical foundation in score matching. While CloakDiff is effective for images, its extension to videos with continuous spatiotemporal semantics remains unknown. As short-video sharing becomes in-creasingly popular on social platforms, extending CloakDiff to this domain represents a promising direction for future research. 
+
+## References 
+
+[1] Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur Mensch, Katherine Millican, Malcolm Reynolds, et al .2022. Flamingo: a visual language model for few-shot learning. Advances in neural information processing systems 35 (2022), 23716–23736. [2] Lynton Ardizzone, Jakob Kruse, Sebastian Wirkert, Daniel Rahner, Eric W Pelle-grini, Ralf S Klessen, Lena Maier-Hein, Carsten Rother, and Ullrich Köthe. 2018. Analyzing inverse problems with invertible neural networks. arXiv preprint arXiv:1808.04730 (2018). [3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, et al . 2025. Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025). [4] Fan Bao, Shen Nie, Kaiwen Xue, Chongxuan Li, Shi Pu, Yaole Wang, Gang Yue, Yue Cao, Hang Su, and Jun Zhu. 2023. One transformer fits all distributions in multi-modal diffusion at scale. In International Conference on Machine Learning .PMLR, 1692–1717. [5] Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen, Sen Xing, Muyan Zhong, Qinglong Zhang, Xizhou Zhu, Lewei Lu, et al . 2024. Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .24185–24198. [6] Wenliang Dai, Junnan Li, Dongxu Li, Anthony Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale N Fung, and Steven Hoi. 2023. Instructblip: Towards general-purpose vision-language models with instruction tuning. Advances in neural information processing systems 36 (2023), 49250–49267. [7] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. 2009. Im-agenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition . Ieee, 248–255. [8] Junjie Fei, Teng Wang, Jinrui Zhang, Zhenyu He, Chengjie Wang, and Feng Zheng. 2023. Transferable decoding with visual entities for zero-shot image captioning. In Proceedings of the IEEE/CVF international conference on computer vision . 3136–3146. [9] Qi Guo, Shanmin Pang, Xiaojun Jia, Yang Liu, and Qing Guo. 2024. Efficient generation of targeted and transferable adversarial examples for vision-language models via diffusion models. IEEE Transactions on Information Forensics and Security (2024). [10] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. 2017. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural information processing systems 30 (2017). [11] Jonathan Ho and Tim Salimans. 2022. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 (2022). [12] Shuai Jia, Bangjie Yin, Taiping Yao, Shouhong Ding, Chunhua Shen, Xiaokang Yang, and Chao Ma. 2022. Adv-attribute: Inconspicuous and transferable ad-versarial attack on face recognition. Advances in Neural Information Processing Systems 35 (2022), 34136–34147. [13] Junpeng Jing, Xin Deng, Mai Xu, Jianyi Wang, and Zhenyu Guan. 2021. Hinet: Deep image hiding by invertible network. In Proceedings of the IEEE/CVF inter-national conference on computer vision . 4733–4742. [14] Tero Karras, Miika Aittala, Timo Aila, and Samuli Laine. 2022. Elucidating the design space of diffusion-based generative models. Advances in neural information processing systems 35 (2022), 26565–26577. [15] Bahjat Kawar, Shiran Zada, Oran Lang, Omer Tov, Huiwen Chang, Tali Dekel, Inbar Mosseri, and Michal Irani. 2023. Imagic: Text-based real image editing with diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 6007–6017. [16] Yash Khare, Viraj Bagal, Minesh Mathew, Adithi Devi, U Deva Priyakumar, and CV Jawahar. 2021. Mmbert: Multimodal bert pretraining for improved medical vqa. In 2021 IEEE 18th international symposium on biomedical imaging (ISBI) .IEEE, 1033–1036. [17] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International conference on machine learning . PMLR, 19730–19742. [18] Junnan Li, Dongxu Li, Caiming Xiong, and Steven Hoi. 2022. Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation. In International conference on machine learning . PMLR, 12888–12900. [19] Minghui Li, Jiangxiong Wang, Hao Zhang, Ziqi Zhou, Shengshan Hu, and Xi-aobing Pei. 2024. Transferable adversarial facial images for privacy protection. In Proceedings of the 32nd ACM International Conference on Multimedia (ACM MM’24) . 10649–10658. [20] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. 2014. Microsoft coco: Common objects in context. In European conference on computer vision . Springer, 740–755. [21] Bingyan Liu, Chengyu Wang, Tingfeng Cao, Kui Jia, and Jun Huang. 2024. To-wards understanding cross and self-attention in stable diffusion for text-guided image editing. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 7817–7826. [22] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual in-struction tuning. Advances in neural information processing systems 36 (2023), 34892–34916. [23] Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongxuan Li, and Jun Zhu. 2022. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems 35 (2022), 5775–5787. [24] Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongxuan Li, and Jun Zhu. 2025. Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models. 
+
+Machine Intelligence Research 22, 4 (2025), 730–751. [25] Ron Mokady, Amir Hertz, and Amit H Bermano. 2021. Clipcap: Clip prefix for image captioning. arXiv preprint arXiv:2111.09734 (2021). [26] Emir Öztürk and Altan Mesut. 2021. Performance evaluation of jpeg standards, webp and png in terms of compression ratio and time for lossless encoding. In 
+
+2021 6th International Conference on Computer Science and Engineering (UBMK) .IEEE, 15–20. [27] Nicolas Papernot, Fartash Faghri, Nicholas Carlini, Ian Goodfellow, Reuben Feinman, Alexey Kurakin, Cihang Xie, Yash Sharma, Tom Brown, Aurko Roy, et al . 2016. Technical report on the cleverhans v2. 1.0 adversarial examples library. arXiv preprint arXiv:1610.00768 (2016). [28] Stefan T Radev, Ulf K Mertens, Andreas Voss, Lynton Ardizzone, and Ullrich Köthe. 2020. BayesFlow: Learning complex stochastic models with invertible neural networks. IEEE transactions on neural networks and learning systems 33, 4 (2020), 1452–1466. [29] GREG Roelofs. 2002. PNG lossless image compression. Lossless Compression Handbook (2002), 371–390. [30] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .10684–10695. [31] Tim Salimans and Jonathan Ho. 2022. Progressive distillation for fast sampling of diffusion models. arXiv preprint arXiv:2202.00512 (2022). Qi Lu et al. 
+
+[32] Yousef Sanjalawe, Salam Al-E’mari, Salam Fraihat, Mosleh Abualhaj, and Emran Alzubi. 2025. A deep learning-driven multi-layered steganographic approach for enhanced data security. Scientific Reports 15, 1 (2025), 4761. [33] Jiaming Song, Chenlin Meng, and Stefano Ermon. 2020. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 (2020). [34] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. 2020. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 (2020). [35] Yufei Song, Ziqi Zhou, Menghao Deng, Yifan Hu, Shengshan Hu, Minghui Li, and Leo Yu Zhang. 2026. Erosion Attack for Adversarial Training to Enhance Semantic Segmentation Robustness. In Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’26) .[36] Yufei Song, Ziqi Zhou, Minghui Li, Xianlong Wang, Menghao Deng, Wei Wan, Shengshan Hu, and Leo Yu Zhang. 2025. PB-UAP: Hybrid Universal Adver-sarial Attack For Image Segmentation.. In Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’25) .[37] Yufei Song, Ziqi Zhou, Qi Lu, Hangtao Zhang, Yifan Hu, Lulu Xue, Shengshan Hu, Minghui Li, and Leo Yu Zhang. 2025. SegTrans: Transferable Adversarial Examples for Segmentation Models. IEEE Transactions on Multimedia (2025). [38] Robin Staab, Mark Vero, Mislav Balunović, and Martin Vechev. 2023. Beyond memorization: Violating privacy via inference with large language models. arXiv preprint arXiv:2310.07298 (2023). [39] Batuhan Tömekçe, Mark Vero, Robin Staab, and Martin Vechev. 2024. Private attribute inference from images with vision-language models. Advances in Neural Information Processing Systems 37 (2024), 103619–103651. [40] Gregory K Wallace. 2002. The JPEG still picture compression standard. IEEE transactions on consumer electronics 38, 1 (2002), xviii–xxxiv. [41] Weiyun Wang, Zhangwei Gao, Lixin Gu, Hengjun Pu, Long Cui, Xingguang Wei, Zhaoyang Liu, Linglin Jing, Shenglong Ye, Jie Shao, et al . 2025. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 (2025). [42] Yichen Wang, Yuxuan Chou, Ziqi Zhou, Hangtao Zhang, Wei Wan, Shengshan Hu, and Minghui Li. 2025. Breaking Barriers in Physical-World Adversarial Examples: Improving Robustness and Transferability via Robust Feature. In Proceedings of the 39th Annual AAAI Conference on Artificial Intelligence (AAAI’25) .[43] Yichen Wang, Hangtao Zhang, Hewen Pan, Ziqi Zhou, Xianlong Wang, Peijin Guo, Lulu Xue, Shengshan Hu, Minghui Li, and Leo Yu Zhang. 2025. AdvEDM: Fine-grained Adversarial Attack against VLM-based Embodied Agents. In Pro-ceedings of the 39th Annual Conference on Neural Information Processing Systems (NeurIPS’25) .[44] Zhibo Wang, Hengchang Guo, Zhifei Zhang, Wenxin Liu, Zhan Qin, and Kui Ren. 2021. Feature importance-aware transferable adversarial attacks. In Proceedings of the IEEE/CVF international conference on computer vision . 7639–7648. [45] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al . 2022. Chain-of-thought prompting elicits reason-ing in large language models. Advances in neural information processing systems 
+
+35 (2022), 24824–24837. [46] Peng Xie, Yequan Bie, Jianda Mao, Yangqiu Song, Yang Wang, Hao Chen, and Kani Chen. 2025. Chain of Attack: On the Robustness of Vision-Language Models Against Transfer-Based Adversarial Attacks. In Proceedings of the Computer Vision and Pattern Recognition Conference . 14679–14689. [47] Shihui Yan, Hu Liu, Junyu Shi, Zihui Zhu, Ziqi Zhou, Yufei Song, Youming Geng, Minghui Li, and Shengshan Hu. 2026. VFACamou: View-Fused Adversarial Camouflage for Environment-Adaptive Physical Evasion. In Proceedings of the IEEE International Conference on Multimedia and Expo (ICME’26) .[48] Shihui Yan, Ziqi Zhou, Yufei Song, Yifan Hu, Minghui Li, and Shengshan Hu. 2026. Transferable Physical-World Adversarial Patches Against Pedestrian Detection Models. arXiv preprint arXiv:2604.22552 (2026). [49] Lei Yu, Yechao Zhang, Ziqi Zhou, Yang Wu, Wei Wan, Minghui Li, Shengshan Hu, Pei Xiaobing, and Jing Wang. 2025. Spa-VLM: Stealthy Poisoning Attacks on RAG-based VLM. arXiv preprint arXiv:2505.23828 (2025). [50] Shengming Yuan, Qilong Zhang, Lianli Gao, Yaya Cheng, and Jingkuan Song. 2022. Natural color fool: Towards boosting black-box unrestricted attacks. Ad-vances in Neural Information Processing Systems 35 (2022), 7546–7560. [51] Jiaming Zhang, Junhong Ye, Xingjun Ma, Yige Li, Yunfan Yang, Jitao Sang, and Dit-Yan Yeung. 2024. Anyattack: Towards large-scale self-supervised generation of targeted adversarial examples for vision-language models. arXiv e-prints 
+
+(2024), arXiv–2410. [52] Jiaming Zhang, Qi Yi, and Jitao Sang. 2022. Towards adversarial attack on vision-language pre-training models. In Proceedings of the 30th ACM International Conference on Multimedia . 5005–5013. [53] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. 2018. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition .586–595. [54] Yunqing Zhao, Tianyu Pang, Chao Du, Xiao Yang, Chongxuan Li, Ngai-Man Man Cheung, and Min Lin. 2023. On evaluating adversarial robustness of large vision-language models. Advances in Neural Information Processing Systems 36 (2023), 54111–54138. [55] Ziqi Zhou, Shengshan Hu, Minghui Li, Hangtao Zhang, Yechao Zhang, and Hai Jin. 2023. Advclip: Downstream-agnostic adversarial examples in multimodal contrastive learning. In Proceedings of the 31st ACM International Conference on Multimedia . 6311–6320. [56] Ziqi Zhou, Shengshan Hu, Ruizhi Zhao, Qian Wang, Leo Yu Zhang, Junhui Hou, and Hai Jin. 2023. Downstream-agnostic adversarial examples. In Proceedings of the 2023 IEEE/CVF International Conference on Computer Vision (ICCV’23) .4345–4355. [57] Ziqi Zhou, Yifan Hu, Yufei Song, Zijing Li, Shengshan Hu, Leo Yu Zhang, Dezhong Yao, Long Zheng, and Hai Jin. 2025. Vanish into Thin Air: Cross-prompt Universal Adversarial Attacks for SAM2. In Proceedings of the 39th Annual Conference on Neural Information Processing Systems (NeurIPS’25) .[58] Ziqi Zhou, Bowen Li, Yufei Song, Shengshan Hu, Wei Wan, Leo Yu Zhang, Dezhong Yao, and Hai Jin. 2025. NumbOD: A Spatial-Frequency Fusion Attack Against Object Detectors. In Proceedings of the 39th Annual AAAI Conference on Artificial Intelligence (AAAI’25) .[59] Ziqi Zhou, Minghui Li, Wei Liu, Shengshan Hu, Yechao Zhang, Wei Wan, Lulu Xue, Leo Yu Zhang, Dezhong Yao, and Hai Jin. 2024. Securely Fine-tuning Pre-trained Encoders Against Adversarial Examples. In Proceedings of the 2024 IEEE Symposium on Security and Privacy (SP’24) .[60] Ziqi Zhou, Yufei Song, Minghui Li, Shengshan Hu, Xianlong Wang, Leo Yu Zhang, Dezhong Yao, and Hai Jin. 2024. Darksam: Fooling segment anything model to segment nothing. In Proceedings of the 38th Annual Conference on Neural Information Processing Systems (NeurIPS’24) .[61] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. 2023. Minigpt-4: Enhancing vision-language understanding with advanced large lan-guage models. arXiv preprint arXiv:2304.10592 (2023). [62] Jiajie Zhu, Xia Du, Jizhe Zhou, Chi-Man Pun, Qizhen Xu, and Xiaoyuan Liu. 2024. Dp-rae: A dual-phase merging reversible adversarial example for image privacy protection. In Proceedings of the 32nd ACM International Conference on Multimedia . 671–680. [63] Zihui Zhu, Ziqi Zhou, Yichen Wang, Lulu Xue, Minghui Li, and Shengshan Hu. 2026. Transferable Physical-World Adversarial Patches Against Object Detection in Autonomous Driving. arXiv preprint arXiv:2604.23105 (2026).
