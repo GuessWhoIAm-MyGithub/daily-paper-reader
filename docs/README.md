@@ -6,56 +6,53 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-16
-- 运行时间：2026-07-16 21:25:33 UTC
+- 最新运行日期：2026-07-19
+- 运行时间：2026-07-19 21:29:20 UTC
 - 运行状态：成功
-- 本次总论文数：11
-- 精读区：5
-- 速读区：6
+- 本次总论文数：10
+- 精读区：2
+- 速读区：8
 
 ### 今日简报（AI）
-- 今日共生成 11 篇推荐（精读 5 篇，速读 6 篇）
-- 精读：《Video Transformer for Remote Identity Document Hologram Detection》（9.0/10）, 《Watermark Forensics for Generative Models: An Information-Theoretic Perspective》（9.0/10）
-- 速读：《Enhancing In-context Panoramic Generation via Geometric-aware Pretraining》（6.0/10）, 《RaMark: Radioactive Watermarking for Generated Tabular Data》（6.0/10）, 《Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection》（6.0/10）
+- 今日共生成 10 篇推荐（精读 2 篇，速读 8 篇）
+- 精读：《Clean-Reference Streaming Detection of Lens Occlusion and Photometric Transitions for Camera Tamper Monitoring》（9.0/10）, 《ChartSync: A Benchmark for Visuo-Logical Cascading Chart Editing》（8.0/10）
+- 速读：《Self-supervised Automatic Matting》（7.0/10）, 《BOCCHI: A More Realistic and Challenging Benchmark for Local Motion Blur Detection with MSDCT-UNet》（7.0/10）, 《Parallax Portrait Matting》（7.0/10）
 - 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202607/16/README](/202607/16/README)
+- 详情：[/202607/19/README](/202607/19/README)
 
 ### 精读区论文标签
-1. [Video Transformer for Remote Identity Document Hologram Detection](/202607/16/2607.11419v1-video-transformer-for-remote-identity-document-hologram-detection)  
+1. [Clean-Reference Streaming Detection of Lens Occlusion and Photometric Transitions for Camera Tamper Monitoring](/202607/19/2607.14760v1-clean-reference-streaming-detection-of-lens-occlusion-and-photometric-transitions-for-camera-tamper-monitoring)  
    标签：评分：9.0/10、query:imgfor
-   evidence：通过视频分析检测身份证件伪造
-2. [Watermark Forensics for Generative Models: An Information-Theoretic Perspective](/202607/16/2607.13003v1-watermark-forensics-for-generative-models-an-information-theoretic-perspective)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：用于定位编辑部分的水印取证
-3. [Continuously Evolving Deepfake Detection: An Architecture and Public-Benchmark Evaluation of a Dynamic Detection System](/202607/16/2607.13234v1-continuously-evolving-deepfake-detection-an-architecture-and-public-benchmark-evaluation-of-a-dynamic-detection-system)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：涉及图像篡改（深度伪造）的检测
-4. [DNA: Dual-stage Native Attribution for Generated Image Source Tracing](/202607/16/2607.13685v1-dna-dual-stage-native-attribution-for-generated-image-source-tracing)  
-   标签：评分：9.0/10、query:imgfor
-   evidence：数字取证中生成图像的来源追踪
-5. [DiTailed: Ensuring Visual Object Consistency in Text-Image-to-Image Flow Matching Models](/202607/16/2607.12539v1-ditailed-ensuring-visual-object-consistency-in-text-image-to-image-flow-matching-models)  
+   evidence：通过镜头遮挡和光度变化检测相机篡改。
+2. [ChartSync: A Benchmark for Visuo-Logical Cascading Chart Editing](/202607/19/2607.10301v1-chartsync-a-benchmark-for-visuo-logical-cascading-chart-editing)  
    标签：评分：8.0/10、query:imgfor
-   evidence：确保文本引导图像编辑中的一致性
+   evidence：级联图表编辑技术的基准测试
 
 ### 速读区论文标签
-1. [Enhancing In-context Panoramic Generation via Geometric-aware Pretraining](/202607/16/2607.08765v1-enhancing-in-context-panoramic-generation-via-geometric-aware-pretraining)  
+1. [Self-supervised Automatic Matting](/202607/19/2607.10395v1-self-supervised-automatic-matting)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：用于区域定位的图像抠图技术
+2. [BOCCHI: A More Realistic and Challenging Benchmark for Local Motion Blur Detection with MSDCT-UNet](/202607/19/2607.10427v1-bocchi-a-more-realistic-and-challenging-benchmark-for-local-motion-blur-detection-with-msdct-unet)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：使用频率感知模型进行模糊区域的像素级定位
+3. [Parallax Portrait Matting](/202607/19/2607.11205v1-parallax-portrait-matting)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：引入基于视差的图像抠图技术用于定位前景区域。
+4. [VisualRepair: Dynamic Tool Calling and Region Focusing for Visual Software Issue Repair](/202607/19/2607.14075v1-visualrepair-dynamic-tool-calling-and-region-focusing-for-visual-software-issue-repair)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：用于图像区域定位的区域聚焦技术
+5. [SwinAD: Multi-stage feature reconstruction for unsupervised industrial anomaly detection](/202607/19/2607.14534v1-swinad-multi-stage-feature-reconstruction-for-unsupervised-industrial-anomaly-detection)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：图像中的无监督异常检测和定位
+6. [Hough-SIFT: Robust Image Registration for Linear Structures via Hough Space](/202607/19/2607.14598v1-hough-sift-robust-image-registration-for-linear-structures-via-hough-space)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：图像配准方法可用于取证图像分析。
+7. [Weakly-Supervised RGB-D Salient Object Detection via SAM-driven Pseudo Annotation and State Space Interaction-based Diffusion](/202607/19/2607.15041v1-weakly-supervised-rgb-d-salient-object-detection-via-sam-driven-pseudo-annotation-and-state-space-interaction-based-diffusion)  
+   标签：评分：7.0/10、query:imgfor
+   evidence：弱监督区域定位方法
+8. [TanGO: Training-Free 3D Editing via Tangent-Space Guidance and Optimization](/202607/19/2607.14927v1-tango-training-free-3d-editing-via-tangent-space-guidance-and-optimization)  
    标签：评分：6.0/10、query:imgfor
-   evidence：涉及图像编辑技术，如修复和风格转移。
-2. [RaMark: Radioactive Watermarking for Generated Tabular Data](/202607/16/2607.09000v1-ramark-radioactive-watermarking-for-generated-tabular-data)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于数据完整性的水印，一种操纵检测形式。
-3. [Imperceptible and Reversible Adversarial Examples against Vision-Language Models for Privacy Protection](/202607/16/2607.10329v1-imperceptible-and-reversible-adversarial-examples-against-vision-language-models-for-privacy-protection)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：使用对抗性编辑来分析和逆向图像过程。
-4. [GFR-SAM: Training-Free Referring Camouflaged Object Segmentation via Cross-Image Prompting](/202607/16/2607.11732v1-gfr-sam-training-free-referring-camouflaged-object-segmentation-via-cross-image-prompting)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于定位图像中伪装区域的分割框架
-5. [Statistical Non-linear Reconstruction Loss for Image Anomaly Detection](/202607/16/2607.12866v1-statistical-non-linear-reconstruction-loss-for-image-anomaly-detection)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于异常检测的重建损失，适用于检测图像编辑。
-6. [Classpose drives the discovery of colorectal cancer phenotypes in clinical grade whole slide images](/202607/16/biorxiv-10-64898-2025-12-18-695211-v2-classpose-drives-the-discovery-of-colorectal-cancer-phenotypes-in-clinical-grade-whole-slide-images)  
-   标签：评分：6.0/10、query:imgfor
-   evidence：用于医学图像中定位的细胞分割和表型分析框架。
+   evidence：3D图像编辑框架
 
 
 <div class="dpr-home-promo-card">

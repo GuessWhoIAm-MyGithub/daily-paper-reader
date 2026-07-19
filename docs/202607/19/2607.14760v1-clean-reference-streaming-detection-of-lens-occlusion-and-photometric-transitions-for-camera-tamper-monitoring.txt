@@ -1,0 +1,577 @@
+Title: Clean-Reference Streaming Detection of Lens Occlusion and Photometric Transitions for Camera Tamper Monitoring
+
+URL Source: https://arxiv.org/pdf/2607.14760v1
+
+Published Time: Fri, 17 Jul 2026 00:56:27 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> 1
+
+# Clean-Reference Streaming Detection of Lens Occlusion and Photometric Transitions for Camera Tamper Monitoring 
+
+Bo Ma, Wei Qi Yan, and Jinsong Wu 
+
+Abstract —A surveillance camera is an image sensor whose silent physical degradation invalidates every downstream con-sumer of its data. In-situ integrity alarms for such vision sensors require low false-alarm rates, bounded computation, and diagnosable behavior under nuisance illumination changes. This paper studies a deliberately narrow streaming integrity monitor for two low-cost sensor-fault signatures: texture-collapsing lens occlusion and abrupt photometric scene transition. The detector compares sampled luminance and local-gradient statistics with a clean-only sliding reference, applies coarse-grid structured-light rejection and mode/rapid-brightness suppression, and emits at most one notification per tamper episode. We formalize the decision predicates and derive a consistency rule for when rapid-brightness suppression makes the scene-transition path unreach-able. On 320 in-scope controlled sequences, the default state ma-chine attains 0.800 F1 and 0.822 balanced accuracy (significantly better paired correctness than the strongest baseline, though the F1 margin is not statistically resolved); on a magnitude-swept public audit it attains the highest partial AUC under a 5% false-alarm budget, and a separate extended-stress FPR-constrained sweep reaches 0.925 recall at 0.025 false-positive rate. Public Xiph, Bremen IoT, and UHCTD diagnostics show the fixed predicates preserve low false alarms while recall concentrates inside the declared envelope (UHCTD in-scope covered recall 0.667 versus 0.016 out of scope), and a 9.09-camera-hour verified-negative public audit records zero false alarms. The method is best interpreted as an auditable sensor-health subsystem rather than a universal camera-tamper classifier. 
+
+Index Terms —Camera health monitoring, false-alarm control, image sensors, lens occlusion, photometric scene transition, sen-sor fault detection, streaming detection, video surveillance. 
+
+I. I NTRODUCTION 
+
+A surveillance camera is, above all, an image sensor, and physical interference with that sensor — covering the lens, changing its focus, moving the camera — silently invalidates all analytics downstream of image acquisition, while day–night switching, exposure control, room-light toggles, and large foreground objects produce equally abrupt image changes. This is a sensor-reliability problem: a single camera-health signal gates the availability and trustworthiness of every downstream consumer of the sensor’s data, so a useful in-situ integrity monitor must balance response latency, nuisance rejection, predictable computational cost, and diagnosable behavior. Throughout the paper, tamper names the physical 
+
+Bo Ma and Wei Qi Yan are with Auckland University of Technology, Auckland 1024, New Zealand. Jinsong Wu is with Guilin University of Electronic Technology, Guilin, China. Corresponding author: Bo Ma (e-mail: rcn4743@aut.ac.nz). 
+
+event class, while sensor-integrity or camera-health names the system-facing signal that reports it. Prior systems compare current frames with buffered ref-erences using histograms, edges, frequency coefficients, key-points, or learned representations [1]–[4]. The present work addresses a narrower engineering point: how low-cost pho-tometric and texture cues can be composed into a stateful decision rule whose baseline cannot absorb an active alarm and whose suppression logic is auditable. The novelty is this stateful, auditable composition rather than the individual scalar cues: an active alarm cannot update the clean reference, nuisance transitions are handled by explicit negative gates, and the emission policy is episode-based rather than per-frame — a trade that matters in embedded pipelines where deterministic behavior, bounded state, and failure diagnosis outweigh an opaque classifier. The method is deliberately not presented as a universal covered–defocused–moved camera classifier. Its positive scope comprises (i) lens obstruction producing a sufficiently large texture collapse with a bounded luminance change and (ii) a scene transition producing a sufficiently large luminance change; pure rotation or translation that preserves global statistics, subtle local occlusion, defocus without the required mean shift, and video-file forgery all fall outside that positive guarantee. The contributions are:  
+
+> •
+
+a clean-reference streaming state machine for two de-clared vision-sensor fault signatures: texture-collapsing lens occlusion and abrupt photometric scene transition;  
+
+> •
+
+an implementation-faithful formulation of the mean, gra-dient, grid, suppression, and episode predicates, with diagnostic metadata for field triage;  
+
+> •
+
+a configuration-safety condition showing when rapid-brightness suppression makes the scene-transition path unreachable;  
+
+> •
+
+a false-alarm-constrained evaluation protocol with paired baselines, targeted ablations, and public-data diagnostics; and  
+
+> •
+
+a deployment boundary showing where fixed photometric predicates end and registration, calibration, or learned references begin. II. R ELATED WORK 
+
+A. Reference-Based and Hand-Crafted Detectors 
+
+Ribnick et al. compared buffered old and recent frames using normalized distance measures [1]; Saglam and Temizel arXiv:2607.14760v1 [cs.CV] 16 Jul 2026 2           
+
+> Frame ItSampled statistics
+> μt,gt,32 ×32 grid
+> Clean-only reference
+> (μ⋆t, g ⋆t,grid ⋆)
+> Scene path
+> δt> θ chg , Eq. (9)
+> Occlusion path texture collapse, Eq. (10)
+> Mode and rapid-brightness gates
+> Coarse-grid gate, Eq. (11)
+> Episode state: one notification per episode
+> yt= ( dt, c t, z t, m t)
+> Clean state: reference updates resume
+> clean frames only
+> suppress
+> reject
+> clean recovery frame
+> reference updates resume
+> Fig. 1. Streaming state-machine view of the detector. Sampled statistics feed the photometric scene path and the gradient-collapse occlusion path; the mode and rapid-brightness gates suppress nuisance transitions, and the coarse-grid gate rejects structured lighting; a clean recovery frame ends the single-notification episode and resumes clean-only reference updates.
+
+developed adaptive detectors for obstruction, displacement, and focus changes emphasizing low false-alarm operation [2]; Tung et al. classified tamper events over an adaptive background codebook [5]; and Roy et al. proposed a ro-bust background-model update that resists a slowly corrupted reference [6]. These methods establish the value of a tem-poral reference but also expose reference contamination and threshold calibration as practical concerns. Edge loss is a particularly common cue because cover and defocus remove high-frequency content: Lee et al. measured edge disappear-ance relative to a background image with foreground-object exclusion [3], Shi et al. combined background construction with local-binary-pattern similarity [7], and Sitara and Mehtre added foreground coverage area and its temporal stability [8]. 
+
+B. Camera Displacement and Registration-Based Detection 
+
+Because global mean and sampled gradient are largely insensitive to a rigid viewpoint change, several prior systems add an explicit geometric cue, from SIFT keypoint-geometry verification [9] to the registration and motion-compensation strategies surveyed by Chapel and Bouwmans [10]. We do not implement a registration baseline in this paper; Section V-G instead measures, on real camera-disjoint images, how far a purely photometric predicate is from covering this case on its own. 
+
+C. Statistical, Learned, and Calibrated References 
+
+Mantini and Shah modeled normal signal activity with a Gaussian mixture and temporal filtering [4], later learned a generative reference with deep feature comparison [11], released the UHCTD dataset with deep-classifier benchmarks on covered/defocused/moved/normal frames — the closest prior work to a learned camera-tamper baseline [12] — and surveyed which hand-crafted feature families transfer best across cameras [13]. Pan detected physical camera-integrity attacks with a deep video-frame-interpolation anomaly score [14]. Such learned models represent broader appearance vari-ation but introduce training data, model storage, and domain-transfer requirements; Sidnev et al. highlighted the difficulty of per-camera threshold selection even for low-level features [15]. More broadly, camera tamper detection is one instance of video anomaly detection [16], and false-alarm-constrained evaluation is standard in adjacent visual-inspection settings [17]; our evaluation adopts the same convention. Our approach occupies a different point in this design space: no pixelwise background modeling or foreground masks [3], no trained probabilistic or deep reference [4], [11], [12], no automatic calibration claim [15], and no geometric registration cue [9], [10]. The distinctive element is the composition of sampled statistics, clean-only reference maintenance, structural nuisance rejection, and explicit operational state; the intended advantages are simplicity, auditability, and bounded state, with geometric invariance and cross-camera tuning delegated to complementary modules. 
+
+D. Embedded Analytics and Sensor Self-Validation 
+
+Hand-crafted cues remain relevant when throughput and resource bounds dominate, as in FPGA [18], DSP [19], low-power smart-camera [20], and single-board-computer [21] tamper detectors; this body of work motivates our emphasis on bounded, auditable arithmetic evaluated as a hardware-agnostic algorithmic contribution. Camera tampering is also an instance of the broader sensor-fault-detection problem: self-validating sensor concepts attach an online validity status and diagnostics to every measurement [22], surveys and classifiers for outlier and fault detection in wireless-sensor and IoT 3
+
+deployments organize the corresponding principles for low-cost distributed sensors [23]–[25], and automotive perception likewise treats camera degradation as a sensor-level reliability concern [26]. The present detector follows the same design logic at the level of an image sensor — validate the stream in situ with bounded arithmetic, attach diagnostic metadata to every alarm, and expose a health signal that gates downstream analytics — motivating auditability and false-alarm control over maximal classification power. III. P ROBLEM SCOPE AND OUTPUT SEMANTICS 
+
+Let It ∈ [0 , 255] H×W be a grayscale frame acquired at timestamp τt. The detector emits yt = ( dt, c t, z t, m t), where 
+
+dt ∈ {0, 1} is an alarm, ct ∈ [0 , 1] is a cue magnitude rather than a calibrated posterior probability, mt is diag-nostic metadata, and zt ∈ {no tamper , occlusion event ,
+
+scene transition }. The second label denotes an abrupt photo-metric scene transition. It should not be read as a registration-based guarantee for every camera displacement. The detector holds a window of at most N frames accepted as clean. Its scalar reference is (μ⋆t , g ⋆t ), and its structural reference is a per-cell mean on a 32 × 32 grid. Frames declared tampered are never inserted into these references. The declared operating envelope is: in scope — a texture-collapsing cover with a bounded mean shift, and an abrupt photometric scene transition not suppressed by the mode or rapid-brightness gates; out of scope or weak — pure camera rotation or translation (global statistics carry no registration evidence), mean-preserving defocus, and subtle local partial covers; intended nuisance rejection — global illumination steps; ambiguous, requiring field validation — foreground objects close to the lens; and excluded from accuracy metrics 
+
+— unreadable or failed clips (each condition is tabulated with its mechanistic reason in the supplementary material). 
+
+A. Clip-Level Ground Truth for Evaluation 
+
+The per-frame alarm dt is a prediction . Evaluating that prediction requires a separate, independently defined ground-truth label, and the two must not be conflated. We define them as follows. A clip is ground-truth positive if and only if at least one declared in-scope condition genuinely occurred at some point during the entire recording, independent of whether the detector raised an alarm, and ground-truth negative only if no such condition occurred anywhere in the full recording. This is a claim about the physical recording session, not a sampled subset of its frames; a brief or previously unnoticed occurrence anywhere in the clip makes it positive. Consequently, “the detector did not alarm” is not evidence that a clip is ground-truth-negative: a predicted-negative clip with a missed genuine event is a false negative, and a true negative requires independent confirmation — exhaustive re-view of the full recording or an authoritative collection record, not a coarse pass over sampled frames or the absence of a reported incident. This definition governs every true-negative, false-negative, specificity, and false-positive-rate statement in the paper; where labels do not meet it, we report a conservative accounting convention instead of a true-negative count. IV. S TREAMING TAMPER DETECTOR 
+
+A. Sampled Photometric and Texture Statistics 
+
+Let x index columns and y index rows throughout, so x ≡ 0(mod 4) selects every fourth column. Mean extraction visits every row and every fourth column: 
+
+Ωμ = {(x, y ) : 0 ≤ x < W, 0 ≤ y < H, x ≡ 0 (mod 4) }. (1) The sampled mean is 
+
+μt = 1
+
+|Ωμ|
+
+X
+
+> (x,y )∈Ωμ
+
+It(x, y ). (2) The local-gradient proxy samples both axes every four pixels but compares immediate neighbors: 
+
+Ωg = {(x, y ) : 0 ≤ x < W − 1, 0 ≤ y < H − 1,x ≡ 0 (mod 4) , y ≡ 0 (mod 4) }. (3) 
+
+gt = 12|Ωg |
+
+X
+
+> (x,y )∈Ωg
+
+(dxt (x, y ) + dyt (x, y )) , (4) where dxt = |It(x + 1 , y ) − It(x, y )| and dyt = |It(x, y +1) −It(x, y )|. Immediate differences avoid aliasing a one-pixel texture into an apparently flat image; border pixels lacking a right or lower neighbor are excluded. During warm-up, a frame is treated as boot-time occlusion if 
+
+μt < θ boot ,dark ∨ gt < θ boot ,flat , (5) with implementation defaults θboot ,dark = 15 intensity levels and θboot ,flat = 2 gradient levels (the controlled evaluation of Section V disables the flatness check). Such frames are emitted but excluded from warm-up. Recovery clears the partially collected reference before accepting new clean frames. Once 
+
+N clean frames are available, running sums give constant-time reference updates: 
+
+μ⋆t = 1
+
+N
+
+X
+
+> k∈W t
+
+μk, g⋆t = 1
+
+N
+
+X
+
+> k∈W t
+
+gk. (6) 
+
+B. Photometric Scene-Transition Path 
+
+Define the inter-frame mean jump δt = |μt − μt−1|, current and previous texture-collapse indicators 
+
+ot = I[gt < θ occ g⋆t ], ot−1 = I[gt−1 < θ occ g⋆t ], (7) where both frames are deliberately tested against the current 
+
+reference g⋆t : the clean window is frozen while a candidate is active, so g⋆t is the most recent uncontaminated texture reference for either frame, and normalized gradient change 
+
+qt = gt−1 − gt
+
+max( g⋆t , ϵ ) . (8) The primary scene candidate is 
+
+Csc  
+
+> t
+
+= [ δt > θ chg ]∧[¬ot ∨ot−1]∧[ρgrad ≤ 0∨qt ≥ ρgrad ]. (9) A counter requires K consecutive candidates when persistence is enabled. A secondary luminance route compares the current mean with both the last accepted clean mean and the sliding 4
+
+mean, requiring an absolute jump above θchg and a relative jump above the auxiliary ratio ρlumin (default 0.8); in the evaluated pathway it adds baseline-relative luminance memory only. 
+
+C. Gradient-Collapse Occlusion Path 
+
+If the scene path has not fired, an occlusion candidate requires the conjunction 
+
+gt < θ occ g⋆t ,
+
+∆min < |μt − μ⋆t | ≤ ∆max ,μmin ≤ μt ≤ μmax ,
+
+(10) so that Eq. (10) denotes all three conditions jointly. The lower bound is ∆min = 20 intensity levels in the implementation; the upper bound and absolute luminance interval reject extreme environmental transitions. Consequently, defocus that reduces texture without also satisfying the mean constraint is not guaranteed to trigger. For each frame, a 32 × 32 center-sampled luminance grid is compared with its clean reference. Let r20 be the fraction of cells changing by more than 20, ¯σb the mean standard deviation over 4×4 grid blocks, and rflat the fraction of blocks with standard deviation below 3. A low-gradient candidate is rejected as structured lighting change when 
+
+(r20 > 0.85 ∧ ¯σb > 10 ∧ rflat < 0.25) 
+
+∨ (¯ σb > 18 ∧ rflat < 0.20 ∧ gt/g ⋆t > 0.40) . (11) The grid is thus a negative gate for occlusion, not a third positive detector. 
+
+D. Transition Suppression and Configuration Consistency 
+
+A change in the externally supplied day–night flag (the operating-mode gate, hereafter the mode gate) suppresses scene output for that transition; on typical cameras this flag derives from the IR-cut-filter state or the sensor front end’s exposure/gain metadata. Separately, if δt > θ rapid , the times-tamp is stored and scene output is suppressed for Tsup . These gates do not suppress an occlusion that independently satisfies (10). The two brightness thresholds cannot be tuned indepen-dently. If Tsup > 0 and θrapid ≤ θchg , every frame satisfying 
+
+δt > θ chg also starts the rapid-brightness window before the scene decision. The primary scene path is therefore unreach-able on that frame. We impose the consistency rule 
+
+Tsup = 0 ∨ θrapid > θ chg . (12) Persistence K > 1 confirms a multi-frame transition, not a single step followed by a stable new view. 
+
+E. Episode State, Complexity, and Invariants 
+
+Two binary episode states select per-frame or once-per-episode emission; a clean decision ends the episode and updates all clean references, and scene decisions precede pri-mary occlusion decisions. Mean extraction costs O(HW/ 4) ,gradient extraction O(HW/ 16) , and the fixed grid O(32 2);                          
+
+> TABLE I EVALUATION MAP . P RIMARY IN -SCOPE EVIDENCE IS SEPARATED FROM BOUNDARY AND TRANSFER DIAGNOSTICS ;METRICS FROM DIFFERENT ROWS ARE NOT DIRECTLY COMPARABLE .
+> Protocol Data Units Question Controlled stress (Ta-ble II) 8 background videos, fixed synthetic mag-nitudes 400 seq. primary in-scope comparison Sensitivity grid (suppl.) same 400 seq. parameter sensitivity Extended stress, probes (suppl.) synthetic gate stres-sors 30–60 seq. each per-gate behavior Xiph audits public videos frames /seq. reproducibility, latency Magnitude sweep (Fig. 2) public videos, swept magnitudes 250 seq. decoupled operating characteristics IoT cross-check (suppl.) public stills, 2 cam-eras images untuned cross-camera transfer UHCTD diagnostic (suppl.) public video, 2 cam-eras 4.5M frames real-video boundary, in-scope stratification Long-negative audit (suppl.) VIRAT + CDnet2014 negatives 9.09 cam.-h verified-negative false alarms
+
+storage is O(N ) scalars plus O(N ·32 2) bytes. Three invariants make the detector auditable in a larger pipeline: reference safety (no alarming frame is ever inserted into the scalar or grid reference, so a sustained occlusion cannot be absorbed by the baseline), episode non-duplication (later positive frames belong to the active episode until a clean recovery frame resets it), and scene-path reachability (the consistency rule of Eq. (12)). V. C ONTROLLED EVALUATION 
+
+Table I maps every evaluation protocol in this paper to its data source, unit of analysis, and the question it answers; the same method row can therefore appear under different scopes without those scopes being comparable. 
+
+A. Protocol and Baselines 
+
+Ten random 48-frame clips are drawn from each of eight background videos (every third source frame, resized to 
+
+160 × 90 ), and five deterministic conditions are generated per clip, yielding 400 labeled sequences: clean, texture-collapsing cover, photometric scene replacement, geometry-preserving rotation/translation, and a global illumination step. Cover and photometric replacement are the declared in-scope positives; clean and illumination-step sequences are negatives; the geo-metric shift is an out-of-scope diagnostic that tests the absence of registration evidence. Perturbations begin at frame 16, after a 12-frame reference window; the seed is fixed to 20260701. We compare six methods on identical sequences. The five baselines are transparent, deployable without training, and representative of the mean, gradient, edge, frame-difference, and histogram cues used in lightweight tamper detection: mean jump (any post-onset |μt − μt−1| > 80 ), gradient collapse 
+
+(gt < 0.45 g⋆ after warm-up), an edge-reference proxy (a literature-motivated Sobel edge-disappearance baseline with-out object masks, not claimed as an exact reproduction of [3]), frame difference (mean absolute difference from the clean reference frame above 35 levels), and histogram difference 
+
+(Bhattacharyya distance from the clean reference histogram above 0.35). Complete published detectors such as Saglam 5
+
+and Temizel’s adaptive scheme [2] depend on pixelwise back-ground maintenance outside the bounded-state family studied here and are represented by their constituent cues. The full state machine runs Eqs. (9)–(11) with N = 12 , θocc = 0 .45 ,
+
+θchg = 80 , ∆max = 45 , [μmin , μ max ] = [60 , 120] , K = 1 ,
+
+ρgrad = 0 .2, and rapid suppression disabled to satisfy (12) without masking scene alarms. Performance is evaluated once per sequence. Primary met-rics are computed only on the declared in-scope conditions: cover and photometric replacement as positives, and clean and illumination step as negatives. The geometric-shift condition is reported as an alarm-rate diagnostic rather than as a positive class in the primary metric. 
+
+B. Statistical Analysis 
+
+All comparisons are paired by construction. On the 320 primary-scope sequences, the strongest baseline by F1 is histogram difference; the full detector alone is correct on 81 sequences and histogram difference alone on 46, giving exact McNemar p = 0 .0024 , while the paired-bootstrap F1 difference is 0.023 with 95% CI [−0.041 , 0.085] (10,000 resamples). We therefore interpret the primary result as sig-nificantly improved paired correctness and false-alarm control on the declared scope, while the aggregate F1 advantage is not statistically resolved. The geometric-shift condition is excluded from the primary metric and retained as a boundary diagnostic: the full detector alarms on 3 of 80 such sequences (0.038) versus 77 of 80 for frame difference (0.963), showing why a moved-camera claim requires a registration cue. 
+
+C. Interpretation 
+
+Mean jump is selective but misses cover; gradient collapse detects most covers but reacts to nuisance conditions; the edge proxy is more balanced but remains a proxy with-out foreground masks; the frame- and histogram-difference detectors buy high recall with excessive negative-sequence alarms (31.3% clean-sequence alarms for frame difference); the complete state machine gives the best primary-scope F1 and balanced accuracy at substantially lower FPR. A basic ablation and threshold-sensitivity grid over the same 400 sequences (full table in the supplementary material) shows the expected monotone behavior: disabling the auxiliary luminance route trades recall for the lowest FPR (0.025); lowering the scene threshold to 60 doubles nuisance false alarms (FPR 0.200) while raising it to 100 costs photometric-transition recall; relaxing the occlusion ratio to 0.35 is the only single-parameter change that improves F1 (0.674 vs. 0.636 at the all-condition scope, which also counts geometric shift as a positive; see the supplementary material). The clean-only reference update and coarse-grid rejection variants produced no measurable change on this five-condition grid, so those design choices are instead isolated with the targeted stress probes summarized below. 
+
+D. Extended Stress, Latency, and FPR-Constrained Operation 
+
+An extended controlled stress audit with six additional generated conditions (sustained cover, repeated cover episodes, structured lighting, day–night transition, rapid brightness, close foreground) exercises the gates individually; the sup-plementary material reports the full component-triggered and targeted-probe tables. The component-level findings are: re-moving rapid-brightness suppression raises rapid-brightness false alarms from 0.217 to 0.767 and introduces day–night false alarms at 0.233; clean-only reference maintenance pre-serves a sustained-cover alarm that all-frame updating silently absorbs; the coarse-grid gate suppresses every structured-light false alarm that fires without it; and a lightweight ORB registration diagnostic detects all sampled geometric-shift clips but with 0.50 clean-clip FPR — complementary, not deployable. Onset latency of detected positives is concentrated at zero frames (median and P90 zero, maximum 10, over 103 detections). A threshold sweep over the 360 extended-stress sequences (120 sustained- and repeated-cover positives, 240 nuisance negatives) reaches recall 0.925 at FPR ≤ 0.05 
+
+using θchg = 150 and θocc = 0.50 , with achieved FPR 0.025; because the sweep reuses generated data, we treat it as an FPR-constrained sensitivity diagnostic rather than a held-out operating point, and a field deployment should select thresholds on calibration cameras. 
+
+E. Public-Data Reproducibility Audit 
+
+Running the controlled protocol on eight small public Xiph.org test videos [27] produced 100 labeled synthetic stress sequences, on which the full state machine obtained precision 1.000, recall 0.500, F1 0.667, and FPR 0.000 (exact 95% upper bound 0.071 on 0/50), while the high-recall frame-difference baseline again had higher F1 (0.730) at a much higher FPR (0.500) — the same qualitative pattern as the local benchmark. Treating the unmodified public videos as clean negatives (808 frames), the detector emitted no alarms at 0.15 ms median per-frame simulator latency; a bounded 720p smoke test with unchanged thresholds also preserved zero false positives (details and intervals in the supplementary material). These are public-data sanity checks only and do not replace camera-disjoint field annotations or false alarms per camera-day. 
+
+F. Magnitude-Swept Public Detectability Audit 
+
+The controlled protocol fixes perturbation magnitudes near the detector’s configured operating point, which risks over-stating headline metrics. To remove this generator–detector coupling, we repeated the protocol on the public Xiph backgrounds with magnitudes sampled to cross the config-ured thresholds: cover mean shifts in [5 , 80] with opacity in [0 .6, 1.0] (versus the accepted (20 , 45] ), scene shifts in 
+
+[20 , 160] (versus θchg = 80 ), and illumination steps in 
+
+[20 , 110] . Each of the resulting 250 sequences records acontinuous score per method, and the state machine is ad-ditionally swept along a monotone fourteen-point threshold path, yielding operating characteristics for all six methods (full curves in the supplementary material). At the false-alarm budget FPR ≤ 0.05 used throughout the paper, the full state machine attains the highest normalized partial AUC, 0.494, ahead of gradient collapse (0.422), histogram difference 6                                                                                  
+
+> TABLE II CONTROLLED STRESS -TEST RESULTS . O F THE 400 GENERATED SEQUENCES (FIVE CONDITIONS , 80 SEQUENCES EACH ), THE 320 PRIMARY -SCOPE SEQUENCES (COVER AND PHOTOMETRIC REPLACEMENT AS POSITIVES ;CLEAN AND ILLUMINATION STEP AS NEGATIVES )DEFINE THE AGGREGATE METRICS ,WITH GEOMETRIC SHIFT RETAINED ONLY AS AN OUT -OF -SCOPE BOUNDARY DIAGNOSTIC . C ONDITION COLUMNS REPORT ALARM RATES OVER
+> 80 SEQUENCES PER CONDITION .Method Prec. Recall F1 BAcc FPR Clean Cover Photo. Illum. Geom. Mean jump 0.898 0.331 0.484 0.647 0.038 0.038 0.000 0.663 0.038 0.038 Gradient collapse 0.927 0.637 0.756 0.794 0.050 0.050 0.963 0.313 0.050 0.050 Edge-reference proxy 0.906 0.662 0.765 0.797 0.069 0.050 1.000 0.325 0.088 0.100 Frame difference 0.602 0.994 0.750 0.669 0.656 0.313 0.988 1.000 1.000 0.963 Histogram difference 0.635 1.000 0.777 0.713 0.575 0.150 1.000 1.000 1.000 0.213 Full state machine 0.912 0.713 0.800 0.822 0.069 0.038 0.938 0.488 0.100 0.038
+
+(0.394), the edge-reference proxy (0.380), mean jump (0.338), and frame difference (0.272). Because magnitudes now cross the declared envelope, absolute recall is necessarily lower than in Table II; the informative quantity is the ranking under a fixed false-alarm budget. Figure 2 reports detection rate as a function of perturbation magnitude: cover detection peaks inside the accepted (20 , 45] 
+
+mean-shift interval and declines beyond ∆max (making the declared envelope directly visible), and the state machine stays silent on illumination steps until the magnitude approaches 
+
+θchg , whereas the high-recall frame- and histogram-difference baselines alarm on essentially every nuisance step. 
+
+G. Independent Public Cross-Dataset Check 
+
+The audits above still use synthetic perturbations. To test transfer to data we did not collect or design, we ran a single-shot check on the Bremen IoT image set, an independently collected, publicly released outdoor collection from two cam-era locations [28]. These are periodic still captures rather than a continuous stream, so persistence, latency, and mode gating do not apply; we evaluate only the static occlusion predicate (Eq. (10)) against a fixed reference built from a small sample of normal images, with no threshold retuned from the controlled-evaluation setting. The set labels four classes per location: normal, blurred, rotated, and obstructed-lens (named noimage in the dataset release). We report two protocols: within-camera, where ref-erence and test images come from the same location, and camera-disjoint, where the reference from one location is applied unmodified to the other. Across all four protocol instances (per-protocol and per-method tables in the supple-mentary material), the occlusion predicate held false positives on held-out normal images to 0.000–0.009, at the cost of recall of 0.065–0.199 concentrated on the obstructed-lens class (per-category alarm rate 0.195–0.386), a weak response to blur (0.00–0.28), and essentially no response to rotation ( ≤0.006) — exactly the declared operating envelope of Section III. The three reference-based baselines transferred far worse under the camera-disjoint protocol, with false-positive rates of 0.15–1.00; the same clean-only reference logic that limits recall here is what kept the false-alarm side stable without per-camera recalibration. Representative frames behind these numbers appear in the supplementary material: the flagged full-lens obstruction is a near-uniform frame with collapsed gradient, a clean match to Eq. (10); a missed defocus case retains enough residual luminance structure to fall outside the required mean-shift interval; and a missed rotation case is nearly indistinguishable from the normal reference in global mean and sampled gradient, grounding the declared out-of-scope rotation case in a real frame. 
+
+H. Public UHCTD Video Diagnostic 
+
+UHCTD is a public multi-day camera-tampering video dataset with normal, covered, defocused, and moved-camera conditions and published deep-network predictions [12], used here as an external diagnostic. Frame class 0 is treated as negative and classes 1–3 as positive; this binary mapping is deliberately broader than our operating envelope (camera movement is out of scope and defocus only weakly covered), and no thresholds were tuned on UHCTD. The full protocol tables appear in the supplementary mate-rial. The official released Camera A predictions over Days 3–6 (AlexNet experiments) reach recall 0.86–0.88 but at normal-frame FPR 0.28–0.29; the release provides hard class labels rather than scores, so these baselines cannot be re-thresholded to the FPR ≤ 0.05 budget used elsewhere in this paper. A full decoded-video pass (stride 1) of both cameras shows the full state machine is not completely silent on this domain — recall 0.028 at FPR 0.049 on Camera A (1,032,624 frames) and recall 0.021 at FPR 0.039 on Camera B (3,454,272 frames) — far below the official CNN baselines. The transparent baselines buy recall only with false alarms: gradient collapse reaches recall 0.36–0.49 at FPR 0.44–0.53, and histogram difference recall 0.67–0.90 at FPR 0.57–0.78. A frozen ResNet18 feature-distance baseline on a 1,200-frame sample reaches F1 0.681 at its best-F1 threshold and recall 0.392 when constrained to FPR ≤ 0.05 . Stratifying all 576 labeled events against the operating envelope explains this: only 22 fall in scope, and those reach recall 0.409 (0.667 for covers) versus re-call 0.016 for the 382 out-of-scope events (exact intervals in the supplementary material) — detection concentrates where the envelope predicts. To test whether a calibrated learned model can recover recall, we fine-tuned the last layer of ResNet18 as a binary tamper classifier on Camera A Days 3–4: the same-camera held-out split (Days 5–6) reaches recall 0.890 at FPR 0.049 (F1 0.889 at its best-F1 threshold), while the camera-disjoint split (Camera B) collapses — its best-F1 point already sat-urates FPR near 1.0, and no threshold recovers nonzero recall at FPR ≤ 0.05 . Calibration therefore transfers only 710 20 30 40 50 60 70                    
+
+> Perturbation magnitude
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Alarm rate
+> Cover (mean shift, levels)
+> 40 60 80 100 120 140
+> Perturbation magnitude
+> Scene transition (mean shift, levels)
+> 40 60 80 100
+> Perturbation magnitude
+> Illumination step (nuisance, levels)
+> Full state machine Gradient collapse Histogram difference Edge-reference proxy Mean jump Frame difference
+> Fig. 2. Detection rate versus perturbation magnitude on the magnitude-swept public audit (five bins per condition, default thresholds). Cover detection by the full state machine peaks inside the accepted mean-shift interval (20 ,45] and declines beyond ∆max , which visualizes the declared operating envelope; the illumination panel shows the nuisance-rejection margin below θchg .
+
+within the training camera, and UHCTD serves overall as an external operating-boundary diagnostic: the full state machine detects a small fraction of UHCTD events (primarily severe covers satisfying the mean-shift interval) at moderate FPR, and calibration or learned baselines are needed before extending the claim to moved-camera and defocus classes. We also ran a bounded camera-disjoint threshold-transfer diagnostic: FPR ≤ 0.05 thresholds selected on one UHCTD camera do not transfer reliably to the other in either direction (protocol and table in the supplementary material), supporting the need for a larger camera-disjoint calibration protocol before any broad UHCTD or field claim. VI. D ISCUSSION AND LIMITATIONS 
+
+The main operational advantage is a small, auditable deci-sion system — tampered frames cannot poison the reference, nuisance gates have explicit semantics, and episode state prevents repeated notifications — supported by the primary controlled results on its matched scope, with the geometric diagnostic and external checks defining where registration, calibration, or learned references are required. The public-data evidence should be read across four sampling regimes rather than as one pooled rate: the Xiph audit checks reproducibility with synthetic stress and clean playback; the independent image check shows near-zero normal-image false alarms under camera-disjoint transfer (0.000–0.009), supporting the clean-reference transfer story for still images; and the UHCTD full decoded pass (4.5M frames) locates the boundary where fixed predicates detect only a small fraction of events (recall 0.021–0.028 at FPR 0.039–0.049) while a fine-tuned ResNet18 (F1 0.889 same-camera) collapses to near-zero recall at the same budget once transferred across cameras, motivating cali-bration or learned baselines before broader claims. The fourth check — a public long-negative audit spanning VIRAT [29] and four CDnet2014 [30] categories (345 recordings, 9.09 camera-hours; table in the supplementary material) — records zero false alarms for the full state machine, bounding its rate below 0.33 false alarms per camera-hour (one-sided 95%; recording-length caveat in the supplementary material). The supplementary operational candidate pools stay out of the main false-positive evidence — they lack long-negative protocols and several rows use surrogate labels; their diagnostic value is exposing an enriched-pool false-alarm rate and close-range cover false negatives, motivating camera-disjoint calibration and predicate-level remedies. Several limitations remain. First, a held-out, independently annotated real-camera test set with physically executed tamper events, onset/offset labels, and day/night metadata is still required; no public dataset currently provides physically ex-ecuted tamper events in continuous video (UHCTD injects tampering synthetically; the Bremen set provides physical tampers only as still images), so a scripted multi-camera field study remains future work. Second, pure geometric dis-placement needs a complementary registration cue, and subtle partial covers or mean-preserving defocus violate Eq. (10). Third, fixed thresholds remain camera dependent; percentile calibration should be evaluated against manual settings, though the false-alarm side of this concern did not materialize under untuned transfer in Section V-G. Finally, the contribution is hardware-agnostic: latency and throughput were measured on commodity CPU hardware, and a dedicated embedded target is not a prerequisite for the algorithmic claims. As a supplementary systems-level data point, the standalone C++ implementation processes 10,000 synthetic frames at 
+
+160 ×90 in 0.32 s (31,400 fps) and 1,000 frames at 1280 ×720 
+
+in 0.79 s (1,270 fps) on a commodity x86-64 CPU; because the state machine subsumes mean, gradient, and grid computa-tions, this upper-bounds the per-frame cost of every baseline. VII. R EPRODUCIBILITY , D ATA , AND DEPLOYMENT 
+
+BOUNDARIES 
+
+All evaluations use public data (Xiph, Bremen IoT, UHCTD, VIRAT, CDnet2014) or a fully specified protocol, except the primary benchmark’s unreleased background video (public-data equivalent in Section V-D); the supplementary material gives the exact predicates, configuration, and statistical proce-dures, and the release artifact will include scripts reproducing every reported public-data table and figure. 8
+
+Auditability requires preserving diagnostic metadata at the alarm frame, not just the final decision. A minimal per-frame record is 
+
+mt = ( μt, g t, μ ⋆t , g ⋆t , δ t, L t, s t, τ t), (13) where Lt is the coarse-grid rejection flag, st the suppres-sion/mode state, and τt the episode state: the same gradient collapse is triaged as a cover candidate when Lt = 0 and as a structured-lighting rejection when Lt = 1 ; archive this record for false-alarm review. A rigorous field evaluation should publish camera-disjoint splits, attack types with onset/offset, day/night state, tuning provenance, per-type recall, onset la-tency, false alarms per camera-day, and paired confidence intervals; long negative recordings qualify only under the definition of Section III-A. Because the domain is surveillance video, released examples are screened for privacy and permission; the detector is a camera-health signal for maintenance — not evidence about people, behavior, or intent — and deployment should retain human review and site-specific calibration given the deliber-ately excluded tamper modes. VIII. C ONCLUSION 
+
+We presented an implementation-faithful, configuration-aware camera-tamper state machine for texture-collapsing occlusion and abrupt photometric scene transition, in which clean-only references, coarse structural rejection, transition suppression, and episode control yield deterministic behav-ior at low arithmetic cost. A controlled paired experiment shows improved primary-scope F1 and balanced accuracy with significantly better paired correctness than the strongest transparent baseline (the paired F1 interval still overlaps zero), the magnitude-swept public audit adds the highest partial AUC under a 5% false-alarm budget, an in-scope stratification of 4.5M real frames confirms envelope-consistent detection, and a verified-negative public audit records zero false alarms in 9.09 camera-hours. The contribution is deliberately an auditable sensor-health subsystem for two low-cost signatures rather than a general classifier, with moved-camera detection del-egated to a registration cue and field calibration still required before broad deployment claims. REFERENCES [1] E. Ribnick, S. Atev, O. Masoud, N. Papanikolopoulos, and R. Voyles, “Real-time detection of camera tampering,” in Proc. IEEE Int. Conf. Video Signal Based Surveillance (AVSS) , 2006, pp. 10–15. [2] A. Saglam and A. Temizel, “Real-time adaptive camera tamper detection for video surveillance,” in Proc. IEEE Int. Conf. Advanced Video Signal Based Surveillance (AVSS) , 2009, pp. 430–435. [3] G. beom Lee, M. jin Lee, and J. Lim, “Unified camera tamper detection based on edge and object information,” Sensors , vol. 15, no. 5, pp. 10 315–10 331, 2015. [4] P. Mantini and S. K. Shah, “A signal detection theory approach for camera tamper detection,” in Proc. IEEE Int. Conf. Advanced Video Signal Based Surveillance (AVSS) , 2017, pp. 1–6. [5] C.-L. Tung, P.-L. Tung, and C.-W. Kuo, “Camera tamper detection using codebook model for video surveillance,” in Proc. Int. Conf. Machine Learning and Cybernetics (ICMLC) , vol. 5, 2012, pp. 1760–1763. [6] S. Roy, A. Ghosh, and A. Basu, “Robust singular value decomposition with application to video surveillance background modelling,” Statistics and Computing , vol. 34, no. 5, p. 178, 2024. [7] P. Shi, B. Hou, J. Chen, and Y. Zu, “An algorithm of occlusion detection for the surveillance camera,” Scientific Programming , vol. 2021, p. 6698160, 2021. [8] K. Sitara and B. M. Mehtre, “Automated camera sabotage detection for enhancing video surveillance systems,” Multimedia Tools and Applica-tions , vol. 78, pp. 5819–5841, 2019. [9] H. Yi, X. Jiao, X. Luo, and C. Yi, “SIFT-based camera tamper detection for video surveillance,” in Proc. 25th Chinese Control and Decision Conference (CCDC) , 2013, pp. 665–668. [10] M.-N. Chapel and T. Bouwmans, “Moving objects detection with a moving camera: A comprehensive review,” Computer Science Review ,vol. 38, p. 100310, 2020. [11] P. Mantini and S. K. Shah, “Camera tampering detection using generative reference model and deep learned features,” in Proc. Int. Conf. Computer Vision Theory Applications (VISAPP) , 2019, pp. 85–95. [12] ——, “UHCTD: A comprehensive dataset for camera tampering detec-tion,” in Proc. IEEE Int. Conf. Advanced Video Signal Based Surveil-lance (AVSS) , 2019, pp. 1–8. [13] ——, “A survey of feature types and their contributions for camera tampering detection,” 2023. [14] J. Pan, “Physical integrity attack detection of surveillance camera with deep learning based video frame interpolation,” 2019. [15] A. Sidnev, M. Barinova, and S. Nosov, “Efficient camera tampering detection with automatic parameter calibration,” in Proc. IEEE Int. Conf. Advanced Video Signal Based Surveillance (AVSS) , 2018, pp. 1–6. [16] Y. Liu, D. Yang, Y. Wang, J. Liu, J. Liu, A. Boukerche, P. Sun, and L. Song, “Generalized video anomaly event detection: Systematic taxonomy and comparison of deep models,” ACM Computing Surveys ,vol. 56, no. 7, p. 189, 2024. [17] T. Bao, J. Chen, W. Li, X. Wang, J. Fei, L. Wu, R. Zhao, and Y. Zheng, “MIAD: A maintenance inspection dataset for unsupervised anomaly detection,” 2022. [18] T. Kryjak, M. Komorkiewicz, and M. Gorgon, “FPGA implementation of camera tamper detection in real-time,” in Proc. Conf. Design Archi-tectures Signal Image Processing (DASIP) , 2012, pp. 224–231. [19] D. T. Lin and C. H. Wu, “Real-time active tampering detection of surveillance camera and implementation on digital signal processor,” in Proc. 8th Int. Conf. Intelligent Information Hiding and Multimedia Signal Processing (IIH-MSP) , 2012, pp. 383–386. [20] A. Gaibotti, C. Marchisio, A. Sentinelli, and G. Boracchi, “Tampering detection in low-power smart cameras,” in Engineering Applications of Neural Networks (EANN) . Springer, 2015, vol. 517, pp. 243–252. [21] Y. R. Adamovskiy and R. P. Bohush, “Smoke and camera tampering detection system based on single-board computer for real-time fire monitoring,” Journal of the Belarusian State University. Mathematics and Informatics , no. 1, pp. 108–120, 2026. [22] M. P. Henry and D. W. Clarke, “The self-validating sensor: Rationale, definitions and examples,” Control Engineering Practice , vol. 1, no. 4, pp. 585–610, 1993. [23] Y. Zhang, N. Meratnia, and P. Havinga, “Outlier detection techniques for wireless sensor networks: A survey,” IEEE Communications Surveys and Tutorials , vol. 12, no. 2, pp. 159–170, 2010. [24] A. Gaddam, T. Wilkin, M. Angelova, and J. Gaddam, “Detecting sensor faults, anomalies and outliers in the internet of things: A survey on the challenges and solutions,” Electronics , vol. 9, no. 3, p. 511, 2020. [25] S. Zidi, T. Moulahi, and B. Alaya, “Fault detection in wireless sensor networks through SVM classifier,” IEEE Sensors Journal , vol. 18, no. 1, pp. 340–347, 2018. [26] A. Pandharipande, C.-H. Cheng, J. Dauwels, S. Z. Gurbuz, J. Ibanez-Guzman, G. Li, A. Piazzoni, P. Wang, and A. Santra, “Sensing and machine learning for automotive perception: A review,” IEEE Sensors Journal , vol. 23, no. 11, pp. 11 097–11 115, 2023. [27] Xiph.org Foundation, “Xiph.org Video Test Media: Derf’s Collection,” https://media.xiph.org/video/derf/, accessed 2026-07-03. [28] S. Attarha, K. Shanmugi, and A. F¨ orster, “Poster: Camera tampering detection for outdoor IoT systems,” arXiv preprint arXiv:2602.05706 ,2026. [29] S. Oh, A. Hoogs, A. Perera, N. Cuntoor, C.-C. Chen et al. , “A large-scale benchmark dataset for event recognition in surveillance video,” in 
+
+Proc. IEEE Conf. Computer Vision Pattern Recognition (CVPR) , 2011, pp. 3153–3160. [30] Y. Wang, P.-M. Jodoin, F. Porikli, J. Konrad, Y. Benezeth, and P. Ishwar, “CDnet 2014: An expanded change detection benchmark dataset,” in 
+
+Proc. IEEE Conf. Computer Vision Pattern Recognition Workshops (CVPRW) , 2014, pp. 393–400. 1
+
+# Supplementary Material for Clean-Reference Streaming Detection of Lens Occlusion and Photometric Transitions for Camera Tamper Monitoring 
+
+Bo Ma, Wei Qi Yan, and Jinsong Wu 
+
+I. I MPLEMENTATION TRACEABILITY AND EXACT 
+
+PREDICATES 
+
+The primary input is an 8-bit single-channel frame. Mean luminance samples every fourth column on every row, whereas the gradient samples every fourth row and column and uses the immediate right and lower neighbors. Consequently, their leading costs are HW/ 4 samples and approximately 2HW/ 16 
+
+absolute differences, respectively. The current single-frame pathway exposes an auxiliary luminance/gradient interface with 
+
+ℓt = 1 , μaux  
+
+> t
+
+= μt, gaux enabled  
+
+> t
+
+= 0 . (1) Thus the auxiliary valid-ratio occlusion test cannot fire, the auxiliary-gradient test is disabled, and the only active auxiliary contribution is an additional mean-change comparison against the last accepted clean frame and the sliding reference. The coarse 32 × 32 luminance grid is likewise not a positive detec-tor. It is evaluated only after the scalar occlusion predicate has fired and can only reject that candidate as a structured lighting change. Let μ⋆t and g⋆t be the clean-window means, δt = |μt −μt−1|,and ϵ = 10 −6. The primary scene predicate before persistence and suppression is 
+
+St = [ δt > θ chg ] ∧ [¬ot ∨ ot−1]
+
+∧
+
+
+
+ρgrad ≤ 0 ∨ gt−1 − gt
+
+max( g⋆t , ϵ ) ≥ ρgrad 
+
+
+
+, (2) where oj = [ gj < θ occ g⋆t ]. A counter increments only on consecutive St = 1 frames and resets otherwise. The primary occlusion predicate is 
+
+Ot = [ gt < θ occ g⋆t ] ∧ [|μt − μ⋆t | > 20] 
+
+∧ [|μt − μ⋆t | ≤ ∆max ] ∧ [μmin ≤ μt ≤ μmax ] ∧ [¬Lt],
+
+(3) where Lt is the coarse-grid structured-lighting predicate de-scribed in the main paper. For the active auxiliary luminance route, let μt− be the last accepted clean-frame mean. Then 
+
+At = [ |μt − μt− | > θ chg ∨ | μt − μ⋆t | > θ chg ]
+
+∧
+
+ |μt − μt− |
+
+max( μt− , 1) > ρ lumin ∨ |μt − μ⋆t |
+
+max( μ⋆t , 1) > ρ lumin 
+
+
+
+.
+
+(4) 
+
+Algorithm 1 Streaming Decision Order 
+
+1: Validate single-channel frame geometry. 
+
+2: Compute mean, gradient, and coarse sample. 
+
+3: Update rapid-brightness timestamp and suppression state. 
+
+4: if clean reference is not initialized then 
+
+5: Emit but do not store a boot-occluded frame. 
+
+6: Otherwise insert the frame into warm-up buffers. 
+
+7: return .
+
+8: end if 
+
+9: Evaluate the primary scene predicate and persistence. 
+
+10: if no primary scene decision then 
+
+11: Evaluate scalar occlusion and coarse-grid rejection. 
+
+12: end if 
+
+13: Evaluate the active auxiliary luminance scene route. 
+
+14: Emit according to per-frame or one-per-episode policy. 
+
+15: if no tamper decision then 
+
+16: Update scalar, auxiliary-luminance, and grid references. 
+
+17: end if 
+
+18: Update previous-frame mean and gradient on every frame. 
+
+19: Update previous auxiliary mean only on an accepted clean frame. This route is evaluated only outside mode-change and rapid-brightness suppression windows. It may reinforce a scene decision but does not overwrite an already selected occlusion. II. S UPPRESSION CONSISTENCY PROOF 
+
+Suppose Tsup > 0 and θrapid ≤ θchg . For any frame satisfying the first conjunct of the primary scene predicate, 
+
+δt > θ chg ≥ θrapid . (5) The rapid-change timestamp is updated before the scene predicate is evaluated. At that same timestamp, 
+
+0 ≤ τt − τrapid = 0 < T sup , (6) so scene output is suppressed. Therefore the primary scene path cannot emit on its triggering frame. The sufficient con-figuration rule is Tsup = 0 or θrapid > θ chg . This rule does not guarantee scene recall; it only removes the deterministic masking contradiction. III. R EFERENCE AND EPISODE UPDATE ORDER 2                           
+
+> TABLE I CONTROLLED -E VALUATION CONFIGURATION
+> Parameter Value Clean window N12 Occlusion gradient ratio 0.45 Scene mean jump 80 Minimum/maximum mean shift 20/45 Accepted occlusion mean interval [60, 120] Scene persistence 1 frame Required gradient change ratio 0.2 Auxiliary relative mean ratio ρlumin 0.8 Rapid-brightness threshold θrapid (intensity levels) 1000 Suppression window Tsup (ms) 0 (disabled) Boot dark / flat thresholds 15 / 0 (flat check disabled) Clean-only reference update enabled Coarse-grid rejection enabled Auxiliary luminance route enabled Input size / clip length 160 ×90 / 48 frames Random seed 20260701
+
+IV. C ONTROLLED BENCHMARK DETAILS 
+
+Table I records the configuration used for the reported con-trolled experiment. Rapid suppression was disabled because the experiment measures the photometric scene path directly; deployments that enable it must obey the consistency condition in the main paper. The cover perturbation blends the post-onset frame with a near-uniform surface whose mean differs from the warm-up reference by 24–40 levels and adds Gaussian noise with standard deviation 1.2. The photometric scene perturbation replaces the post-onset content with frames from a different source video and shifts mean luminance by 95 levels. The geometric stress test applies an 18-degree rotation, a horizontal translation of 12% of width, and a vertical translation of 8% of height with reflected borders. The nuisance illumination con-dition adds or subtracts 70 levels without changing geometry. V. D ECLARED OPERATING ENVELOPE 
+
+Table II tabulates the operating envelope declared in the main paper, condition by condition, with the mechanistic rea-son for each expected behavior. It reports method semantics, not new experimental evidence. VI. M AGNITUDE -S WEEP OPERATING CHARACTERISTICS 
+
+Figure 1 shows the full operating-characteristic curves for the magnitude-swept public audit summarized in the main paper. VII. A BLATION AND THRESHOLD -S ENSITIVITY GRID 
+
+Table III reports the basic ablation and threshold-sensitivity grid over the full 400-sequence controlled set summarized in the main paper. The clean-only reference update and coarse-grid rejection variants produced no measurable change on this five-condition grid; those design choices are isolated with the targeted stress probes of the next section instead. 0.0 0.2 0.4 0.6 0.8 1.0      
+
+> False-positive rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True-positive rate
+> FPR budget 0.05  Full state machine
+> Gradient collapse
+> Histogram difference
+> Edge-reference proxy
+> Mean jump
+> Frame difference
+> Fig. 1. Operating characteristics on the magnitude-swept public audit (250 sequences, primary scope). The shaded band marks the FPR ≤0.05 false-alarm budget. Baselines are swept over their native scalar statistics; the full state machine is swept along a monotone fourteen-point threshold path, so its curve ends at the recall ceiling of its most sensitive configured setting.
+
+VIII. E XTENDED STRESS AND TARGETED COMPONENT 
+
+DIAGNOSTICS 
+
+The extended controlled stress audit adds six generated conditions to the base protocol: sustained cover, repeated cover episodes, structured lighting, day–night transition, rapid brightness, and close foreground. Table IV reports the component-triggered behavior that changed under this audit. Removing rapid-brightness suppression raises rapid-brightness false alarms from 0.217 to 0.767 and introduces day–night false alarms at 0.233. Three targeted component probes and one geometric base-line diagnostic isolate the design choices that the five-condition grid cannot separate (Table V). In a sustained-cover contami-nation probe, clean-only reference maintenance preserves the alarm through the post-onset tail, whereas all-frame updating absorbs the cover and stops alarming. In a structured-light probe that satisfies the scalar occlusion predicate, the coarse-grid gate suppresses all alarms while the no-grid variant alarms on every sequence. In an operating-mode probe, the mode gate eliminates the day–night nuisance alarms that appear when the gate is removed. Finally, a lightweight ORB homography-failure diagnostic detects all sampled geometric-shift clips, confirming that a complementary registration cue directly targets the declared out-of-scope motion case, but its 0.50 FPR on clean clips shows that such a cue needs calibration; it demonstrates complementarity and is not part of the primary method comparison. The same audit gives onset-latency statistics for positive detections. The full state machine detects with median latency 0 frames, P90 latency 0 frames, maximum latency 10 frames, and mean latency 0.64 frames over 103 detected positives. Mean jump detects only three positives and alarms four frames after onset; frame difference has median/P90 latency 0 frames and maximum latency 9 frames. The FPR-constrained threshold sweep reported in the main paper runs on the 360 extended-stress sequences — 120 positives (60 sustained-cover and 60 repeated-episode clips) and 240 nuisance negatives (60 3
+
+TABLE II DECLARED OPERATING ENVELOPE AND EXPECTED FAILURE MODES .
+
+Condition Expected detector behavior Reason Texture-collapsing cover with bounded mean shift In scope Gradient collapse and bounded luminance change satisfy the occlusion predi-cate. Abrupt photometric scene transition In scope when not suppressed by mode or rapid-brightness gates Inter-frame mean jump and gradient-change checks drive the scene path. Pure camera rotation or translation Out of scope Global mean and sampled local-gradient statistics can remain close to the clean reference without registration evidence. Mean-preserving defocus Out of scope or weak response Defocus may reduce texture without satisfying the required mean-shift interval. Subtle local partial cover Out of scope or weak response Sampling and global aggregate statistics may dilute small localized changes. Global illumination step Intended nuisance rejection Rapid-brightness and structural-lighting logic are designed to avoid turning lighting transients into tamper episodes. Foreground object close to lens Ambiguous, requires field validation The current predicates do not include semantic foreground reasoning or object masks. Unreadable or failed clip Excluded from accuracy metrics Execution failure is an input-quality or processing-failure case, not a true negative or false negative without annotation. 
+
+TABLE III CONTROLLED ABLATION AND THRESHOLD -SENSITIVITY SUMMARIES ON THE SAME 400 SEQUENCES . C ONDITION COLUMNS REPORT ALARM RATE .AGGREGATE COLUMNS USE THE ALL -CONDITION SCOPE (COVER ,
+
+PHOTOMETRIC REPLACEMENT , AND GEOMETRIC SHIFT AS POSITIVES ;
+
+CLEAN AND ILLUMINATION STEP AS NEGATIVES ), WHICH IS WHY THE 
+
+FULL STATE MACHINE ROW DIFFERS FROM THE PRIMARY -SCOPE METRICS OF TABLE II IN THE MAIN PAPER .
+
+Variant Prec. Recall F1 BAcc FPR Cover Photo. Illum. Full state machine 0.914 0.488 0.636 0.709 0.069 0.938 0.488 0.100 No auxiliary luminance 0.963 0.429 0.594 0.702 0.025 0.938 0.350 0.050 Persistence K = 2 0.911 0.471 0.621 0.701 0.069 0.938 0.438 0.100 Occlusion ratio 0.35 0.927 0.529 0.674 0.733 0.063 0.938 0.613 0.088 Scene threshold 60 0.797 0.525 0.633 0.663 0.200 0.938 0.563 0.350 Scene threshold 100 0.910 0.421 0.575 0.679 0.063 0.938 0.288 0.088 Max mean shift 35 0.929 0.488 0.639 0.716 0.056 0.938 0.488 0.075 Persistence K = 3 0.911 0.471 0.621 0.701 0.069 0.938 0.438 0.100 
+
+TABLE IV COMPONENT -TRIGGERED EXTENDED STRESS AUDIT . E NTRIES SHOW ALARMED SEQUENCES OVER THE CONDITION DENOMINATOR AND THE CORRESPONDING SEQUENCE -LEVEL ALARM RATE .
+
+Variant Long cover Day–night Rapid bright. Full state machine 58/60 (0.967) 0/60 (0.000) 13/60 (0.217) No auxiliary luminance 58/60 (0.967) 0/60 (0.000) 0/60 (0.000) No rapid suppression 58/60 (0.967) 14/60 (0.233) 46/60 (0.767) 
+
+each of structured lighting, day–night, rapid brightness, and close foreground) — and achieves recall 0.925 at FPR 0.025 with the confusion counts 111 TP, 6 FP, 234 TN, 9 FN. IX. H IGH -R ESOLUTION PROCESSING SMOKE TEST 
+
+To check resolution sensitivity of the implementation path, the public-video backgrounds were resized to 1280 × 720 and re-run without changing thresholds. Because the source clips are low-resolution public test media, this is a high-resolution processing check rather than native HD field evidence. On 30 synthetic sequences, the full state machine obtained precision 1.000, recall 0.333, F1 0.500, BAcc 0.667, and FPR 0.000, with median per-frame simulator time 0.76 ms and 95th percentile 2.15 ms. The 720p FPR of 0/12 has a 95% Clopper– Pearson upper bound of 0.265, and its recall of 6/18 has 95% CI [0.133, 0.590]; it is therefore only a runtime and resolution-path smoke test. 
+
+TABLE V TARGETED COMPONENT AND REGISTRATION DIAGNOSTICS . R ATES ARE SEQUENCE -LEVEL ALARM RATES EXCEPT FOR THE ORB ROW , WHICH REPORTS BINARY DETECTION METRICS ON SIX GEOMETRIC -SHIFT AND SIX CLEAN CLIPS .
+
+Diagnostic Full / proposed Ablated / baseline Interpretation Clean-only reference 1.000 0.000 Maintains sustained-cover alarm Coarse-grid gate 0.000 1.000 Rejects structured-light false alarm Mode-transition gate 0.000 0.500 Suppresses mode-switch nuisance ORB registration 1.000 recall 0.500 FPR Detects motion but is noisy 
+
+TABLE VI UHCTD PUBLIC -VIDEO DIAGNOSTIC ON DAYS 3–6. O FFICIAL ROWS EVALUATE RELEASED CAMERA A LEARNED -MODEL PREDICTIONS ON ALL ALIGNED FRAMES . F ULL -PASS ROWS DECODE EVERY FRAME (STRIDE 1). FINE -TUNED RES NET 18 ROWS : SAME -CAMERA TRAINS AND TESTS ON 
+
+CAMERA A; CROSS -CAMERA TRAINS ON CAMERA A AND TESTS ON 
+
+CAMERA B. T HE CROSS -CAMERA FPR ≤0.05 ROW IS DEGENERATE (NO THRESHOLD REACHES THE BUDGET WITH NONZERO RECALL , SO RECALL AND FPR BOTH SATURATE AT 0), REPORTED TO MAKE THE CROSS -CAMERA FAILURE EXPLICIT RATHER THAN OMITTED .
+
+Protocol Method Frames Recall FPR F1 Official full Exp. 3 AlexNet 1,032,000 0.863 0.283 0.640 Official full Exp. 1 AlexNet 1,032,192 0.876 0.293 0.639 Same-cam (best-F1) Fine-tuned ResNet18 10,000 0.843 0.018 0.889 Same-cam (FPR ≤0.05) Fine-tuned ResNet18 10,000 0.890 0.049 0.875 Cross-cam (best-F1) Fine-tuned ResNet18 20,000 1.000 1.000 0.387 Cross-cam (FPR ≤0.05) Fine-tuned ResNet18 20,000 0.000 0.000 0.000 Frozen sample Frozen ResNet18 1,200 0.767 0.207 0.681 Full pass (A) Full state machine 1,032,624 0.028 0.049 0.047 Full pass (B) Full state machine 3,454,272 0.021 0.039 0.038 
+
+X. UHCTD D IAGNOSTIC TABLES 
+
+Table VI gives the UHCTD diagnostic summarized in the main paper: official released Camera A learned-model predictions, the learned baselines, and the full decoded-video pass of the full state machine. Table VII gives the per-method transparent-baseline rows for the same full decoded-video pass (stride 1), summarized as ranges in the main paper. XI. UHCTD I N-S COPE EVENT STRATIFICATION 
+
+Each of the 576 labeled UHCTD events (both cameras, Days 3–6) is classified against the declared operating envelope using 4
+
+TABLE VII UHCTD FULL DECODED -VIDEO PASS , TRANSPARENT BASELINES (D AYS 
+
+3–6).                                    
+
+> Protocol Method Frames Recall FPR F1 Full pass (A) Gradient collapse 1,032,624 0.362 0.440 0.272 Full pass (B) Gradient collapse 3,454,272 0.488 0.529 0.319 Full pass (A) Frame difference 1,032,624 0.646 0.584 0.383 Full pass (B) Frame difference 3,454,272 0.601 0.526 0.380 Full pass (A) Histogram difference 1,032,624 0.897 0.784 0.426 Full pass (B) Histogram difference 3,454,272 0.668 0.569 0.398
+
+TABLE VIII UHCTD IN -SCOPE STRATIFIED EVENT RECALL , BOTH CAMERAS COMBINED (576 LABELED EVENTS ).                                                     
+
+> Scope Class Events Detected Recall In-scope Covered 960.667 In-scope Defocused 10 10.100 In-scope Moved 320.667 In-scope All 22 90.409 Boundary (texture only) Defocused 166 90.054 Boundary (texture only) Moved 600.000 Boundary (texture only) All 172 90.052 Out-of-scope Covered 183 20.011 Out-of-scope Defocused 16 00.000 Out-of-scope Moved 183 40.022 Out-of-scope All 382 60.016 All All 576 24 0.042
+
+a ground-truth-clean reference computed from the sliding mean of sampled statistics over the last 12 normal-labeled frames preceding the event: an event is envelope-in-scope if any frame within its first 300 frames satisfies the occlusion predicate (Eq. (3): gradient ratio, mean-shift interval, and luma bounds all met) or the scene predicate (inter-frame mean jump exceeds the scene threshold); it is a boundary case if only the texture-collapse condition holds without the required mean-shift interval; otherwise it is out of scope. Table VIII joins this classification with the full state machine’s alarm frames from the full decoded-video pass. In-scope covers are detected at recall 0.667, far above the aggregate rate, while out-of-scope events across all three tamper classes are detected at recall 0.011–0.022, confirming that the full state machine’s low aggregate recall on UHCTD reflects selective, envelope-consistent blindness rather than a uniformly weak detector. Because the in-scope cells are small, we report exact 95% Clopper–Pearson intervals: covered 6/9, [0 .30 , 0.93] ; in-scope overall 9/22, [0 .21 , 0.64] ; out-of-scope 6/382, [0 .006 , 0.034] ;the in-scope moved cell contains only three events and its rate should not be over-read. The in-scope and out-of-scope intervals do not overlap, so the qualitative conclusion survives the small-sample bound. XII. UHCTD C AMERA -D ISJOINT THRESHOLD TRANSFER 
+
+For each transfer direction, 100 sampled frames per day were decoded from each camera over Days 3–6, giving 400 calibration frames and 400 held-out frames; each stream retained its own clean reference, but score thresholds were selected only on the calibration camera (FPR ≤ 0.05 objective) and then frozen on the held-out camera. The sampled subset is diagnostic rather than exhaustive, but it directly tests whether 
+
+TABLE IX UHCTD CAMERA -DISJOINT THRESHOLD -TRANSFER DIAGNOSTIC .THRESHOLDS ARE SELECTED ON THE CALIBRATION CAMERA WITH THE 
+
+FPR ≤ 0.05 OBJECTIVE AND THEN FROZEN ON THE HELD -OUT CAMERA .EACH DIRECTION USES 400 SAMPLED CALIBRATION FRAMES AND 400 
+
+> SAMPLED HELD
+
+-OUT FRAMES .                    
+
+> Cal. →Test Method Recall FPR F1 A→BMean jump 0.000 0.009 0.000 A→BFrozen ResNet18 0.000 0.000 0.000 B→AFrame difference 0.775 0.221 0.676 B→AFrozen ResNet18 1.000 0.786 0.522
+
+TABLE X INDEPENDENT PUBLIC CROSS -DATASET CHECK SUMMARY . L1 AND L2
+
+> DENOTE THE TWO INDEPENDENT CAMERA LOCATIONS
+
+; CROSS -CAMERA ROWS USE AN UNTUNED REFERENCE FROM THE SOURCE LOCATION .BASELINE FPR RANGE COVERS GRADIENT -COLLAPSE ,
+
+> FRAME
+
+-DIFFERENCE , AND HISTOGRAM -DIFFERENCE BASELINES . Noimage 
+
+> IS THE DATASET
+
+’S NAME FOR THE OBSTRUCTED -LENS CLASS .                          
+
+> Protocol Recall FPR Noimage Baseline FPR Within L10.065 0.000 0.195 0.340–0.349 Within L20.199 0.000 0.243 0.323–0.680
+> L1→L20.155 0.009 0.386 0.969–1.000
+> L2→L10.140 0.000 0.278 0.151–1.000
+
+a false-alarm-constrained threshold transfers across cameras. Table IX shows that it does not transfer reliably: Camera A thresholds become over-conservative on Camera B, while Camera B thresholds can exceed the held-out false-alarm budget on Camera A. XIII. F ULL PUBLIC IMAGE CROSS -D ATASET BREAKDOWN 
+
+Table X gives the per-protocol summary of the independent public cross-dataset check, and Table XI gives the full four-method breakdown summarized in the main paper. This breakdown is diagnostic rather than primary evidence: the static occlusion predicate keeps normal-image false alarms low under untuned camera transfer, while learned calibration, continuous-video persistence, and registration cues remain outside this still-image check. Figure 2 shows representative frames behind these numbers: a held-out normal reference, a correctly flagged full-lens obstruction, a defocused frame the predicate misses, and a rotated-camera frame the predicate misses. The obstruction case is a near-uniform frame with collapsed gradient. The defocus case retains enough residual luminance structure that it falls outside the required mean-shift interval even though a human viewer immediately sees the impairment. The rotation case is nearly indistinguishable from the normal reference in global mean and sampled gradient, since the predicate has no registration cue. XIV. S TATISTICAL PROCEDURE 
+
+For method A and baseline B, exact McNemar testing is applied to the discordant correctness counts 
+
+n10 = X
+
+> i
+
+I[ˆ yAi = yi ∧ ˆyBi̸ = yi], (7) 
+
+n01 = X
+
+> i
+
+I[ˆ yAi̸ = yi ∧ ˆyBi = yi]. (8) 5
+
+TABLE XI FULL INDEPENDENT PUBLIC IMAGE CROSS -DATASET CHECK . L1 AND L2 DENOTE INDEPENDENT CAMERA LOCATIONS ; L1 → L2 BUILDS THE REFERENCE FROM L1 AND EVALUATES ON L2 WITHOUT RECALIBRATION . C LASS COLUMNS REPORT PER -CATEGORY ALARM RATES ; Noimage IS THE DATASET ’S NAME FOR THE OBSTRUCTED -LENS CLASS .                                                                                                                                                                                                  
+
+> Protocol Method Prec. Recall F1 BAcc FPR Normal Blur Noimage Rotated Within L1Occlusion predicate 1.000 0.065 0.122 0.533 0.000 0.000 0.000 0.195 0.000 Within L1Gradient collapse 0.679 0.712 0.695 0.686 0.340 0.339 1.000 1.000 0.135 Within L1Frame difference 0.381 0.212 0.272 0.433 0.346 0.346 0.015 0.075 0.545 Within L1Histogram difference 0.691 0.774 0.730 0.713 0.349 0.349 0.973 1.000 0.350 Within L2Occlusion predicate 1.000 0.199 0.332 0.600 0.000 0.000 0.285 0.243 0.000 Within L2Gradient collapse 0.657 0.674 0.665 0.676 0.323 0.323 0.704 1.000 0.138 Within L2Frame difference 0.526 0.648 0.581 0.557 0.533 0.533 0.369 0.896 0.707 Within L2Histogram difference 0.527 0.827 0.644 0.574 0.680 0.680 0.823 1.000 0.575
+> L1→L2Occlusion predicate 0.938 0.155 0.266 0.573 0.009 0.009 0.027 0.386 0.006
+> L1→L2Gradient collapse 0.464 0.962 0.626 0.481 1.000 1.000 1.000 1.000 0.844
+> L1→L2Frame difference 0.369 0.649 0.470 0.325 1.000 1.000 0.969 0.084 1.000
+> L1→L2Histogram difference 0.471 0.959 0.632 0.495 0.969 0.969 0.946 1.000 0.916
+> L2→L1Occlusion predicate 1.000 0.140 0.246 0.570 0.000 0.000 0.142 0.278 0.000
+> L2→L1Gradient collapse 0.793 0.576 0.667 0.713 0.151 0.151 0.702 1.000 0.025
+> L2→L1Frame difference 0.484 0.937 0.638 0.469 1.000 1.000 1.000 0.862 0.950
+> L2→L1Histogram difference 0.500 1.000 0.667 0.500 1.000 1.000 1.000 1.000 1.000
+
+(a) Normal reference (b) Obstructed lens: detected 
+
+(c) Defocus: missed (d) Rotation: missed Fig. 2. Qualitative success and failure examples from the independent public cross-dataset check (camera location L1, within-camera protocol). (a) Held-out normal frame used as a visual reference. (b) Fully obstructed lens, correctly flagged. (c) Defocused frame, not flagged. (d) Rotated camera, not flagged. Source: Attarha, Shanmugi, and F¨ orster (arXiv:2602.05706). 
+
+The exact two-sided p value uses a Binomial( n10 + n01 , 0.5) 
+
+model. For the F1 difference, we run 10,000 paired bootstrap resamples over sequence indices and recompute F 1A − F 1B .We report the 2.5 and 97.5 percentiles. The same fixed predictions are used for both the all-condition and scope-matched analyses. XV. P UBLIC LONG -N EGATIVE FALSE -A LARM AUDIT 
+
+Thresholds are frozen from the existing calibration proto-col (no tuning on these recordings). VIRAT ground-camera videos are a staged-activity collection whose published pro-tocol contains no camera tampering, supporting the ground-truth-negative justification; the four audited CDnet2014 cat-egories (camera jitter, bad weather, PTZ, turbulence) are hard nuisance-motion conditions with full per-frame change-detection annotations confirming no tamper events. Table XII reports false alarms per camera-hour (FA/h) by method. The full state machine and mean jump are the only methods with zero false alarms on both sources; gradient collapse, frame difference, and histogram difference all fire substantially more 
+
+TABLE XII PUBLIC LONG -NEGATIVE FALSE -ALARM AUDIT . FSM: FULL STATE MACHINE ; MJ: MEAN JUMP ; GC: GRADIENT COLLAPSE ; FD: FRAME DIFFERENCE ; HD: HISTOGRAM DIFFERENCE . A LL VALUES ARE FALSE ALARMS PER CAMERA -HOUR .                     
+
+> Source Rec. Cam.-h FSM MJ GC FD HD VIRAT 329 8.61 0.000 0.000 0.000 0.116 0.000 CDnet2014 16 0.48 0.000 0.000 2.096 41.929 46.122
+
+often on CDnet2014’s harder nuisance motion than on VI-RAT’s largely static scenes, with histogram difference reaching 46.1 FA/h. Zero events in 9.09 camera-hours bounds the full state machine’s rate below 0.33 false alarms per camera-hour (one-sided 95% Poisson), i.e., below 7.9 per camera-day; the audited recordings are short (VIRAT averages roughly 94 s per clip), so multi-hour single-camera negative recordings remain future work. XVI. S UPPLEMENTARY OPERATIONAL DIAGNOSTICS 
+
+The current summary is computed from completed clip-level records in supplementary operational diagnostics. For each clip, predicted tamper is defined as the presence of at least one emitted tamper event. The reference class in this interim snapshot comes from coarse collection-stage clip categorization. This surrogate-supervision protocol is useful for rapid verification, but not for definitive causal or external-validity claims. Table XIII separates each operational set by label status and by the only quantities its labels can support. The mixed and large stress sets lack verified true negatives, so they are retained only as completed-clip and alarm-yield summaries rather than precision, recall, or F1 evidence. The broad candi-date set is also retained only as an alarm-yield observation: 25 of 4,106 completed clips alarmed, while the historical alarm list is superseded by the separately verified FP/TP candidate pool. The FP/TP candidate set is the only subset with a verified true-negative side; it gives TP=13, FP=12, TN=10, FN=0, precision 0.520, recall 1.000, specificity 0.4545, FPR 0.5455, and F1 0.684. 6
+
+TABLE XIII SUPPLEMENTARY OPERATIONAL DIAGNOSTICS                                               
+
+> Metric Mixed Large Broad cand. *FP/TP cand. Completed clips 117 1,394 4,106 35 Execution failures 0090Verified TN available no no no yes Reported alarm outcomes 5 likely TP / 2 likely FP 5 likely TP / 4 likely FP label under revision 13 TP / 12 FP Unverified non-alarm outcomes 110 1,385 4,081 —Alarms / alarm rate 7 / 0.060 9 / 0.0065 25 / 0.0061 25 / 0.714 Supported accuracy metrics none none none precision/recall/F1/FPR Verified-set precision ———0.520 Verified-set recall ———1.000 Verified-set specificity / FPR ———0.4545 / 0.5455 Verified-set F1 ———0.684
+> *
+
+The broad candidate set’s whole-directory positive label was found unreliable after this snapshot; only the raw alarm count is retained until a corrected per-clip label is available. The 25 alarms trace to the same clips as a subset of the FP/TP candidate set (16 confirmed-negative, 9 confirmed-positive there), superseded by that set’s fresher complete rerun. A separate, non-exhaustive audit of 69 of its 4,081 non-alarming clips confirmed 2 false negatives and 67 true negatives. TABLE XIV UNLABELED OPERATIONAL SWEEP 
+
+Set Completed Alarms Alarm rate Operational sweep 4,140 20 0.0048 
+
+For the broad candidate set, we also audited non-alarming clips to probe false negatives. Four heuristics (including an edge-density terminal-texture screen) screened all 4,081 non-alarming clips, and 69 flagged or sampled clips were manually reviewed. The audit confirmed 2 false negatives and 67 true negatives. Both missed events were close-range covers that collapsed texture while failing the current mean-shift interval, which identifies a concrete predicate weakness rather than a new recall estimate for the whole set. This audit is non-exhaustive and is therefore reported as failure-mode evidence only. Both confirmed false negatives share the same predicate-level explanation. The close object collapses texture, but the resulting mean shift falls outside the bounded interval of the occlusion predicate in Eq. (3), especially the upper limit ∆max .Increasing ∆max would recover some of these events but also risks converting lighting and exposure changes into occlusion alarms. A safer remedy is to add a color-agnostic terminal texture cue, such as an edge-density or high-frequency-energy floor, and require it to agree with the low-gradient state before extending the accepted mean-shift interval. This is the motivation for the edge-density screening used in the manual FN audit; it is not yet part of the production predicate. Table XIV reports a separate unlabeled operational sweep. Records that did not complete are excluded from the denomi-nator and are not treated as negatives, positives, or completed clips. Because the sweep has not been independently anno-tated, it is reported only as an alarm-yield audit and is not converted into TP, TN, FP, or FN counts. A timestamp audit of the same simulator batch spans 12.42 hours, corresponding to 333 completed clips per hour, with median and 95th-percentile inter-record intervals of 11 and 14 seconds. This is a batch-throughput audit rather than a per-frame latency or energy measurement.

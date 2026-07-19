@@ -1,0 +1,608 @@
+Title: VisualRepair: Dynamic Tool Calling and Region Focusing for Visual Software Issue Repair
+
+URL Source: https://arxiv.org/pdf/2607.14075v1
+
+Published Time: Thu, 16 Jul 2026 01:32:46 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# VisualRepair: Dynamic Tool Calling and Region Focusing for Visual Software Issue Repair 
+
+Jingyu Xiao †, Zhongyi Zhang †, Haoran Hou †, Yuxuan Wan †, Yuan Jiang ¶,Yintong Huo ‡§ , Michael R. Lyu ††The Chinese University of Hong Kong, Hong Kong SAR, China 
+
+¶Harbin Institute of Technology, China 
+
+‡Singapore Management University, Singapore 
+
+{jyxiao, zyzhang, hrhou, yxwan }@link.cuhk.edu.hk, jiangyuan@hit.edu.cn, ythuo@smu.edu.sg, lyu@cse.cuhk.edu.hk 
+
+Abstract —Automated Program Repair (APR) has witnessed significant progress with the advent of Large Language Models (LLMs). However, as modern software systems increasingly expose rich graphical user interfaces, effectively leveraging visual information from bug screenshots has become essential for understanding bugs and generating accurate fixes in multi-modal scenarios. Real-world issue reports frequently contain heterogeneous visual attachments including UI screenshots, IDE snapshots, GIFs, and text-centric images, each with distinct visual patterns and domain-specific semantics that impose substantial perceptual demands on MLLMs. Furthermore, bug screenshots often contain large expanses of uninformative and bug-irrelevant regions, distracting the model’s attention and limiting patch diversity. To address these challenges, we propose VisualRepair, an MLLM-based framework for visual software issue repair comprising two core modules: Image Type-aware Tool Calling (ITTC), which classifies input images and dynamically invokes a tailored tool-calling chain for robust visual interpretation, and Dynamic Test-time Region Focusing (DTRF), which grounds multiple bug-related region candidates and refines them via an adaptive zoom-in and zoom-out strategy to improve fault localization and promote diverse patch generation. Extensive experiments on the SWE-bench Multimodal benchmark demon-strate that VisualRepair consistently outperforms state-of-the-art approaches. VisualRepair resolves 196 and 25 instances on the test and dev sets, respectively, surpassing the best baseline by 10 and 11 instances. These results highlight the effectiveness of type-aware visual understanding and region-focused localization for automated visual software issue repair. 
+
+Index Terms —Automated Program Repair, MLLMs, GUI. 
+
+I. I NTRODUCTION 
+
+Software bugs are inevitable in modern software develop-ment, posing significant threats to system reliability, security, and user experience. Automated Program Repair (APR) [1], [2] has emerged as a promising research direction aimed at automatically localizing and fixing software defects, thereby reducing the manual effort required for software maintenance and improving overall software quality. Traditional APR tech-niques [3]–[5] have achieved notable progress, yet they often 
+
+> §
+
+Corresponding authors: Yintong Huo (ythuo@smu.edu.sg) 
+
+> 1
+
+The paper was completed in March 2026 and is currently under review. The code will be released upon acceptance. 
+
+struggle with generalizability and the complexity of real-world bugs. With the advent of LLMs, APR has witnessed significant progress via fine-tuning [6]–[9] and prompting-based paradigms [10]–[14], achieving promising results on benchmarks like Defects4J [15] and SWE-bench [16]. These approaches typically follow a generate-and-validate paradigm, where candidate patches are generated from bug reports and subsequently verified through test execution [17]–[19]. However, most modern software systems, including web applications, design tools, and integrated development envi-ronments (IDEs), expose rich graphical user interfaces (GUIs) to users for display and interaction. Bugs in these systems frequently manifest as visual anomalies [20], layout defects, or interaction failures [21] that are inherently difficult to describe through text alone, and thus cannot be adequately captured by existing text-only methods. To bridge this gap, SWE-bench Multimodal (SWE-bench M) [22] is proposed, extending the SWE-bench framework to incorporate visual contexts such as screenshots alongside natural language issue descriptions. Because of advanced visual understanding and code generation capabilities [23]–[27], Multimodal Large Language Models (MLLMs) have been applied to visual software issue repair by perceiving GUI-level defects [28] directly from screenshots, reasoning about the underlying root causes, and generating effective patches. For example, DesignRepair [29] proposes a design-guideline-aware system that analyzes and repairs design issues for UIs. GUIRepair [30] designs a bidirectional pipeline including image2code and code2image to achieve cross-modality reasoning for visual software issue repair. Despite the promise of MLLMs for visual software issue repair, there remain two challenges hindering effectiveness. 
+
+Challenge 1: Heterogeneous visual content in issue reports hinders MLLMs’ ability to understand bugs. Visual artifacts in real-world software issue reports are heteroge-neous, spanning UI screenshots, animated GIFs, Integrated Development Environment (IDE) code snapshots, and plain-text images as shown in Figure 1. This diversity imposes varied aspects on image reasoning, as each modality exhibits distinct visual patterns and domain-specific semantics. For instance, GIFs require temporal reasoning over interaction sequences, arXiv:2607.14075v1 [cs.SE] 15 Jul 2026 UI Screenshot        
+
+> We are currently importing the custom
+> range from 2.0 projects, but the range
+> is fixed to 0 -100 for monitors created
+> in 3.0 [image ]
+> Slider monitors: changing the min/max
+> scratch -gui
+> IDE Code Snapshot
+> highlight.js
+> Generic types using the `extends`
+> keyword break subsequent highlighting.
+> [image ]
+> Generics with extends broken
+> Bpmn -js
+> Interactive GIF Image
+> Message flows targeting **intermediate message
+> catch boundary events** are disallowed but shall
+> be allowed according to BPMN 2.0 [image ]
+> Intermediate message catch boundary events
+> shall be allowed targets for message flows
+> Plain -text Image
+> lighthouse
+> Lighthouse was unable to automatically check the
+> font -display value for the following URL:
+> [image ]
+> font -display audit warnings for iframes
+
+Fig. 1. Four visual tasks with heterogeneous inputs for SWE-bench M [22]. 
+
+while plain-text images demand accurate text extraction and interpretation. Notably, UI-based and IDE-based inputs pose different challenges for bug reproduction: UI inputs are highly variable and require inferring interaction logic, whereas IDE inputs are more structured but demand a precise understanding of code semantics. Treating these heterogeneous inputs in a uniform manner will significantly hamper MLLMs’ ability to comprehend and resolve reported issues. 
+
+Challenge 2: MLLMs fail to locate bug-related regions when facing complex bug screenshots. Real-world bug screenshots encompass overwhelming yet irrelevant informa-tion: they usually contain a large portion of uninformative con-tent (e.g., blank backgrounds) for debugging. Such visual noise poses two compounding problems: 1) it distracts the model’s attention from the defective region, leading to imprecise fault localization; 2) processing full, unfiltered images constrains the model’s ability to examine the bug from multiple perspec-tives, thereby limiting the diversity of generated patches. In this paper, we propose VisualRepair, an MLLM-based framework for visual software issue repair that addresses the aforementioned challenges. VisualRepair comprises two core modules: Image Type-aware Tool Calling (ITTC) and Dynamic Test-time Region Focusing (DTRF). To handle the heterogeneity of visual inputs in real-world issue reports, ITTC employs a lightweight classifier to automatically identify the type of each input image and dynamically assign a tailored tool-calling chain accordingly. The toolkit consists of four components: a GIF tool that processes animated images and extracts key frames to capture dynamic bug behaviors; an OCR tool that extracts textual content from image regions; a cropping tool that removes uninformative blank areas to produce a more compact visual representation; and a code library tool containing code templates that enriches the context for bug reproduction and patch selection. To address the challenge of imprecise bug localization, we further propose DTRF, which mitigates noisy visual context and promotes diverse patch generation. DTRF first prompts the MLLM to identify and ground multiple bug-related region candidates within the input image. For each candidate region, a zoom-in and zoom-out strategy is then applied to dynamically adjust the region boundary, enabling the model to refocus on the most diagnostically relevant area at an appropriate level of granularity. Compared with a range of state-of-the-art methods in the SWE-bench M leaderboard [31]. VisualRepair resolves 
+
+196 and 25 issues on the test and dev splits, respectively, surpassing the best baselines by 10 and 11 instances on test and dev splits, respectively, as of March 2026. Our contributions are as follows: 
+
+• Insights . We identify two critical yet underexplored phe-nomena in visual software issue repair: the heterogeneity of visual inputs in real-world issue reports and imprecision of bug-related visual region localization. 
+
+• Technique. We propose VisualRepair, an MLLM-based framework that performs type-aware tool invocation for het-erogeneous visual understanding and multi-region ground-ing with zoom-in and out refinement for precise fault localization and diverse patch generation. 
+
+• Evaluation. We conduct extensive experiments on the SWE-bench M benchmark [22], comparing VisualRepair against a range of state-of-the-art methods in the leaderboard [31]. VisualRepair resolves 196 and 25 issues on the test and dev sets, respectively, outperforming all existing baselines. II. B ACKGROUND 
+
+A. Problem Definition 
+
+The visual software issue repair task is formulated as follows. The input consists of two components: a software repository R = {C , D} , comprising the project codebase C and associated documentation D, and an issue report I = {T , V} ,consisting of a natural language bug description T and a set of visual attachments V = {v1, v 2, . . . , v k}. Each image vi ∈ V 
+
+is associated with a type τi ∈ { UI , IDE , GIF , Text , . . . },reflecting the heterogeneous nature of visual content found in real-world issue reports. The objective is to generate a patch 
+
+P = {(fi, ∆i)}, where each pair denotes a code modification 
+
+∆i applied to source file fi ∈ C , such that P resolves the reported defect without introducing regressions. The task is formulated as M : ( R, I) → P , where M is the multimodal large language model. 
+
+B. Preliminary Study 1) The Image Type Distributions: We employ four PhD students majoring in software engineering with comprehensive front-end development background to annotate the bug images in SWE-bench Multimodal benchmark [22]. We first randomly select 10% issues for analysis and then discuss and refine the image type until reaching a consensus. The annotation results are presented in Fig. 2. UI screenshots constitute the dominant image type, accounting for 43.4% and 63.8% of issues in the test and dev splits respectively, followed by IDE code snapshots at 25.9% and 18.1%, GIF images at 11.6% and 2.9%, and plain text images at 9.1% and 7.6%. The remaining 10.0% and 7.6% fall into the others category, comprising issues with no attached image or bug-irrelevant visual content. 
+
+Observation 1: Visual inputs in real-world issue reports are highly heterogeneous, spanning four distinct types, underscoring the necessity of diverse perception strategies. 43.4% 25.9% 11.6% 10.0% 9.1%     
+
+> SWEBench Multimodal Test
+> 63.8% 18.1% 7.6% 7.6% 2.9%
+> SWEBench Multimodal Dev UI IDE Code GIF Text Others Fig. 2. Image types distribution in SWEbench MM benchmark. Others means no image or bug-unrelated image only.
+
+2) Inaccurate Bug-related Region Focusing: Even when an MLLM successfully processes the input image, precisely local-izing the bug-relevant region remains a significant challenge. As illustrated in Figure 3, for issue carbon-7012 [32], the reported bug requests the addition of xl and large button size variants with an 80px height. While the ground truth region (green box) correctly identifies the full button row at the bottom of the UI, the MLLM-identified region (red box) only partially overlaps with it, missing the rightmost portion containing the key size indicator ( 80px / 10rem ). This demonstrates that MLLMs have limitations in capturing the full extent of the bug-relevant region, particularly when the defective area is located at the periphery of a complex, content-rich screenshot. [button] add `xl` and `large` button size variant   
+
+> In the new creation flow pattern we need larger `80px` height
+> [button](https:// react.carbondesignsystem.com /?path=/story/b
+> utton --default). I think we should also add the modal's `64px`
+> buttons to the button component as well for consistency.
+> Issue
+> Identified by MLLM Ground Truth
+> carbon -design -system__carbon -7012
+> Image
+> Fig. 3. Bug-related region grounding example.
+
+Observation 2: MLLMs exhibit imprecise grounding ca-pability, frequently failing to localize the bug-relevant region, which undermines repairing performance. 
+
+III. M ETHOD 
+
+A. Overview 
+
+Fig. 4 illustrates the overall architecture of VisualRepair. Given an issue report I and a software repository R, Visual-Repair proceeds through three stages. First, the Image Type-aware Tool Calling module classifies each input image and routes it through a tailored tool-calling chain, producing struc-tured outputs including OCR results, a processed image, and reproduced code. Second, VisualRepair performs hierarchical fault localization on R, identifying the bug-relevant files and code hunks to narrow the repair search space. Finally, the Dy-namic Test-time Region Focusing module grounds some bug-related region candidates from the processed image, augments each via zoom-in and zoom-out operations, and generates candidate patches. Finally, patch selection is conducted based on the compilation validation and visual difference checking. 
+
+B. Image Type-aware Tool Calling 1) Tool sets: Applying a uniform perception strategy across visually heterogeneous inputs causes MLLMs to misinterpret GIF interaction sequences, overlook code-level details in IDE snapshots, and fail to extract critical text from text-centric images, ultimately hindering bug comprehension. Therefore, we implement the following tools: 
+
+Gif tool . Real-world issue reports include animated GIFs to demonstrate dynamic or interactive bug behaviors that cannot be captured by a single static screenshot. Directly feeding a GIF to an MLLM is infeasible; instead, we decompose each GIF into a sequence of individual frames, producing an ordered image list. However, retaining all frames is redundant, as consecutive frames in a GIF are often visually near-identical. We extract keyframes from a GIF by measuring the mean absolute error (MAE) between consecutive preprocessed frames. A dynamic threshold is defined as τ = μMAE +k·σMAE ,where μMAE and σMAE are the mean and standard deviation of all inter-frame MAEs, and k is a scaling coefficient. Starting from the first frame, a subsequent frame is selected as a keyframe if its MAE relative to the last selected keyframe exceeds τ , subject to a minimum frame gap constraint to avoid redundant selections. 
+
+OCR tool . Some issue images, particularly IDE snapshots and terminal outputs, contain dense bug-relevant text such as error messages, stack traces, or code excerpts. We employ PaddleOCR [33] to detect and transcribe all text regions within the input image, and incorporate the extracted text into the MLLM’s input context as a complementary signal, compensating for cases where direct visual interpretation of small or low-contrast text may be unreliable. 
+
+Crop tool . Bug screenshots often contain large uninforma-tive regions like blank backgrounds or empty canvas areas that contribute scarce information yet inflate the image token count and distract the model’s attention. To address this, we apply a structure-aware cropping procedure based on the UIED [34] algorithm, which detects UI elements within the image, representing each detected element as a bounding box GIF  UI  Text Code 
+
+Rule -based 
+
+Image Type 
+
+Classifier  GIF Tool 
+
+Extract Key frames 
+
+OCR  Tool 
+
+Text  Extraction 
+
+Code Library 
+
+Code Template 
+
+Crop  Tool 
+
+Crop  Out 
+
+Meaningless  Area 
+
+Tool  Calling  Chain 
+
+Code Repository 
+
+src 
+
+app 
+
+pub 
+
+component 
+
+Package.json 
+
+config.ts 
+
+Run Environment 
+
+Issue Report 
+
+> Description
+
+Image Type -aware Tool Calling 
+
+> Reproduced
+> Code
+> Processed
+> Image
+> OCR
+> Results
+
+Bug  File  Localization 
+
+Hunk  Localization 
+
+> Image
+
+…… 
+
+Dynamic Test -time  Region  Focusing 
+
+Patch Selection 
+
+zoom in zoom out  grounding   
+
+> compile
+> error unsolved resolved
+> Patch Generation
+
+On -demand construction Fig. 4. The overview of VisualRepair. <html >                   
+
+> <head >
+> <link rel =" stylesheet "href =" ./themes/ prism.css ">
+> </ head >
+> <body >
+> <pre ><code class =" language -sql ">
+> INSERT INTO MESSAGESEARCHPATTERN (name,
+> query)VALUES ('a', 'select ''hello world'' from a’)
+> --this is a comment
+> INSERT INTO MESSAGESEARCHPATTERN (name,
+> query)VALUES (' a','select ''hello world ''from a’)
+> </ code > </ pre >
+> <script src =" ./ prism.js "></ script >
+> <script src =" ./components/prism -sql.js "></ script >
+> <script src =" ./components/prism -sql.min.js "></ script >
+> </ body >
+> </ html >
+> <html >
+> <head >
+> <link rel =" stylesheet "href =" ./themes/ prism.css ">
+> </ head >
+> <body >
+> <pre ><code class =" language -css ">
+> ul {position:absolute!important }
+> ol {position: relative !important}
+> </ code > </ pre >
+> <script src =" ./ prism.js "></ script >
+> <script src =" ./components/prism -css.js "></ script >
+> <script src =" ./components/prism -css.min.js "></ script >
+> <script src =" ./components/prism -core.min.js "></ script >
+> </ body >
+> </ html >
+> PrismJS__prism -1500 PrismJS__prism -1585
+> Wrong Highlight
+> render render
+
+Fig. 5. The reproduced code of two issues of PrismJS. 
+
+bi. We then perform a horizontal and vertical scan-line sweep across the image: a scan line that does not intersect any bounding box identifies a region devoid of UI elements. Such regions are marked as removable and subsequently cropped from the image. The resulting image retains only the regions containing meaningful UI content, yielding a more compact representation that reduces unnecessary token consumption and sharpens the model’s focus on bug-relevant areas. 
+
+Code library . Front-end libraries concerned with format rendering, such as syntax highlighting libraries (e.g., Pris-mJS [35], Highlight.js [36]) and Markdown rendering libraries (e.g., Marked.js [37]), exhibit a high degree of structural homogeneity in their code. As illustrated in Figure 5, bugs in such libraries typically manifest as incorrect visual rendering behavior (e.g., wrong syntax highlighting regions), yet the underlying HTML code required to reproduce them follows a near-identical template: a standard HTML scaffold that imports the relevant JavaScript dependencies, and embeds a minimal code snippet to trigger the erroneous behavior. Reproducing a bug in these libraries reduces to filling in two components within a shared template: the triggering code content and the corresponding library import statements. Motivated by this observation, we construct a Code Library of code templates. Templates are constructed on-demand and issue-agnostically: when a previously unseen repository is encountered, an MLLM analyzes its structure and official documentation to generate a minimal runnable template. Since construction relies solely on repository-level information with no access to issue content, this process eliminates any risk of test-set leakage. When the MLLM is tasked with reproducing a bug, the Code Library Tool retrieves the matching template and populates it with issue-specific content, significantly reducing the burden on the model to generate correct reproduction code from scratch. This not only improves the fidelity of bug reproduction, but also enables automated patch validation: once a candidate patch is applied, the resulting HTML file is rendered by a WebDriver, which captures a screenshot and compares it against the original issue image to assess whether the visual defect has been resolved. 
+
+2) Image Type Classifier: Algorithm 1 summarizes the Image Type-aware Tool Calling procedure, which routes each input image through a sequential chain based on its associated types. The classification begins with a lightweight check on the file suffix s. If the image is a GIF, it is passed to the GIF Tool, which decomposes the animation into a frame sequence and applies MAE-based key frame extraction to obtain a compact set of representative frames. The MLLM then takes the key frames together with the bug description as input to generate the reproduction code, and the final output O
+
+packages the generated code, key frames, and bug description for downstream processing. Algorithm 1: Image Type-aware Tool Calling 
+
+Require: Input image v, file suffix s, issue I
+
+Ensure: Tool calling result O 
+
+> 1:
+
+repo ← GET REPO (I) 
+
+> 2:
+
+if repo / ∈ CODE LIBRARY then  
+
+> 3:
+
+code template ← GENERATE TEMPLATE (repo ) 
+
+> 4:
+
+CODE LIBRARY ← CODE LIBRARY ∪ { repo :
+
+code template } 
+
+> 5:
+
+end if  
+
+> 6:
+
+if s = .gif then  
+
+> 7:
+
+frames ← GIF TOOL (v) 
+
+> 8:
+
+key frames ← KEY FRAME EXTRACTION (frames , δ ) 
+
+> 9:
+
+code ← M LLM (key frames , bug description ) 
+
+> 10:
+
+O ← (code, key frames , bug description ) 
+
+> 11:
+
+else  
+
+> 12:
+
+E ← UIED (v) {Detect UI elements with bounding boxes } 
+
+> 13:
+
+v′ ← CROP TOOL (v, E) {Remove uninformative regions } 
+
+> 14:
+
+if ∃ e ∈ E s.t. T YPE (e)̸ = text then  
+
+> 15:
+
+code ← M LLM (v′, bug description ) 
+
+> 16:
+
+else  
+
+> 17:
+
+text content ← OCRT OOL (v′) {Extract textual content } 
+
+> 18:
+
+if ISCODE (text content ) then  
+
+> 19:
+
+code template ← CODE LIBRARY [repo ] 
+
+> 20:
+
+code ←
+
+M LLM (code template , v ′, bug description ) 
+
+> 21:
+
+O ← (code, v ′, bug description ) 
+
+> 22:
+
+else  
+
+> 23:
+
+O ← (text content , bug description ) 
+
+> 24:
+
+end if  
+
+> 25:
+
+end if  
+
+> 26:
+
+end if  
+
+> 27:
+
+return O
+
+For non-GIF images, UIED [34] detects all UI elements as bounding boxes, and the crop tool is immediately applied to remove blank regions, yielding a compact representation v′. If any non-text UI element is detected, the image is treated as a UI screenshot and the MLLM generates reproduction code from v′ and the bug description. Otherwise, OCR extracts text from v′, which is then classified (I SCODE ) as code or plain text. For code images, a matching template is retrieved and combined with v′ and the bug description to prompt code generation. For plain-text images, the extracted text and bug description are directly returned as bug-related ingredients O
+
+for subsequent localization and repair. 
+
+Performance of Image Classifier . The classification in Algorithm 1 is not a learned model but a deterministic rule-based pipeline, which inherently avoids the misclassification risks of trained classifiers. It proceeds in three stages: (1) GIF detection is performed purely by file suffix, yielding no errors by definition; (2) UI element routing is handled by UIED’s rule-based bounding box detector, where any detected non-text UI element triggers the UI branch; (3) only the final text-vs-code discrimination relies on an MLLM judgment over the extracted text content. Since stages (1) and (2) cover the majority of inputs deterministically, the MLLM (e.g., GPT-4o) is only invoked for a small, well-defined subset. We empiri-cally evaluated the end-to-end classification accuracy on the full SWE-bench Multimodal benchmark and confirmed 100% accuracy with zero misclassified instances, demonstrating that the cascading error risk does not manifest in practice. The differences between ITTC and general tool-calling frameworks. Unlike ReAct [38], OpenHands [39], and SWE-agent [18], which rely on free-form LLM reasoning for tool selection, ITTC adopts a deterministic, type-driven routing mechanism that eliminates the instability and overhead of LLM-based tool dispatch for visual inputs. 
+
+C. Bug Localization 
+
+Following Agentless [17] and GUIRepair [30], VisualRepair performs fault localization in two stages: file localization and hunk localization. In file localization, candidate files are identified by combining MLLMs and embedding models. The MLLM examines the repository structure given project docu-mentation and the enhanced issue report to return likely buggy file paths, avoiding full file contents to stay within context lim-its. Complementarily, the embedding model retrieves the Top-
+
+N most semantically relevant files within MLLM-identified directories. The two candidate sets are merged, and if the union exceeds N , each file is compressed into a lightweight skeleton retaining imports, signatures, and comments, from which the MLLM selects the N most relevant bug files. In hunk localization, the full contents of all key bug files are provided to the MLLM, which identifies suspicious classes, functions, or global constructs. Localization operates at class or function granularity to preserve contextual information. Elements exceeding N lines are compressed to their headers, variable declarations, and comments. The MLLM returns sus-pected element names, and their complete bodies are extracted as the localized hunks. 
+
+D. Dynamic Test-time Region Focusing 
+
+Precisely identifying the bug-relevant region within an issue image is critical to generate accurate patches, yet a single localization attempt is often insufficient due to the limitation of MLLMs’ visual grounding abilities. Therefore, we propose Dynamic Test-time Region Focusing, which augments patch generation with diverse, multi-granularity region candidates derived from the issue image. 
+
+1) Bug Region Grounding: Given an issue report consisting of issue descriptions and issue images, we employ a grounding MLLM to localize the bug-relevant region within the input image v, producing bounding boxes that delineate the sus-pected defective area. Since a single grounding result may be imprecise due to visual complexity or model uncertainty, we prompt the grounding agent to generate M candidate regions 
+
+{b1, b 2, . . . , b M } for each image, introducing more diversity. 2) Zoom-in and Zoom-out: To capture bug-relevant context at varying granularities, we apply zoom-in and zoom-out strategies to each of the M grounded regions. For each can-didate bounding box bi, we produce two augmented variants: a zoomed-in region cropped to half the original area for fine-grained details, and a zoomed-out region expanded to twice the original area for broader context. This yields 2M additional candidates, resulting in 3M + 1 distinct visual inputs. 
+
+3) Patch Generation: Each of the 3M + 1 region candi-dates, together with the class/function level bug code snippets identified by previous bug localization phase, is independently fed into the MLLM to generate patches. For each visual input, the MLLM produces P candidate patches, yielding a final pool of (3 M + 1) × P patches in total. This diverse patch pool, grounded in complementary spatial perspectives of the bug region, substantially increases the likelihood of generating a correct and complete repair. Specifically, each patch consists of a Search/Replace edit pair comprising two components: (i) a search segment containing the original code to be modified, and (ii) a replacement segment containing the revised code. Applying such a patch is straightforward: the search segment is located within the target file and substituted with the corresponding replacement. This edit-based patch format constrains the MLLMs to produce minimal, targeted modifications rather than complete rewrites and enhances reliability by lowering the risk of hallucinations that tend to arise when generating large code blocks from scratch. 
+
+E. Patch Selection 
+
+Given the pool of (3 M +1) ×P candidate patches generated by DTRF, we apply the following patch selection procedure to identify the most plausible repair. (1) Patch Filtering. We first attempt to apply and compile each candidate patch, recording whether it compiles successfully. Patches that fail to compile are excluded from subsequent stages, and only syntactically valid patches are retained. For issues associated with reposi-tories that have a corresponding code template in our code li-brary, we perform automated visual validation. Surviving patch are applied to the reproduction code, which is then rendered in a browser via web driver to capture a screenshot. Rendered screenshots are subsequently compared against the original issue images at the pixel level. Patches whose rendered output is visually identical to the buggy screenshot are discarded, as they indicate no effective change in visual behavior. (2) Patch Selection. We follow the GUIRepair [30] for patch selection, the remaining patch scenario images are then sequentially input to the MLLM, which assesses whether the visual output reflects a successful fix based on its understanding of the issue report. Once the model identifies a patch as effective, the validation process terminates. The validated patch is then retained as the resolution for the issue. IV. E XPERIMENT SETUP 
+
+A. Implementation 
+
+Implementation details. We adopt o3 [40] as the backbone MLLM for VisualRepair, and use 
+
+text-embedding-3-small [41] as the embedding model for document retrieval. In the Image Type-aware Tool Calling module, the MAE threshold δ for GIF key frame extraction is set to 1.2, and the retrieval module returns the top-6 relevant documents from the repository for context augmentation. In the bug file localization phase, we set the sampling temperature to 1 with 2 sampling iterations, returning the top-4 most relevant bug files as candidates; in the hunk localization phase, we adopt the same temperature and sampling configuration to cover a diverse set of potential bug code snippets and provide adequate repair ingredients for patch generation. These retrieval and sampling hyperparameters are inherited directly from prior work (GUIRepair, Agentless) and kept consistent with their settings, which ensures fair comparison against these baselines. In the Dynamic Test-time Region Focusing module, the number of grounded region candidates is set to M = 3 .Each candidate is augmented with zoom-in and zoom-out variants, yielding 3M + 1 = 10 distinct visual inputs. With 
+
+P = 1 patches generated per visual input, VisualRepair produces a final candidate pool of 1 × (3 M + 1) = 10 patches per issue, from which the final patch is selected via our automated patch selection procedure. 
+
+Benchmark. We evaluate VisualRepair on SWE-bench Mul-timodal [22], the leading benchmark for assessing AI systems in fixing bugs in visual, user-facing JavaScript software. It comprises 619 task instances from 17 popular JavaScript li-braries, split into a test set (SWE-bench M test, 517 instances) and a development set (SWE-bench M dev, 102 instances). We use SWE-bench M test for overall effectiveness evaluation and SWE-bench M dev for the generalizability study. 
+
+B. Baselines 
+
+We choose the baselines from the official SWE-Bench M Leaderboard [31] with 10 issue repairing frameworks with 22 variants based on GPT [40], [42] and Claude [43] backbones.  
+
+> •
+
+RAG [22] uses BM25 [44] for document retrieval while inheriting their document formatting and prompt structure.  
+
+> •
+
+SWEAgent [18] is a lightweight framework that connects an LM to an operating system via a text-based agent-computer interface (ACI), enabling file editing and shell execution.  
+
+> •
+
+Agentless [17] employs a simplistic three-phase process of localization, repair, and patch validation.  
+
+> •
+
+Agentless Lite [45] is a lightweight variant of Agentless that retrieves relevant files via embeddings and iteratively generates repair patches from the top results.  
+
+> •
+
+Globant Code Fixer Agent [46] is an AI-driven development agent designed to automatically detect, analyze, and fix code issues by leveraging large language models to support automated software maintenance workflows.  
+
+> •
+
+Zencoder [47] is a coding assistant that helps developers generate, edit, and understand code through natural language interactions integrated into development workflows.  
+
+> •
+
+Openhands-Versa [39] is a generalist agent built with a modest number of general tools: code editing and execution, web search, and multimodal web browsing. • Refact AI Agents [48] are end-to-end software engineer-ing agents that integrate with developer tools, understand codebases, and autonomously plan, execute, and iterate on complex coding tasks until completion.  
+
+> •
+
+GUIRepair [30] applies the image2code and code2image pipeline to achieve the cross-modality reasoning.  
+
+> •
+
+SVRepair [49] consists of a fine-tuned vision-language model that translates visual artifacts into structured sym-bolic representations, and an intelligent refinement loop that iteratively improves repair quality. 
+
+C. Research Questions  
+
+> •
+
+(RQ1) Overall Performance. How well does the overall performance of VisualRepair compare to SOTA baselines?  
+
+> •
+
+(RQ2) Ablation Study. How does the key components of VisualRepair contribute to the overall repair capability?  
+
+> •
+
+(RQ3) Parameter Study. How do key parameters affect the performance of VisualRepair?  
+
+> •
+
+(RQ4) Generalizability Study : Can VisualRepair general-ize to additional multimodal task instances?  
+
+> •
+
+(RQ5) Case Study : Why does VisualRepair work? V. E XPERIMENT RESULTS 
+
+A. Overall Performance (RQ1) 
+
+We run VisualRepair three times and report the average results, with a variance of 1. Table I shows the performance of all approaches on the SWE-bench Multimodal test set. VisualRepair, using o3-20250416 as the backbone model, resolves 196 instances, achieving a resolve rate of 37.91%, outperforming all existing approaches on performance while maintaining low cost at an average of $0.47 per issue. 
+
+Comparison with open-source systems. VisualRepair out-performs all open-source baselines by a significant mar-gin. The strongest open-source competitors, GUIRepair and SVRepair, both using o3 as backbone model, resolve 186 instances (35.98%), which VisualRepair exceeds by 10 in-stances. Among other open-source systems, Agentless Lite with o3-20250416 achieves 26.50% (137 instances), and OpenHands-Versa with Claude-Sonnet-4 reaches 34.43% (178 instances), both of which VisualRepair surpasses by a substan-tial margin. Notably, VisualRepair achieves these results at an average cost of $0.47, far lower than comparable baselines such as OpenHands-Versa ($1.79) and SWE-agent ($1.52– $3.11), demonstrating a favorable balance between repair effectiveness and computational efficiency. 
+
+Comparison with closed-source commercial systems. 
+
+Among the two closed-source commercial systems, Zencoder resolves 158 instances and Globant Code Fixer Agent resolves 153 instances. VisualRepair outperforms both by a consider-able margin of 36 and 41 instances respectively, validating the effectiveness of VisualRepair across both open-source and commercial system comparisons. 
+
+Repository-level analysis. Table II presents the repository-level performance of VisualRepair and the top-4 baseline approaches on the SWE-bench Multimodal test set. Visual-Repair achieves the best or tied-best performance across the majority of repositories. On bpmn-js [50] and carbon [32], VisualRepair achieves the highest resolve rate of 75.93% and 21.05%, respectively, where issue reports frequently contain GIF-based interaction sequences, the GIF tool in ITTC effec-tively extracts key frames to capture dynamic bug behaviors, contributing to this strong performance. On openlayers [51] and lighthouse [52], where bug screenshots are particularly noisy and contain large bug-irrelevant regions, DTRF’s multi-granularity region focusing proves critical, with VisualRepair resolving 77 instances (97.47%) and 11 instances (20.37%) respectively, outperforming all baselines on both repositories. On prism [35], the code library tool provides matching syntax highlighting templates that facilitate accurate bug reproduction and patch validation, enabling VisualRepair to outperform GUIRepair and SVRepair with a resolve rate of 26.32%. 
+
+Repair Difference Analysis. Figure 6 shows a Venn di-agram of resolved issues across the top-5 approaches. All methods share a common core of 137 issues, representing straightforward bugs. Notably, VisualRepair uniquely resolves 10 instances, the highest among all methods, indicating its ability to capture complementary bug patterns via type-aware visual understanding and region-focused localization. In com-parison, GUIRepair (o3), SVRepair (o3), GUIRepair (o4-mini), and Refact (claude-4-sonnet) uniquely resolve 2, 5, 5, and 10 instances, respectively. The limited pairwise-only overlaps between VisualRepair and others further suggest that its gains are not subsumed by existing approaches, but instead provide genuinely complementary repair capabilities. In summary, these results confirm that addressing the het-erogeneity of visual inputs and the imprecision of bug region localization leads to significant performance improvements for visual software issue repair. 5 10 153232342100310 20242 5063134611 137 VisualRepair(o3) GUIRepair(o3) SVRepair(o3) Refact(claude-4-sonnet) GUIRepair(o4mini)  
+
+> Fig. 6. Venn diagram of fixed issues for Top-5 methods.
+
+B. Ablation Study (RQ2) 
+
+VisualRepair comprises two core components: Image Type-aware Tool Calling (ITTC) and Dynamic Test-time Region Focusing (DTRF). We use four variants of VisualRepair ( C0–
+
+C3) to evaluate the individual contribution of each component, where C0 serves as the baseline with both modules removed, and C3 represents the full configuration. TABLE I RESULTS ON SWE-BENCH M TEST . REFERS CLOSED -SOURCE SYSTEMS . REFERS CLAUDE MODELS . REFERS GPT MODELS .
+
+Methods Base Model Resolved %Resolved $Avg. Cost 
+
+GUIRepair [30] o3-20250416 186 35.98% —
+
+SVRepair [49] o3-20250416 186 35.98% —
+
+Refact.ai Agent [48] NA 184 35.59% —OpenHands-Versa [39] Claude-Sonnet-4-20250514 178 34.43% $1.79 GUIRepair [30] o4-mini-20250416 175 33.85% $0.36 OpenHands-Versa [39] Claude-Sonnet-3-7-20250219 162 31.33% $1.95 GUIRepair [30] GPT-4.1-20250414 161 31.14% $0.25 Zencoder [47] NA 158 30.56% —GUIRepair [30] GPT-4o-20240806 157 30.37% $0.29 Globant Code Fixer Agent [46] NA 153 29.59% —Agentless Lite [45] o3-20250416 137 26.50% -Agentless Lite [45] Claude-Sonnet-3-5-20240620 131 25.34% $0.25 Agentless Lite [45] GPT-4o-20240806 127 24.56% $0.18 SWE-agent Multimodal [22] GPT-4o-20240806 63 12.19% $2.94 SWE-agent [18] Claude-Sonnet-3-5-20240620 63 12.19% $1.52 SWE-agent JavaScript [22] Claude-Sonnet-3-5-20240620 62 11.99% $3.11 SWE-agent [18] GPT-4o-20240806 62 11.99% $2.07 SWE-agent Multimodal [22] Claude-Sonnet-3-5-20240620 59 11.41% $3.11 SWE-agent JavaScript [22] GPT-4o-20240806 48 9.28% $0.99 Agentless [17] Claude-Sonnet-3-5-20240620 32 6.19% $0.42 RAG [22] GPT-4o-20240806 31 6.00% $0.17 RAG [22] Claude-Sonnet-3-5-20240620 26 5.03% $0.15 Agentless [17] GPT-4o-20240806 16 3.09% $0.38 
+
+VisualRepair (Ours) o3-20250416 196 37.91% $0.47 TABLE II COMPARISON OF RESOLVED ISSUES ACROSS REPOSITORIES BETWEEN 
+
+VISUAL REPAIR AND TOP -4 METHODS ON SWE-B ENCH M TEST .BACKBONE MODELS ARE O 3-20250416 FOR GPT AND 
+
+CLAUDE -S ONNET -4-20250514 FOR CLAUDE . B EST RESULTS ARE MARKED BY GREEN .                                                                                    
+
+> Repo Num VisualRepair GUIRepair [30] SVRepair [49] Refact [48] OpenHands-Versa [39]
+> next 39 10 (25.64%) 10 (25.64%) 10 (25.64%) 8 (20.51%) 9 (23.08%) bpmn-js 54 41 (75.93%) 37 (68.52%) 38 (70.37%) 35 (64.81%) 37 (68.52%) carbon 133 28 (21.05%) 24 (18.05%) 24 (18.05%) 26 (19.55%) 21 (15.79%) eslint 11 6 (54.55%) 6 (54.55%) 6 (54.55%) 3 (27.27%) 4 (36.36%) lighthouse 54 11 (20.37%) 8 (14.81%) 9 (16.67%) 7 (12.96%) 5 (9.26%) grommet 20 5 (25.00%) 5 (25.00%) 4 (20.00%) 3 (15.00%) 2 (10.00%) highlight.js 39 4 (10.26%) 3 (7.69%) 4 (10.26%) 5 (12.82%) 5 (12.82%) openlayers 79 77 (97.47%) 76 (96.20%) 77 (97.47%) 76 (96.20%) 74 (93.67%) prettier 13 3 (23.08%) 4 (30.77%) 4 (30.77%) 6 (46.15%) 4 (30.77%) prism 38 10 (26.32%) 8 (21.05%) 8 (21.05%) 11 (28.95%) 12 (31.58%) quarto-cli 24 1 (4.17%) 5 (20.83%) 1 (4.17%) 4 (16.67%) 5 (20.83%) scratch-gui 60 (0.00%) 0 (0.00%) 1 (16.67%) 0 (0.00%) 0 (0.00%)
+> Total 517 196 (37.91%) 186 (35.98%) 186 (35.98%) 184 (35.59%) 178 (34.43%)
+
+TABLE III THE PERFORMANCE OF 4 VARIANTS FOR VISUAL REPAIR . X DENOTES REMOVAL AND Y DENOTES INCLUSION .ITTC DTRF Resolved %Resolved $Avg.Cost X X C0 151 29.21% $0.16 Y X C1 171 33.08% $0.45 X Y C2 166 32.11% $0.46 Y Y C3 196 37.91% $0.47 
+
+Contribution of ITTC. Enabling ITTC alone ( C1) improves performance to 171 instances, a gain of 20 over the uniform perception baseline C0, demonstrating that type-aware visual interpretation substantially enhances comprehension of hetero-geneous bug images. The gains are concentrated in visually heterogeneous types: UI (7), GIF (5), IDE Code (4), and Text (4), confirming that type-aware routing is most critical for inputs that a uniform strategy systematically mishandles. 
+
+Contribution of DTRF. Enabling DTRF alone ( C2) resolves 166 instances, a gain of 15 over C0, validating that multi-granularity region focusing improves fault localization and patch diversity. Manual inspection confirms grounding quality: 14 of 15 newly resolved instances (93.3%) had the bug-relevant region correctly identified, indicating that DTRF’s region focusing directly drives repair rather than incidentally benefiting from patch diversity alone. 
+
+Synergy of ITTC and DTRF. Finally, the full VisualRepair configuration (C3) achieves the best performance of 196 instances, outperforming C1 and C2 by 25 and 30 instances respectively, confirming that ITTC and DTRF are complemen-tary and mutually reinforcing. 
+
+C. Parameter Study (RQ3) 1) The M (number of grounded regions) and patch gener-ation count P : Rather than expensive grid search, our design was guided by prior work: GUIRepair and Agentless generate 40 patches per issue, so setting M = 3 with 4 patches per region would yield a comparable total. However, we found that 40 patches impose a substantial selection burden on the MLLM ranker, so we reduced P to 10 (approximately 1 patch per region per zoom level), balancing patch diversity with selection tractability. We sample 100 test instances for sensitivity analysis and found that resolved counts remain stable when M ranges from 1 to 3 ( P from 4 to 10). As shown in Table IV, M = 3 with P = 10 achieves the highest resolved count (37), while M = 4 (P = 13 ) yields diminishing returns (dropping to 33), as additional regions increasingly overlap with already-covered areas and the larger candidate pool further burdens patch selection. Notably, P = 10 is more efficient than GUIRepair’s 40 patches, reducing inference cost and selection complexity without sacrificing performance. 
+
+TABLE IV SENSITIVITY ANALYSIS OF M 
+
+> AND
+
+P .
+
+M (#Regions) 1 2 3 4
+
+P (#Patches) 4 7 10 13 Solved 35 36 37 33 TABLE V COVERAGE AND OVERLAP RATIO UNDER DIFFERENT ZOOM FACTORS .Factor Coverage Ratio Overlap Ratio Solved No zoom 0.3459 0.1275 34 7/8 0.3730 0.1458 34 1/2 0.4917 0.2384 37 1/8 0.8093 0.6124 35 
+
+2) The Grounding Zoom Factor: We evaluate each setting by its coverage ratio (proportion of the image captured across regions) and overlap ratio (redundancy between regions). As shown in Table V, a zoom factor close to 1 (e.g., 7/8) produces only minor region variations, yielding low coverage (0.373) and insufficient diversity, resulting in only 34 resolved instances. Conversely, a zoom factor close to 0 (e.g., 1/8) enlarges regions aggressively, causing the overlap ratio to spike to 0.61 and severely undermining patch diversity, dropping to 35 resolved instances. A zoom factor of 1/2 achieves the best balance, with a coverage ratio of 0.492 and a moderate overlap ratio of 0.238, yielding the highest resolve count of 37 instances. We therefore select zoom 1/2 as the optimal setting. 
+
+TABLE VI ABLATION STUDY ON THE THRESHOLD COEFFICIENT k.
+
+k 0.2 0.5 0.8 1.0 1.2 1.5 Avg.Keyframes 12.09 10.24 8.93 8.43 7.96 7.04 Solved 37 36 36 38 38 32 
+
+3) The key frame extract coefficient k: k controls the sensitivity of key frame selection. We sample 50 GIF-based issues to evaluate the effect of k, with results shown in Table VI. The number of solved issues remains stable at 36–38 when k ranges from 0.2 to 1.2, but drops to 32 at 
+
+k = 1 .5, indicating that overly aggressive filtering discards visually informative frames. We therefore set k = 1 .2 as the default, which minimizes the average number of keyframes per GIF while preserving solving performance, striking the best balance between efficiency and effectiveness. 
+
+D. Generalization Study (RQ4) 
+
+In the generalizability experiment, we focus on the perfor-mance of VisualRepair on five additional repositories from the SWE-bench Multimodal dev split and base models. In Table VII, VisualRepair achieves the best overall performance, resolving 25 out of 102 instances (24.51%), outperforming 
+
+TABLE VII RESULTS ON SWE-BENCH M DEV . T HE BACKBONE MODELS ARE 
+
+GPT-4 O-20240806. B EST RESULTS ARE MARKED BY GREEN .                                      
+
+> Repo Num VisualRepair GUIRepair [30] SWE-agentM [18] AgentlessJS [45] RAG [22]
+> wp-calypso 37 0 (0.00%) 0 (0.00%) 0 (0.00%) 0 (0.00%) 1 (2.70%) Chart.js 24 8 (33.33%) 6 (25.00%) 5 (20.83%) 0 (0.00%) 3 (12.50%) react-pdf 11 0 (0.00%) 0 (0.00%) 0 (0.00%) 0 (0.00%) 0 (0.00%) marked 14 8 (57.14%) 1 (7.14%) 1 (7.14%) 0 (0.00%) 3 (21.43%) p5.js 16 9 (56.25%) 7 (43.75%) 4 (25.00%) 1 (6.25%) 4 (25.00%)
+> Total 102 25 (24.51%) 14 (13.73%) 10 (9.80%) 1 (0.98%) 11 (10.78%)
+
+TABLE VIII RESULTS ON SWE-BENCH M DEV ACROSS DIFFERENT BACKBONE MODELS . B EST RESULTS PER REPO ARE MARKED IN GREEN .                                    
+
+> Repo Num o4-mini-2025-04-16 o3-20250416 GUIRepair VisualRepair GUIRepair VisualRepair
+> wp-calypso 37 1 (2.70%) 2 (5.41%) 1 (2.70%) 1 (2.70%) Chart.js 24 21 (87.50%) 20 (83.33%) 23 (95.83%) 23 (95.83%) react-pdf 11 1 (9.09%) 1 (9.09%) 1 (9.09%) 2 (18.18%) marked 14 4 (28.57%) 5 (35.71%) 4 (28.57%) 5 (35.71%) p5.js 16 5 (31.25%) 8 (50.00%) 3 (18.75%) 6 (37.50%)
+> Total 102 32 (31.37%) 36 (35.29%) 32 (31.37%) 37 (36.27%)
+
+other baselines. Notably, VisualRepair achieves particularly strong results on Chart.js [53] (33.33%) and marked [37] (57.14%), where the code library tool in ITTC provides match-ing code templates that significantly facilitate bug reproduction and patch validation for these rendering-oriented libraries. On p5.js [54], VisualRepair also leads with 56.25%, outperform-ing all baselines. Overall, the consistent performance gains across diverse repositories validate the generalizability. 
+
+E. Case Study (RQ5) 
+
+Case Study 1: Tool using for bug comprehension. Fig-ure 7 presents a case from the bpmn-io [50] repository (issue 
+
+bpmn-js-1179 ), where the bug describes a sequence flow layout breaking after dropping an element, accompanied by a GIF of 89 frames. Without the GIF tool, the MLLM would struggle to extract meaningful temporal information from the raw animation. By extracting 4 representative key frames, the GIF tool reduces visual redundancy by 95% while retaining the critical moments that reveal the erroneous behavior: the newly inserted sequence flow incorrectly attaches to the top-left corner of the dropped element rather than its center. Grounded in this compact temporal evidence, VisualRepairsuccessfully localizes the bug in DropOnFlowBehavior.js and gen-erates the correct patch, demonstrating the essential role of the GIF tool in comprehending dynamic bug behaviors. 
+
+Case Study 2: Dynamic region grounding for local-ization. Figure 8 presents a case from the lighthouse [52] repository (issue lighthouse-5791 ), where the bug de-scribes redirects opportunity being incorrectly squished in the performance report. The issue image contains a cluttered audit UI with substantial uninformative whitespace, making direct bug localization difficult. VisualRepairfirst applies the crop tool to remove blank regions, sharpening the model’s focus on meaningful content. Subsequently, DTRF prompts the MLLM to ground multiple region candidates, but as shown in the bpmn -io__bpmn -js -1179          
+
+> VisualRepair
+> 89 frames 4frames
+> Image Type -aware Tool Calling
+> Extract Key frames
+> Sequence Flow Layout Broken After Dropping Element
+> Bug reproduce Bug localization
+> I will repair the bug.
+> Patch Generation Fig. 7. Case study for tool using.
+
+figure, two of the initial grounding results (red boxes) are incorrectly localized, demonstrating that single-shot grounding alone is insufficient to reliably capture the bug-relevant region at the bottom-right corner. DTRF further applies zoom-in (blue boxes) and zoom-out (green boxes) augmentations, among which the candidates marked with successfully cover the defective area and provide accurate visual grounding. GoogleChrome__lighthouse -5791        
+
+> Image Type -aware Tool Calling
+> Crop out meaningless region
+> Redirects opportunity squished in report .
+> I will repair the bug.
+> VisualRepair
+> …
+> Dynamic test -time region focusing
+> Bug reproduce
+> Bug localization
+> Patch
+> generation
+> Fig. 8. Case study for dynamic test-time region focusing.
+
+Failure Analysis . We conduct analysis of the unre-solved instances and identify three representative failure modes: (1) Long screenshots with imprecise grounding. In 
+
+carbon-design-system_carbon-13317 [32], the bug report contains an extremely long screenshot spanning mul-tiple UI sections, making it difficult for DTRF to precisely localize the bug-relevant region. (2) GIFs with excessive frames. In openlayers_openlayers-9083 [51], the GIF contains an unusually large number of frames that remain numerous even after key-frame extraction, prevent-ing the model from identifying the visual transition corre-sponding to the bug. (3) High-noise, high-density images. In GoogleChrome_lighthouse-1446 [52], the image contains extremely dense visual information with significant noise, preventing effective bug localization. These failure modes highlight promising directions for future work: im-proving visual grounding for long screenshots, developing adaptive compression methods for GIF inputs, and enhancing bug localization and patch generation under complex, noisy, or information-dense visual inputs. VI. T HREATS TO VALIDITY 
+
+(1) Backbone Model Selection. Our main experiments use o3 as the backbone, which may limit generalizability. How-ever, since o3 is adopted by competitive baselines on SWE-bench Multimodal, it enables fair comparison, and additional experiments with GPT-4o and o4-mini show consistent gains. (2) Benchmark Coverage. We evaluate on SWE-bench Mul-timodal, which mainly contains JavaScript/TypeScript front-end repositories. Although performance on other languages (e.g., Java, Python, and C#) remains unverified, it is currently the most comprehensive benchmark for visual software issue repair. VII. R ELATED WORK 
+
+A. LLM for Automated Program Repairing 
+
+Single Modality Program Repair. Researchers have proposed numerous LLM-based APR approaches to address software engineering challenges. Early work explored two dominant paradigms: fine-tuning LLMs on bug-fix datasets [6]–[9] and prompting pre-trained models with carefully designed templates [10]–[14], [55]–[57], both of which demonstrated promising repair capabilities. More recently, researchers have shifted attention toward LLM-based autonomous agents capa-ble of tackling complex, repository-level issue resolution [16]– [19], [39]. For instance, SWE-agent [18] introduces an Agent-Computer Interface to enable flexible environment interaction, SpecRover [19] enhances the repair process through auto-mated specification inference, and Agentless [17] adopts a streamlined localization-repair-validation pipeline for practical software development tasks. 
+
+Visual Software Issue Repair. A separate line of work targets visual software issues; however, existing approaches are typi-cally tailored to narrow bug categories and lack generalizabil-ity across diverse visual problem domains. Iris [58] proposes a context-aware technique for repairing color-related accessibil-ity issues in mobile applications. DesignRepair [59] introduces a dual-stream, knowledge-driven LLM-based framework for detecting and repairing design quality issues in front-end code. DesignBench [20] benchmarks MLLMs on design-related re-pair across six categories of display issues. To address general real-world visual software issues, GUIRepair builds upon the agentless repair paradigm [17] and incorporates cross-modal reasoning to comprehend and localize visual information. Nev-ertheless, existing approaches still struggle to accommodate heterogeneous visual inputs and face significant challenges in precisely grounding issue regions. B. MLLM for GUI Development and Maintenance 
+
+GUI Code Generation. Recent advances in multimodal large language models (MLLMs) have enabled increasingly sophis-ticated UI code generation methods. DCGen [60] adopts a divide-and-conquer pipeline to reduce element omission and layout distortion, while LaTCoder [61] improves layout fi-delity through layout-aware generation. Interaction2Code [21] evaluates MLLMs on interactive webpage generation, and EfficientUICoder [62] reduces inference overhead via bidirec-tional token compression. Instruct4Edit [63] programmatically synthesizes high-quality datasets for code editing, whereas ComUICoder [64] uses semantic-aware segmentation and merging to enhance component reuse and maintainability. 
+
+GUI Testing and Bug Localization. For GUI bug localiza-tion, prior works exploit a variety of signals, including user interaction data [65], natural language bug descriptions [66], and recorded bug videos [67], [68], to pinpoint UI-level faults with deep learning-based methods. Building on the capabilities of LLMs, GPTDroid [69] reformulates mobile GUI testing as a question-answering task, enabling language models to interact with and explore applications through GUI information. For bug reproduction, AdbGPT [70] proposes a lightweight prompt engineering-based approach that au-tomatically reproduces bugs directly from natural language bug reports. However, existing methods are either confined to code generation or applied to mobile platforms for bug reproduction, limiting their generalization to end-to-end repair of complex real-world visual software. 
+
+VIII. C ONCLUSION 
+
+We propose VisualRepair, an MLLM-based framework for visual software issue repair, addressing two key challenges: heterogeneous visual inputs and bug-region localization. Visu-alRepair introduces two core modules: Image Type-aware Tool Calling, which classifies input images and invokes a tailored tool chain for robust interpretation of diverse visual content, and Dynamic Test-time Region Focusing, which grounds bug-related region candidates and refines them via adaptive zoom-in/out to improve fault localization and patch diversity. Exten-sive experiments on SWE-bench MM demonstrate that Visu-alRepair consistently outperforms all leaderboard methods. REFERENCES [1] Q. Zhang, C. Fang, Y. Ma, W. Sun, and Z. Chen, “A survey of learning-based automated program repair,” ACM Transactions on Software Engi-neering and Methodology (TOSEM) , vol. 33, no. 2, pp. 1–69, 2023. [2] L. Gazzola, D. Micucci, and L. Mariani, “Automatic software repair: A survey,” in Proceedings of the 40th International Conference on Software Engineering , 2018, pp. 1219–1219. [3] C. Le Goues, T. Nguyen, S. Forrest, and W. Weimer, “Genprog: A generic method for automatic software repair,” Ieee transactions on software engineering , vol. 38, no. 1, pp. 54–72, 2011. [4] K. Liu, A. Koyuncu, D. Kim, and T. F. Bissyand´ e, “Tbar: Revisiting template-based automated program repair,” in Proceedings of the 28th ACM SIGSOFT international symposium on software testing and anal-ysis , 2019, pp. 31–42. [5] H. D. T. Nguyen, D. Qi, A. Roychoudhury, and S. Chandra, “Semfix: Program repair via semantic analysis,” in 2013 35th International Conference on Software Engineering (ICSE) . IEEE, 2013, pp. 772– 781. [6] K. Huang, X. Meng, J. Zhang, Y. Liu, W. Wang, S. Li, and Y. Zhang, “An empirical study on fine-tuning large language models of code for automated program repair,” in 38th International Conference on Automated Software Engineering (ASE) , 2023, pp. 1162–1174. [7] N. Jiang, K. Liu, T. Lutellier, and L. Tan, “Impact of code language models on automated program repair,” in 45th International Conference on Software Engineering (ICSE) , 2023, pp. 1430–1442. [8] C. S. Xia, Y. Ding, and L. Zhang, “The plastic surgery hypothesis in the era of large language models,” in 38th International Conference on Automated Software Engineering (ASE) , 2023, pp. 522–534. [9] B. Yang, H. Tian, J. Ren, H. Zhang, J. Klein, T. Bissyande, C. Le Goues, and S. Jin, “Morepair: Teaching llms to repair code via multi-objective fine-tuning,” ACM Transactions on Software Engineering and Method-ology (TOSEM) , 2025. [10] C. S. Xia and L. Zhang, “Less training, more repairing please: revisiting automated program repair via zero-shot learning,” in 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (FSE) , 2022, pp. 959–971. [11] Q. Zhang, C. Fang, T. Zhang, B. Yu, W. Sun, and Z. Chen, “Gamma: Re-visiting template-based automated program repair via mask prediction,” in 38th International Conference on Automated Software Engineering (ASE) , 2023, pp. 535–547. [12] C. S. Xia and L. Zhang, “Automated program repair via conversation: Fixing 162 out of 337 bugs for $0.42 each using chatgpt,” in 
+
+Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA 2024) . New York, NY, USA: Association for Computing Machinery, 2024, p. 819–831. [Online]. Available: https://doi.org/10.1145/3650212.3680323 [13] X. Yin, C. Ni, S. Wang, Z. Li, L. Zeng, and X. Yang, “Thinkrepair: Self-directed automated program repair,” in 33rd International Symposium on Software Testing and Analysis (ISSTA) , 2024, pp. 1274–1286. [14] I. Bouzenia, P. Devanbu, and M. Pradel, “Repairagent: An autonomous, llm-based agent for program repair,” in 47th International Conference on Software Engineering (ICSE) , 2025, pp. 694–694. [15] R. Just, D. Jalali, and M. D. Ernst, “Defects4j: A database of existing faults to enable controlled testing studies for java programs,” in Pro-ceedings of the 2014 international symposium on software testing and analysis (ISSTA 2014) , 2014, pp. 437–440. [16] C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, and K. R. Narasimhan, “SWE-bench: Can language models resolve real-world github issues?” in The Twelfth International Conference on Learning Representations (ICLR 2024) , 2024. [Online]. Available: https://openreview.net/forum?id=VTF8yNQM66 [17] C. S. Xia, Y. Deng, S. Dunn, and L. Zhang, “Demystifying llm-based software engineering agents,” Proceedings of the ACM on Software Engineering (FSE) , vol. 2, pp. 801–824, 2025. [18] J. Yang, C. E. Jimenez, A. Wettig, K. Lieret, S. Yao, K. Narasimhan, and O. Press, “Swe-agent: Agent-computer interfaces enable automated soft-ware engineering,” Advances in Neural Information Processing Systems (NeurIPS 2024) , vol. 37, pp. 50 528–50 652, 2024. [19] H. Ruan, Y. Zhang, and A. Roychoudhury, “Specrover: Code intent extraction via llms,” in 47th International Conference on Software Engineering (ICSE) , 2025, pp. 617–617. [20] J. Xiao, M. Wang, M. H. Lam, Y. Wan, J. Liu, Y. Huo, and M. R. Lyu, “Designbench: A comprehensive benchmark for mllm-based front-end code generation,” arXiv preprint arXiv:2506.06251 , 2025. [21] J. Xiao, Y. Wan, Y. Huo, Z. Wang, X. Xu, W. Wang, Z. Xu, Y. Wang, and M. R. Lyu, “Interaction2code: Benchmarking mllm-based interactive webpage code generation from interactive prototyping,” in 2025 40th IEEE/ACM International Conference on Automated Software Engineer-ing (ASE 2025) . IEEE, 2025, pp. 241–253. [22] J. Yang, C. E. Jimenez, A. L. Zhang, K. Lieret, J. Yang, X. Wu, O. Press, N. Muennighoff, G. Synnaeve, K. R. Narasimhan, D. Yang, S. Wang, and O. Press, “SWE-bench multimodal: Do AI systems generalize to visual software domains?” in The Thirteenth International Conference on Learning Representations (ICLR 2025) , 2025. [Online]. Available: https://openreview.net/forum?id=riTiq3i21b [23] X. Zhao, Q. Sun, J. Xiao, X. Liu, H. Yang, Q. Chen, X. Luo, J. Huang, Y. Zhong, L. Chen et al. , “Beyond nl2code: A structured survey of multimodal code intelligence,” arXiv preprint arXiv:2606.15932 , 2026. [24] W. Tang, J. Xiao, W. Jiang, X. Xiao, Y. Wang, X. Tang, Q. Li, Y. Ma, J. Liu, S. Tang et al. , “Slidecoder: Layout-aware rag-enhanced hierarchical slide generation from design,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing (EMNLP 2025) , 2025, pp. 9026–9050. [25] W. Tang, J. Xiao, Y. Gong, F. Ran, T. Xia, J. Liu, M. H. Lam, W. Wang, and M. R. Lyu, “Efficientpostergen: Semantic-aware efficient poster generation via token compression and accurate violation detection,” 
+
+arXiv preprint arXiv:2603.00155 , 2026. [26] X. Teoh, Y. Lin, D.-M. Nguyen, R. Ren, W. Zhang, and J. S. Dong, “Webtestpilot: Agentic end-to-end web testing against natural language specification by inferring oracles with symbolized gui elements,” Pro-ceedings of the ACM on Software Engineering , vol. 3, no. FSE, 7 2026. [27] C. T. Le, T. O. Y. Siang, J. Xiao, Y. Wan, and Y. Huo, “Uibenchkit: A unified toolkit for design-to-code model evaluation,” arXiv preprint arXiv:2605.13141 , 2026. [28] R. Liu, X. Teoh, Y. Lin, G. Chen, R. Ren, D. Poshyvanyk, and J. S. Dong, “Guipilot: A consistency-based mobile gui testing approach for detecting application-specific bugs,” Proc. ACM Softw. Eng. , vol. 2, no. ISSTA, Jun. 2025. [Online]. Available: https://doi.org/10.1145/3728909 [29] M. Yuan, J. Chen, Z. Xing, A. Quigley, Y. Luo, T. Luo, G. Mohammadi, Q. Lu, and L. Zhu, “Designrepair: Dual-stream design guideline-aware frontend repair with large language models,” in 2025 IEEE/ACM 47th International Conference on Software Engineering (ICSE 2025) . IEEE, 2025, pp. 2483–2494. [30] K. Huang, J. Zhang, X. Xie, and C. Chen, “Seeing is fixing: Cross-modal reasoning with multimodal llms for visual software issue repair,” in 
+
+2025 40th IEEE/ACM International Conference on Automated Software Engineering (ASE 2025) . IEEE, 2025, pp. 1156–1168. [31] SWE-bench, “Swe-bench multimodal leaderboard,” 2026. [Online]. Available: https://www.swebench.com/index.html#multimodal [32] C. D. System, “A design system built by ibm.” 2026. [Online]. Available: https://github.com/carbon-design-system/carbon [33] C. Cui, T. Sun, M. Lin, T. Gao, Y. Zhang, J. Liu, X. Wang, Z. Zhang, C. Zhou, H. Liu, Y. Zhang, W. Lv, K. Huang, Y. Zhang, J. Zhang, J. Zhang, Y. Liu, D. Yu, and Y. Ma, “Paddleocr 3.0 technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2507.05595 [34] M. Xie, S. Feng, Z. Xing, J. Chen, and C. Chen, “Uied: a hybrid tool for gui element detection,” in Proceedings of the 28th ACM Joint Meeting on European Software Engineering Conference and Symposium on the Foundations of Software Engineering , 2020, pp. 1655–1659. [35] PrismJS, “Lightweight, robust, elegant syntax highlighting.” 2026. [Online]. Available: https://github.com/PrismJS/prism [36] HighlightJS, “Javascript syntax highlighter with language auto-detection and zero dependencies.” 2026. [Online]. Available: https: //github.com/highlightjs/highlight.js [37] MarkedJS, “A markdown parser and compiler. built for speed.” 2026. [Online]. Available: https://github.com/markedjs/marked [38] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao, “ReAct: Synergizing reasoning and acting in language models,” in 
+
+International Conference on Learning Representations (ICLR) , 2023. [39] X. Wang, B. Li, Y. Song, F. F. Xu, X. Tang, M. Zhuge, J. Pan, Y. Song, B. Li, J. Singh et al. , “Openhands: An open platform for ai software developers as generalist agents,” arXiv preprint arXiv:2407.16741 , 2024. [40] OpenAI, “o3,” 2026. [Online]. Available: https://developers.openai.com/ api/docs/models/o3 [41] ——, “text-embedding-3-small,” 2025. [Online]. Available: https: //platform.openai.com/docs/models/text-embedding-3-small [42] ——, “Gpt-4o,” 2026. [Online]. Available: https://platform.openai.com/ docs/models/gpt-4o [43] Anthropic, “Claude 3.5 sonnet,” 2025. [Online]. Available: https: //docs.anthropic.com/en/docs/about-claude/models/all-models [44] S. Robertson and H. Zaragoza, The probabilistic relevance framework: BM25 and beyond . Now Publishers Inc, 2009, vol. 4. [45] C. S. Xia, Y. Deng, S. Dunn, and L. Zhang, “Agentless lite: Rag-based swe-bench software engineering scaffold,” 2026. [Online]. Available: https://github.com/sorendunn/Agentless-Lite [46] Globant, “Globant code fixer agent,” 2026. [Online]. Available: https://ai.globant.com/ [47] Zencoder, “The ai coding agent,” 2026. [Online]. Available: https: //zencoder.ai/ [48] R. AI, “Refact ai agents,” 2026. [Online]. Available: https://refact.ai/ [49] X. Tang, J. Wang, L. Luo, J. Xu, S. Zhou, D. Chen, W. Jiang, and Y. Li, “Svrepair: Structured visual reasoning for automated program repair,” 
+
+arXiv preprint arXiv:2602.06090 , 2026. [50] Bpmn-io, “About a bpmn 2.0 rendering toolkit and web modeler.” 2026. [Online]. Available: https://github.com/bpmn-io/bpmn-js [51] Openlayers, “A high-performance, feature-packed library for creating interactive maps on the web.” 2026. [Online]. Available: https: //github.com/openlayers/openlayers [52] GoogleChrome, “Automated auditing, performance metrics, and best practices for the web.” 2026. [Online]. Available: https://github.com/ GoogleChrome/lighthouse [53] ChartJS, “Simple yet flexible javascript charting for designers and developers.” 2026. [Online]. Available: https://github.com/chartjs/chart. js/ [54] processing, “p5.js is a free and open-source javascript library for accessible creative coding.” 2026. [Online]. Available: https: //github.com/processing/p5.js/ [55] Z. Fan, X. Gao, M. Mirchev, A. Roychoudhury, and S. H. Tan, “Automated repair of programs from large language models,” in 45th International Conference on Software Engineering (ICSE) , 2023, pp. 1469–1481. [56] C. S. Xia, Y. Wei, and L. Zhang, “Automated program repair in the era of large pre-trained language models,” in 2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE 2023) . IEEE, 2023, pp. 1482–1494. [57] J. Zhao, D. Yang, L. Zhang, X. Lian, Z. Yang, and F. Liu, “Enhancing automated program repair with solution design,” in 39th International Conference on Automated Software Engineering (ASE) , 2024, pp. 1706– 1718. [58] Y. Zhang, S. Chen, L. Fan, C. Chen, and X. Li, “Automated and context-aware repair of color-related accessibility issues for android apps,” in 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (FSE) , 2023, pp. 1255–1267. [59] M. Yuan, J. Chen, Z. Xing, A. Quigley, Y. Luo, T. Luo, G. Mohammadi, Q. Lu, and L. Zhu, “ DesignRepair: Dual-Stream Design Guideline-Aware Frontend Repair with Large Language Models ,” in IEEE/ACM 47th International Conference on Software Engineering (ICSE) . Los Alamitos, CA, USA: IEEE Computer Society, May 2025, pp. 646–646. [60] Y. Wan, C. Wang, Y. Dong, W. Wang, S. Li, Y. Huo, and M. Lyu, “Divide-and-conquer: Generating ui code from screenshots,” Proceed-ings of the ACM on Software Engineering (FSE 2025) , vol. 2, pp. 2099– 2122, 2025. [61] Y. Gui, Z. Li, Z. Zhang, G. Wang, T. Lv, G. Jiang, Y. Liu, D. Chen, Y. Wan, H. Zhang et al. , “Latcoder: Converting webpage design to code with layout-as-thought,” in Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining , 2025, pp. 721– 732. [62] J. Xiao, Z. Zhang, Y. Wan, Y. Huo, Y. Liu, and M. R. Lyu, “Effi-cientuicoder: A bidirectional token compression framework for efficient mllm-based ui code generation,” Proceedings of the ACM on Software Engineering , vol. 3, no. FSE, pp. 2396–2418, 2026. [63] T. H. Dang, J. Xiao, and Y. Huo, “Envisioning future interactive web development: Editing webpage with natural language,” 2025 2nd IEEE/ACM International Conference on AI-powered Software (AIware) ,pp. 61–66, 2025. [Online]. Available: https://api.semanticscholar.org/ CorpusID:282592059 [64] J. Xiao, J. Qin, S. Li, M. H. Lam, Y. Wan, J.-t. Huang, Y. Huo, and M. R. Lyu, “Comuicoder: Component-based reusable ui code generation for complex websites via semantic segmentation and element-wise feedback,” arXiv preprint arXiv:2602.19276 , 2026. [65] J. Mahmud, N. De Silva, S. A. Khan, S. H. Mostafavi, S. H. Mansur, O. Chaparro, A. Marcus, and K. Moran, “On using gui interaction data to improve text retrieval-based bug localization,” in Proceedings of the 46th IEEE/ACM International Conference on Software Engineering (ICSE 2024) , 2024, pp. 1–13. [66] A. Saha, Y. Song, J. Mahmud, Y. Zhou, K. Moran, and O. Chaparro, “Toward the automated localization of buggy mobile app uis from bug descriptions,” in Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA 2024) , 2024, pp. 1249–1261. [67] C. Bernal-C´ ardenas, N. Cooper, K. Moran, O. Chaparro, A. Marcus, and D. Poshyvanyk, “Translating video recordings of mobile app usages into replayable scenarios,” in Proceedings of the ACM/IEEE 42nd international conference on software engineering (ICSE 2020) , 2020, pp. 309–321. [68] M. Havranek, C. Bernal-C´ ardenas, N. Cooper, O. Chaparro, D. Poshy-vanyk, and K. Moran, “V2s: A tool for translating video recordings of mobile app usages into replayable scenarios,” in 2021 IEEE/ACM 43rd International Conference on Software Engineering: Companion Proceedings (ICSE-Companion) . IEEE, 2021, pp. 65–68. [69] Z. Liu, C. Chen, J. Wang, M. Chen, B. Wu, X. Che, D. Wang, and Q. Wang, “Make llm a testing expert: Bringing human-like interaction to mobile gui testing via functionality-aware decisions,” in Proceedings of the IEEE/ACM 46th International Conference on Software Engineering (ICSE 2024) , 2024, pp. 1–13. [70] S. Feng and C. Chen, “Prompting is all you need: Automated android bug replay with large language models,” in Proceedings of the 46th IEEE/ACM International Conference on Software Engineering (ICSE 2024) , 2024, pp. 1–13.
