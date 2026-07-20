@@ -1,0 +1,316 @@
+Title: AI Watermark Evidence Fails Forensic Readiness: An Empirical Evaluation
+
+URL Source: https://arxiv.org/pdf/2607.16010v1
+
+Published Time: Mon, 20 Jul 2026 01:02:04 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# AI Watermark Evidence Fails Forensic Readiness: An Empirical Evaluation 
+
+## Saifur Rahman Tamim, Amir Labib Khan 
+
+Department of Computer Science and Engineering Northern University Bangladesh tamim 41230201087@nub.ac.bd, amirlabibkhan02@gmail.com 
+
+Preprint. A version of this paper was submitted to the AAAI/ACM Conference on AI, Ethics, and Society (AIES) 2026. 
+
+Abstract 
+
+Governments are increasingly mandating that LLM-generated content carry watermarks. The EU AI Act calls for markings that are “sufficiently reliable and robust.” California’s SB 942 requires disclosure that is “permanent or extraordinarily difficult to remove.” Both mandates rest on an untested assumption: that watermark detection yields evidence reliable enough for courts. This paper tests that assumption directly. We evaluate three representative LLM watermarking methods—KGW, Unigram, and the MarkLLM implemen-tation of SynthID-Text—against the Daubert admissibility criteria and the NIST SP 800-86 digital forensic process. To structure this evaluation, we propose a Forensic Readiness Score (FRS) framework with 12 criteria, three manda-tory gates, and a 60-point scoring system. We focus on meaning-preserving paraphrase as the attack vector, since it is both legally realistic and difficult to dismiss as evidence tampering. The results raise serious evidentiary concerns. Out of 846 valid paraphrase runs across 15 diverse prompts per method, every single initially-detected KGW and Unigram text lost its watermark after paraphrasing—100% conditional removal. SynthID fared only slightly better at 98.3%. Even before any attack, false-negative rates were already high: 70% for KGW, 83% for Unigram, 80% for SynthID. The SynthID configu-ration also flagged 5.4% of paraphrased human-written con-trols as AI-generated and showed an 18.6% paradox rate, with 80% of its own pristine watermarked output landing in the uncertainty deadband. None of the three methods sat-isfy more than two of five Daubert factors. We also find that the FRS point-based scoring system, despite working as de-signed, cannot fully capture forensic uselessness—a limita-tion worth noting for future framework design. These configurations, as tested, do not meet the evidentiary bar that courts require. 
+
+## Introduction 
+
+Consider a courtroom scenario. A prosecutor offers a text as AI-generated, citing a positive watermark detection result. The defense attorney takes that same text, runs it through a paraphrasing tool anyone can access online, and hands back a version that means the same thing—but no longer triggers the watermark detector. The prosecution’s evidence just evaporated. The meaning survived. What is the judge supposed to do with that? This is not a contrived hypothetical. The EU AI Act re-quires AI-generated content markings to be “sufficiently re-liable, interoperable, effective and robust as far as this is technically feasible” (European Parliament and Council of the European Union 2024). California’s SB 942 insists that disclosure be “permanent or extraordinarily difficult to re-move” (California State Legislature 2024). Executive Or-der 14110 went further, mandating “state-of-the-art” prove-nance tools and explicitly naming watermarking (The White House 2023)—though the order was later rescinded (The White House 2025), which itself says something about how quickly the policy ground can shift. What these mandates have in common is an assumption: that the underlying watermarking technology actually works well enough to produce courtroom-grade evidence. But this assumption has not been directly evaluated against foren-sic admissibility standards. Robustness studies measure how well detectors hold up against attacks using ML metrics like TPR and AUC. Governance analyses ask whether the pol-icy infrastructure around watermarking is adequate. Neither tradition provides the thing courts actually need: an end-to-end assessment of whether watermark evidence meets the Daubert admissibility standard and follows the NIST SP 800-86 forensic process (Liang et al. 2025; Nemecek, Jiang, and Ayday 2025). Some background is useful here. The Daubert criteria (Daubert) are how U.S. federal courts decide whether sci-entific evidence is admissible—they ask about testability, peer review, known error rates, standards, and general ac-ceptance. NIST SP 800-86 (National Institute of Standards and Technology 2006) lays out how digital forensic evidence should be collected, examined, analyzed, and reported. Re-cent work has warned that watermarking risks becoming “symbolic compliance” without real enforceable standards (Nemecek, Jiang, and Ayday 2025). We wanted to see if the empirical data backs up that concern. It does. This paper contributes four things: 1. An empirical evaluation of representative LLM wa-termarks against forensic admissibility standards (both NIST SP 800-86 and Daubert). 2. A Forensic Readiness Score (FRS) framework: 12 arXiv:2607.16010v1 [cs.CR] 17 Jul 2026 scorable criteria grounded in Daubert factors and NIST phases, plus 3 mandatory gates and a 60-point scale. 3. Paraphrase experiments across KGW, Unigram, and SynthID-Text, with reproducibility verified through timestamped same-seed computational reruns. 4. Evidence that meaning-preserving paraphrase achieves 100% conditional watermark removal for two of three methods (98.3% for the third), while keeping semantic similarity high enough that a court would struggle to call it evidence tampering. As watermarked AI systems reach wider deployment, courts will encounter this kind of evidence without any established framework for evaluating it. We provide that framework—and show that, at least for these configurations, the evidence does not hold up. 
+
+## Background and Related Work 
+
+LLM Watermarking Methods 
+
+We test three watermarking methods that represent different design philosophies, all available through the open-source MarkLLM toolkit (Pan et al. 2024). 
+
+KGW (Kirchenbauer et al. 2023) works by splitting the token vocabulary into “green” and “red” lists using a hash of the previous token. During text generation, green-list tokens get a logit boost controlled by a parameter δ, pushing the model toward those tokens. Detection then checks whether the output has an unusually high proportion of green tokens via a z-score. One important consequence of this design: because the partition depends on each token’s predecessor, changing even one token can ripple through the rest of the partitions. 
+
+Unigram (Zhao et al. 2024) takes a different approach—it uses a fixed, context-independent vocabulary partition. The green/red split stays the same regardless of what came be-fore, which in theory makes it more resilient to local edits. Detection still uses a z-score over green-token frequency, but the fixed partition means the method should be more ro-bust to bounded edit-distance attacks. 
+
+SynthID-Text (Dathathri et al. 2024) is the highest-profile method in our evaluation—published in Nature ,deployed by Google in production. It uses tournament-based scoring with probabilistic detection. We evaluate the open-source MarkLLM implementation, not Google’s proprietary system (an important distinction we return to in the limitations). Unlike the other two methods, SynthID uses three detection states—WATERMARKED, NOT WATERMARKED, and UNCERTAIN—rather than a simple binary threshold. In our experiments we use the MarkLLM weighted-mean detector with a threshold of 0.5 and an UNCERTAIN deadband of ±0.03 .These three methods together cover the main design space: context-dependent partitioning (KGW), context-free partitioning (Unigram), and tournament-based probabilistic scoring (SynthID). That range matters because we want to test whether forensic failure is a property of the general ap-proach, not just one particular design. 
+
+Forensic Evidence Standards 
+
+Two frameworks are relevant to how courts handle scientific and digital evidence. 
+
+Daubert criteria. Under Daubert v. Merrell Dow Phar-maceuticals (Daubert) and Federal Rule of Evidence 702 (Federal Rules), judges evaluate scientific evidence on five factors: (1) testability and falsifiability, (2) peer review and publication, (3) known or potential error rate, (4) existence of controlling standards, and (5) general acceptance. For wa-termarking, Factor 3—the known error rate—turns out to be the critical weakness. If the error rate is unstable or un-known, the evidence is hard to admit. We note that Daubert is a US federal evidentiary standard; state courts following 
+
+Frye and civil-law jurisdictions (e.g., under EU procedu-ral rules) use different admissibility tests. We use Daubert as our primary lens because of its close conceptual fit with NIST’s error-rate language, but the forensic weaknesses we document—unstable error rates, no controlling standards— are relevant to any admissibility framework that asks similar questions of scientific evidence. 
+
+NIST SP 800-86. NIST’s guide for digital forensics (Na-tional Institute of Standards and Technology 2006) defines four phases: Collection, Examination, Analysis, and Report-ing. None of the watermark evaluations we are aware of doc-ument an end-to-end workflow aligned to these phases. This matters because watermark detection alone is not a foren-sic process; it becomes forensic evidence only when embed-ded in a documented collection, examination, analysis, and reporting workflow. NIST has separately acknowledged the broader challenge of digital content transparency (National Institute of Standards and Technology 2024), but no existing guidance bridges watermark detection to forensic evidence handling. 
+
+Historical precedent. There is a pattern here worth not-ing. The 2009 NAS report (National Research Council 2009) found that several forensic disciplines—fingerprint analysis, bite mark comparison, hair microscopy—had been used in courtrooms for decades without adequate scientific valida-tion. The 2016 PCAST report (President’s Council of Advi-sors on Science and Technology 2016) made similar points. The consequences were real: wrongful convictions. AI wa-termarking looks like it could be heading down the same path—deployed in practice, written into regulation, but not actually validated against the standards courts use to decide whether evidence is reliable enough to hear. 
+
+Related Work 
+
+Watermark robustness evaluation. The most thorough ro-bustness study to date is WaterPark by Liang et al. (2025), which tested 10 watermarking methods against 12 attack types across three language models (OPT-1.3B, LLaMA3-7B, Qwen2.5-14B) and five datasets. Their findings are di-rectly relevant to ours: SynthID’s true positive rate dropped from 0.998 on clean text to 0.498 under moderate paraphras-ing. A single ChatGPT paraphrase pass brought every tested method below 30% detection. They also found enormous cross-model variability—KGW’s TPR went from 0.858 on OPT to 0.334 on LLaMA3 under the same attack conditions. Table 1: How this paper fits alongside prior watermark eval-uations. We go narrower on attacks but deeper on forensic admissibility—to our knowledge, the first study to jointly apply Daubert and NIST SP 800-86 forensic standards to LLM watermark evaluation, building on prior robustness (Liang et al.) and governance (Nemecek et al.) work.                
+
+> Work Scale Attacks Forensic framework
+> Liang et al. 10 methods 12 types ML metrics (TPR, FPR) Nemecek et al. 1 method 1 type Governance scorecard Pan et al.; Yi et al. 3 methods Distillation Not addressed
+> This work 3 methods 1 type FRS + Daubert + NIST
+
+But WaterPark evaluates entirely through ML metrics. It does not ask whether these numbers would satisfy a Daubert hearing, and it does not map results to NIST forensic phases. Other work has established theoretical impossibility results for strong watermarking (Zhang et al. 2024), shown that re-liable AI text detection may be impossible in adversarial settings (Sadasivan et al. 2023), and demonstrated attacks that exploit watermark design properties (Pang et al. 2024). These all point toward fragility, but none address admissibil-ity. Notably, the WaterPark finding that one round of Chat-GPT paraphrasing drops all methods below 30% TPR sug-gests our same-model paraphraser actually represents a con-servative lower bound on how bad things can get. 
+
+Distillation-based attacks and attribution ambiguity. 
+
+Pan et al. (2025) demonstrated that watermark traces can be stripped away during unauthorized knowledge distillation. Yi et al. (2025) extended this to unified spoofing and scrub-bing attacks across KGW, Unigram, and SynthID-Text. The forensic implication goes beyond robustness: even when a watermark is detected, the signal might not mean what you think it means. It could reflect direct generation, inherited traces from distillation, or deliberate spoofing. That kind of attribution ambiguity makes it very difficult to establish a stable error-rate interpretation in court. 
+
+Governance and policy. Nemecek, Jiang, and Ayday (2025) argued that watermarking without enforceable stan-dards amounts to “symbolic compliance” and laid out a three-layer governance framework covering technical re-quirements, audit infrastructure, and enforcement. Their pa-per included a prototype evaluation scorecard with 0–5 scoring—a design that ended up converging with our FRS. They also ran SynthID on Gemma-2-9b-it independently and found paraphrasing eliminated detection in 4 of 5 cases. But their contribution is fundamentally a governance argu-ment, not a systematic empirical test: five prompts, no foren-sic pipeline, no FRS-style scoring. 
+
+Our position. There are three threads in the existing lit-erature. Liang et al. (2025) ask: how robust are watermarks? Nemecek, Jiang, and Ayday (2025) ask: why is governance failing? Distillation-attack studies ask whether watermark traces survive model transfer (Pan et al. 2025; Yi et al. 2025). We ask a different question: would watermark evidence ac-tually survive a Daubert hearing? For the three methods and configurations we tested, the answer is no. Table 2: FRS criteria mapped to forensic standards.                               
+
+> Cat. #Criterion Standard
+> Tech. T1 Repeatability NIST reprod. T2 Robustness NIST exam. T3 Detectability Daubert F3 T4 Quantifiability Daubert F1 Legal L1 Reliability Daubert F3 L2 Peer Review Daubert F2 L3 Known Error Rate Daubert F3 L4 Testability Daubert F1 Oper. O1 Accessibility NIST cross. O2 Efficiency NIST cross. O3 Documentation NIST cross. O4 Independence NIST cross.
+
+## The Forensic Readiness Score Framework 
+
+ML benchmarks ask: “does watermark detection work on average?” Courts need to know something different: “can an expert witness testify, for this specific piece of evidence, to a known and stable error rate?” The FRS framework is our attempt to bridge that gap. 
+
+Design Rationale 
+
+The FRS maps NIST SP 800-86’s four phases onto five framework components (Evidence Collection, Verification Protocol, FRS Evaluation, Evidence Report Template, and Implementation Guidelines) and turns Daubert’s five factors into scorable criteria. We were not the first to think along these lines—Nemecek, Jiang, and Ayday (2025) indepen-dently proposed a scorecard with 0–5 scoring across robust-ness, detection quality, and auditability. Our FRS shares that philosophy but takes it further: each criterion is grounded in a specific Daubert factor or NIST phase, we add mandatory gates that can override point scores entirely, and we validate the whole thing empirically. 
+
+The 12 Criteria 
+
+Each criterion gets a score from 0 to 5, for a maximum of 60 points. They fall into three categories (Table 2). 
+
+The Three Mandatory Gates 
+
+Points alone are not enough. Even if a method scores 
+
+≥40/60, it still has to clear three gates. Failing any one of them results in a NOT FORENSIC READY verdict, no mat-ter how high the score. 
+
+Gate G1: FPR and FNR must be documented and in-dependently computable. Without known error rates, courts cannot evaluate reliability (Daubert Factor 3). 
+
+Gate G2: The paradox rate must stay below 20%. If at-tacking a watermark increases the detection score more than a fifth of the time, something is fundamentally wrong with the method’s logic. Evidence corruption should not help ver-ification. 
+
+Gate G3: Results must be repeatable across sessions within documented tolerance. This is a basic NIST repro-ducibility requirement. Table 3: Experimental configuration. A single attack model (Qwen2.5-1.5B) is used across all methods, controlling the attacker variable so that cross-method differences reflect wa-termark properties rather than paraphraser capability.                    
+
+> Method Source Model Attack Model Venue Detector
+> KGW Qwen2.5-1.5B Qwen2.5-1.5B ICML ’23 z-score ( τ=4.0) Unigram Qwen2.5-1.5B Qwen2.5-1.5B ICLR ’24 z-score ( τ=4.0) SynthID Gemma-2-9b-it Qwen2.5-1.5B Nature ’24 weighted mean ( τ=0.5 ±0.03)
+
+Scoring Limits as a Finding 
+
+One of the more interesting outcomes of this work is what happens with the scoring system itself. As Section 5 will show, KGW ends up at 37/60—NOT FORENSIC READY, and fairly classified. But Unigram lands at ex-actly 40/60, right on the CONDITIONALLY FORENSIC READY threshold, despite having the worst FNR of any method (83%) and 100% conditional removal. It passes ev-ery gate and clears the point threshold while being, in prac-tice, forensically useless. We think this is worth highlighting not as a flaw in the framework but as a genuine finding: point-based scoring has inherent limits when it comes to capturing forensic useless-ness. It is a bit like how a good credit score can mask indi-vidual risk. Courts will need both the quantitative score and 
+
+a qualitative assessment of how the method actually behaves under adversarial conditions. 
+
+## Experimental Setup 
+
+Methods and Models 
+
+We run all experiments through the MarkLLM toolkit (Pan et al. 2024). Table 3 summarizes the configuration. For KGW and Unigram, Qwen2.5-1.5B serves as both the watermark generator and the paraphrase attacker, which keeps the comparison clean across methods. For SynthID, we use Gemma-2-9b-it as the generator—following the setup in Nemecek, Jiang, and Ayday (2025)—and Qwen2.5-1.5B as a cross-model attacker. This is actually a more real-istic threat model: in practice, someone trying to strip a wa-termark does not need access to the original model. The fact that we use different source models for different methods is deliberate. We are testing whether forensic failure is a prop-erty of statistical watermarking as a category , not something specific to one model. 
+
+Attack Design 
+
+Meaning-preserving paraphrase. Qwen2.5-1.5B rewrites each watermarked text for all three methods. For SynthID, this creates a cross-model attack (Gemma-generated text at-tacked by Qwen); for KGW and Unigram, it is a same-model attack. We filter outputs through a triple validity gate: (1) cosine similarity ≥ 0.75 via all-MiniLM-L6-v2 (Reimers and Gurevych 2019), (2) normalized Levenshtein distance 
+
+≥ 0.15 , and (3) length ratio between 0.5 and 2.0. Anything failing any gate gets thrown out. The retained paraphrases ended up with high semantic similarity—medians of 0.83–0.84 across methods, with ev-ery single retained sample above 0.75. We chose paraphras-Table 4: Session provenance. Replicate sessions used identi-cal seeds and produced byte-identical results, confirming de-terministic reproducibility. We report canonical session re-sults; replicate sessions are archived for provenance.                
+
+> Session Notebook Seed Status
+> qwen v4.1 rep2 KGW+Unigram 123 Canonical qwen v4.1 rep3 KGW+Unigram 123 Reproducibility synthid v4 SynthID 123 Canonical synthid v4 rep2 SynthID 123 Reproducibility
+
+ing as the sole attack because it is the one that matters most in a legal setting. A defense attorney can point to a para-phrased text and say: “the meaning is identical—you cannot call this evidence destruction.” A court would have a very hard time excluding that argument. 
+
+Experimental Protocol 
+
+We designed 15 prompts per method, covering conversa-tional, technical, news, professional, and creative domains. Each prompt gets 2 generation seeds, giving 30 base water-marked texts per method. We then attack each base text at three temperatures (0.7, 1.0, 1.3) with five template variants per temperature, which means up to 450 attack attempts per method before filtering. After the validity gate, we end up with 304 valid runs for KGW, 306 for Unigram, and 236 for SynthID. We use prompt-level statistics as the primary unit of analysis and compute SHA-256 hashes at every stage. For baseline error rates, the 30 pristine texts per method give us FNR estimates. Paraphrased controls—237 for KGW and Unigram, 184 for SynthID—provide FPR base-lines. The Qwen experiments ran on Colab free tier (T4 GPU); SynthID needed Colab Pro for the A100 to handle Gemma-2-9b-it. Every result we report comes from archived, version-controlled runs verified with SHA-256 hashes (Table 4). We ran each experiment twice under identical seeds and config-uration; the reruns produced byte-identical outputs and serve as deterministic reproducibility evidence, not additional in-dependent samples. Code and archived artifacts will be re-leased upon acceptance. 
+
+## Results 
+
+The results tell a story in three layers: watermarks fail before any attack, they collapse under paraphrase, and the para-phrases preserve enough meaning that a court cannot dis-miss them as evidence destruction. 
+
+Pre-Attack Baseline Failure 
+
+Before anyone even tries to attack the watermarks, they are already unreliable. The fraction of watermarked texts that the detectors correctly identify—with no adversarial inter-vention at all—is surprisingly low. KGW picks up 9 out of 30 pristine texts (FNR = 70%, Wilson 95% CI: 52.1–83.3%). Unigram does worse: 5 out of 30 (FNR = 83%, CI: 66.4– 92.7%). SynthID manages 6 out of 30 (FNR = 80%, CI: 62.7–90.5%). Watermarked Text Evidence       
+
+> Verification Protocol
+> Compute Metrics
+> FPR, FNR, Paradox, Repeatability
+> Score 12 Criteria
+> T1–T4, L1– L4, O1–O4 (max 60 pts)
+> 3 Mandatory Gates
+> G1: Error rates documented? G2: Paradox <20%? G3: Cross-session repeatable?
+> FORENSIC READY
+> Score ≥40 & all gates pass
+> COND. READY
+> Score ≥40, gates pass, caveats noted
+> NOT FORENSIC READY
+> Any gate fails or score <40
+> Step 1 Step 2 Step 3
+> Step 4
+
+Figure 1: How the FRS evaluation works. Watermarked text moves through four stages: verification testing, metric computation, scoring against 12 criteria (0–5 each, 60 max), and three mandatory gates. Any single gate failure overrides the point score—a method that fails a gate is NOT FORENSIC READY no matter how many points it earned. In our results, Unigram passes all gates and lands at exactly 40/60 (the minimum COND. READY threshold) despite 100% conditional removal and 83% FNR—a clear scoring-limit case. Table 5: Paraphrase attack results across three methods. Conditional removal is the headline finding: among ini-tially detectable texts, what fraction lost detection after para-phrase. Wilson 95% CIs reported for FPR, FNR, and condi-tional removal.                                     
+
+> Metric KGW Unigram SynthID
+> Valid runs 304 306 236 Yield 34% 34.5% 23% Raw removal 32.9% 13.4% 24.6%
+> Cond. removal 100% (100/100) 100% (41/41) 98.3% (58/59) FPR (controls) 0/237 (0%) 0/237 (0%) 10/184 (5.4%)
+> FPR 95% CI [0, 1.6]% [0, 1.6]% [3.0, 9.7]% FNR (pristine) 21/30 (70%) 25/30 (83%) 24/30 (80%) FNR 95% CI [52.1, 83.3]% [66.4, 92.7]% [62.7, 90.5]% Paradox rate 2.3% 4.9% 18.6% Sem. sim. (median) 0.84 0.83 0.83
+
+For SynthID the picture is particularly bleak: 24 of those 30 pristine texts scored inside the ±0.03 uncertainty dead-band. The detector fails to issue a confident verdict on 80% of its own watermarked output. This matters for Daubert. If a detector cannot reliably find its own watermarks in clean, unmodified text, an expert wit-ness cannot credibly testify to a “known error rate.” The evi-dence is already compromised before any adversary gets in-volved. 
+
+Paraphrase Attack: Primary Analysis 
+
+Table 5 has the core numbers. Among texts where the water-mark was initially detected, paraphrasing wiped it out in ev-ery single case for KGW and Unigram. For SynthID, 58 out of 59 initially-detected texts lost their watermark—98.3%. That 100% conditional removal for KGW and Unigram is the central result of this paper (Figure 4). What it means concretely: for any watermarked text that a forensic exam-iner could actually detect, a straightforward paraphrase will erase the watermark entirely. The paraphrasing tools needed are freely available. The meaning is preserved. We should note that we only discarded paraphrases when they failed the validity gate (similarity below 0.75 or too lit-tle lexical change), so Table 5 represents the conservative, high-quality subset that would be hardest for a prosecutor to challenge. 
+
+The compounding problem. These failures stack. KGW detects 30% of its own watermarked texts to begin with, and then loses all of those to paraphrase: 0.30 × 0.00 = 0 .00 
+
+effective detection. Unigram is even worse—17% baseline detection, then 0% survival. SynthID detects 20% and re-tains 1.7% of those: 0.20 × 0.017 ≈ 0.003 . A court relying on watermark evidence is looking at effective detection rates somewhere between 0% and 0.3% after a trivial, meaning-preserving transformation. 
+
+SynthID-specific findings. SynthID has five forensically noteworthy behaviors. First, phantom watermarks : the detector flagged 10 out of 184 paraphrased control texts—clean, unwatermarked hu-man text—as watermarked (5.4%, Wilson CI: 3.0–9.7%). That means human-authored text can be falsely attributed to an AI system. One of the flagged samples was a standard typing test sentence, which scored 0.5656 and cleared the detection threshold. If a standard typing test sentence can exceed the detection threshold, the false-attribution risk is non-trivial. Second, 24 out of 30 pristine watermarked texts (80%) scored inside the ±0.03 uncertainty deadband. The detec-tor’s usable operating range is about 0.07 points wide (0.487 to 0.558). There is almost no room between “watermarked” and “not watermarked.” Third, threshold sensitivity : if you shift the threshold by just ±10%, 93.6% of verdicts flip. That earns a T4 (quantifi-ability) score of 0/5 in our FRS. There is no stable quantita-tive signal to testify about. Fourth, after paraphrasing, 69.5% of attacked texts stay stuck in the UNCERTAIN zone while 23.7% transition from DETECTED to UNCERTAIN. The three-state system, which was supposed to reduce false certainty, instead creates a forensic dead zone. Table 6: FRS audit results under paraphrase attack. The “Empirical reality” column contextualizes the FRS score— methods that pass the point threshold can still be forensically useless.                 
+
+> Method FRS Gates Verdict Empirical reality
+> KGW 37/60 All pass Not ready 100% cond. removal, 70% FNR Unigram 40/60 All pass Cond. ready 100% cond. removal, 83% FNR SynthID 35/60 All pass Not ready 5.4% FPR, 80% UNCERTAIN, T4=0
+
+Fifth, despite being published in Nature and deployed by Google, the MarkLLM SynthID configuration scores lowest of all three methods at 35/60. Liang et al. (2025) indepen-dently found SynthID’s TPR dropping to 0.498 under DP-40 paraphrase and 0.232 under translation, confirming that the method works on margins too thin for forensic use. 
+
+Semantic Preservation 
+
+The retained paraphrases stay semantically close to the orig-inals: median cosine similarities of 0.84 (KGW), 0.83 (Uni-gram), and 0.83 (SynthID), with everything above 0.75. This is what makes the attack so damaging from a legal per-spective. You cannot call something “evidence destruction” when the meaning is substantially intact. The transformation is just rewording—the kind of thing people do naturally ev-ery day. We also ran preliminary word deletion experiments on earlier pilot datasets and saw the same general failure pat-terns, but we chose to focus the paper entirely on paraphrase since it is the legally realistic scenario. Our results line up with Liang et al. (2025): their WaterPark evaluation tested 12 attack types across three LLMs and found fragility ev-erywhere. Their SynthID TPR dropped to 0.498 under mod-erate paraphrasing, 0.232 under translation. And a single ChatGPT paraphrase pass brought every method below 30% TPR—meaning our same-model attacker is actually a con-servative test. 
+
+FRS Audit and Daubert Scorecard 
+
+Table 6 gives the FRS scores as an interpretive lens over the empirical results. The experiments in Sections 5.1–5.3 are the primary evidence; FRS adds structure. KGW at 37/60 is correctly flagged as NOT FORENSIC READY. So is SynthID at 35/60—it fails on score alone, and the empirical picture (false positives, near-total uncertainty) is even worse than the number suggests. The interesting case is Unigram. It lands at exactly 40/60—the minimum passing score—and clears all three gates. By the FRS rubric, it is CONDITIONALLY FOREN-SIC READY. But it has the highest FNR (83%), 100% con-ditional removal, and the worst baseline detection of any method. One point less and it would be NOT READY. This is the clearest demonstration we have that point-based foren-sic scoring can mask underlying uselessness. Table 7 maps each method against the five Daubert fac-tors. All three pass Factors 1 and 2 (they are testable and peer-reviewed). All three fail Factor 3 (no stable error rate) and Factor 4 (no forensic standards existed before this Table 7: Daubert factor assessment by method. “Part.” de-notes partial satisfaction: accepted in research literature, but not in forensic practice.                     
+
+> Method F1 F2 F3 F4 F5
+> KGW Pass Pass Fail Fail Part. Unigram Pass Pass Fail Fail Part. SynthID Pass Pass Fail Fail Part.
+
+work). Factor 5 gets a “partial”—accepted in the research community but not in forensic practice. To be clear: we do not mean that error rates cannot be measured in a controlled experimental notebook. Rather, the measured rates are high, attack-sensitive, and configuration-dependent, preventing a stable operational error rate from being generalized to case-level forensic use under Rule 702. Passing only two out of five Daubert factors makes admissibility a steep climb. 
+
+## Discussion 
+
+Implications for Courts 
+
+We want to be precise about what these experiments show. They do not show that watermark detectors are stochas-tically unreliable in the sense of producing random out-puts. The detectors are deterministically repeatable—run the same input twice, get the same score. What collapses is the evidentiary signal : once a text undergoes meaning-preserving transformation, the detection result changes. This is reproducible forensic failure, not noise. Judges are going to encounter watermark evidence. The FRS framework gives them a structured way to evaluate it using the forensic language they already work with. But the bottom line is simpler than the framework: until watermark-ing methods can demonstrate stable error rates under realis-tic adversarial conditions, watermark evidence deserves se-rious skepticism. There is a broader issue, too. Even a positive water-mark signal may not settle the authorship question. Distilla-tion and spoofing research shows that a detected watermark might reflect direct generation, inherited traces from model distillation, or deliberate forgery (Pan et al. 2025; Yi et al. 2025). Watermarking sits inside a larger, unsolved problem of digital evidence authentication in the AI era (Bellovin et al. 2024). Courts have been down this road before. The NAS report (National Research Council 2009) documented how foren-sic methods were admitted and relied upon for years before anyone checked whether the science held up. We think AI watermarking is at risk of repeating that mistake. 
+
+Implications for Policymakers 
+
+The EU AI Act (European Parliament and Council of the European Union 2024) and California’s SB 942 (Califor-nia State Legislature 2024) both mandate watermarking, but every method we tested fails forensic admissibility stan-dards in our evaluated configurations. This is essentially what Nemecek, Jiang, and Ayday (2025) called “symbolic compliance”—the mandate exists, implementations exist, 0.75 0.80 0.85 0.90 0.95                  
+
+> Semantic similarity
+> 6
+> 5
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> Attacked score - pristine score
+> median sim = 0.84
+> removed = 100/304
+> KGW
+> 0.75 0.80 0.85 0.90 0.95 1.00
+> Semantic similarity
+> 5
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> median sim = 0.83
+> removed = 41/306
+> Unigram
+> 0.750 0.775 0.800 0.825 0.850 0.875 0.900 0.925 0.950
+> Semantic similarity
+> 0.08
+> 0.06
+> 0.04
+> 0.02
+> 0.00
+> 0.02
+> 0.04
+> median sim = 0.83
+> removed = 58/236
+> SynthID
+> Not removed Removed Paradox/increase No score change Similarity threshold (0.75)
+
+Figure 2: Within-method score change under paraphrase attack for KGW, Unigram, and SynthID. Each point is a valid para-phrase run; the x-axis gives semantic similarity and the y-axis gives attacked score minus pristine score. Orange points denote removal events, green points denote non-removal, and purple points denote paradoxical score increases. Across all three meth-ods, score drops persist even when semantic similarity remains high ( ≥ 0.75 ), supporting the forensic claim that watermark disruption does not require meaning destruction. Score scales differ by method, so comparisons are interpreted within each panel rather than across panels. n = 304 (KGW), 306 (Unigram), 236 (SynthID). but the connection between the two has not been vali-dated. Liang et al. (2025) showed that watermark design-ers face a basic trade-off: methods that keep text quality high (like KGW and Unigram) tend to be fragile, while ro-bust methods degrade quality. And the cross-model variabil-ity they documented (TPR ranging from 0.858 to 0.334 for the same method on different models) makes it essentially impossible to establish a stable “known error rate” across deployments—a direct Daubert Factor 3 violation. 
+
+Implications for AI Companies 
+
+The MarkLLM SynthID configuration scored lowest of the three methods (35/60), with a detection margin of roughly 0.03, a 5.4% false positive rate, 80% UNCERTAIN verdicts on its own pristine output, and T4 = 0 (93.6% verdict insta-bility under threshold perturbation). A standard human typ-ing test sentence scored above the detection threshold. The pattern of findings across our work, Nemecek, Jiang, and Ayday (2025), and Liang et al. (2025) all point in the same direction: deployment interest has gotten ahead of forensic validation. 
+
+The Scoring Limit Finding 
+
+Unigram’s exact-threshold pass (40/60) while exhibiting the worst empirical performance of any method—100% condi-tional removal, 83% FNR—is a finding in its own right. It shows that criteria-based scoring frameworks, no matter how carefully designed, have inherent limits. Forensic validation for AI systems needs adversarial testing alongside the score-card, not folded into it. 
+
+## Limitations and Future Work 
+
+Model scale and families. We tested two model families (Qwen2.5 and Gemma-2) at 1.5B–9B scale. Liang et al. (2025) found cross-model fragility persists at 14B, and the statistical properties underlying these failures are scale-independent. Testing additional families like LLaMA or Mistral would widen coverage, but given the category-wide nature of the failure, we would not expect different forensic conclusions. 
+
+Attack scope. We tested one attack type. Liang et al. (2025) tested twelve and found consistent fragility every-where. Their ChatGPT paraphrase result—all methods drop-ping below 30% TPR—suggests stronger attackers would produce worse outcomes than what we report. We also ran earlier word deletion pilot experiments that informed our anomaly taxonomy but used a different experimental pro-tocol, so we do not report those as primary results. 
+
+Text length and sample size. Our texts are 50 tokens long, and we use 30 pristine texts (15 prompts × 2 seeds) per method. Longer texts and larger sample sets are needed in future work. 
+
+Reproducibility scope. All experiments use a single global seed (123). Our replicate sessions confirm determin-istic reproducibility, but they are not cross-seed replications. We do have cross-seed data from earlier pilot experiments (seed 42 vs. 123 for KGW/Unigram), which showed iden-tical failure patterns, but this was under a slightly different protocol. 
+
+Implementation vs. production. We test the open-source MarkLLM implementation of SynthID, not Google’s propri-etary production system. We cannot speak to how the pro-duction version would perform. The FRS is also one possi-ble operationalization of forensic readiness—alternative de-signs might score differently. 
+
+Framework validation breadth. The FRS criteria and gates draw on Daubert and NIST, but we have not yet con-ducted inter-rater reliability testing or a systematic study of how different gate thresholds would affect outcomes. Those are next steps for maturing the framework. KGW   
+
+> (n=304)
+> Unigram
+> (n=306)
+> SynthID
+> (n=236)
+> Watermarking Method
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Cosine Similarity
+> 0.840 0.832 0.829
+> Min. threshold (0.75)
+
+Figure 3: Semantic similarity distribution across paraphrase attacks (all three methods). Box plots show median, quar-tiles, and range of cosine similarity for retained paraphrases. The green dashed line indicates the minimum acceptable se-mantic threshold (0.75). All methods show medians between 0.83–0.84 and retain samples exclusively above 0.75, con-firming that watermark removal occurs without meaning de-struction. n = 304 (KGW), 306 (Unigram), 236 (SynthID). 
+
+## Conclusion 
+
+All three watermarking methods we tested—KGW, Uni-gram, and the MarkLLM SynthID configuration—fall short of forensic evidence admissibility standards. Meaning-preserving paraphrase eliminates watermark detection in 100% of initially-detected texts for KGW and Unigram, and 98.3% for SynthID, while also revealing a 5.4% false pos-itive rate on clean text for SynthID. All three methods fail at least two of five Daubert factors. The FRS framework we propose gives courts and policymakers a structured tool for evaluating watermark evidence—while also revealing, through the Unigram boundary case, that point-based scor-ing has inherent limits. The gap between what “technical robustness” means in an ML paper and what “forensic admissibility” means in a courtroom has to be closed before this evidence shows up at scale. Our framework is a first step. The alternative—letting unvalidated evidence into legal proceedings without any-one having checked it against the standards courts actually use—risks repeating the failures documented by the NAS (National Research Council 2009) and PCAST (President’s Council of Advisors on Science and Technology 2016) re-ports. Those failures were measured in wrongful convic-tions. 
+
+## Ethical Considerations 
+
+Everything in this paper evaluates publicly available sys-tems. We use open-source models (Qwen2.5, Gemma-2) and a public toolkit (MarkLLM). No human subjects are involved. The attack we test—paraphrasing—is something anyone with internet access can do. We are not introducing KGW Unigram SynthID    
+
+> Watermarking Method
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Removal rate (%)
+> 32.9%
+> 13.4%
+> 24.6%
+> 100.0% 100.0% 98.3%
+> Raw removal rate Conditional removal rate
+
+Figure 4: Raw vs. conditional watermark removal rates. Raw removal (blue) counts all texts losing detection; conditional removal (red) counts only texts that were initially detectable. The gap exposes the forensic problem: raw rates appear modest (13–33%), but among the small fraction of texts a court could actually rely on, removal is near-total (98– 100%). new capabilities; we are documenting the forensic conse-quences of capabilities that already exist, which we believe serves the public interest. 
+
+## Researcher Positionality 
+
+Our background is in digital forensics and adversarial secu-rity, not ML optimization. That shaped how we approached this work: we evaluated watermarks against the standards courts actually use to decide whether evidence is admissi-ble, rather than measuring aggregate detection accuracy the way most ML robustness studies do. We think that framing is important because policymakers are already writing wa-termarking into law, and someone needs to ask whether the evidence holds up in the room where it will actually be used. That said, this lens has blind spots. Watermarks may serve purposes beyond courtroom evidence — content provenance tracking, platform-level filtering, or internal audit — where the forensic bar we apply is not the right yardstick. Our eval-uation does not speak to those use cases, and readers should keep that scope in mind. 
+
+## Adverse Impact Statement 
+
+Showing that watermarks are fragile could undermine trust in watermarking prematurely, or be used to argue against mandates. But we think the greater risk is the alternative: deploying unreliable evidence technology in courts without anyone having validated it first. History supports this view. Delayed validation of forensic methods—bite mark analy-sis, hair microscopy, algorithmic risk scores like COMPAS (State v Loomis)—has led to documented wrongful convic-tions. Proactive validation, even when the results are nega-tive, is the responsible path. Acknowledgments 
+
+We thank Alexander Nemecek for reviewing an earlier ver-sion of this work and for helpful discussion on watermark governance. 
+
+## References 
+
+Bellovin, S. M.; et al. 2024. Seeking Reliable Digital Evi-dence in the Age of AI. Columbia University Working Pa-per. California State Legislature. 2024. California AI Trans-parency Act, SB 942, Chapter 291. Approved by Governor, September 19, 2024; effective January 1, 2026. Dathathri, S.; See, A.; Ghaisas, S.; Huang, P.-S.; McAdam, R.; Welbl, J.; Bachani, V.; Kaskasoli, A.; Stanforth, R.; Matejovicova, T.; et al. 2024. Scalable Watermarking for Identifying Large Language Model Outputs. Nature ,634(8035): 818–823. Daubert. 1993. Daubert v. Merrell Dow Pharmaceuticals, Inc. 509 U.S. 579. Supreme Court of the United States. European Parliament and Council of the European Union. 2024. Regulation (EU) 2024/1689: Artificial Intelligence Act. Official Journal of the European Union, L 2024/1689. Article 50. Federal Rules. 2023. Federal Rules of Evidence, Rule 702: Testimony by Expert Witnesses. As amended Dec. 1, 2023. Kirchenbauer, J.; Geiping, J.; Wen, Y.; Katz, J.; Miers, I.; and Goldstein, T. 2023. A Watermark for Large Language Models. In Proceedings of the 40th International Confer-ence on Machine Learning (ICML) , 17061–17084. PMLR. Liang, J.; Wang, Z.; Hong, S.; Ji, S.; and Wang, T. 2025. Watermark under Fire: A Robustness Evaluation of LLM Watermarking. In Findings of the Association for Compu-tational Linguistics: EMNLP 2025 , 21050–21074. National Institute of Standards and Technology. 2006. Guide to Integrating Forensic Techniques into Incident Response. Technical Report SP 800-86, NIST. National Institute of Standards and Technology. 2024. Re-ducing Risks Posed by Synthetic Content: An Overview of Technical Approaches to Digital Content Transparency. Technical Report AI 100-4, NIST. National Research Council. 2009. Strengthening Forensic Science in the United States: A Path Forward. Technical report, The National Academies Press, Washington, DC. Nemecek, A.; Jiang, Y.; and Ayday, E. 2025. Watermarking Without Standards Is Not AI Governance. In Workshop on Technical AI Governance (TAIG), ICML 2025 .Pan, L.; Liu, A.; He, Z.; Gao, Z.; Zhao, X.; Lu, Y.; Zhou, B.; Liu, S.; Hu, X.; Wen, L.; et al. 2024. MarkLLM: An Open-Source Toolkit for LLM Watermarking. In Proceedings of the 2024 Conference on Empirical Methods in Natural Lan-guage Processing: System Demonstrations (EMNLP Demo) .Pan, L.; Liu, A.; Huang, S.; Lu, Y.; Hu, X.; Wen, L.; King, I.; and Yu, P. S. 2025. Can LLM Watermarks Robustly Pre-vent Unauthorized Knowledge Distillation? In Proceedings of the 63rd Annual Meeting of the Association for Compu-tational Linguistics (ACL), Volume 1: Long Papers , 13228– 13251. Vienna, Austria: Association for Computational Lin-guistics. Pang, Q.; Hu, S.; Zheng, W.; and Smith, V. 2024. At-tacking LLM Watermarks by Exploiting Their Strengths. arXiv:2402.16187. President’s Council of Advisors on Science and Technology. 2016. Forensic Science in Criminal Courts: Ensuring Sci-entific Validity of Feature-Comparison Methods. Technical report, Executive Office of the President. Reimers, N.; and Gurevych, I. 2019. Sentence-BERT: Sen-tence Embeddings Using Siamese BERT-Networks. In Pro-ceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP) .Sadasivan, V. S.; Kumar, A.; Balasubramanian, S.; Wang, W.; and Feizi, S. 2023. Can AI-Generated Text Be Reliably Detected? arXiv:2303.11156. State v Loomis. 2016. State v. Loomis. 881 N.W.2d 749 (Wis. 2016). Supreme Court of Wisconsin. The White House. 2023. Executive Order 14110: Safe, Se-cure, and Trustworthy Development and Use of Artificial In-telligence. Federal Register, Vol. 88, No. 210. Rescinded by Executive Order 14179, January 2025. The White House. 2025. Executive Order 14179: Removing Barriers to American Leadership in Artificial Intelligence. Yi, X.; Li, Y.; Zheng, S.; Wang, L.; Wang, X.; and He, L. 2025. Unified Attacks to Large Language Model Water-marks: Spoofing and Scrubbing in Unauthorized Knowledge Distillation. Knowledge-Based Systems , 329: 114295. Zhang, H.; Edelman, B. L.; Francati, D.; Venturi, D.; Ate-niese, G.; and Barak, B. 2024. Watermarks in the Sand: Im-possibility of Strong Watermarking for Generative Models. In Proceedings of the 41st International Conference on Ma-chine Learning (ICML) .Zhao, X.; Ananth, P.; Li, L.; and Wang, Y.-X. 2024. Prov-able Robust Watermarking for AI-Generated Text. In Pro-ceedings of the 12th International Conference on Learning Representations (ICLR) .
