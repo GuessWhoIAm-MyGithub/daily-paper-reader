@@ -1,0 +1,456 @@
+Title: OPD-IAD: From Language Judgment to Industrial Anomaly Detection via On-Policy Self-Distillation
+
+URL Source: https://arxiv.org/pdf/2607.18850v1
+
+Published Time: Wed, 22 Jul 2026 00:52:20 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+## OPD-IAD: F ROM LANGUAGE JUDGMENT TO INDUS -
+
+TRIAL ANOMALY DETECTION VIA ON-P OLICY SELF -D ISTILLATION 
+
+Shuimu Chen ∗,1, Jing Jin ∗,1
+
+Nan Su 1, Hongbo Xu 2, Zebang Cheng 2,3, Wenming Yang 1, Fei Ma †,2, Guijin Wang †,11 Tsinghua University  
+
+> 2
+
+Guangdong Laboratory of Artificial Intelligence and Digital Economy (SZ)  
+
+> 3
+
+Shenzhen University 
+
+ABSTRACT 
+
+Large vision-language models (LVLMs) have recently shown strong potential for industrial anomaly detection (IAD) by providing image-level anomaly judgments and interpretable defect reasoning. However, current LVLM-based IAD meth-ods still struggle to produce precise pixel-level anomaly maps from generated language judgments. We aim to achieve precise pixel-level localization while using language as guidance rather than letting it dominate the visual response. Specifically, we propose OPD-IAD , an evidence-privileged dense on-policy self-distillation framework for LVLM-based IAD. OPD-IAD distills privileged defect evidence onto the model’s own on-policy judgment trajectory, enabling the final generated judgment to be learned under dense supervision rather than treated only as a textual answer. The resulting judgment serves as a semantic condition for dense anomaly perception. To turn this condition into dense visual evidence, we introduce Language-guided Visual Anchoring , which uses a judgment reforward to re-encode the image and question under the final-judgment condition into se-mantic anchors and contrasts them with dense visual features through a contrastive heatmap head to generate anomaly maps. The language judgment therefore pro-vides compact semantic guidance, while dense visual features remain the basis for pixel-level scoring, allowing language to guide anomaly localization without letting language quality directly dictate the pixel-level response. Extensive experiments show that OPD-IAD achieves the best overall performance among LVLM-based IAD methods, leading on most image-level, pixel-level, and QA metrics. 
+
+1 INTRODUCTION 
+
+Industrial anomaly detection (IAD) aims to identify defective products and highlight anomalous regions, which is essential for visual quality inspection. Existing IAD methods have established strong dense detection baselines through CLIP-style representations, prompt designs, and visual foundation features (Jeong et al., 2023; Zhou et al., 2024; Cao et al., 2024; Li et al., 2024b; Hou et al., 2026), producing both image-level anomaly scores and pixel-level anomaly maps. Recent LVLM-based IAD methods introduce generative vision-language models into IAD, enabling models to understand industrial images, answer defect-related questions, and generate image-specific anomaly judgments and explanations (Gu et al., 2024c; Li et al., 2025a; Xu et al., 2025; Chao et al., 2025; Li et al., 2026b). However, although these methods improve image-level discrimination and language-based interpretability, reliably converting generated language judgments into precise pixel-level anomaly maps remains underexplored in LVLM-based IAD. This limitation appears in two forms in current localization pathways, as illustrated in Figure 1. Some methods keep language and localization decoupled: the generated judgment serves mainly as an 
+
+> *
+
+Equal contribution. 
+
+> †
+
+Corresponding authors. 
+
+1arXiv:2607.18850v1 [cs.CV] 21 Jul 2026 Decoupled Language and Localization Language -Coupled Localization OPD -IAD: Language -Guided Visual Anchoring       
+
+> Image
+> +Question
+> LVLM
+> Visual
+> branch
+> ≈
+> ≈
+> ≈
+> ≈ Final
+> judgment
+> Image
+> +Question
+> LVLM
+> Seg token
+> Mask text
+> Box
+> Reasoning
+> attention
+> Decoder
+> /Head Image
+> +Question
+> LVLM
+> Vision
+> encoder
+> ≈
+> ≈
+> ≈
+> ≈ Final
+> judgment
+> Semantic anchors
+> Contrastive
+> scoring
+
+Figure 1: Localization pathways in LVLM-based IAD. Existing methods either decouple language and localization (left), or tightly couple localization to language-side grounding interfaces (middle). OPD-IAD (right) lets the final language judgment provide semantic guidance while dense visual features ground pixel-level anomaly responses. explanation or interaction interface and does not participate in heatmap generation (Gu et al., 2024c; Li et al., 2025a). Other methods tightly couple localization to language-side or semantic grounding interfaces, such as segmentation tokens, mask text, box-like outputs, anchor-guided mask decoding, or reasoning-token attention (Qu et al., 2026; Deng et al., 2026; Jin et al., 2026; Zhao et al., 2025). In this case, localization can become sensitive to the correctness and consistency of the generated judgment. Inaccurate anomaly judgments or unstable reasoning may therefore suppress, misguide, or degrade the resulting heatmap. This motivates our design principle that generated language should provide semantic guidance for visual localization, while pixel-level anomaly responses should be grounded in dense visual evidence rather than directly determined by the generated text. This localization view further exposes a training challenge behind the generated judgment. Since the judgment is produced by the model itself and then used as a semantic condition for localization, its training should satisfy two requirements. First, supervision should be applied to the model’s own generation trajectory, because this is the trajectory that provides the judgment at deployment. Second, supervision should be fine-grained, because the judgment should reflect defect evidence rather than merely satisfy a final answer reward. Existing LVLM training paradigms each satisfy only one side of these requirements. Standard SFT provides dense token-level supervision, but it learns from fixed offline responses and therefore does not supervise the states visited by the model at deployment. Reinforcement learning with verifiable rewards (RLVR) instead samples on-policy responses, but its IAD rewards are typically sparse outcome-level signals, such as answer correctness, format, or coarse localization (Shao et al., 2024; Chao et al., 2025; Li et al., 2026b). As a result, SFT is fine-grained but off-policy, whereas RLVR is on-policy but sparse. On-policy distillation addresses this mismatch by applying token-level teacher supervision to the model’s own sampled trajectories rather than fixed offline responses, thereby combining on-policy training with fine-grained feedback (Agarwal et al., 2024; Gu et al., 2024a). We further adopt its self-distillation form, where one model supervises its own trajectory with privileged defect evidence instead of relying on an external teacher (Zhao et al., 2026). Building on this principle, we propose OPD-IAD , an evidence-privileged dense on-policy self-distillation framework for LVLM-based IAD. During training, the model samples a judgment trajec-tory under the deployment context that contains only the image and question. The same trajectory is then evaluated under a privileged context with defect evidence, producing token-level self-distillation targets. This process distills privileged defect evidence onto the model’s own generated judgment without requiring an external teacher, making the judgment a stable semantic condition for subsequent language-guided localization. Furthermore, we propose Language-guided Visual Anchoring as a concrete mechanism for this guidance. Instead of using the full chain-of-thought as the localization context, OPD-IAD keeps only the final anomaly judgment and uses a judgment reforward to re-encode the image, question, and judgment into normal and abnormal anchor representations. A contrastive heatmap head then scores dense visual patch features against these anchors to produce the anomaly map. In this way, the language judgment provides a compact semantic condition, while pixel-level responses remain grounded in visual-feature scoring rather than being directly dictated by the generated text. 2Extensive experiments across multiple IAD benchmarks validate the effectiveness of our framework. Ablations further show that the generated judgment guides rather than dictates heatmap generation, keeping localization visually grounded under imperfect language judgments. Our contributions are summarized as follows. 1. We propose OPD-IAD , an evidence-privileged dense on-policy self-distillation framework for LVLM-based IAD. It learns generated anomaly judgments by using privileged defect evidence to supervise the model’s own generation trajectories, rather than treating such evidence as a fixed offline answer for imitation. 2. We further introduce Language-guided Visual Anchoring , which uses the final generated judgment to condition abnormal/normal semantic anchors, guiding visual-feature-grounded anomaly heatmap generation without letting the language judgment directly dominate pixel-level responses. 3. Extensive experiments on multiple IAD benchmarks show that OPD-IAD achieves state-of-the-art overall performance among LVLM-based IAD methods, with leading results on most reported image-level, pixel-level, and binary judgment metrics across datasets. 
+
+2 RELATED WORK 
+
+2.1 TRADITIONAL INDUSTRIAL ANOMALY DETECTION 
+
+Traditional industrial anomaly detection (IAD) methods primarily rely on visual modeling with target-domain data. They include reconstruction-based methods that detect anomalies through reconstruction errors, feature-embedding or memory-bank methods that measure deviations from normal visual distributions, and synthetic-anomaly or teacher-student methods that learn discriminative visual cues from generated defects or distilled features (Zavrtanik et al., 2021; Li et al., 2021; Roth et al., 2022; Batzner et al., 2024; Cui et al., 2022). These methods can produce strong image- and pixel-level anomaly scores when product-specific training data are available, but their training and adaptation are tied to target products. To reduce this data dependence, zero-shot anomaly detection (ZSAD) methods leverage pretrained vision-language or visual foundation models for industrial inspection. Training-free methods construct anomaly maps from windowed CLIP features and normal/abnormal prompt ensembles (Jeong et al., 2023; Deng et al., 2024; Chen et al., 2024b), while adaptation-based methods learn object-agnostic, dynamic, or fine-grained normal/abnormal prompts and features (Chen et al., 2023; Zhou et al., 2024; Cao et al., 2024; Qu et al., 2024; Gu et al., 2024b; Li et al., 2024a). Other recent systems further reduce the role of the language branch and rely on stronger visual scoring (Li et al., 2024b; Hou et al., 2026). These methods establish strong ZSAD baselines for image- and pixel-level anomaly scoring, but their language signal is fixed, learned, or removed before inspecting a test image, rather than generated from the inspected image itself. Consequently, they do not use a generated image-specific judgment as a semantic condition for heatmap generation. 2.2 LARGE VISION -L ANGUAGE MODEL METHODS 
+
+Recent LVLM-based IAD methods extend industrial inspection from visual anomaly scoring to language-based anomaly understanding. MMAD (Jiang et al., 2025) establishes a comprehensive benchmark for evaluating MLLMs in industrial inspection, while Anomaly-OV (Xu et al., 2025) con-structs instruction-tuning data for anomaly reasoning. IAD-R1 (Li et al., 2026b), AnomalyR1 (Chao et al., 2025), and Triad (Li et al., 2025b) further improve industrial anomaly reasoning through post-training, reinforcement learning, or manufacturing-specific modeling. These efforts enable models to answer defect-related questions and generate interpretable anomaly judgments, but precise pixel-level heatmaps remain difficult for generative LVLMs. Existing localization paths usually rely on external visual evidence, segmentation interfaces, or language-side or semantic grounding interfaces. AnomalyGPT (Gu et al., 2024c) supports defect dialogue while relying on a separate localization decoder, and Myriad (Li et al., 2025a) injects anomaly maps from vision experts. EIAD (Zhang et al., 2025) and VMAD (Deng et al., 2026) introduce segmentation-oriented interfaces, AG-VAS (Qu et al., 2026) uses learnable semantic 3anchors and an anchor-guided mask decoder, ReAL (Jin et al., 2026) aggregates visual attention responses from anomaly-related reasoning tokens into pixel-level maps, and OmniAD (Zhao et al., 2025) represents masks with text-as-mask encoding. These designs improve localization, but they either delegate dense prediction to auxiliary modules or couple localization with semantic or spatial language interfaces, such as boxes, segmentation tokens, mask text, anchor-guided mask decoding, or reasoning-token attention. In contrast, OPD-IAD uses the final generated judgment to guide heatmap generation, while keeping dense anomaly responses grounded in visual features. 2.3 ON-P OLICY DISTILLATION 
+
+Conventional knowledge distillation typically trains a student on fixed offline responses. On-policy distillation (OPD) instead samples trajectories from the current student and matches teacher and student next-token distributions at each visited state (Agarwal et al., 2024; Gu et al., 2024a). This formulation provides dense token-level supervision on the states that the student encounters at inference, alleviating the mismatch induced by fixed training trajectories. On-policy self-distillation (OPSD) further instantiates the teacher and student as the same model under different contexts. The teacher is provided with privileged information unavailable to the student, while supervising the student’s on-policy trajectory with dense token-level targets (Zhao et al., 2026). Recent work extends OPD and OPSD to fine-grained visual understanding, visual reasoning, temporal grounding, and embodied control (Yuan et al., 2026; Liu et al., 2026; Bousselham et al., 2026; Li et al., 2026a; Zhong et al., 2026). 
+
+3 METHOD 
+
+3.1 SETTING AND PIPELINE OVERVIEW 
+
+We consider IAD with labeled source-domain training data and evaluation on unseen target domains. For each source sample, the observable input is xi = ( ximg  
+
+> i
+
+, x text  
+
+> i
+
+), where ximg  
+
+> i
+
+is an industrial image and xtext  
+
+> i
+
+is a defect-judgment question. The augmented source training set is 
+
+Dsrc = {(ximg  
+
+> i
+
+, x text  
+
+> i
+
+, a i, M i, r i)}Ni=1 , (1) where ai is the image-level anomaly label, Mi is the source-domain pixel mask, and ri is a training-only defect-analysis reference with a verified judgment and supporting evidence. At inference, the model observes only the deployment input xi = ( ximg  
+
+> i
+
+, x text  
+
+> i
+
+). It produces a response ˆyi with final judgment ˆai, and predicts an anomaly map ˆMi. The generated judgment is used for language-based anomaly assessment, whereas an image-level anomaly score is obtained by spatially aggregating ˆMi.During training, we use ri without changing the deployment input by defining student and teacher contexts as 
+
+cSi = Prompt S (ximg  
+
+> i
+
+, x text  
+
+> i
+
+), cTi = Prompt T (ximg  
+
+> i
+
+, x text  
+
+> i
+
+, r i). (2) Thus, ri and Mi are training-only signals, and inference always starts from cSi .Figure 2 summarizes the complete flow. The student generation and judgment reforward are shared by training and inference; only the evidence-privileged teacher branch is training-specific. 3.2 EVIDENCE -PRIVILEGED ON -POLICY SELF -DISTILLATION 
+
+The final judgment must be learned on the same trajectories that the model will visit at deployment, but the defect evidence used to supervise this judgment is available only during training. To address this asymmetry, OPD-IAD constructs an evidence-privileged self-distillation signal on student-sampled trajectories, following the on-policy self-distillation principle (Zhao et al., 2026). Rather than directly imitating the privileged reference ri, the student samples its own response, 
+
+ˆyi ∼ πθ (· | cSi ). (3) Given this sampled trajectory, the teacher does not generate a separate trajectory. Instead, it re-scores each student prefix under the evidence-privileged context cTi . The teacher parameters are maintained 4Which of the following 
+
+options correctly 
+
+describes the image? 
+
+(A) Normal 
+
+(B) Abnormal 
+
+Vision 
+
+Encoder 
+
+ℱ !"# 
+
+Multimodal 
+
+LLM 
+
+ℱ
+
+Language -guided Visual Anchoring 
+
+Sampled trajectory 𝑦 "
+
+abnormal reasoning 
+
+Contrastive Heatmap Head 
+
+Visual 
+
+features 
+
+i
+
+j
+
+Judgment reforward 
+
+<latexit sha1_base64="1+GJr953PROxPF4xTgxvwf4EIos=">AAACyHicjVHLSsNAFD2NrxpfVZdugkVwVRKR6rLoRlxVMG2hlpJMp3VomoRkotTixh9wq18m/oH+hXfGFNQiOiHJmXPvOTP3Xj8ORCpt+7VgzM0vLC4Vl82V1bX1jdLmViONsoRxl0VBlLR8L+WBCLkrhQx4K064N/ID3vSHpyrevOFJKqLwUo5j3hl5g1D0BfMkUe5d1zPNbqlsV2y9rFng5KCMfNWj0guu0EMEhgwjcISQhAN4SOlpw4GNmLgOJsQlhISOc9zDJG1GWZwyPGKH9B3Qrp2zIe2VZ6rVjE4J6E1IaWGPNBHlJYTVaZaOZ9pZsb95T7SnutuY/n7uNSJW4prYv3TTzP/qVC0SfRzrGgTVFGtGVcdyl0x3Rd3c+lKVJIeYOIV7FE8IM62c9tnSmlTXrnrr6fibzlSs2rM8N8O7uiUN2Pk5zlnQOKg41Ur14rBcO8lHXcQOdrFP8zxCDWeowyVvgUc84dk4N2Lj1hh/phqFXLONb8t4+AAF+JCG</latexit> za
+
+<latexit sha1_base64="sb9JvqXWhJy9PEfk3s5DFuwJjF4=">AAACyHicjVHLSsNAFD2NrxpfVZdugkVwVRKR6rLoRlxVMG2hlpJMp3VomoRkotTixh9wq18m/oH+hXfGFNQiOiHJmXPvOTP3Xj8ORCpt+7VgzM0vLC4Vl82V1bX1jdLmViONsoRxl0VBlLR8L+WBCLkrhQx4K064N/ID3vSHpyrevOFJKqLwUo5j3hl5g1D0BfMkUe5dNzTNbqlsV2y9rFng5KCMfNWj0guu0EMEhgwjcISQhAN4SOlpw4GNmLgOJsQlhISOc9zDJG1GWZwyPGKH9B3Qrp2zIe2VZ6rVjE4J6E1IaWGPNBHlJYTVaZaOZ9pZsb95T7SnutuY/n7uNSJW4prYv3TTzP/qVC0SfRzrGgTVFGtGVcdyl0x3Rd3c+lKVJIeYOIV7FE8IM62c9tnSmlTXrnrr6fibzlSs2rM8N8O7uiUN2Pk5zlnQOKg41Ur14rBcO8lHXcQOdrFP8zxCDWeowyVvgUc84dk4N2Lj1hh/phqFXLONb8t4+AAk8pCT</latexit> zn
+
+<latexit sha1_base64="FU6HrEWAs/qGvkzQwb0Jf7J7i0E=">AAACzHicjVHLSsNAFD2Nr1pfVZdugkVwVVKR6rLoxpVUsA9pS5mk03ZoXiQToYRu/QG3+l3iH+hfeGdMQS2iE5KcOfeeM3PvtUNXxNKyXnPG0vLK6lp+vbCxubW9U9zda8ZBEjm84QRuELVtFnNX+LwhhXR5O4w482yXt+zJpYq37nkUi8C/ldOQ9zw28sVQOEwSddcdM5myWV/0iyWrbOllLoJKBkrIVj0ovqCLAQI4SOCBw4ck7IIhpqeDCiyExPWQEhcREjrOMUOBtAllccpgxE7oO6JdJ2N92ivPWKsdOsWlNyKliSPSBJQXEVanmTqeaGfF/uadak91tyn97czLI1ZiTOxfunnmf3WqFokhznUNgmoKNaOqczKXRHdF3dz8UpUkh5A4hQcUjwg7Wjnvs6k1sa5d9Zbp+JvOVKzaO1lugnd1Sxpw5ec4F0HzpFyplqs3p6XaRTbqPA5wiGOa5xlquEIdDfL28IgnPBvXhjRSY/aZauQyzT6+LePhA2jXkxo=</latexit> ˆai
+
+<latexit sha1_base64="nSBIu3AfIjcrBOrBnvF9r31huu4=">AAACzHicjVHLSsNAFD2Nr1pfVZdugkVwVVKR6rLoxo1SwT6kLSWZTtvBvEgmQgnd+gNu9bvEP9C/8M6YglpEJyQ5c+49Z+be64SuiKVlveaMhcWl5ZX8amFtfWNzq7i904yDJGK8wQI3iNqOHXNX+LwhhXR5O4y47Tkubzl35yreuudRLAL/Rk5C3vPskS+GgtmSqNvu2Jbp5bQv+sWSVbb0MudBJQMlZKseFF/QxQABGBJ44PAhCbuwEdPTQQUWQuJ6SImLCAkd55iiQNqEsjhl2MTe0XdEu07G+rRXnrFWMzrFpTcipYkD0gSUFxFWp5k6nmhnxf7mnWpPdbcJ/Z3MyyNWYkzsX7pZ5n91qhaJIU51DYJqCjWjqmOZS6K7om5ufqlKkkNInMIDikeEmVbO+mxqTaxrV721dfxNZypW7VmWm+Bd3ZIGXPk5znnQPCpXquXq9XGpdpaNOo897OOQ5nmCGi5QR4O8PTziCc/GlSGN1Jh+phq5TLOLb8t4+AA5G5MG</latexit> ˆMi
+
+image token text token anchor token final judgment 
+
+Student Mode 
+
+Teacher Mode 
+
+Auxiliary reward 
+
+Evidence -Privileged On -policy Self -Distillation 
+
+Privileged evidence ri
+
+<latexit sha1_base64="SLdt3n5AuEJ/5oQaqpBcZRAlQ+Y=">AAADCnicjVFdS9xAFD2mrdXY2m199CV0ESwsS1aK9cGCVAQft9hVwWiYzM7uDpsvJpPCEvYf9J/0zTfpa/+AT6L9A+2/6J1phKqITkhy5tx7zsy9N8pjWWjfv5xxnjx9Nvt8bt5dePFy8VXj9Zv9IisVFz2exZk6jFghYpmKnpY6Foe5EiyJYnEQjbdN/OCrUIXM0i96kovjhA1TOZCcaaLCxk43rPZaeup+dINchlWgR0KzqRvEYqBX3YD3M+0Fiex7PJQne61gxHQ1mYaVbG2SKlByONLvwkbTb/t2eXdBpwZN1KubNS4QoI8MHCUSCKTQhGMwFPQcoQMfOXHHqIhThKSNC0zhkrakLEEZjNgxfYe0O6rZlPbGs7BqTqfE9CpSelghTUZ5irA5zbPx0job9j7vynqau03oH9VeCbEaI2If0l1nPlZnatEYYMPWIKmm3DKmOl67lLYr5ubef1VpcsiJM7hPcUWYW+V1nz2rKWztprfMxn/bTMOaPa9zS/wxt6QBd26P8y7YX2t31tvrn983tz7Vo57DMt5ileb5AVvYRRc98v6Oc1zhl/PNOXXOnB//Up2ZWrOEG8v5+Rci1KpM</latexit> PS,t = ωω
+
+(· | cS
+
+i , ˆyi,<t 
+
+)
+
+<latexit sha1_base64="yPt19JBEatLbnsbQnuu2N8Bh+aY=">AAADEHicjVHLatwwFD1x+kjdR6btshuToZDCMHhCSLNoIJBNIZspzCSBKDWyRjMj4heyHBiMfyJ/0l12odv+QMiu3bV/0SvFgbahtDK2j86950j33rhIVGnC8HrJW753/8HDlUf+4ydPn612nr84KPNKCzkWeZLro5iXMlGZHBtlEnlUaMnTOJGH8emejR+eSV2qPBuZRSFPUj7L1FQJboiKOvvDqB71TOPv+KxQUc1irmtm5tLwpvFZIqdm3WdikpuApWoSiEh9HPXYnJt60US16r0jLdNqNjdvok437IduBXfBoAVdtGuYd67AMEEOgQopJDIYwgk4SnqOMUCIgrgT1MRpQsrFJRr4pK0oS1IGJ/aUvjPaHbdsRnvrWTq1oFMSejUpA7wmTU55mrA9LXDxyjlb9m/etfO0d1vQP269UmIN5sT+S3eb+b86W4vBFNuuBkU1FY6x1YnWpXJdsTcPfqnKkENBnMUTimvCwilv+xw4Telqt73lLv7dZVrW7kWbW+GHvSUNePDnOO+Cg43+YKu/9WGzu9tvR72CV1jDOs3zLXbxHkOMyfsTrvAV37xz78K79D7fpHpLreYlflvel5+6W6z/</latexit> PT,t = ω¯ω
+
+(· | cT
+
+i , ˆyi,<t 
+
+)
+
+<latexit sha1_base64="CGJIVQYbNU7FZkvLq/o0zlCh8yM=">AAAC8nicjVHLSsNAFD3GV42vqEs3wSIIYklFqhuh4MalilWhlTJJpxrMi8lEKSVf4c6duPUH3OpHiH+gf+GdMUJVRCckOXPuPWfm3usmgZ9Kx3kZMoZHRsfGSxPm5NT0zKw1N3+UxpnweMOLg1icuCzlgR/xhvRlwE8SwVnoBvzYvdhR8eNLLlI/jg5lL+GnITuL/K7vMUlU21o7MLfNg3a/FTJ5LsJ+NxaE8txcHWRZlF5xkedtq+xUHL3sn6BagDKKtRdbz2ihgxgeMoTgiCAJB2BI6WmiCgcJcafoEycI+TrOkcMkbUZZnDIYsRf0PaNds2Aj2ivPVKs9OiWgV5DSxjJpYsoThNVpto5n2lmxv3n3tae6W4/+buEVEitxTuxfus/M/+pULRJdbOkafKop0YyqzitcMt0VdXN7oCpJDglxCncoLgh7WvnZZ1trUl276i3T8VedqVi194rcDG/qljTg6vdx/gRH65VqrVLb3yjXK8WoS1jEElZonpuoYxd7aJD3NR7wiCdDGjfGrXH3kWoMFZoFfFnG/Ts296Hs</latexit> R = Rformat + Ranswer 
+
+<latexit sha1_base64="gvzpEXatJ77aP7LIcOSPKRqzjhI=">AAACynicjVHLSsNAFD2Nr1pfVZdugkVwFRKR6rLgxoWLCvYBtsgknbahaRImEyGE7vwBt/ph4h/oX3hnTEEtohOSnDn3nDtz73XjwE+kbb+WjKXlldW18nplY3Nre6e6u9dOolR4vOVFQSS6Lkt44Ie8JX0Z8G4sOJu6Ae+4kwsV79xzkfhReCOzmPenbBT6Q99jkqhOb8xkns3uqjXbsvUyF4FTgBqK1YyqL+hhgAgeUkzBEUISDsCQ0HMLBzZi4vrIiROEfB3nmKFC3pRUnBSM2Al9R7S7LdiQ9ipnot0enRLQK8hp4og8EekEYXWaqeOpzqzY33LnOqe6W0Z/t8g1JVZiTOxfvrnyvz5Vi8QQ57oGn2qKNaOq84osqe6Kurn5pSpJGWLiFB5QXBD2tHPeZ1N7El276i3T8TetVKzae4U2xbu6JQ3Y+TnORdA+sZy6Vb8+rTWsYtRlHOAQxzTPMzRwiSZauspHPOHZuDKEkRn5p9QoFZ59fFvGwwdu8JJC</latexit> ˆy
+
+<latexit sha1_base64="LOvR2QKiEc1VnztNashjAa+CTQE=">AAADKnicjVFNT9wwEH0EKJRCWeixl7QrJJDKKosQcEFC7YUjlbqARNDKCd7FrDeJHAcJVvuP+CfcuFSo1x7osVe4dDwYqYD64SjJzJv3nj2epNCqtFF0PRKMjo2/mJh8OfVqeub1bG1ufrfMK5PKVprr3OwnopRaZbJlldVyvzBS9BMt95LeJ1ffO5WmVHn2xZ4V8rAvupnqqFRYgto1WbYH6mS4GVtRxe9iLTt2MdYi62oZxokwg9MhEz5wcj5si9hwdfmvrMyzYqO6x3apXatHjYhX+Dxo+qAOv3by2lfEOEKOFBX6kMhgKdYQKOk5QBMRCsIOMSDMUKS4LjHEFGkrYkliCEJ79O1SduDRjHLnWbI6pV00vYaUIRZIkxPPUOx2C7lesbND/+Q9YE93tjP6J96rT6jFMaH/0j0w/1fnerHoYIN7UNRTwYjrLvUuFd+KO3n4W1eWHArCXHxEdUNxysqHew5ZU3Lv7m4F12+Y6VCXp55b4Yc7JQ24+XScz4PdlUZzrbH2ebW+9dGPehJv8R6LNM91bGEbO2iR9yV+4hZ3wUVwFVwH3+6pwYjXvMGjFXz/BfpHuuo=</latexit> sij = ω (→¯vij , ¯za↑ ↓ → ¯vij , ¯zn↑)
+
+<latexit sha1_base64="sMBNmcXZlz2rYY/2aUSaJ3wS/6g=">AAACznicjVHLSsNAFD2Nr1pfVZdugkVwVRKR6rLoxmUF+4C2lCSd1qGTB8mkUEtx6w+41c8S/0D/wjtjCmoRnZDkzLnn3Jl7rxsJnkjLes0ZS8srq2v59cLG5tb2TnF3r5GEaeyxuheKMG65TsIED1hdcilYK4qZ47uCNd3RpYo3xyxOeBjcyEnEur4zDPiAe44kqt2RXPTZ9G7Wc3rFklW29DIXgZ2BErJVC4sv6KCPEB5S+GAIIAkLOEjoacOGhYi4LqbExYS4jjPMUCBvSipGCofYEX2HtGtnbEB7lTPRbo9OEfTG5DRxRJ6QdDFhdZqp46nOrNjfck91TnW3Cf3dLJdPrMQtsX/55sr/+lQtEgOc6xo41RRpRlXnZVlS3RV1c/NLVZIyRMQp3Kd4TNjTznmfTe1JdO2qt46Ov2mlYtXey7Qp3tUtacD2z3EugsZJ2a6UK9enpepFNuo8DnCIY5rnGaq4Qg113fFHPOHZqBljY2bcf0qNXObZx7dlPHwA3xmUFA==</latexit> ˜za
+
+<latexit sha1_base64="uDqZD5hic216Os9nX4hjblgcCxA=">AAACznicjVHLSsNAFD2Nr1pfVZdugkVwVRKR6rLoxmUF+4C2lCSd1qGTB8mkUEtx6w+41c8S/0D/wjtjCmoRnZDkzLnn3Jl7rxsJnkjLes0ZS8srq2v59cLG5tb2TnF3r5GEaeyxuheKMG65TsIED1hdcilYK4qZ47uCNd3RpYo3xyxOeBjcyEnEur4zDPiAe44kqt2RXPTZ9G7WC3rFklW29DIXgZ2BErJVC4sv6KCPEB5S+GAIIAkLOEjoacOGhYi4LqbExYS4jjPMUCBvSipGCofYEX2HtGtnbEB7lTPRbo9OEfTG5DRxRJ6QdDFhdZqp46nOrNjfck91TnW3Cf3dLJdPrMQtsX/55sr/+lQtEgOc6xo41RRpRlXnZVlS3RV1c/NLVZIyRMQp3Kd4TNjTznmfTe1JdO2qt46Ov2mlYtXey7Qp3tUtacD2z3EugsZJ2a6UK9enpepFNuo8DnCIY5rnGaq4Qg113fFHPOHZqBljY2bcf0qNXObZx7dlPHwA/fmUIQ==</latexit> ˜zn
+
+<latexit sha1_base64="uU0xppBxg6l3cDlXwYKQhDci/X4=">AAAC13icjVHLTsJAFD3UF+ILcemmkZi4IsUYdEl04xITeRhA0pYBJvSVdmoghLgzbv0Bt/pHxj/Qv/DOWBKVGJ2m7Zlz7zkz914rcHgkDOM1pS0sLi2vpFcza+sbm1vZ7Vwt8uPQZlXbd/ywYZkRc7jHqoILhzWCkJmu5bC6NTyT8foNCyPue5diHLC2a/Y93uO2KYjqZHOjDr+etFxTDLiYcLc/nXayeaNgqKXPg2IC8khWxc++oIUufNiI4YLBgyDswERETxNFGAiIa2NCXEiIqzjDFBnSxpTFKMMkdkjfPu2aCevRXnpGSm3TKQ69ISl17JPGp7yQsDxNV/FYOUv2N++J8pR3G9PfSrxcYgUGxP6lm2X+VydrEejhRNXAqaZAMbI6O3GJVVfkzfUvVQlyCIiTuEvxkLCtlLM+60oTqdplb00Vf1OZkpV7O8mN8S5vSQMu/hznPKgdFoqlQuniKF8+TUadxi72cEDzPEYZ56igSt4jPOIJz9qVdqvdafefqVoq0ezg29IePgDlY5eZ</latexit> ximg 
+
+i
+
+<latexit sha1_base64="/QbN0JsB1GoqRIorPBUGuuwMCcs=">AAAC2HicjVHLTsJAFD3UF+ILZemmkZi4IsUYdEl04xITeURA0pYBJvSVdmoghMSdcesPuNUvMv6B/oV3xpKoxOg0bc+ce8+ZufdagcMjYRivKW1hcWl5Jb2aWVvf2NzKbu/UIj8ObVa1fccPG5YZMYd7rCq4cFgjCJnpWg6rW8MzGa/fsDDivncpxgFru2bf4z1um4KoTjY36vDrScs1xYCLiWAjMZ12snmjYKilz4NiAvJIVsXPvqCFLnzYiOGCwYMg7MBERE8TRRgIiGtjQlxIiKs4wxQZ0saUxSjDJHZI3z7tmgnr0V56Rkpt0ykOvSEpdeyTxqe8kLA8TVfxWDlL9jfvifKUdxvT30q8XGIFBsT+pZtl/lcnaxHo4UTVwKmmQDGyOjtxiVVX5M31L1UJcgiIk7hL8ZCwrZSzPutKE6naZW9NFX9TmZKVezvJjfEub0kDLv4c5zyoHRaKpULp4ihfPk1GncYu9nBA8zxGGeeooEreYzziCc/alXar3Wn3n6laKtHk8G1pDx9WaJgr</latexit> xtext 
+
+i
+
+<latexit sha1_base64="x57UOCmnE0iGUrbYao4n/D2KMJs=">AAADQ3icjVHPaxQxFH4z/qqr1dV68xJdhC3IMitShSIU7cGD4Eq7baEpQyab3Q1NJkOSEco4/nf+DeLdg+JNvAq+xCmoRTTDZL73ve97k5dXVEo6n2UfkvTc+QsXL61c7l25unrtev/GzT1nasvFlBtl7EHBnFCyFFMvvRIHlRVMF0rsF8fPQn7/tbBOmnLXn1TiSLNFKeeSM49U3n9LCNXMLzlTzYs2b2JgdfNysrPdtqs9Qp6Ejbpa5z6gbXqHKjH3wxBM8mbnvo8yukm1nM2UoG/oZiRMJSzzxpZMi8Yt2iGqd1G9HrNWLpZ+Pe8PslEWFzkLxh0YQLcmpv8eKMzAAIcaNAgowSNWwMDhcwhjyKBC7gga5CwiGfMCWuiht0aVQAVD9hj3BUaHHVtiHGq66Ob4F4WvRSeBe+gxqLOIw99IzNexcmD/VruJNcPZTvBbdLU0sh6WyP7Ld6r8X1/oxcMcHsceJPZURSZ0x7sqdbyVcHLyS1ceK1TIBTzDvEXMo/P0nkn0uNh7uFsW85+iMrAh5p22hs/hlDjg8Z/jPAv2HozGG6ONVw8HW0+7Ua/AbbgLQ5znI9iC5zCBKdb+mPSSteRW+i79kn5Nv/2UpknnWYPfVvr9B19suJE=</latexit> LOPSD = ∑
+
+t
+
+D(PS,t → sg( PT,t )) Figure 2: Overview of OPD-IAD. The student generates a judgment from the observable image-question context, while the evidence-privileged teacher branch re-scores the same on-policy trajectory only during training. A judgment reforward aggregates the image and question under the final-judgment condition into abnormal and normal anchors za, z n, which guide the contrastive heatmap head for dense anomaly localization. by an exponential-moving-average (EMA) update of the student parameters (Tarvainen & Valpola, 2017), ¯θ(k) = μ ¯θ(k−1) + (1 − μ) θ(k), μ ∈ (0 , 1) . (4) The resulting teacher branch is used only to re-score the student trajectory. Thus, the two branches share the same LVLM architecture and vocabulary, while the privileged reference in cTi supplies additional defect evidence and the EMA update stabilizes teacher token distributions. At position t, we denote the student and teacher next-token distributions as 
+
+PS,t = pS (· | cSi , ˆyi,<t ), PT,t = pT (· | cTi , ˆyi,<t ). (5) The token-level OPSD loss for sample i directly compares the student next-token distribution under the deployment context with the stop-gradient teacher distribution under the evidence-privileged context: 
+
+ℓ(i)OPSD =
+
+|ˆyi|
+
+X
+
+t=1 
+
+D(PS,t ∥ stopgrad( PT,t )) , (6) where gradients are propagated only through the student distribution and D denotes a token-level distribution divergence. The full objective is 
+
+LOPSD = E(xi,r i)∼D src 
+
+ˆyi∼πθ (·| cSi )
+
+h
+
+ℓ(i)OPSD 
+
+i
+
+. (7) In our implementation, we instantiate D as a generalized Jensen–Shannon divergence. For β ∈ (0 , 1) ,we define the mixture distribution 
+
+mβt = (1 − β)PS,t + β stopgrad( PT,t ), (8) and set 
+
+Dβ
+
+JSD (PS,t ∥ stopgrad( PT,t )) = β KL(stopgrad( PT,t ) ∥ mβt ) + (1 − β) KL( PS,t ∥ mβt ). (9) When β = 0 .5, Dβ
+
+JSD reduces to the symmetric JSD. 3.3 LANGUAGE -GUIDED VISUAL ANCHORING 
+
+After the LVLM produces a language response, we need a semantic condition for localization. How-ever, beyond the final judgment, the full response contains intermediate reasoning and supplementary 5descriptions that are not directly relevant to localizing defects and may introduce redundant infor-mation. We therefore extract only the final judgment span as a compact, image-specific semantic condition. Specifically, we extract the text enclosed by <answer></answer> :
+
+ˆai = Trim ans (ˆ yi), (10) where ˆyi is the student-sampled response. The extracted span ˆai is used both as the language-side anomaly judgment for assessment and as a compact, image-specific condition passed to the judgment reforward. Table 3 systematically ablates the semantic guidance condition used for localization, validating the effectiveness of using the final judgment as this condition. We then perform a judgment reforward with the same LVLM without generating a new response. The reforward prompt contains the original image, question, generated judgment, and two abnor-mal/normal anchors, denoted by za and zn. After self-attention over the full sequence, we take their hidden states as the contextualized anchors: 
+
+(˜ za, ˜zn) = f ref 
+
+> θ
+
+
+
+ximg  
+
+> i
+
+, x text  
+
+> i
+
+, ˆai; za, z n
+
+
+
+, ˜za, ˜zn ∈ Rd. (11) Here, za and zn are the base abnormal and normal anchors. As they participate in the judgment reforward alongside the original image, question, and generated final judgment, the resulting ˜za and 
+
+˜zn aggregate visual content, language context, and the semantic guidance provided by the generated judgment, thereby forming image-specific abnormal and normal anchors. Let V = {vij } denote the dense visual patch features used by the heatmap head. The contrastive heatmap head projects and normalizes the contextualized anchors, normalizes the visual features, and computes the anomaly logit for patch (i, j ) as 
+
+¯vij = vij 
+
+∥vij ∥2
+
+, ¯za = ga(˜ za)
+
+∥ga(˜ za)∥2
+
+, ¯zn = gn(˜ zn)
+
+∥gn(˜ zn)∥2
+
+,sij = τ (⟨¯vij , ¯za⟩ − ⟨ ¯vij , ¯zn⟩) ,
+
+(12) where τ is a learnable temperature. A patch receives a high anomaly score when it aligns more strongly with the abnormal anchor than with the normal anchor. Upsampling S = {sij } produces the pixel-level anomaly map ˆMi.3.4 TRAINING OBJECTIVE 
+
+During training, the heatmap S receives both image-level and pixel-level supervision. At the image level, we average its largest 1% anomaly logits and align the result with the image label ai using BCE. At the pixel level, we supervise the anomaly response at each location with the mask Mi using a combination of BCE, focal loss (Lin et al., 2017), and Dice loss (Milletari et al., 2016). Finally, inspired by (Hou et al., 2026), we encourage the abnormal and normal anchors to remain separated: 
+
+Lcon = max( ⟨¯za, ¯zn⟩ + m, 0) . (13) The resulting localization objective is 
+
+Lmap = λimg Limg + λpix Lpix + λfoc Lfoc + λdice Ldice + λcon Lcon . (14) We additionally use a lightweight outcome reward to regularize the response format and final judgment, 
+
+Ri = Rfmt (ˆ yi) + Rans (ˆ ai, a i), (15) where Rfmt checks the required response schema and Rans checks the final judgment. The corre-sponding policy-gradient term Lreward is auxiliary because it supplies only a sparse outcome signal. The complete training objective is 
+
+L = LOPSD + λRLreward + λH Lmap . (16) Thus, LOPSD learns the deployment-time judgment, Lreward regularizes its outcome, and Lmap trains visually grounded anomaly prediction from judgment-conditioned anchor states ˜za, ˜zn.6Table 1: Main LVLM-IAD comparison. All results are percentages. Image-level cells are (I-AUROC, I-AP, I-F1), pixel-level cells are (P-AUROC, P-AP, P-F1, AUPRO), and QA/Acc. is binary judgment accuracy. † denotes our reproduction under the same protocol; “–” denotes unreported metrics.                                                                                                           
+
+> Metric Data AnomalyGPT †Myriad †EIAD ReAL Ours Image-level
+> MVTec-AD (71.43, 85.94, 85.95) (–, –, –) (–, –, –) (79.80, 87.10, –) (93.76 ,96.99 ,92.58 )VisA (60.79, 68.20, 73.84) (51.93, 57.88, 71.39) (–, –, –) (–, –, –) (89.01 ,91.91 ,85.98 )SDD (64.72, 22.81, 31.47) (64.68, 22.79, 31.63) (52.70, –, –) (81.40, 44.30, –) (96.15 ,77.77 ,72.22 )DTD-S (66.70, 80.89, 84.47) (66.70, 80.89, 84.47) (83.40, –, –) (94.50 , 96.40, –) (94.50 ,97.96 ,95.03 )WFDD (61.37, 69.10, 71.13) (62.99, 68.95, 71.13) (59.60, –, –) (79.90, 78.80, –) (88.53 ,90.43 ,82.85 )
+> Pixel-level
+> MVTec-AD (77.61, 21.41, 28.76, 32.09) (–, –, –, –) (87.80, –, 34.70, –) (75.60, 16.60, –, –) (90.87 ,43.52 ,45.44 ,86.05 )VisA (81.68, 6.64, 11.48, 46.72) (82.06, 4.12, 8.57, 35.49) (91.90, –, 18.70, –) (–, –, –, –) (95.49 ,30.58 ,35.61 ,65.92 )SDD (62.33, 0.18, 1.86, 8.47) (62.34, 0.18, 1.87, 8.46) (52.10, –, –, –) (82.30, 2.60, –, –) (99.40 ,21.25 ,32.52 ,96.12 )DTD-S (90.82, 23.42, 35.72, 70.62) (90.82, 23.42, 35.71, 70.61) (61.20, –, –, –) (94.20 , 26.40, –, –) (93.00, 34.11 ,38.20 ,74.09 )WFDD (75.62, 7.25, 13.24, 32.99) (75.87, 8.28, 11.53, 29.64) (53.70, –, –, –) (70.50, 7.40, –, –) (91.68 ,25.26 ,31.47 ,51.31 )
+> QA/Acc.
+> MVTec-AD 44.75 –––71.42
+> VisA 27.29 55.50 ––73.73
+> SDD 11.93 24.01 87.20 –62.91 DTD-S 39.39 78.77 74.80 –81.98
+> WFDD 58.72 60.00 56.10 –69.82
+
+4 EXPERIMENTS 
+
+4.1 EXPERIMENTAL SETUP 
+
+Datasets and protocol. We evaluate OPD-IAD under a strict cross-dataset zero-shot proto-col on five target benchmarks: MVTec-AD (Bergmann et al., 2019), VisA (Zou et al., 2022), SDD/KolektorSDD (Tabernik et al., 2019), DTD-Synthetic (Aota et al., 2023), and WFDD (Chen et al., 2024a). When MVTec-AD is the target, the source training data are drawn from VisA and GoodsAD (Zhang et al., 2024); when VisA is the target, the source training data are drawn from MVTec-AD and GoodsAD. For SDD/KolektorSDD, DTD-Synthetic, and WFDD, we evaluate the MVTec-AD/GoodsAD source-trained model. 
+
+Model and training. We use Qwen3-VL-8B-Instruct (Bai et al., 2025) as the backbone and, unless otherwise specified, fully fine-tune it with a trainable vision tower. Training uses DeepSpeed ZeRO-2 on 8 A100 GPUs, with a per-GPU batch size of 1 and 4 gradient accumulation steps. We train for 30 epochs with a learning rate of 1 × 10 −6 and a warmup ratio of 0.03. For OPSD, the EMA decay is 0.999, β = 0 .5, λ = 0 .8, and the auxiliary reward weight is 0.1. 
+
+Metrics. We report image-level metrics, pixel-level metrics, and binary judgment accuracy in percent: image AUROC, image AP, image F1, pixel AUROC, pixel AP, pixel F1, AUPRO, and QA/Acc. All OPD-IAD anomaly metrics are evaluated on the complete test set with the full-resolution protocol, while QA/Acc. is computed from the final binary language judgment. 4.2 MAIN RESULTS 
+
+Table 1 reports the main results on five standard industrial anomaly detection benchmarks: MVTec-AD and VisA cover diverse object and texture categories, SDD/KolektorSDD targets steel-surface defects, DTD-Synthetic evaluates synthetic texture anomalies, and WFDD focuses on fabric defects. Under this cross-dataset zero-shot setting, OPD-IAD leads most image-level discrimination and pixel-level localization metrics, with particularly stable gains in dense localization, while still retaining binary language judgment output. These results show that the benefit of OPD-IAD is not limited to more accurate language answers; through language-guided visual anchoring, it converts the final judgment into an image-specific localization condition and produces more reliable anomaly maps. Figure 3 shows qualitative results of OPD-IAD on representative industrial anomaly samples. Each example includes the input image, the generated anomaly heatmap, the natural-language analysis, and the final normal/abnormal judgment. In most examples, the heatmaps concentrate around defect regions and are consistent with the language judgments. In the few cases where the final judgment is incorrect, the heatmap still preserves localized anomaly responses, indicating that the 7USER: Is the image anomalous or normal?                                                                           
+
+> Reason, then answer .
+> Assistant: The image shows a fabric with a
+> regular woven pattern. A localized dark
+> irregular spot appears near the center,
+> breaking the texture consistency .
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant: A small dark spot appears on
+> the leather surface, deviating from the
+> surrounding texture and indicating an
+> anomaly .
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant :A transparent irregular object
+> on the surface deviates from the
+> surrounding speckled pattern, indicating
+> an anomaly.
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant :The PCB has broken solder
+> joints or missing components, indicating
+> an anomaly .
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant: One capsule has a dark
+> irregular spot that deviates from the
+> uniform appearance of the others,
+> indicating an anomaly.
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant: A dark circular spot appears on
+> the soap surface, deviating from its
+> otherwise uniform appearance and
+> indicating an anomaly.
+> Judgment: abnormal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant: The wood texture and color are
+> consistent with normal patterns, with no
+> visible abnormality .
+> Judgment: normal
+> USER: Is the image anomalous or normal?
+> Reason, then answer .
+> Assistant: The cashew appears intact with
+> normal shape and color, without visible
+> defects or abnormal features .
+> Judgment: normal
+
+Figure 3: Qualitative visualization of OPD-IAD. Each example contains the input image, anomaly heatmap, generated language analysis, and final judgment. Green checks and red crosses denote correct and incorrect image-level judgments, respectively. language judgment serves as semantic guidance while pixel-level responses remain supported by visual evidence. 4.3 ABLATION STUDIES 
+
+Training paradigm. We isolate the effect of the training objective by replacing on-policy self-distillation with two controls under the same data, the same localization branch, and the same trainable tower. One control is supervised fine-tuning on the reference response, which treats the reference as a fixed target and therefore does not correct token-level distributions along the model’s own sampled trajectories. The second control optimizes a single-rollout GRPO reward objective on the model’s own sample, testing whether outcome-level reward alone can replace dense distributional supervision. Table 2 reports this comparison on VisA. OPD-IAD improves over supervised fine-tuning on all seven anomaly-detection metrics, suggesting that directly imitating fixed reference responses does not sufficiently adapt the model to the judgment trajectories it visits at deployment. The GRPO control obtains slightly higher image AUROC/AP, but drops clearly on all dense localization metrics. This trade-off indicates that outcome-level reward can help image-level discrimination, whereas token-level on-policy supervision provides more stable judgment conditions for the subsequent dense localization branch. 
+
+Language-guided visual anchoring. Table 3 analyzes Language-guided Visual Anchoring by asking two questions: whether the localization branch should use the final judgment as its compact semantic condition, and how strongly the heatmap depends on the semantics of that judgment. The first block changes the localization interface by using the full response, learnable anchors, anchoring with language output only, or anchoring without language output. Here, “Anchoring w/ language output only” still generates the language response but prevents the final judgment from being aggregated into the anchors, whereas “Anchoring w/o language output” removes language output from the localization path. The second block keeps the inspected image and sampled response fixed, and replaces only the judgment span fed to the judgment reforward with a GT judgment or an incorrect judgment. 8Table 2: Training paradigm ablation on VisA. We compare SFT, single-rollout GRPO reward, and OPD-IAD under the same data, localization branch, and trainable tower. Colored subscripts denote absolute changes from OPD-IAD. Setting I-AUROC I-AP I-F1 P-AUROC P-AP P-F1 AUPRO 
+
+Training objective controls 
+
+SFT 87.53 ↓1.48 91.19 ↓0.72 85.46 ↓0.52 84.76 ↓10 .73 21.66 ↓8.92 29.66 ↓5.95 41.95 ↓23 .97 
+
+GRPO reward-only (1 rollout) 89.68 ↑0.67 92.13 ↑0.22 85.82 ↓0.16 92.86 ↓2.63 23.25 ↓7.33 29.16 ↓6.45 56.01 ↓9.91 
+
+OPD-IAD 89.01 91.91 85.98 95.49 30.58 35.61 65.92 Table 3: Analysis of Language-guided Visual Anchoring on MVTec-AD. One block compares localization interfaces, and the other block replaces only the judgment span fed to the judgment reforward. The OPD-IAD row matches the MVTec-AD result in Table 1. Colored subscripts denote absolute changes from OPD-IAD; the GT judgment is an analysis-only setting rather than a deployable zero-shot result. Setting I-AUROC I-AP I-F1 P-AUROC P-AP P-F1 AUPRO 
+
+Localization interface controls 
+
+Full-response condition 91.49 ↓2.27 95.75 ↓1.24 91.84 ↓0.74 87.63 ↓3.24 33.21 ↓10 .31 38.30 ↓7.14 79.82 ↓6.23 
+
+Learnable-anchor condition 90.95 ↓2.81 95.56 ↓1.43 91.44 ↓1.14 87.35 ↓3.52 32.63 ↓10 .89 37.65 ↓7.79 78.48 ↓7.57 
+
+Anchoring w/ language output only 93.46 ↓0.30 96.89 ↓0.10 92.53 ↓0.05 89.74 ↓1.13 38.72 ↓4.80 42.05 ↓3.39 85.00 ↓1.05 
+
+Anchoring w/o language output 90.73 ↓3.03 95.06 ↓1.93 91.22 ↓1.36 85.95 ↓4.92 27.34 ↓16 .18 33.41 ↓12 .03 80.21 ↓5.84 
+
+Judgment intervention controls 
+
+GT judgment 95.60 ↑1.84 97.57 ↑0.58 94.05 ↑1.47 92.95 ↑2.08 45.45 ↑1.93 47.18 ↑1.74 87.64 ↑1.59 
+
+Incorrect judgment 85.60 ↓8.16 93.41 ↓3.58 88.90 ↓3.68 87.61 ↓3.26 32.05 ↓11 .47 36.93 ↓8.51 87.53 ↑1.48 
+
+OPD-IAD 93.76 96.99 92.58 90.87 43.52 45.44 86.05 The interface controls show that the final judgment span is the strongest deployable condition. The full-response condition degrades localization, suggesting that verbose responses introduce noise, while the learnable-anchor condition lacks sample-specific judgment semantics. The two anchoring controls further separate language generation from language aggregation: keeping language output without aggregating the final judgment remains close at the image level but drops on dense localization metrics, and removing language output weakens localization further. This indicates that language output becomes useful for localization only when the final judgment is aggregated into the visual anchors. The sample-specific semantics provided by the final judgment guide the anchors toward more reliable anomaly responses. The judgment interventions further show that judgment semantics actively affects the judgment-conditioned visual anchors. GT judgments improve all metrics, indicating that more accurate language judgments can refine the judgment-conditioned anchors. In contrast, incorrect judgments decrease all metrics except AUPRO, with clear degradation in image-level discrimination and in key dense localization metrics such as P-AUROC, P-AP, and P-F1. This indicates that the judgment semantics is not an irrelevant text input but an effective semantic guide for localization. 
+
+5 CONCLUSION 
+
+We presented OPD-IAD, an evidence-privileged dense on-policy self-distillation framework for industrial anomaly detection. The core idea is to turn the final judgment generated by an LVLM from a standalone language output into a semantic condition for dense anomaly perception. During training, defect evidence is used as the privileged context to provide dense token-level supervision on the model’s own sampled trajectories. Furthermore, during localization, Language-guided Visual Anchoring uses the final judgment to condition normal and abnormal semantic anchors, which are combined with visual features to generate anomaly maps. Experiments across five industrial anomaly detection datasets show that OPD-IAD achieves more stable overall performance in image-level discrimination, pixel-level localization, and language judgment. Overall, these results suggest that the language judgment learned by evidence-privileged OPSD can serve as an effective bridge between LVLM semantic reasoning and visual anomaly localization, while the anomaly map remains grounded in visual evidence. 9REFERENCES 
+
+Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos Garea, Matthieu Geist, and Olivier Bachem. On-policy distillation of language models: Learning from self-generated mistakes. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun (eds.), 
+
+International Conference on Learning Representations , volume 2024, pp. 21246–21263, 2024. Toshimichi Aota, Lloyd Teh Tzer Tong, and Takayuki Okatani. Zero-shot versus many-shot: Un-supervised texture anomaly detection. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 5564–5572, January 2023. Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhifang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, Mei Li, Kaixin Li, Zicheng Lin, Junyang Lin, Xuejing Liu, Jiawei Liu, Chenglong Liu, Yang Liu, Dayiheng Liu, Shixuan Liu, Dunjie Lu, Ruilin Luo, Chenxu Lv, Rui Men, Lingchen Meng, Xuancheng Ren, Xingzhang Ren, Sibo Song, Yuchong Sun, Jun Tang, Jianhong Tu, Jianqiang Wan, Peng Wang, Pengfei Wang, Qiuyue Wang, Yuxuan Wang, Tianbao Xie, Yiheng Xu, Haiyang Xu, Jin Xu, Zhibo Yang, Mingkun Yang, Jianxin Yang, An Yang, Bowen Yu, Fei Zhang, Hang Zhang, Xi Zhang, Bo Zheng, Humen Zhong, Jingren Zhou, Fan Zhou, Jing Zhou, Yuanzhi Zhu, and Ke Zhu. Qwen3-vl technical report, 2025. Kilian Batzner, Lars Heckler, and Rebecca K ¨onig. Efficientad: Accurate visual anomaly detection at millisecond-level latencies. In 2024 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 127–137. IEEE, Jan 2024. doi: 10.1109/wacv57701.2024.00020. Paul Bergmann, Michael Fauser, David Sattlegger, and Carsten Steger. Mvtec ad — a compre-hensive real-world dataset for unsupervised anomaly detection. In 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 9584–9592. IEEE, June 2019. doi: 10.1109/cvpr.2019.00982. Walid Bousselham, Hilde Kuehne, and Cordelia Schmid. Vold: Reasoning transfer from llms to vision-language models via on-policy distillation, 2026. Yunkang Cao, Jiangning Zhang, Luca Frittoli, Yuqi Cheng, Weiming Shen, and Giacomo Boracchi. Adaclip: Adapting CLIP with hybrid learnable prompts for zero-shot anomaly detection. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and G ¨ul Varol (eds.), 
+
+Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part XXXV , volume 15093 of Lecture Notes in Computer Science , pp. 55–72. Springer, 2024. doi: 10.1007/978-3-031-72761-0 \ 4. Yuhao Chao, Jie Liu, Jie Tang, and Gangshan Wu. Anomalyr1: A grpo-based end-to-end mllm for industrial anomaly detection, 2025. Qiyu Chen, Huiyuan Luo, Chengkan Lv, and Zhengtao Zhang. A unified anomaly synthesis strategy with gradient ascent for industrial anomaly detection and localization. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and G ¨ul Varol (eds.), Computer Vision -ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXVII , volume 15125 of Lecture Notes in Computer Science , pp. 37–54. Springer, 2024a. doi: 10.1007/978-3-031-72855-6 \ 3. Xuhai Chen, Yue Han, and Jiangning Zhang. April-gan: A zero-/few-shot anomaly classification and segmentation method for cvpr 2023 vand workshop challenge tracks 1&2: 1st place on zero-shot ad and 4th place on few-shot ad, 2023. Xuhai Chen, Jiangning Zhang, Guanzhong Tian, Haoyang He, Wuhao Zhang, Yabiao Wang, Chengjie Wang, and Yong Liu. CLIP-AD: A Language-Guided Staged Dual-Path Model for Zero-Shot Anomaly Detection , pp. 17–33. Springer Nature Singapore, Nov 2024b. ISBN 9789819790036. doi: 10.1007/978-981-97-9003-6 2. Lei Cui, Xinyi Le, Xin Lu, Yujun Shen, Kai Yang, Zhiyuan You, and Yu Zheng. A unified model for multi-class anomaly detection. In Advances in Neural Information Processing Systems 35 , NeurIPS 2022, pp. 4571–4584. Neural Information Processing Systems Foundation, Inc. (NeurIPS), 2022. doi: 10.52202/068431-0330. 10 Hanqiu Deng, Zhaoxiang Zhang, Jinan Bao, and Xingyu Li. Bootstrap fine-grained vision-language alignment for unified zero-shot anomaly localization, 2024. Huilin Deng, Hongchen Luo, Wei Zhai, Yanming Guo, Yang Cao, and Yu Kang. Vmad: Visual-enhanced multimodal large language model for zero-shot anomaly detection. IEEE Transactions on Automation Science and Engineering , 23:3607–3618, 2026. ISSN 1558-3783. doi: 10.1109/ tase.2025.3591656. Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang. Minillm: Knowledge distillation of large language models. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun (eds.), International Conference on Learning Representations , volume 2024, pp. 32694–32717, 2024a. Zhaopeng Gu, Bingke Zhu, Guibo Zhu, Yingying Chen, Hao Li, Ming Tang, and Jinqiao Wang. Filo: Zero-shot anomaly detection by fine-grained description and high-quality localization. In 
+
+Proceedings of the 32nd ACM International Conference on Multimedia , MM ’24, pp. 2041–2049. ACM, Oct 2024b. doi: 10.1145/3664647.3680685. Zhaopeng Gu, Bingke Zhu, Guibo Zhu, Yingying Chen, Ming Tang, and Jinqiao Wang. Anomalygpt: Detecting industrial anomalies using large vision-language models. Proceedings of the AAAI Conference on Artificial Intelligence , 38(3):1932–1940, Mar 2024c. ISSN 2159-5399. doi: 10.1609/aaai.v38i3.27963. Yanning Hou, Peiyuan Li, Zirui Liu, Yitong Wang, Yanran Ruan, Jianfeng Qiu, and Ke Xu. Visualad: Language-free zero-shot anomaly detection via vision transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 21346–21356, June 2026. Jongheon Jeong, Yang Zou, Taewan Kim, Dongqing Zhang, Avinash Ravichandran, and Onkar Dabeer. Winclip: Zero-/few-shot anomaly classification and segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 19606–19616, June 2023. Xi Jiang, Jian Li, Hanqiu Deng, Yong Liu, Bin-Bin Gao, Yifeng Zhou, Jialin Li, Chengjie Wang, and Feng Zheng. MMAD: A comprehensive benchmark for multimodal large language models in industrial anomaly detection. In ICLR , 2025. Yizhou Jin, Yuezhu Feng, Jinjin Zhang, Peng Wang, Qingjie Liu, and Yunhong Wang. Reasoning-driven anomaly detection and localization with image-level supervision. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 43061–43071, June 2026. Chun-Liang Li, Kihyuk Sohn, Jinsung Yoon, and Tomas Pfister. Cutpaste: Self-supervised learning for anomaly detection and localization. In 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 9659–9669. IEEE, June 2021. doi: 10.1109/cvpr46437.2021.00954. Jiaze Li, Hao Yin, Haoran Xu, Boshen Xu, Wenhui Tan, Zewen He, Jianzhong Ju, Zhenbo Luo, and Jian Luan. Video-opd: Efficient post-training of multimodal large language models for temporal video grounding via on-policy distillation, 2026a. Xiaofan Li, Zhizhong Zhang, Xin Tan, Chengwei Chen, Yanyun Qu, Yuan Xie, and Lizhuang Ma. Promptad: Learning prompts with only normal samples for few-shot anomaly detection. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 16838–16848, June 2024a. Xurui Li, Ziming Huang, Feng Xue, and Yu Zhou. Musc: Zero-shot industrial anomaly classification and segmentation with mutual scoring of the unlabeled images. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun (eds.), International Conference on Learning Representations ,volume 2024, pp. 2172–2197, 2024b. Yanhui Li, Yunkang Cao, Chengliang Liu, Yuan Xiong, Xinghui Dong, and Chao Huang. Iad-r1: Reinforcing consistent reasoning in industrial anomaly detection. Proceedings of the AAAI Conference on Artificial Intelligence , 40(8):6583–6591, Mar 2026b. ISSN 2159-5399. doi: 10.1609/aaai.v40i8.37588. 11 Yuanze Li, Haolin Wang, Shihao Yuan, Ming Liu, Debin Zhao, Yiwen Guo, Chen Xu, Guangming Shi, and Wangmeng Zuo. Myriad: Large multimodal model by applying vision experts for industrial anomaly detection, 2025a. Yuanze Li, Shihao Yuan, Haolin Wang, Qizhang Li, Ming Liu, Chen Xu, Guangming Shi, and Wangmeng Zuo. Triad: Empowering LMM-based anomaly detection with expert-guided region-of-interest tokenizer and manufacturing process. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 21917–21926, October 2025b. Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Dollar. Focal loss for dense object detection. In 2017 IEEE International Conference on Computer Vision (ICCV) , pp. 2999–3007. IEEE, Oct 2017. doi: 10.1109/iccv.2017.324. Ruiqi Liu, Xiaolei Lv, Gengsheng Li, Ximo Zhu, Zhiheng Wang, Zhengbo Zhang, Junkai Chen, Zhiheng Li, Bo Li, Jun Gao, and Shu Wu. Visual-advantage on-policy distillation for vision-language models, 2026. Fausto Milletari, Nassir Navab, and Seyed-Ahmad Ahmadi. V-net: Fully convolutional neural networks for volumetric medical image segmentation. In 2016 Fourth International Conference on 3D Vision (3DV) , pp. 565–571. IEEE, Oct 2016. doi: 10.1109/3dv.2016.79. Zhen Qu, Xian Tao, Mukesh Prasad, Fei Shen, Zhengtao Zhang, Xinyi Gong, and Guiguang Ding. 
+
+VCP-CLIP: A Visual Context Prompting Model for Zero-Shot Anomaly Segmentation , pp. 301–317. Springer Nature Switzerland, Dec 2024. ISBN 9783031728907. doi: 10.1007/978-3-031-72890-7 18. Zhen Qu, Xian Tao, Xiaoyi Bao, Dingrong Wang, ShiChen Qu, Zhengtao Zhang, and Xingang Wang. Ag-vas: Anchor-guided zero-shot visual anomaly segmentation with large multimodal models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 14126–14136, June 2026. Karsten Roth, Latha Pemula, Joaquin Zepeda, Bernhard Scholkopf, Thomas Brox, and Peter Gehler. Towards total recall in industrial anomaly detection. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 14298–14308. IEEE, June 2022. doi: 10.1109/ cvpr52688.2022.01392. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. Deepseekmath: Pushing the limits of mathematical reasoning in open language models, 2024. Domen Tabernik, Samo ˇSela, Jure Skvar ˇc, and Danijel Sko ˇcaj. Segmentation-based deep-learning approach for surface-defect detection. Journal of Intelligent Manufacturing , 31(3):759–776, May 2019. ISSN 1572-8145. doi: 10.1007/s10845-019-01476-x. Antti Tarvainen and Harri Valpola. Mean teachers are better role models: Weight-averaged consis-tency targets improve semi-supervised deep learning results. In Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017 , pp. 1195–1204, 2017. Jiacong Xu, Shao-Yuan Lo, Bardia Safaei, Vishal M. Patel, and Isht Dwivedi. Towards zero-shot anomaly detection and reasoning with multimodal large language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 20370–20382, June 2025. Qianhao Yuan, Jie Lou, Xing Yu, Hongyu Lin, Le Sun, Xianpei Han, and Yaojie Lu. Vision-opd: Learning to see fine details for multimodal llms via on-policy self-distillation, 2026. Vitjan Zavrtanik, Matej Kristan, and Danijel Skocaj. Dræm – a discriminatively trained reconstruction embedding for surface anomaly detection. In 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 8310–8319. IEEE, Oct 2021. doi: 10.1109/iccv48922.2021.00822. Jian Zhang, Runwei Ding, Miaoju Ban, and Linhui Dai. Pku-goodsad: A supermarket goods dataset for unsupervised anomaly detection and segmentation. IEEE Robotics and Automation Letters , 9 (3):2008–2015, Mar 2024. ISSN 2377-3774. doi: 10.1109/lra.2024.3352358. 12 Zongyun Zhang, Jiacheng Ruan, Xian Gao, Ting Liu, and Yuzhuo Fu. EIAD: Explainable industrial anomaly detection via multi-modal large language models. In IEEE International Conference on Multimedia and Expo (ICME) , pp. 1–6. IEEE, 2025. doi: 10.1109/ICME59968.2025.11209158. Shifang Zhao, Yiheng Lin, Lu Han, Yao Zhao, and Yunchao Wei. Omniad: Detect and understand industrial anomaly via multimodal reasoning, 2025. Siyan Zhao, Zhihui Xie, Mengchen Liu, Jing Huang, Guan Pang, Feiyu Chen, and Aditya Grover. Self-distilled reasoner: On-policy self-distillation for large language models, 2026. Zhide Zhong, Haodong Yan, Junfeng Li, Junjie He, Tianran Zhang, and Haoang Li. Vla-opd: Bridging offline sft and online rl for vision-language-action models via on-policy distillation, 2026. Qihang Zhou, Guansong Pang, Yu Tian, Shibo He, and Jiming Chen. Anomalyclip: Object-agnostic prompt learning for zero-shot anomaly detection. In B. Kim, Y. Yue, S. Chaudhuri, K. Fragkiadaki, M. Khan, and Y. Sun (eds.), International Conference on Learning Representations , volume 2024, pp. 49705–49737, 2024. Yang Zou, Jongheon Jeong, Latha Pemula, Dongqing Zhang, and Onkar Dabeer. SPot-the-Difference Self-supervised Pre-training for Anomaly Detection and Segmentation , pp. 392–408. Springer Nature Switzerland, 2022. ISBN 9783031200564. doi: 10.1007/978-3-031-20056-4 23. 13

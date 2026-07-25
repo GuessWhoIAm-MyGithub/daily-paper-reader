@@ -1,0 +1,519 @@
+Title: CR-Refiner: An Object-Centric Optimal Transport Reranker for Edit-Conditioned 3D Scene Retrieval
+
+URL Source: https://arxiv.org/pdf/2607.19115v1
+
+Published Time: Wed, 22 Jul 2026 01:03:45 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# CR-Refiner: An Object-Centric Optimal Transport Reranker for Edit-Conditioned 3D Scene Retrieval 
+
+Hao Wu 1,2 Jinjing Zhu 2 Nanyu Wu 2 Qianyi Cai 2 Heyi Lin 2 Hao Wang 2 Hui Xiong 1,2∗
+
+> 1
+
+Hong Kong University of Science and Technology 
+
+> 2
+
+Hong Kong University of Science and Technology (Guangzhou) 
+
+## Abstract 
+
+Edit-conditioned 3D scene retrieval pairs a reference 3D room with a natural-language modification and retrieves rooms from a corpus that satisfy the edit. Three lines of prior work each fall short on this task. 2D composed image retrieval reasons over pixel-level edits and has no primitive for 3D object sets. 3D foundation encoders embed individual objects but cannot compose at the scene level. 3D scene-grounding methods localize references inside a static scene rather than rank modified rooms across a corpus. We present CR-Refiner , a training-free reranker that wraps any base retriever’s top-K candidates with three components. A frozen LLM parses the edit into a structured query entity, and each candidate is scored by an unbalanced optimal-transport problem over a 1×G cost matrix coupling category, style, material, and geometry. The unbalanced solver lets the single-entity query drop mass on irrelevant objects, modelling the asymmetry directly. An axis-conditional structural prior adds size-keyword cues for geometric edits and subject-anchor direction cues for spatial edits. An LLM verifier refines the top three candidates with continuous confidence. Because no benchmark evaluates compositional matching over 3D object sets, we additionally release 
+
+3D-CER , 4,963 edit-conditioned queries over a 23 ,381 -room indoor corpus across five edit axes, with multi-positive ground truth, CIRR-style hard subsets, and zero-target adversarials. Across three qualitatively distinct base retrievers, CR-Refiner consistently improves hard-subset R@ 1 and mAP@ 10 on every edit axis. 
+
+## 1 Introduction 
+
+3D scene retrieval is widely used in interior design, embodied agents, and retrieval-augmented scene synthesis. A user submits either a text description matched against scene captions and graph metadata [ 1, 2], or a reference scene matched by global appearance. Neither interface fits a common workflow. A designer reviewing a draft room often wants to filter the corpus by an edit applied to the current scene, such as “swap the king-size bed for a single bed”. We study edit-conditioned 3D scene retrieval , the task of retrieving rooms that satisfy a natural-language modification of a given reference room. The reference room is structured. Each object carries a category, a style, a material, and a 3D bounding box. The edit instruction names one object and specifies a target attribute or a relative position. Following the protocol of 2D composed image retrieval [ 3 , 4], performance is measured by Recall@ K and mAP@ 10 over a CIRR-style hard-distractor subset. The matching problem is asymmetric. A candidate room contains many objects but the edit names only one. The retriever must locate the edited slot, check its attributes, and verify that the rest of the room is preserved. Three lines of prior work each address only part of this problem. 2D composed 
+
+> ∗Corresponding author. Preprint. arXiv:2607.19115v1 [cs.CV] 21 Jul 2026
+
+image retrieval [ 5 , 3, 6, 4, 7 –10 ] reasons over pixel-level edits and has no primitive for 3D object sets. 3D foundation encoders [ 11 –14 ] embed individual objects but cannot compose at the scene level. 3D scene-grounding methods [ 1, 2, 15 –18 ] localize references inside a static scene rather than retrieve modified ones across a corpus. We present CR-Refiner , a training-free reranker that wraps any base retriever’s top-K candidates with three components. The coupled-OT backbone scores each candidate by an unbalanced optimal-transport problem over a 1×G cost matrix coupling category, style, material, and geometry, where the unbalanced solver lets the single-entity query drop mass on irrelevant objects rather than splitting unit mass across G candidate objects. An axis-conditional structural prior adds bounding-box size cues for geometric edits and subject-anchor direction cues for spatial edits, with the router reusing the LLM-parsed axis at no additional cost. An LLM verifier refines the top-three candidates with continuous confidence to disambiguate near-ties. Section 3 details each component. Validating CR-Refiner requires a benchmark with multi-axis edits, multi-positive ground truth, and hard-negative subsets that distinguish structural matching from caption matching. Because no such resource existed, we release 3D-CER : edit-conditioned queries over a 23 ,381 -room 3D-FRONT/3D-FUTURE corpus across five edit axes (style, material, spatial, geometric, compound), with multi-positive ground truth, CIRR-style 20-distractor hard subsets, and zero-target adversarials. The benchmark is built end-to-end with no human annotation; correctness is enforced by programmatic predicates and an independent cross-model audit. Across three qualitatively distinct base retrievers, CR-Refiner consistently improves hard-subset R@ 1 over the strongest baseline on every edit axis (Section 5.2). In summary, this paper makes the following contributions: • We propose CR-Refiner , the first training-free reranker for edit-conditioned 3D scene retrieval, built on object-centric coupled optimal transport with an axis-conditional structural prior and an LLM verifier. • We release 3D-CER , a benchmark of 4,963 edit-conditioned queries over 23 ,381 indoor rooms across five edit axes, with multi-positive ground truth, CIRR-style hard subsets, and zero-target adversarials. • We empirically validate retriever-agnostic plug-in compatibility on three qualitatively distinct base retrievers, and decompose the candidate-generation versus reranking regimes on the full 23 K-room corpus. 
+
+## 2 Related Work 
+
+Composed image retrieval (CIR). The CIR paradigm, where a reference image and an edit text are composed into a target-image query, was established by CIRR [ 3], which introduced the subset-based hard-negative protocol that we adopt for our hard subsets. CIRCO [ 4] reformulated CIR as multi-positive retrieval to address CIRR’s false-negative issue, an approach we follow with mAP@ 10 
+
+as the primary metric. Among training-free CIR methods, CIReVL [ 7 ] first captions the reference image with a VLM and then prompts an LLM to rewrite the caption together with the edit into a target description, while Pic2Word [ 8] maps the reference image to a pseudo-word token in CLIP’s token embedding space and concatenates it with the edit text. LinCIR [ 10 ] extends this textual-inversion paradigm with a language-only training strategy for better backbone scalability, and CompoDiff [9] models CIR as conditional latent-diffusion editing on CLIP embeddings. The shared limitation across this line is the 2D pixel modality: none of these methods can reason over 3D object sets, bounding-box geometry, or scene-level composition. We adapt CIRR’s subset protocol and CIRCO’s multi-positive evaluation to a new modality, and use CIReVL and Pic2Word as base-retriever baselines (Section 5.4) to test plug-in compatibility. 
+
+3D scene language datasets. ScanRefer [ 1] and the ReferIt3D [ 19 ] family annotate referring expressions over static 3D scenes; Multi3DRefer [ 2] generalizes to zero, one, and multi-target grounding, whose adversarial design we reuse for our zero-target queries; ScanQA [ 20 ] addresses 3D question answering; and SceneVerse [ 21 ] scales 3D-language pretraining over 68 K scenes. 3D-LLM[16] brings 3D scenes and PointLLM[17] brings 3D objects into instruction-tuned multimodal LLMs for free-form reasoning. Closer to retrieval, SceneGraphLoc [ 18 ] matches a query image 2against a database of compact 3D scene graphs for cross-modal coarse localization. The shared limitation is the static-scene assumption: queries describe what is in a scene, not what an edit would produce. To our knowledge, 3D-CER is the first benchmark that composes a reference scene with a natural-language modification and requires retrieving the post-edit target. 
+
+3D foundation encoders and edit-conditioned 3D generation. OpenShape [ 12 ], Uni3D [ 13 ], and ULIP-2 [ 14 ] produce CLIP-aligned single-object embeddings, but offer no scene-level composition primitive. ChangeIt3D [ 22 ], built on the ShapeTalk dataset, addresses language-conditioned per-shape editing rather than scene-level retrieval. For scene-level generation, DiffuScene [ 23 ] and InstructScene [ 24 ] synthesize indoor 3D layouts via diffusion (unconditional and instruction-driven, respectively), and EditRoom [ 25 ] generates edited rooms through diffusion rather than retrieving from a fixed corpus. The shared limitation is task formulation: each treats edits as a generation problem on a single object or scene rather than retrieval over a corpus. We treat the corpus as fixed and frame the problem as reranking, which permits zero-cost deployment on any indoor 3D collection without per-scene generation. 
+
+## 3 CR-Refiner 
+
+3.1 Preliminaries: Query Entity and Candidate Specification 
+
+We denote the reference 3D room as R and the natural-language edit text as t. A frozen LLM parses 
+
+(R, t ) into a structured query entity q = ( cq , s q , m q , d q , axis) with five fields: target category cq ,target style sq , target material mq , optional spatial direction dq ∈ { left, right, front, behind, near, far },and the predicted edit axis axis ∈ { STY, MAT, SPA, GEO, CMP } (style, material, spatial, geometric, compound). The base retriever returns a candidate pool P of size K. Each candidate room C ∈ P 
+
+comes with a structured spec listing its G objects {oj }Gj=1 , where each object oj = ( cj , s j , m j , p j )
+
+has a category, optional style, optional material, and a 3D bounding-box centre pj ∈ R3. All attribute fields use the 3D-FUTURE attribute vocabulary; missing values are preserved as nulls rather than imputed. CR-Refiner produces a final score ˆs(C) for each candidate, and the reranked output sorts P
+
+by ˆs in ascending order. 
+
+3.2 Coupled-OT Backbone Motivation. An edit instruction names one subject (e.g., “the king-size bed”) while a candidate room contains many objects, most of which are unrelated to the edit. A plain dot-product over object embeddings cannot exploit this one-to-many asymmetry: it treats every object as equally salient and pollutes the score with noise from unmentioned furniture. We therefore frame reranking as a transport problem over an asymmetric 1×G cost matrix. 
+
+Cost matrix. For each candidate object oj , we define four hard mismatch indicators that compare 
+
+q against oj symbol by symbol. We use the index set A = {cat , sty , mat , dir } to label these four channels; these lowercase tags are attribute-channel names internal to the cost matrix and are distinct from the uppercase edit-axis labels {STY, MAT, SPA, GEO, CMP } introduced in §3.1. The category indicator ℓcat (q, o j ) ∈ { 0, 1} is 0 iff cq and cj are string-equal. The style indicator 
+
+ℓsty (q, o j ) ∈ { 0, 0.5, 1} takes value 0 when sq matches the candidate’s style (either oj ’s own style sj
+
+or any style in the candidate room’s style multiset, as a room-level fallback for missing object-level annotation), 1 when both sj and the room style are present but neither matches, and 0.5 when both are missing. The material indicator ℓmat (q, o j ) ∈ { 0, 0.5, 1} follows the same scheme without the room-level fallback, since material is an object-level attribute. The direction indicator ℓdir (q, o j ) ∈ { 0, 1}
+
+is 0 iff the sign of the bounding-box centre coordinate pj along the relevant axis matches the parsed direction dq . The four indicators aggregate into a single mismatch cost 
+
+M1,j =
+
+P 
+
+> k∈A
+
+wk ℓk(q, o j )
+
+P 
+
+> k∈A
+
+wk
+
+, (1) with weights wcat =0 .4, wsty =0 .3, wmat =0 .2, and wdir =0 .1. A term contributes only if the corre-sponding query field is non-null, so a geometric query (no sq , no mq ) is not penalised by missing style or material. The intentionally low direction weight reflects that bounding-box centres in 3D-FRONT live in scene-specific world frames, making ℓdir unreliable on its own; the structural prior (§3.3) restores this signal on spatial queries. 3Input           
+
+> Source 3D Scene
+> Natural Language
+> Edit Instruction
+> Change the king -size bed
+> from Mediterranean to
+> Japanese
+> Bed: Mediterranean
+> Nightstand: Japanese
+> Lamp: Kids
+> Style Top -K
+> Corpus Coupled -OT Backbone
+> Structural Prior
+> LLM Verifier
+> CR -Refiner Reranked Output
+> Query
+> entity
+> ℓcat
+> ℓsty
+> ℓmat
+> ℓgeom
+> cost vector
+> T* Unbalanced
+> Sinkhorn
+> LLM
+> Parser
+> Top -3
+> Router
+> Bbox Bonus
+> Direction
+> Match
+> GEO/CMP
+> SPA
+> OT( q,C )
+> B( q,C )
+> σ(q,C )Φ
+> frozen LLM
+> Σ
+> Base
+> Retriever
+
+Figure 1: Overview of CR-Refiner. Given a reference 3D room R and a natural-language edit t, a base retriever returns a top-K candidate pool P while a frozen LLM parses (R, t ) into a structured query entity q. CR-Refiner rescores each candidate via a Coupled-OT Backbone , an axis-conditional 
+
+Structural Prior , and an LLM Verifier applied to the top-3 candidates after the backbone and prior; the three signals are combined additively into the final reranking score (Eq. 3). 
+
+Unbalanced Sinkhorn solver. Stacking the four indicators across all G candidate objects yields the cost matrix M ∈ R1×G with entries M1,j from Eq. 1. With the asymmetric source distribution 
+
+a = [1] ∈ R1 and uniform target b = 1G/G , we solve the regularised unbalanced transport problem [26] 
+
+T⋆ = arg min  
+
+> T≥0
+
+⟨T, M⟩ − ε H (T) + τ KL( T1 G ∥ a), (2) where T ∈ R1×G 
+
+> ≥0
+
+is the transport plan, ⟨T, M⟩ = P 
+
+> i,j
+
+Tij Mij is the Frobenius inner product, 
+
+H(T) = − P 
+
+> i,j
+
+Tij log Tij is the Shannon entropy of T, T1 G ∈ R is the row marginal of T, ε is the entropic regularisation weight, and τ is the KL slack on the row marginal that allows the solver to drop mass on rows with no plausible match instead of forcing the unit query mass to be split across all G candidate objects. We use ε=0 .01 and τ =1 .0, both selected on the validation split, and take the transport cost OT( q, C ) = ⟨T⋆, M⟩ as the backbone score. 
+
+3.3 Structural Prior Motivation. The backbone consumes only categorical, stylistic, material, and sign-of-coordinate signals. Two channels remain invisible. First, fine-grained bounding-box geometry: the symbolic 
+
+ℓdir is deliberately weak, and size-keyword cues such as “smaller” or “king-size” are not used at all. Second, inter-object adjacency: spatial edits like “move the chair to the right of the desk” depend on relations between pairs of objects, not on any single object’s position. These two channels call for different primitives. Size cues are localised to a single object and read directly from the category vocabulary. Direction cues require comparing two objects in the same room, which we handle with a subject-anchor scheme. We therefore design an axis-conditional structural prior that selects the right primitive for each edit type, using the parser-predicted axis at no additional cost. 
+
+Size-class bonus (geometric and compound branch). For queries with axis ∈ { GEO, CMP }, we compute a size-class bonus that detects size modifiers ( small / single / compact / smaller for small; 
+
+king / large / larger / big for large) from the parsed paraphrase. The bonus rewards candidates that contain at least one object in the queried category family at the matching size class. We apply a small penalty when the family is present at the wrong size class. STY and MAT queries receive zero bonus from this branch and rely entirely on the OT backbone’s ℓsty and ℓmat terms. 4Direction bonus (spatial and compound branch). For queries with axis ∈ { SPA, CMP }, we compute a subject-anchor direction bonus. We identify the subject object in the candidate by category match against cq , and pick an anchor as the highest-mention non-subject category in the paraphrase. The relative direction between the two objects is read from the sign of their bounding-box-centre difference along the relevant axis. The bonus rewards candidates whose relative direction agrees with the parsed dq . Although bounding-box directions live in scene-specific world frames, in practice this signal is sufficient on 3D-FRONT, where most rooms align to consistent global frame conventions. 
+
+Combined structural bonus. Regardless of branch, the structural bonus B(q, C ) ∈ R≥0 enters the final score with weight βB =0 .3, subtracted from the backbone cost. The router uses the LLM-predicted axis at no additional inference cost. 
+
+3.4 LLM Verifier Motivation. After the backbone and structural prior, the top-3 candidates are often nearly tied on subtle attributes that the {0, 0.5, 1} indicators cannot resolve. A frozen LLM equipped with each candidate’s full object list can disambiguate them holistically. Pilot studies showed that binary PASS/FAIL prompts collapse mild attribute drift and gross violation into a single FAIL, removing many correct top-1 candidates from the ranking. A continuous LLM confidence σ(q, C ) ∈ [0 , 1] ,where 1 means the candidate fully satisfies the edit and 0 a clear violation, preserves the magnitude and lets a mildly imperfect but correct candidate outrank a clearly wrong one. 
+
+Design. We invoke a frozen LLM on each of the top-3 candidates ranked by the backbone and structural prior. The prompt asks it to output a continuous confidence σ(q, C ) ∈ [0 , 1] together with a one-sentence rationale; the rationale is discarded. The verifier refines only positions one to three of the ranking; the tail is left untouched. This adds three LLM calls per query and roughly two seconds of wall-clock time. 
+
+3.5 Final Score and Pipeline 
+
+The final reranking score combines the three components additively: 
+
+ˆs(C) = OT( q, C ) − βB B(q, C ) − βV σ(q, C ) · 1[C ∈ top-3] , (3) with βB =0 .3 and βV =0 .5. The indicator 1[C ∈ top-3] restricts the verifier to the three candidates with the lowest backbone-plus-prior score OT( q, C ) − βB B(q, C ); the tail of P is left untouched. 
+
+Complexity. For one query, the cost-matrix and unbalanced-Sinkhorn solve are O(KG ) with no matrix multiplication; the structural bonus is O(KG ) for both the size-class and direction branches; the verifier issues exactly three LLM calls. End-to-end, the only parameters in the pipeline are the five scalars (ε, τ, β B , β V , K ), all selected on the validation split before any test-set use. 
+
+## 4 The 3D-CER Benchmark 
+
+We release 3D-CER , a benchmark of edit-conditioned queries over a 23 ,381 -room 3D-FRONT/3D-FUTURE corpus. To our knowledge, 3D-CER is the first 3D benchmark that combines edit-conditioned queries, multi-positive ground truth, CIRR-style hard subsets, and zero-target adversarials in a single resource (Table 1). 
+
+Task formalism. A 3D-CER instance is a triplet (R, t, T ) where R is a reference 3D room with object categories, styles, materials, and bounding boxes, t is a natural-language edit, and T ⊂ C is the set of multi-positive target rooms drawn from a fixed 23 ,381 -room corpus C. In the hard-subset setting, methods rank H ∪ T , where H is a 20 -room CIRR-style distractor pool mined per query from the same room type as the source [ 3]. About one fifth of test queries are zero-target ( T = ∅) and require abstention; these inject corpus-impossible attribute combinations such as a Scandinavian-style marble bathtub in a corpus without bathtubs. 5Table 1: Comparison with related benchmarks. Edit : pairs a reference and a modification text to retrieve a target. Multi : ≥ 2 valid GTs per query. Hard : per-query distractor pool (CIRR-style). 
+
+Zero : adversarial queries with no valid GT, requiring abstention. 3D-CER is the only benchmark that combines all four.                                                  
+
+> Benchmark Modality Corpus #queries Edit Multi Hard Zero ScanRefer [1] 3D scene 800 51,583 ✗✗✗✗
+> Multi3DRefer [2] 3D scene 800 61,926 ✗✓✗✓
+> CIRR [3] 2D image 21,552 36,554 ✓✗✓✗
+> CIRCO [4] 2D image 120,000 1,020 ✓✓✗✗
+> ChangeIt3D [22] 3D shape ShapeNet ∼22 K✓✗✗✗
+> 3D-CER (ours) 3D scene 23,381 4,963 ✓✓✓✓
+
+Construction. 3D-CER is built end-to-end with no human annotation. We programmatically mine candidate edit operators across five axes (style, material, spatial, geometric, compound) on 
+
+16 ,131 valid source rooms, prompt GPT-5.1 for three short paraphrases per query in CIRR/CIRCO style, and pass each query through a five-layer programmatic validation that combines reverse-parse axis prediction, three-paraphrase axis consistency, source/target sanity checks, and JID/UUID leak detection ( 98 .5% pass rate). Multi-positive ground truth is mined by running the operator predicate over the same-room-type slice of the corpus, and queries with no real positives become zero-target adversarials. Quality is independently audited by a held-out GPT-5.1 evaluator ( 92 .7% distractor NO-rate on 500 probes) and a cross-family check against Gemini-3-flash-preview-nothinking ( 88 .0% 
+
+verdict agreement on 1,478 pairs). Full details of the seven construction phases and the audit protocols are deferred to Appendix B. 
+
+Statistics and metric. 3D-CER comprises 2,868 train, 473 val, and 1,622 test queries over 23 ,381 
+
+corpus rooms. The test split breaks down as 207 STY, 152 MAT, 388 SPA, 475 GEO, and 52 CMP queries with ground truth, plus 348 zero-target queries. The average multi-positive count is 14 .7
+
+per query (median 5). Following CIRCO [ 4], we adopt mAP@ 10 as the primary metric so that any residual axis-lenient false negatives do not unduly penalise a method that surfaces a valid but unlabelled positive. 
+
+## 5 Experiments 
+
+5.1 Setup and Evaluation Protocol 
+
+We evaluate on the 1,622 -query test split of 3D-CER, comprising 1,274 with-GT queries and 348 
+
+zero-target queries. All experiments run on a single NVIDIA RTX 5090 with random seed 42 .The base text encoder is MPNet ( all-mpnet-base-v2 ). The frozen LLM used for entity parsing, paraphrase rewriting in the CIReVL baseline, and the verifier is GPT-5.1-2025-11-13; the cross-model audit uses Gemini-3-flash-preview-nothinking. Total combined wall-clock is approximately 
+
+4 GPU-hours and the LLM API cost is approximately $ 30 . Hyperparameters τ =1 .0, βB=0 .3, and 
+
+βV =0 .5 are selected on the validation split before any test-set use. The hard-subset size is 20 .We report four metrics. Recall@ 1, Recall@ 5, and Recall@ 10 measure recall over the 20 -distractor hard subset H ∪ T , mirroring CIRR. mAP@ 10 measures mean Average Precision at 10 over the same pool, accounting for multiple positives in CIRCO style. Abstention F1 is computed for zero-target queries: methods that emit no positive (or scores below a calibrated threshold) are correct, and F1 balances precision and recall of abstention. Per-axis breakdowns report all metrics across the five axes (STY, MAT, SPA, GEO, CMP) to expose method-axis interactions. mAP@ 10 is our primary metric due to the operator-level nature of multi-positive ground truth; bootstrap confidence intervals are reported in Appendix C where appropriate. 
+
+5.2 Main Results 
+
+Table 2 reports R@ 1, R@ 10 , and mAP@ 10 on the 1,274 with-GT test queries against three training-free baselines that span three retrieval paradigms: dense embedding (caption-MPNet), LLM-rewrite (CIReVL [ 7 ]), and additive composition (Pic2Word [ 8]). We additionally report intermediate ablations 6Table 2: Main results on 3D-CER test, hard-subset reranking ( n=1 ,274 with-GT). Top block: training-free baselines spanning dense embedding (Caption-MPNet), LLM rewrite (CIReVL), and additive composition (Pic2Word). Bottom block: cumulative components of CR-Refiner. Solver : OT solver variant ( add. = additive cost, bal. = balanced Sinkhorn, unb. = unbalanced Sinkhorn). Prior :structural prior with router strategy ( bbox = bbox-only on every query, axis = axis-conditional). Ver. :LLM verifier on the top three. Bold marks the full method.                                                         
+
+> Method Solver Prior Ver. R@1 R@10 mAP@10 Caption (MPNet) ———0.192 0.851 0.250 CIReVL [7] ———0.267 0.870 0.297 Pic2Word [8] ———0.272 0.863 0.316 CR-Refiner ablation add. —✗0.229 0.609 0.295 bal. —✗0.216 0.607 0.279 unb. —✗0.235 0.624 0.302 unb. bbox ✗0.378 0.881 0.510 unb. axis ✗0.585 0.947 0.651
+> CR-Refiner (full) unb. axis ✓0.639 0.951 0.663
+
+Table 3: Per-axis R@ 1 on the full 1,274 with-GT test pool (STY 207 / MAT 152 / SPA 388 / GEO 475 
+
+/ CMP 52 ). The WL-only baseline scores candidates by a non-LLM Weisfeiler–Lehman scene-graph kernel applied uniformly. Method Overall STY MAT SPA GEO CMP Caption (MPNet) 0.192 0.357 0.171 0.204 0.120 0.173 Pic2Word [8] 0.272 0.275 0.224 0.526 0.078 0.288 WL-only 0.351 0.367 0.191 0.562 0.253 0.077 
+
+Full CR-Refiner 0.639 0.725 0.513 0.546 0.724 0.577 
+
+∆ vs. caption +44 .7 +36 .8 +34 .2 +34 .2 +60 .4 +40 .4
+
+of CR-Refiner with one or two of its three components removed, so the source of the gain is visible at every step. Full CR-Refiner reaches R@ 1= 0.639 and mAP@ 10= 0.663 , an absolute gain of +36 .7 R@ 1 points and +34 .7 mAP@ 10 points over the strongest baseline (Pic2Word). R@ 10 saturates near 0.951 for the full method, so R@ 1 and mAP@ 10 are the more discriminating measures. 
+
+5.3 Per-Axis Breakdown 
+
+Table 3 disaggregates R@ 1 by edit axis. We additionally include a non-LLM WL-only baseline that scores candidates by a Weisfeiler–Lehman scene-graph kernel applied uniformly to all queries. This baseline isolates how much of the signal can be recovered from structured-metadata matching alone, without the OT backbone or the LLM verifier. CR-Refiner improves R@ 1 over the caption baseline on every axis by between 34 and 60 absolute points, and matches or exceeds every text-conditioned baseline on every axis. On attribute axes (STY, MAT, GEO, CMP), the gain is driven by the OT backbone together with the bounding-box branch of the structural prior. On the spatial axis, the gain is delivered by the direction-bonus branch of the structural prior, reaching R@ 1=0 .546 , comparable to the non-LLM WL-only baseline at 0.562 .The WL-only baseline also confirms that 3D-CER is not trivially solvable by structured-metadata matching: WL-only beats caption overall ( 0.351 vs. 0.192 ) but trails CR-Refiner by a wide margin (0.351 vs. 0.639 ). 
+
+5.4 Plug-in Compatibility 
+
+Table 4 reports the gain of CR-Refiner when stacked on three qualitatively distinct base retrievers under fixed-pool hard-subset reranking. The evaluation pool is the same released static hard subset used in Table 2; the difference is that this experiment uses a lightweight CR-Refiner configuration 7Table 4: Plug-in compatibility on three base retrievers. Same hard subset as Table 2 ( n=1 ,274 with-GT). +Ours is the verifier-free CR-Refiner; the verifier is excluded to isolate the retriever-agnostic component. Adding the verifier gives a further +∼5 R@ 1 (see Table 5).                                   
+
+> R@ 1mAP@ 10
+> Base retriever alone +Ours ∆alone +Ours ∆
+> Caption (MPNet) 0.185 0.578 +39 .30.248 0.609 +36 .1
+> CIReVL [7] 0.265 0.597 +33 .20.294 0.616 +32 .2
+> Pic2Word [8] 0.279 0.593 +31 .40.318 0.621 +30 .3
+> Average ∆(95% CI) +34 .6±4.0+32 .9±2.9
+
+Table 5: Ablation studies (R@ 1, n=1 ,274 ). Top : drop-one component, with the other two retained. 
+
+Bottom : router variants. Bbox-only forces the bbox branch on every query; oracle uses ground-truth axis labels.                                                     
+
+> Variant Overall STY MAT SPA GEO CMP mAP@10
+> Drop-one component ablation
+> Full CR-Refiner 0.639 0.725 0.513 0.546 0.724 0.577 0.663
+> −Unbalanced solver 0.613 0.729 0.408 0.552 0.691 0.500 0.633
+> −Structural prior 0.297 0.729 0.513 0.188 0.112 0.442 0.315
+> −LLM verifier 0.585 0.522 0.507 0.564 0.678 0.365 0.651
+> Router variants
+> Bbox-only 0.537 0.754 0.520 0.175 0.737 0.596 —Oracle (upper bound) 0.640 0.754 0.520 0.546 0.737 0.596 —
+
+without the LLM verifier ( OT backbone + structural prior , denoted +Ours) so that the plug-in cost remains constant across base retrievers. CR-Refiner uniformly delivers +31 to +39 R@ 1 points and +30 to +36 mAP@ 10 points across all three paradigms, indicating that the structural prior is retriever-agnostic under hard-subset reranking. We do not claim this property generalises to full-corpus retrieval, where recall rather than reranking becomes the bottleneck (Section 5.6). 
+
+5.5 Component Ablation 
+
+Table 5 reports two ablation studies on the full 1,274 with-GT test queries. The top block removes one of the three components in turn while the other two are retained. The bottom block compares router variants of the structural prior. Each component’s largest contribution coincides with its design axis. Removing the unbalanced solver (reverting to balanced Sinkhorn) costs −10 .5 points on the material axis, where one-to-many asymmetry is most extreme: a query about a nightstand’s material has nothing to say about the bed, the wardrobe, or the lamp, and a balanced solver dilutes the cost across all of them. Removing the structural prior is the largest single drop ( −34 .2 R@ 1 overall) and concentrates on the geometric axis ( −61 .2) and the spatial axis ( −35 .8), where bounding-box geometry and scene-graph adjacency carry the discriminative signal that the symbolic OT backbone cannot see. Removing the LLM verifier costs −20 .3 points on the style axis, where holistic linguistic judgment correctly demotes candidates that match keyword-level style but fail when read in context. 
+
+Routing. Axis-conditional routing lifts overall R@ 1 by +10 .2 points over the bbox-only variant, almost entirely from the spatial axis ( +37 .1 points), where the bbox-only variant disables the direction bonus that SPA queries depend on. The oracle-routed upper bound at 0.640 is essentially identical to the parser-routed full method at 0.639 , so a learned router is not necessary. 
+
+5.6 Full-Corpus Recall Ceiling 
+
+All numbers above are fixed-pool reranking. Since a reranker only re-orders the base retriever’s output, we measure the full-corpus recall ceiling on 200 stratified queries. Even the strongest base retriever (CIReVL) recalls only 88 .0% of positives at K=1000 and 7.5% at K=1 . Feeding CR-8Source  Ours  Caption -only  Pic2Word               
+
+> Style
+> “Change the king -size bed from a modern style to a minimalist style in a comparable bedroom.”
+> Style
+> “Change the vintage/retro wardrobe to an industrial -style wardrobe while keeping the rest of the bedroom broadly similar.”
+> Geometry
+> “Replace the large king -size bed in the master bedroom with a smaller single bed , maintaining a comparable overall bedroom layout.”
+
+Figure 2: Qualitative comparison on 3D-CER hard subsets. Source room (column 1) and top-1
+
+retrievals from CR-Refiner (column 2, green border), Caption-MPNet (column 3, red border), and Pic2Word (column 4, red border). The edit axis is labelled at the left of each row; the edit instruction appears in italics below. Refiner a top-K from this corpus produces a modest lift at small K that disappears at large K as the structural prior dilutes against an increasingly noisy pool. CR-Refiner is therefore effective for candidate disambiguation but not sufficient on broad pools, and closing the full-corpus gap is a candidate-generation problem we leave to future work. 
+
+5.7 Qualitative Analysis 
+
+Figure 2 shows top-1 retrievals on three hard-subset queries, two STY edits and one GEO edit. In every row, only CR-Refiner returns a room where the slot named in the edit text changes as instructed (bed style in Row 1, wardrobe style in Row 2, and bed size class in Row 3), while the remaining furniture stays close to the source. Caption-MPNet matches surface keywords but selects rooms with visibly different layouts, and Pic2Word retrieves rooms where the edited slot is occluded or missing from view, consistent with additive composition failing to localise the edit on a named object. 
+
+## 6 Limitations 
+
+All headline numbers are reranking over a 20 -distractor hard subset rather than full-corpus retrieval, and the recall ceiling in Section 5.6 bounds any downstream reranker by the candidate-generation stage. Both paraphrases and the multi-positive predicate operate at the operator level following the CIRR/CIRCO convention, which we mitigate by adopting mAP@ 10 as the primary metric. The LLM verifier adds roughly two seconds per query, which is acceptable offline but limits real-time deployment; the OT backbone and structural prior alone run on CPU at over 500 queries per second. Each of these scopes points to a complementary research direction left for future work. 
+
+## 7 Conclusion 
+
+We presented CR-Refiner, a training-free reranker for edit-conditioned 3D scene retrieval that frames the problem as an unbalanced optimal-transport problem over an asymmetric cost matrix, complemented by an axis-conditional structural prior and a continuous-confidence LLM verifier. We additionally release 3D-CER, a benchmark of edit-conditioned queries over a 23 K-room indoor corpus with multi-positive ground truth, hard subsets, and zero-target adversarials. CR-Refiner consistently improves hard-subset retrieval over training-free baselines on every edit axis, and the released benchmark and code support reproducible follow-up work on 3D-aware retrieval. 9References 
+
+[1] Dave Zhenyu Chen, Angel X Chang, and Matthias Nießner. Scanrefer: 3d object localization in rgb-d scans using natural language. In European conference on computer vision , pages 202–221. Springer, 2020. [2] Yiming Zhang, ZeMing Gong, and Angel X Chang. Multi3drefer: Grounding text description to multiple 3d objects. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15225–15236, 2023. [3] Zheyuan Liu, Cristian Rodriguez-Opazo, Damien Teney, and Stephen Gould. Image retrieval on real-life images with pre-trained vision-and-language models. In Proceedings of the IEEE/CVF international conference on computer vision , pages 2125–2134, 2021. [4] Alberto Baldrati, Lorenzo Agnolucci, Marco Bertini, and Alberto Del Bimbo. Zero-shot composed image retrieval with textual inversion. In Proceedings of the IEEE/CVF international conference on computer vision , pages 15338–15347, 2023. [5] Nam Vo, Lu Jiang, Chen Sun, Kevin Murphy, Li-Jia Li, Li Fei-Fei, and James Hays. Composing text and image for image retrieval - an empirical odyssey, 2018. URL https://arxiv.org/ abs/1812.07119 .[6] Alberto Baldrati, Marco Bertini, Tiberio Uricchio, and Alberto Del Bimbo. Effective conditioned and composed image retrieval combining clip-based features. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 21466–21474, 2022. [7] Shyamgopal Karthik, Karsten Roth, Massimiliano Mancini, and Zeynep Akata. Vision-by-language for training-free compositional image retrieval. arXiv preprint arXiv:2310.09291 ,2023. [8] Kuniaki Saito, Kihyuk Sohn, Xiang Zhang, Chun-Liang Li, Chen-Yu Lee, Kate Saenko, and Tomas Pfister. Pic2word: Mapping pictures to words for zero-shot composed image retrieval. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 19305–19314, 2023. [9] Geonmo Gu, Sanghyuk Chun, Wonjae Kim, HeeJae Jun, Yoohoon Kang, and Sangdoo Yun. Compodiff: Versatile composed image retrieval with latent diffusion, 2024. URL https: //openreview.net/forum?id=0NruoU6s5Z .[10] Geonmo Gu, Sanghyuk Chun, Wonjae Kim, Yoohoon Kang, and Sangdoo Yun. Language-only efficient training of zero-shot composed image retrieval, 2024. URL https://arxiv.org/ abs/2312.01998 .[11] Renrui Zhang, Ziyu Guo, Wei Zhang, Kunchang Li, Xupeng Miao, Bin Cui, Yu Qiao, Peng Gao, and Hongsheng Li. Pointclip: Point cloud understanding by clip, 2021. URL https: //arxiv.org/abs/2112.02413 .[12] Minghua Liu, Ruoxi Shi, Kaiming Kuang, Yinhao Zhu, Xuanlin Li, Shizhong Han, Hong Cai, Fatih Porikli, and Hao Su. Openshape: Scaling up 3d shape representation towards open-world understanding. Advances in neural information processing systems , 36:44860–44879, 2023. [13] Junsheng Zhou, Jinsheng Wang, Baorui Ma, Yu-Shen Liu, Tiejun Huang, and Xinlong Wang. Uni3d: Exploring unified 3d representation at scale. arXiv preprint arXiv:2310.06773 , 2023. [14] Le Xue, Ning Yu, Shu Zhang, Artemis Panagopoulou, Junnan Li, Roberto Martín-Martín, Jiajun Wu, Caiming Xiong, Ran Xu, Juan Carlos Niebles, et al. Ulip-2: Towards scalable multimodal pre-training for 3d understanding. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 27091–27101, 2024. [15] Ziyu Zhu, Xiaojian Ma, Yixin Chen, Zhidong Deng, Siyuan Huang, and Qing Li. 3d-vista: Pre-trained transformer for 3d vision and text alignment, 2023. URL https://arxiv.org/ abs/2308.04352 .10 [16] Yining Hong, Haoyu Zhen, Peihao Chen, Shuhong Zheng, Yilun Du, Zhenfang Chen, and Chuang Gan. 3d-llm: Injecting the 3d world into large language models, 2023. URL https: //arxiv.org/abs/2307.12981 .[17] Runsen Xu, Xiaolong Wang, Tai Wang, Yilun Chen, Jiangmiao Pang, and Dahua Lin. Pointllm: Empowering large language models to understand point clouds, 2024. URL https://arxiv. org/abs/2308.16911 .[18] Yang Miao, Francis Engelmann, Olga Vysotska, Federico Tombari, Marc Pollefeys, and Dániel Béla Baráth. Scenegraphloc: Cross-modal coarse visual localization on 3d scene graphs, 2024. URL https://arxiv.org/abs/2404.00469 .[19] Panos Achlioptas, Ahmed Abdelreheem, Fei Xia, Mohamed Elhoseiny, and Leonidas Guibas. Referit3d: Neural listeners for fine-grained 3d object identification in real-world scenes. In Andrea Vedaldi, Horst Bischof, Thomas Brox, and Jan-Michael Frahm, editors, Computer Vision – ECCV 2020 , pages 422–440, Cham, 2020. Springer International Publishing. ISBN 978-3-030-58452-8. [20] Daichi Azuma, Taiki Miyanishi, Shuhei Kurita, and Motoaki Kawanabe. Scanqa: 3d question answering for spatial scene understanding, 2022. URL https://arxiv.org/abs/2112. 10482 .[21] Baoxiong Jia, Yixin Chen, Huangyue Yu, Yan Wang, Xuesong Niu, Tengyu Liu, Qing Li, and Siyuan Huang. Sceneverse: Scaling 3d vision-language learning for grounded scene understanding. In European Conference on Computer Vision , pages 289–310. Springer, 2024. [22] Panos Achlioptas, Ian Huang, Minhyuk Sung, Sergey Tulyakov, and Leonidas Guibas. Shapetalk: A language dataset and framework for 3d shape edits and deformations. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12685–12694, 2023. [23] Jiapeng Tang, Yinyu Nie, Lev Markhasin, Angela Dai, Justus Thies, and Matthias Nießner. Diffuscene: Denoising diffusion models for generative indoor scene synthesis, 2024. URL 
+
+https://arxiv.org/abs/2303.14207 .[24] Chenguo Lin and Yadong Mu. Instructscene: Instruction-driven 3d indoor scene synthesis with semantic graph prior, 2024. URL https://arxiv.org/abs/2402.04717 .[25] Kaizhi Zheng, Xiaotong Chen, Xuehai He, Jing Gu, Linjie Li, Zhengyuan Yang, Kevin Lin, Jianfeng Wang, Lijuan Wang, and Xin Eric Wang. Editroom: Llm-parameterized graph diffusion for composable 3d room layout editing, 2025. URL https://arxiv.org/abs/2410.12836 .[26] Lenaic Chizat, Gabriel Peyré, Bernhard Schmitzer, and François-Xavier Vialard. Scaling algorithms for unbalanced optimal transport problems. Mathematics of computation , 87(314): 2563–2609, 2018. 
+
+## A Pseudocode of CR-Refiner 
+
+Algorithm 1 summarises the full inference procedure of CR-Refiner. Each step references the corresponding component of the main text. Line 1 invokes the LLM parser (Section 3.1). Line 4 builds the cost matrix and solves the unbalanced Sinkhorn (Section 3.2). Line 5 computes the axis-conditional structural bonus (Section 3.3). Line 7 runs the LLM verifier on the top three candidates only (Section 3.4). 
+
+Hyperparameters. The full pipeline contains five scalar hyperparameters. The entropic regu-larisation weight ε=0 .01 and the KL slack τ =1 .0 control the unbalanced Sinkhorn (Eq. 2). The structural-bonus weight βB =0 .3 scales the structural prior in the final score (Eq. 3). The verifier weight βV =0 .5 scales the LLM-verifier confidence (Eq. 3). The candidate pool size is K = |H ∪ T | ,where |H| = 20 caption-NN distractors are fixed per query (§4) and |T | is the per-query multi-positive count (median 5, mean 14 .7). All five hyperparameters are selected on the validation split before any test-set use. 11 Algorithm 1 CR-Refiner reranking 
+
+Require: reference room R, edit text t, base retriever R, frozen LLM Φ, corpus C, top-K size K 
+
+> 1:
+
+q ← Φ( R, t ) ▷ parse to query entity  
+
+> 2:
+
+P ← R (R, t, C, K ) ▷ base retriever’s top-K 
+
+> 3:
+
+for C ∈ P do  
+
+> 4:
+
+Build cost matrix M (Eq. 1); solve Eq. 2 → OT( q, C ) 
+
+> 5:
+
+Route by q. axis ; compute structural bonus B(q, C ) 
+
+> 6:
+
+end for  
+
+> 7:
+
+Compute partial scores OT( q, C ) − βB B(q, C ) for all C ∈ P  
+
+> 8:
+
+σ(q, C ) ← Φ( q, C ) for the top three candidates by partial score  
+
+> 9:
+
+Compute final ˆs(C) via Eq. 3 for all C ∈ P  
+
+> 10:
+
+return P sorted by ˆs in ascending order 
+
+## B 3D-CER Construction Pipeline 
+
+3D-CER is built end-to-end with no human annotation. Correctness is enforced by programmatic predicates and an independent cross-model audit. The pipeline consists of seven phases, summarised below. 
+
+Phase 1: Edit-operator mining. For each of the 16 ,131 valid source rooms (those containing three to twelve furniture objects, after filtering empty and over-cluttered scenes from the 23 ,381 -room corpus), we programmatically generate up to 30 candidate edit operators across the five axes (style, material, spatial, geometric, compound). Each operator is a structured object specifying axis, target slot, source attribute, target attribute, and predicate. The mining yields over 460 ,000 (room, operator) pairs. 
+
+Phase 2: Synthetic target rendering for LLM grounding. We balance-sample 2,000 candidates per axis ( 10 ,000 total) and synthesise a target room via mesh swap for style and material edits, spatial shift for spatial edits, or category replacement for geometric edits. The synthetic target is used only as visual grounding for the GPT-5.1 paraphrase generator in Phase 3 and is not part of the released corpus or ground truth. After compatibility filtering, 8,966 candidates are retained. 
+
+Phase 3: Paraphrase generation. Given each (source, operator) pair, we prompt GPT-5.1 to produce three short paraphrases per query in three registers (formal, colloquial, affective), following the CIRR/CIRCO convention for composed-retrieval text. Each paraphrase is one or two sentences, names the key edited object, and describes the axis-specific change with at most a soft preservation hint such as “in roughly the same layout” or “broadly similar”. Hard constraints in the prompt forbid object-ID leakage and coordinate disclosure. All 8,966 candidates produce valid paraphrases. The exact prompt template is reproduced in Appendix E. 
+
+Phase 4: Five-layer programmatic validation. Each query passes five binary checks before becoming a release candidate. (L1) Reverse-parse axis prediction. We parse the paraphrase back into a query entity and verify that the parsed axis matches the source operator axis. (L2) Three-paraphrase axis consistency. All three paraphrases of the same query must agree on the axis label. 
+
+(L3) Source-as-positive sanity. The original source room must satisfy the edit predicate when the operator’s source attribute is replaced by the target attribute. (L4) Target-as-positive sanity. The synthetic target room from Phase 2 must pass the predicate. (L5) JID/UUID leak detection. No paraphrase contains 3D-FUTURE asset IDs that could be used as shortcuts. The end-to-end pass rate is 8,834 /8,966 = 98 .5% .
+
+Phase 5: Multi-positive ground-truth mining. For each surviving query, we run the operator predicate over the same-room-type slice of the 23 ,381 -room corpus to mine multi-positive ground truth. Of the 8,834 validated queries, 3,923 (44 .4% ) yield ≥ 1 real positive in the corpus and form the with-GT pool. The remaining 4,911 queries yield zero positives and become zero-target adversarials ,a free byproduct of strict predicate matching. The average multi-positive count is 14 .7 per query (median 5). Concretely, a zero-target adversarial such as “Switch the bathtub to Scandinavian-style marble” produces no positive when the corpus contains no bathtub object, regardless of the requested 12 style or material; methods must learn to recognise this gap and abstain rather than return a falsely confident match. 
+
+Phase 6: AI-judge quality control. A randomly sampled set of 500 queries with 6 probes each (3 positive candidates and 3 distractor candidates per query) is judged by GPT-5.1 in a held-out evaluator role. The distractor NO-rate is 92 .7% , indicating that hard-subset distractors are reliably distinguishable from positives. We additionally run a cross-family independence check using Gemini-3-flash-preview-nothinking on 1,478 (query, candidate) pairs. The two model families agree on 88 .0% 
+
+of verdicts, with the confusion matrix dominated by easy distractor rejections (NO/NO: 1,203 pairs). Cross-family agreement on positives is correspondingly modest, consistent with the operator-level multi-positive predicate (one axis-specific edit, applied to the named slot, in a 3D scene broadly comparable to the source). 
+
+Phase 7: Stratified split. We split queries into train ( 2,868 ), validation ( 473 ), and test ( 1,622 ) sets, stratified jointly by edit axis and source room type. Roughly 21% of test queries are zero-target. The test split breaks down as 207 STY, 152 MAT, 388 SPA, 475 GEO, and 52 CMP queries with ground truth, plus 348 zero-target queries. 
+
+Hard subset construction. For each release-candidate query, we mine |H| = 20 caption-nearest-neighbour distractors from the same-room-type slice of the corpus. Distractors are ranked by cosine similarity between the source room’s caption embedding (MPNet all-mpnet-base-v2 ) and each candidate room’s caption embedding, with all multi-positive ground-truth rooms T excluded so that 
+
+H ∩ T = ∅. The hard subset is fixed per query and released as part of the static benchmark. 
+
+Example paraphrases. We give one paraphrase per axis to illustrate the dataset’s textual style. • STY: “Change the king-size bed in this second bedroom from a light-luxury style to a vintage/retro style, with the room’s overall composition broadly comparable.” 
+
+• MAT: “Change the single bed’s material from cloth to plywood in a comparable second bedroom configuration.” 
+
+• SPA: “Place the nightstand on the right of the bed instead of the left, keeping the rest of the room broadly similar.” 
+
+• GEO: “Replace the large king-size bed with a smaller single bed in a comparable second bedroom layout.” 
+
+• CMP: “Switch the wardrobe to a Japanese style and move it next to the window, otherwise keep the bedroom broadly similar.” 
+
+## C Bootstrap Confidence Intervals 
+
+We compute 95% bootstrap confidence intervals for the three headline metrics in Table 2 and the plug-in deltas in Table 4. Bootstraps are computed over 1,000 resamples of the 1,274 -query test split, with the same evaluation pool per query as in the main text. Table 6 reports CIs for the full method against the strongest baseline, and Table 7 reports CIs for the plug-in deltas across base retrievers. The CIs do not overlap between the full method and any text-conditioned baseline on R@ 1
+
+or mAP@ 10 , confirming that the gap is not within bootstrap noise. Table 6: 95% bootstrap CIs for headline metrics ( n=1 ,274 , 1,000 resamples).                               
+
+> Method R@ 1R@ 10 mAP@ 10
+> Caption (MPNet) 0.192 [0.171 ,0.213 ]0.851 [0.832 ,0.870 ]0.250 [0.231 ,0.270 ]Pic2Word [8] 0.272 [0.250 ,0.297 ]0.863 [0.844 ,0.882 ]0.316 [0.292 ,0.339 ]
+> Full CR-Refiner 0.639 [0.612 ,0.665 ]0.951 [0.939 ,0.962 ]0.663 [0.638 ,0.687 ]
+
+13 Table 7: 95% bootstrap CIs for plug-in ∆ in Table 4. 
+
+Base retriever ∆ R@ 1 ∆ mAP@ 10 
+
+Caption (MPNet) +39 .3 [+35 .7, +42 .9] +36 .1 [+32 .4, +39 .8]CIReVL [7] +33 .2 [+29 .8, +36 .6] +32 .2 [+28 .7, +35 .7]Pic2Word [8] +31 .4 [+28 .0, +34 .8] +30 .3 [+26 .9, +33 .7]
+
+Average +34 .6 ± 4.0 +32 .9 ± 2.91 5 10 50 100 500 1000   
+
+> K(top-K retrieved from full 23,381-room corpus)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Recall@K  (with 95% bootstrap CI)
+> hard-subset R@1 0.27
+> (CIRR/CIRCO protocol)
+
+Full-corpus recall ceiling: candidate-generation bottleneck 
+
+> Caption (MPNet)
+> Pic2Word
+> CIReVL
+
+Figure 3: Full-corpus recall ceiling on the 23 ,381 -room corpus (n=200 ). Recall@ K for the three base retrievers across K ∈ { 1, 5, 10 , 50 , 100 , 500 , 1000 }, with 95% bootstrap confidence intervals shaded. The dotted line marks the hard-subset R@ 1 regime ( ≈ 0.27 ) reported in Section 5.2, illustrating how far full-corpus recall lags the curated-pool numbers at small K. Visualisation of Table 8. 
+
+## D Full-Corpus Recall Ceiling and Pipeline Decomposition 
+
+We provide two diagnostic tables that complement the brief discussion in Section 5.6. Table 8 reports full-corpus Recall@ K for each base retriever, and Table 9 reports end-to-end pipeline R@ 1 when CR-Refiner reranks the base retriever’s top-K from the full corpus. Table 8: Full-corpus Recall@ K on the 23 ,381 -room corpus ( n=200 ). 
+
+Method R@1 R@10 R@100 R@500 R@1000 Caption (MPNet) 0.000 0.055 0.200 0.520 0.665 Pic2Word (additive) 0.045 0.190 0.465 0.740 0.835 CIReVL (LLM rewrite) 0.075 0.275 0.560 0.805 0.880 
+
+The recall ceiling rises slowly with K (Figure 3). Even the strongest base retriever recalls only 88 .0% 
+
+of positives at K=1000 (the top 4.3% of the corpus), and the dense caption retriever recalls 66 .5% .The base-retriever R@ 1 on the full corpus is essentially zero for caption-MPNet and only 0.045 to 
+
+0.075 for the strongest text-conditioned retrievers, even though the same retrievers reach hard-subset R@ 1 of 0.19 to 0.27 in Section 5.2. The two-orders-of-magnitude gap shows that hard-subset reranking and full-corpus retrieval are different regimes rather than two points on the same curve. 14 Table 9: End-to-end full-corpus pipeline R@ 1 by base-retriever pool size K (n=200 ). The verifier is disabled here to avoid conflating the diagnostic with per-query inference cost at scale. 
+
+Base retriever Base R@1 K=10 K=50 K=100 K=500 K=1000 
+
+Caption (MPNet) + CR-Refiner 0.000 0.010 0.010 0.010 0.005 0.005 Pic2Word + CR-Refiner 0.045 0.055 0.025 0.040 0.015 0.015 10 50 100 500 1000   
+
+> Reranking pool size K (top-K from full 23K corpus)
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> Final pipeline R@1
+> lift dies
+> beyond K 100
+
+Full-corpus K-decomposition: reranker effective only on curated pools (K 100) 
+
+> Caption base R@1 (full corpus top-1)
+> Caption + CR-Refiner reranks top-K
+> Pic2Word base R@1
+> Pic2Word + CR-Refiner reranks top-K
+
+Figure 4: Pipeline R@ 1 as a function of reranking pool size K (n=200 ). Solid lines are the end-to-end pipeline R@ 1 when CR-Refiner reranks the base retriever’s top-K from the full 23 K-room corpus; dashed lines are the corresponding base retriever’s full-corpus top-1 for reference. The lift over the base retriever survives at K≤100 and dies beyond K≈100 as the structural prior dilutes against an increasingly noisy pool. Visualisation of Table 9. The shape of the curve is the substantive finding (Figure 4). At small K from 10 to 100 , reranking provides a modest lift over the base retriever’s top-1, with overlapping bootstrap intervals that we read as suggestive rather than conclusive. At large K such as 500 or 1000 , the structural prior dilutes against an increasingly noisy pool and the lift disappears. We treat this as a scope diagnostic that makes the reranker’s operating regime explicit. Closing the full-corpus recall gap is a candidate-generation problem requiring a stronger 3D-aware retriever, for example a frozen 3D foundation encoder such as Uni3D [13] or OpenShape [12] adapted to scene-level composition, which is complementary future work. 
+
+## E LLM Prompts 
+
+We reproduce the prompts used for entity parsing, paraphrase generation, and verification. All prompts are sent to GPT-5.1-2025-11-13 with temperature 0 and a fixed system message asking for JSON-only output. 
+
+Entity parser (Section 3.1). 
+
+You are a structured-edit parser for indoor 3D scenes. Given a reference room de-scription and an edit instruction, output a JSON object with fields: category (tar-get object), style (target style or null), material (target material or null), spatial 
+
+(left/right/front/behind/near/far or null), and axis (one of STY, MAT, SPA, GEO, CMP). Do not output any extra text. 
+
+15 Reference room: {spec}  
+
+> Edit instruction: {paraphrase}
+> JSON:
+
+Paraphrase generator (Phase 3).       
+
+> You are writing natural-language editing instructions for an interior design retrieval task. Given a source room and a structured edit operator, generate three short paraphrases of the edit in three registers: formal, colloquial, and affective. Each paraphrase must be one or two sentences, name the key edited object, describe the axis-specific change, and use soft preservation language only such as “broadly similar” or “in roughly the same layout”. Do not mention any 3D-FUTURE asset ID, UUID, or coordinate value. Source room: {spec}
+> Operator: {op}
+> JSON output: {"formal": "...", "colloquial": "...", "affective": "..."}
+
+LLM Verifier (Section 3.4).             
+
+> You are evaluating whether a candidate 3D room satisfies a natural-language edit applied to a reference room. Output a JSON object with two fields: confidence , a continuous value in [0 ,1] where 1.0indicates that the candidate fully satisfies the edit and 0.0indicates a clear violation, with intermediate values reflecting mild attribute drift; and rationale , one short sentence. Output JSON only. Reference room: {spec_ref}
+> Edit instruction: {paraphrase}
+> Candidate room: {spec_cand}
+> JSON:
+
+## F Implementation Details 
+
+Mismatch indicator computation. The four indicators in Eq. 1 are computed by exact string equality on the 3D-FUTURE attribute vocabulary, with the following edge cases. For ℓsty , the room-level fallback compares sq against the multiset {sj′ }j′∈C of all object styles in the candidate room and returns 0 if any sj′ =sq . For ℓdir , the bounding-box centre coordinate is taken along the axis matching dq . We use the x axis for left and right, the z axis for front and behind, and Euclidean distance to the room centroid for near and far. The indicator is 0 when the sign of the coordinate matches dq (negative for “left”, positive for “right”, and so on). The non-null rule excludes any term whose corresponding query field is null, so a geometric query with no sq or mq is not penalised by missing style or material. 
+
+Subject and anchor selection in the structural prior. The structural prior identifies a subject and an anchor object inside each candidate. The subject is the first object whose category equals 
+
+cq . The anchor is the first non-subject object whose category keyword (its first word) appears in the parsed paraphrase. If no such anchor exists, we fall back to the first non-subject object in the candidate’s object list. The relative direction is computed as the sign of the bounding-box-centre difference between subject and anchor along the relevant axis, and the bonus rewards candidates whose relative direction agrees with dq . For near and far queries, the bonus thresholds the Euclidean distance between subject and anchor at 1.5 m and 3.0 m respectively. 
+
+Size-class detection. For the size-class bonus, we count occurrences of size-keyword tokens in the parsed paraphrase. The vocabulary maps small / smaller / single / compact / tiny / petite / twin to the small class, medium / double / queen to medium, and large / larger / king / spacious / big / bigger / huge to large. The bonus rewards candidates that contain at least one object in the queried category family at the chosen target size class, applies a small penalty when the family is present at the wrong size class, and contributes zero otherwise. 
+
+Software. We implement the OT backbone using the unbalanced Sinkhorn solver from POT (Python Optimal Transport, ≥ 0.9). The structural prior is implemented in pure NumPy. The base retrievers are reproduced from the authors’ released code where available, and CIReVL and Pic2Word use the 16 same GPT-5.1 model as our parser for fair comparison. All experiments use a single fixed random seed of 42 .
+
+## G Ablation Heatmap 
+
+Figure 5 visualises the drop-one ablation in Table 5 as a per-axis heatmap. The heatmap makes the design-axis correspondence between each component and its target edit type immediately visible. The unbalanced solver’s largest drop is on the material axis ( −10 .5 R@ 1), where one-to-many asymmetry is most extreme, since a query about a single object’s material has nothing to say about the rest of the room and a balanced solver dilutes the cost across all candidate objects. The structural prior’s largest drops are on the geometric ( −61 .2) and spatial ( −35 .8) axes, where bounding-box size cues and pairwise direction cues respectively carry the discriminative signal that the symbolic OT cost matrix cannot capture. The LLM verifier’s largest drops are on the style ( −20 .3) and compound ( −21 .2)axes, where holistic linguistic judgment correctly demotes candidates that match keyword-level attributes but fail when read in context. The off-diagonal pattern of the heatmap is also informative. Each component’s largest negative delta concentrates on a different set of axes, with limited overlap. This near-orthogonality of the three components on the per-axis decomposition supports the modular design choice in Section 3, where each component handles a structurally distinct signal channel rather than redundantly covering the same axes. STY MAT SPA GEO CMP Overall Full (A+B+B5) Full A                                             
+
+> Full B
+> Full B5
+> 0.725 0.513 0.546 0.724 0.577 0.639 0.729 0.408 0.552 0.691 0.500 0.613 0.729 0.513 0.188 0.112 0.442 0.297 0.522 0.507 0.564 0.678 0.365 0.585
+> R@1 (per axis)
+> STY MAT SPA GEO CMP Overall Full (A+B+B5) Full A
+> Full B
+> Full B5
+> +0.004 -0.105 +0.006 -0.033 -0.077 -0.026 +0.004 0.000 -0.358 -0.612 -0.135 -0.342 -0.203 -0.006 +0.018 -0.046 -0.212 -0.054
+> R@1 vs Full
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0 0.2 0.4 0.6
+
+Figure 5: Drop-one ablation on the 1,274 with-GT test queries , visualising Table 5. Each row removes one component from the full method ( A: unbalanced OT solver; B: structural prior; B5:LLM verifier). Left : absolute R@ 1 per edit axis. Right : ∆R@ 1 against the full method, where negative values mean the removed component was needed and deeper blue means a larger drop. Each module’s largest negative delta concentrates on its design axis ( A on MAT, B on SPA and GEO, B5
+
+on STY and CMP), with limited overlap across components. 17
