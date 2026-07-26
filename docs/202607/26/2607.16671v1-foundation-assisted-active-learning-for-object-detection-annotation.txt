@@ -1,0 +1,547 @@
+Title: Foundation-Assisted Active Learning for Object Detection Annotation
+
+URL Source: https://arxiv.org/pdf/2607.16671v1
+
+Published Time: Tue, 21 Jul 2026 00:28:01 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Foundation-Assisted Active Learning for Object Detection Annotation 
+
+Jinchang Zhang, Arnold Zumbrun, Jing Lin, and Guoyu Lu 
+
+Abstract — The annotation cost for remote sensing object detection is high, while existing active learning methods still face several challenges in object detection scenarios, includ-ing the coupling of localization and classification uncertainty, severe localization noise in the cold-start stage, and pseudo-diversity caused by high-recall candidate proposals. To address these issues, we propose a foundation-model-collaborative active learning and semi-automatic annotation framework for effi-cient construction of remote sensing object detection datasets. We build a dual-source mechanism consisting of a reference localization source (SA-source) based on UPN+SAM2 and a detector prediction source (OD-source), and further propose a Foundation-model-enhanced Dual-Source Uncertainty estima-tion to improve sample selection quality in the cold-start stage by jointly modeling localization consistency and classification confidence. Furthermore, we propose Object-Centric Diversity Sampling, which constructs object-level representations using DINOv2 features and SAM2 masks to improve sample cover-age while suppressing pseudo-diversity. To address geometric noise in the semi-automatic annotation stage, we design Dual-Source Box Switching, which replaces noisy detector boxes with matched refined boxes from the SA-source, thereby reducing the manual burden of box refinement. Experiments on DIOR, HRSC2016, DOTAv2, and FAIR1M show that our method achieves superior or comparable results under most annotation budgets, with notably stronger cold-start sample efficiency in the low-budget regime. 
+
+I. I NTRODUCTION 
+
+Object detection heavily depends on large-scale, high-quality annotated data [13], [28], [7]. In remote sensing, this process is often more time-consuming and costly due to factors such as dense small objects, large scale vari-ations, and and complex imaging conditions [17], [16]. Active learning is widely regarded as an effective way to alleviate this challenge, as its core idea is to prioritize more informative samples for annotation under a limited labeling budget, thereby achieving better detection performance with lower human annotation cost, analogous to adaptive resource allocation in model optimization [25]. Existing active learning methods mainly involve uncer-tainty estimation, diversity modeling, and data valuation [35], [1], [2], [29]. Although these methods have shown promis-ing results, they still exhibit clear limitations in remote sensing object detection. First, in active learning for ob-ject detection, the value of a sample depends on both localization quality and category discrimination. However, existing methods often rely primarily on the detector’s own prediction confidence for sample selection, making it difficult                  
+
+> Jinchang Zhang and Guoyu Lu are with the Intelligent Vi-sion and Sensing (IVS) Lab at Indiana University Bloomington.
+
+guoyulu62@gmail.com . Arnold Zumbrun, Jing Lin, and Guoyu Lu are also with the US Air Force Research Lab (AFRL) during this work. 
+
+to explicitly distinguish between classification uncertainty and localization uncertainty. This limitation is evident in the cold-start stage: benefiting from pretrained backbones, a detector’s classification capability may improve relatively quickly, while its localization remains noisy. As a result, sampling strategies based solely on detector confidence are easily affected by unstable bounding-box predictions and geometric bias [30], reducing selection quality in the early stage of active learning. To alleviate this issue, we need a reference source that is relatively independent of detector predictions and provides more stable localization. Second, active learning must not only identify “hard samples,” but also ensure sample coverage under a limited annotation budget. However, a single model is often unable to simul-taneously provide high-recall candidate generation, precise object localization, and robust semantic representations [38]. To address this, we introduce visual foundation models with complementary capabilities and build a collaborative pipeline spanning candidate generation, region refinement, and semantic representation, so that uncertainty estimation and diversity sampling in active learning can be grounded on higher-quality object representations rather than relying solely on the detector’s single prediction signal. Third, while the introduction of foundation models provides stronger can-didate perception and representation capabilities for active learning, it also brings new forms of noise and redundancy. For example, model-generated candidates may contain over-fragmented instances, which can create “pseudo-diversity” during diversity sampling and reduce the effective use of the annotation budget. This implies that foundation models cannot simply be stacked onto an active learning pipeline; instead, they must be co-designed with the sampling strategy to suppress candidate redundancy and fragmentation noise. Finally, in the cold-start stage, even if category predictions are somewhat reliable, annotators must frequently correct boxes with large localization errors, leading to high practical interaction costs. Therefore, how to leverage foundation models to provide stable geometric priors and reduce hu-man–computer interaction in semi-automatic annotation is key to deploying active learning in practice. To address these challenges, we propose a foundation-model-collaborative framework (Fig 1) for active learning and semi-automatic annotation to efficiently construct re-mote sensing datasets. We build a dual-source mechanism: we use UPN+SAM2 to precompute and cache category-agnostic, high-recall, and localization-stable reference boxes (SA-source), while using current-round detector outputs as a learnable prediction source (OD-source). On top of this, Foundation-Enhanced Dual-Source Uncertainty (FDSU) arXiv:2607.16671v1 [cs.CV] 18 Jul 2026 (b) Foundation -Enhanced Dual -Source Uncertainty     
+
+> (d) Object -Centric Diversity Sampling (OCDS)
+> (b) Foundation -Enhanced Dual -Source
+> Uncertainty (FDSU) Fig. 1. Foundation-model-collaborative active learning and semi-automatic annotation framework for remote sensing object detection. The left panel shows the unlabeled remote sensing image pool. The upper branch performs offline SA-source precomputation (executed once and cached): UPN generates category-agnostic proposal boxes, and SAM2 refines them with masks (producing BSA ,MSA ,SSA ). The lower branch is the online active learning loop: the detector runs inference on unlabeled images to produce the OD-source, followed by FDSU for uncertainty-based filtering; then, OCDS selects samples to annotate from the candidate set. During the semi-automatic annotation stage, DSBS replaces noisy OD-source boxes with matched refined boxes from the SA-source (geometry from the SA-source, category labels from the OD-source). Finally, the labeled set is updated and the detector is fine-tuned. This process repeats until the annotation budget is exhausted.
+
+matches bounding boxes from both sources and jointly models localization agreement and classification confidence to accurately assess sample informativeness. Furthermore, we perform mask-guided diversity sampling in the DINOv2 [19] feature space and introduce a candidate fragmentation sup-pression term to avoid pseudo-diversity from redundant proposals. Finally, a Dual-Source Box Switching (DBS) mechanism replaces noisy detector boxes with SA-source refined boxes during the cold-start stage, reducing manual interaction costs and accelerating the active learning loop. Overall, our contributions are summarized as follows: 1. We propose a foundation-model-collaborative active learning framework for remote sensing object detection, which inte-grates foundation-model capabilities into the active learning and semi-automatic annotation loop. 2. By matching bound-ing boxes between the two sources, we derive a sample uncertainty score that is better suited for active learning in object detection, improving sampling stability in the cold-start stage. 3. We design a redundancy penalty tailored to the introduction of visual foundation models, thereby improving annotation budget efficiency. 4. During the cold-start stage, we use SA-source refined boxes to replace detector-predicted boxes, which reduces annotation cost while improving detec-tion performance. II. RELATED WORK 
+
+A. Active Learning 
+
+Active learning for object detection mainly focuses on uncertainty and diversity modeling, but practical deployment must also address the cold-start stage, where scarce initial annotations cause unstable sample selection. Uncertainty-based methods select informative samples using predic-tion confidence—including loss prediction modules [35], instance-/image-level uncertainty [36], and classification-localization inconsistency measures [10]. However, classi-fication and localization errors are tightly coupled, mak-ing early-stage uncertainty estimation highly sensitive to localization noise. Diversity-based methods improve feature-space coverage via core-set selection [21], clustering con-straints [26], prototype-based representation alignment [31], relation-aware representation learning [15], or hybrid dual-objectives like PPAL [33], USDM [34], and DivProto [28]. Yet, they still suffer from redundant candidates and “pseudo-diversity” in high-recall proposal settings. In cold-start active learning, the detector lacks the labeled samples needed to form a stable data distribution representation, which biases uncertainty and distorts diversity estimation. To mitigate this, ALWOD [27] uses a generative warm-start with student-teacher disagreement, while Chen et al. [6] improve early-stage representativeness via self-supervised contrastive learn-ing and K-means clustering. Overall, relying solely on de-tector predictions is insufficiently robust during cold-start, motivating the introduction of stronger priors or auxiliary mechanisms to improve sample selection. 
+
+B. Vision foundation models 
+
+Vision foundation models have reshaped downstream vi-sual tasks. Large-scale pretraining and adaptation meth-ods [5], [19], [22], [32] endow vision transformers and vision-language models with powerful representation capa-bilities. Concurrently, task-oriented foundation models have emerged: SAM [11], [20] introduce a universal, prompt-based segmentation paradigm to produce class-agnostic masks, while the Universal Proposal Network (UPN) [9], built on detection transformers [4], [8], generates class-agnostic bounding boxes under varied objectness settings. Despite these individual advancements, active learning and vision foundation models [37] lack deep collaborative design for remote sensing object detection. Existing methods like AL4FM [3] integrate segmentation models into active learn-ing, but their foundation model utility remains limited. To address this, we integrate vision foundation model capabili-ties at three levels—candidate construction, sample selection, and semi-automatic annotation—to improve both cold-start sample efficiency and overall annotation efficiency in remote sensing object detection data construction. III. M ETHOD 
+
+In this chapter, we introduce our foundation-model-driven active learning and semi-automatic annotation framework for accelerating remote sensing object detection dataset con-struction under a limited annotation budget. The core idea of the framework is to build a dual-source collaborative mechanism. On the one hand, we use UPN →SAM2 to form a reusable, high-recall reference localization source (SA-source), which provides stable geometric priors during the cold-start stage. On the other hand, we use the current-round detector outputs as a learnable prediction source (OD-source), which provides category predictions and confidence information. Based on these two sources, we adopt a two-stage sample selection strategy, namely uncertainty filtering + diversity sampling, to select the most valuable samples for annotation. Moreover, we introduce a dynamic box-switching mechanism to reduce manual box-correction cost in early-stage annotation, thereby improving the efficiency and stability of the active learning loop. 
+
+A. SA-Source Precomputation 
+
+This section introduces the SA-source in our framework: a reusable, category-agnostic, high-recall localization candi-date pool that provides stable spatial priors for subsequent Foundation-Enhanced Dual-Source Uncertainty and semi-automatic annotation. Unlike approaches that rely on early detector predictions, the SA-source is constructed by a two-stage foundation-model pipeline. We first use the Universal Proposal Network (UPN) to generate category-agnostic pro-posal boxes, and then use SAM2 to refine these proposals into masks, from which tight bounding boxes are derived. This process is executed offline only once per image, and the cached results are reused across all active learning rounds. 
+
+1) Category-Agnostic Proposal Generation (UPN Pro-posals): Given an unlabeled image I, UPN outputs aset of category-agnostic proposal boxes with objectness scores: UPN( I) →P (I) =   buj , s upn 
+
+> j
+
+ Nu(I) 
+
+> j=1
+
+, where buj =(xj
+
+> 1
+
+, y j
+
+> 1
+
+, x j
+
+> 2
+
+, y j
+
+> 2
+
+) denotes the coordinates of the j-th proposal box, supn  
+
+> j
+
+∈ (0 , 1) is the category-agnostic objectness con-fidence, and Nu(I) is the number of proposals generated by UPN. The role of UPN is to achieve high recall over potential objects, thereby avoiding sole reliance on unsta-ble localization predictions during the detector cold-start stage. To control computational cost and reduce obviously noisy candidates, we apply a lightweight pre-filtering step to P (I) and retain the Top-Ku proposals: PKu (I) =Top -Ku
+
+  supn 
+
+> j
+
+ . Optional geometric constraints can also be applied, such as an area threshold and an aspect-ratio range: area( buj )/HW ≥ τb, ρ min ≤ w(buj )/h (buj ) ≤ ρmax .
+
+These filters are only used to remove extreme outliers. The core fragmentation suppression is explicitly modeled later in the diversity stage (Sec. III-C). 
+
+2) Mask Refinement and Tight Box Extraction (SAM2 Refinement): For each retained proposal box buj ∈ PKu (I),we use it as a prompt to SAM2 and generate an object mask: SAM2( I, b uj ) → mj , where mj ∈ { 0, 1}H×W is a binary mask. We then derive a tight bounding box from the mask: bsa j = bbox( mj ), where bbox( ·) denotes the minimum enclosing rectangle of the foreground pixel set in the mask. This “box → mask → tight box” procedure signif-icantly improves the alignment between proposals and true object boundaries, providing a more reliable reference for localization-consistency measurement in subsequent FDSU. 
+
+3) SA-Source Caching and Reuse: In summary, for image I, we obtain and cache the following SA-source triplets: BSA (I)=bsa j 
+
+> NSA (I)
+> j=1
+
+, MSA (I)={mj }NSA (I) 
+
+> j=1
+
+,
+
+SSA (I)=supn  
+
+> j
+> NSA (I)
+> j=1
+
+, where NSA (I) ≤ Ku. The cache is generated only once per image and is directly loaded in each active learning round. As a result, the foundation-model inference cost is reduced from “repeated computation every round” to a “one-time offline preprocessing” cost, improving the scalability of the overall framework for large-scale remote-sensing data annotation scenarios. 
+
+B. Foundation-Enhanced Dual-Source Uncertainty 
+
+In active learning for object detection, the “informative-ness” of a sample comes not only from uncertainty in category discrimination, but also from uncertainty in local-ization quality. This is especially important in the cold-start stage: the detector’s classification capability may improve quickly due to pretraining, while localization remains rela-tively unstable. Therefore, using detector confidence alone as the sampling criterion often overlooks localization noise, which is a key factor in this stage. To address this issue, we propose Foundation-Enhanced Dual-Source Uncertainty (FDSU). FDSU uses the SA-source (reference boxes pre-computed by UPN →SAM2) to provide a stable localization reference, and uses the OD-source (current-round detec-tor predictions and classification confidence) to reflect the model’s current belief. We then fuse localization agreement and classification confidence into a unified uncertainty mea-sure, which is used to filter a candidate set I(s)cond .
+
+1) Definition of the SA/OD Dual Sources: For any unla-beled image I ∈ I (s) 
+
+> u
+
+, the cached SA-source is BSA (I) = 
+
+{bsa j }NSA (I) 
+
+> j=1
+
+, where bsa j is the tight box derived from the SAM2 mask (Sec. III-A). The OD-source predictions from the current-round detector OD (s−1) are OD (s−1) (I) →BOD (I) = {bod k }NOD (I) 
+
+> k=1
+
+, ΣOD (I) = {σod k }, where σod k ∈
+
+(0 , 1) is the classification confidence for box bod k (e.g., max-imum class probability or objectness × class probability). 
+
+2) Hungarian Matching and Localization Agreement: 
+
+Since BSA (I) and BOD (I) generally differ in both cardi-nality and ordering, we align the two sets using one-to-one Hungarian matching while ignoring category labels, so as to focus solely on localization agreement. We first construct a cost matrix C ∈ RNSA ×NOD using an IoU-induced cost: 
+
+Cjk = 1 − IoU( bsa j , b od k ), IoU( a, b ) = |a ∩ b||a ∪ b| . (1) The Hungarian algorithm then produces a matching set with minimum total cost, P(I) = {(j, k )}. For unmatched boxes (e.g., extra candidates on one side), we do not include them in FDSU fusion; however, they can still be used in the diversity stage (see Sec. III-C). Given a matched pair (j, k ) ∈ P (I), we convert the matching cost into a localization agreement quality score σmatch  
+
+> jk
+
+∈ (0 , 1] .
+
+3) Fusing Classification Confidence and Localization Agreement (Object-level Uncertainty): Localization agree-ment alone is still insufficient to characterize learnable informativeness: some objects may have stable localization but remain difficult to classify, and are thus still valuable for annotation. We therefore fuse the localization agreement 
+
+σmatch  
+
+> jk
+
+and the OD-source classification confidence σod k to obtain an object-level uncertainty μjk . We use the harmonic mean to emphasize the “short-board effect” (i.e., a low value in either term leads to higher uncertainty): 
+
+μjk = 1 − 2 σod k σmatch 
+
+> jk
+
+σod k + σmatch  
+
+> jk
+
++ ϵ , ϵ = 10 −6. (2) 
+
+4) Image-level Uncertainty and Candidate Set Filtering: 
+
+To select a candidate set for subsequent diversity sampling from the unlabeled pool, we aggregate object-level uncer-tainty into an image-level uncertainty score U (I). Since remote sensing images often contain multiple instances with large scale variations, simple averaging may be diluted by many easy objects. To improve robustness, we adopt Top-K aggregation (where K can be a constant, e.g., 10, or adaptively chosen based on the number of instances): 
+
+U (I) = 1
+
+> K
+
+P 
+
+> (j,k )∈TopK( P(I))
+
+μjk , where TopK( P(I)) de-notes the top K matched pairs in P(I) ranked by μjk 
+
+in descending order. If the number of matched pairs is smaller than K, we average over all matched pairs. Given the per-round annotation budget n and a candidate expansion factor θ > 1, we select the top nθ most uncertain images from the unlabeled set to form the candidate set: I(s)cond =Top nθ 
+
+
+
+{U (I)}I∈I (s)
+
+> u
+
+
+
+. We then perform diversity sampling on I(s)cond (Sec. III-C) to obtain the final set for annotation, 
+
+I(s)sel . For each image, the Hungarian matching complexity is O  min( NSA , N OD )3. In practice, the number of SA-source candidates can be controlled by Top-Ku (Sec. 3.1), and the number of OD-source prediction boxes can also be limited by keeping Top-Kod after NMS. Therefore, FDSU can be implemented efficiently in practice. More importantly, the SA-source is obtained from offline caches and does not require rerunning UPN and SAM2 in each AL round. As a result, the computational cost is concentrated on detector inference and matching-based fusion, making the framework practical for large-scale remote sensing annotation. 
+
+C. Object-Centric Diversity Sampling (OCDS) 
+
+In Sec. III-B, we use FDSU to filter a high-uncertainty candidate set I(s)cond from the unlabeled pool. However, uncertainty-prioritized sampling tends to produce “near-duplicate” samples (images from the same geographic region, under the same sensor condition, or with highly similar target appearance), which reduces the coverage efficiency of the annotation budget. Therefore, in this section, we further perform diversity sampling on I(s)cond to maximize coverage over object appearance and scene conditions. Unlike meth-ods that rely only on SAM masks, we use SAM2 masks to suppress background interference, and build object-level representations and class prototypes in the DINOv2 semantic space for more stable coverage estimation. Furthermore, con-sidering that UPN proposals may exhibit over-fragmentation (many local small boxes or duplicate boxes), we introduce an explicit fragmentation suppression term to prevent diversity scores from being dominated by noisy candidates. 
+
+1) Candidate Objects and Object Embeddings: For any candidate image I ∈ I (s)cond , we obtain candidate masks and bounding boxes from the cached SA-source: MSA (I) = 
+
+{mj }NSA (I) 
+
+> j=1
+
+, BSA (I) = {bsa j }NSA (I) 
+
+> j=1
+
+. To reduce computa-tional cost and avoid extreme noisy candidates, we retain only the Top-K candidate objects (ranked by supn , mask area, or simple geometric filtering), denoted by O(I). That is, O(I) = {(bj , m j )}NI
+
+> j=1
+
+, N I ≤ K. We then extract object-level embeddings. Let the DINOv2 feature map for the full image be F (I) ∈ RC×H′×W ′
+
+. We downsample the mask mj
+
+to the feature-map resolution, denoted by mdown  
+
+> j
+
+, and apply mask-guided pooling to obtain the object feature:                 
+
+> fj(I) =
+> P
+> u,v F(I)[: , u, v ]·mdown
+> j[u, v ]
+> P
+> u,v mdown
+> j[u, v ] + ε,¯fj(I) = fj(I)
+> ∥fj(I)∥2
+> .(3)
+
+2) Class Prototype Construction: To measure how well candidate objects are covered by the labeled distribution, we construct class prototypes on the labeled set I(s) 
+
+> l
+
+. Specif-ically, for each ground-truth box in each labeled image, we also use SAM2 to obtain a precise mask and compute an object embedding according to Eq. (3). For each class 
+
+c ∈ { 1, . . . , C }, we collect the embedding set: F(s) 
+
+> c
+
+= { ¯f |
+
+¯f comes from I(s) 
+
+> l
+
+and has class c}. To capture intra-class diversity, we use k-means++ (with cosine distance) to cluster 
+
+F(s) 
+
+> c
+
+into p prototypes: P(s) 
+
+> c
+
+= {pc,t }pt=1 , ∥pc,t ∥2 = 1 . Here, 
+
+p is the number of prototypes per class (e.g., p = 5 ). These prototypes represent “already covered appearances” and are used to quantify the coverage gain of new candidate objects. The class label of each candidate object is obtained from the OD-source prediction. For candidate object j, we denote its predicted class by ˆcj (e.g., assigned by the detector box with maximum IoU with bsa j , or directly by detector predictions on the corresponding region). 
+
+3) Coverage / Novelty Scoring: We define the degree to which a candidate object is not yet covered by prototypes of its predicted class as novelty: novel( j) = min t∈{ 1,...,p }
+
+
+
+1 −
+
+cos( ¯fj (I), p ˆcj ,t )
+
+
+
+, where cos( ·, ·) denotes cosine similarity. If ¯fj is close to some prototype, then that appearance has already been covered in the labeled set and novel( j) is small; otherwise, it is large, indicating a potentially new appear-ance or scene with higher annotation value. We aggregate object-level novelty into an image-level coverage score. To avoid mean dilution in dense-object images, we adopt Top-
+
+Kd aggregation: Cov( I) = 1
+
+> Kd
+
+P 
+
+> j∈Top Kd(O(I))
+
+novel( j),
+
+where Top Kd(O(I)) denotes the top Kd objects ranked by 
+
+novel( j) in descending order. 
+
+4) Explicit Fragmentation Suppression: The high-recall property of UPN may introduce over-fragmented candidates (many local small boxes or highly overlapping duplicates). These candidates are often similar to each other in feature space and provide limited annotation gain, but can artificially inflate Cov( I) and create “pseudo-diversity.” To address this issue, we define a fragmentation penalty Frag( I) for each image to suppress candidate redundancy. 
+
+(a) Small-area fragment ratio. Let |mj | denote the mask area (in pixels). We define 
+
+rsmall (I) = 1
+
+|O (I)|
+
+X
+
+> j∈O (I)
+
+⊮
+
+ |mj |
+
+HW < τ a
+
+
+
+, (4) where τa is the small-area threshold. 
+
+(b) Spatial redundancy (overlapping duplicates). 
+
+riou (I) = 1
+
+|O (I)|
+
+X
+
+> j∈O (I)
+
+max   
+
+> k̸=j
+
+IoU( bj , b k). (5) 
+
+(c) Semantic redundancy (feature duplication). 
+
+rsim (I) = 1
+
+|O (I)|
+
+X
+
+> j∈O (I)
+
+max   
+
+> k̸=j
+
+cos( ¯fj (I), ¯fk(I)) . (6) 
+
+(d) Candidate count penalty. 
+
+rcnt (I) = log  1 + |O (I)|. (7) 
+
+5) Final Diversity Score and Selection: Finally, we com-bine the coverage score and fragmentation penalty to define the image-level diversity score: D(I) = Cov( I)−λ Frag( I),
+
+where λ ≥ 0 controls the strength of fragmentation sup-pression. Intuitively, D(I) encourages selecting images that contain uncovered appearances/scenes while avoiding can-didate redundancy caused by UPN over-fragmentation. On the candidate set I(s)cond , we select the top n images with the highest diversity scores as the final annotation set for the current round: I(s)sel = Top n
+
+
+
+{D(I)}I∈I (s)cond 
+
+
+
+. We typically limit the number of candidate objects per image to NI ≤ K
+
+(e.g., K ∈ [30 , 100] ), and when computing riou and rsim , we only consider a local neighbor set for each object (e.g., Top-
+
+M overlapping boxes or Top-M nearest feature neighbors), so that the overall complexity remains tractable. 
+
+D. Dual-Source Box Switching (DSBS) 
+
+In the early iterations of active learning, even when the detector uses a pretrained backbone, its classification ability often improves relatively quickly, while localiza-tion quality remains significantly insufficient. This cold-start phenomenon—“classification converges earlier, localization converges later”—directly increases annotation cost: if the annotation interface displays detector-predicted boxes by default, annotators must frequently drag, resize, or redraw bounding boxes to correct localization errors, which offsets the efficiency gains brought by active learning. To reduce the manual box-correction burden in early rounds, we pro-pose a Dual-Source Box Switching (DSBS) module. During annotation, DSBS replaces noisy detector boxes with more stable SA-source geometric boxes while preserving detector-provided category supervision, thus enabling semi-automated labeling with “geometry from SA, category from OD.” For any image to be annotated, I ∈ I (s)sel , we have:SA-source 
+
+BSA (I) = {bsa j }NSA (I) 
+
+> j=1
+
+,, OD-source (detector) III-B.1. The goal of DSBS is to generate, for each displayed object in the annotation interface, a pre-annotation box-label pair (˜b, ˜y)
+
+such that: ˜b is as close as possible to the true object boundary (to reduce geometric correction cost). ˜y remains consistent with the detector output (to preserve supervision signals). 
+
+1) Box Switching: Aligning OD Boxes to SA Boxes: We first establish correspondences between BOD (I) and BSA (I).To ensure one-to-one assignment and avoid many-to-one conflicts, we adopt the same Hungarian matching scheme 1. This yields a matching set P(I) = {(k, j )}. For each matched pair (k, j ), the switched pre-annotation box as: 
+
+˜bk =
+
+(bsa j , if IoU( bod k , b sa j ) ≥ τsw ,bod k , otherwise , (8) where τsw is the switching threshold used to avoid incor-rectly replacing a detector box with an obviously unrelated SA box. Intuitively, when an OD box sufficiently overlaps with an SA box, we regard them as referring to the same object instance, and replacing the OD box with the SA box can significantly improve geometric quality. The category label and confidence remain from the OD-source: ˜yk =ˆyk, ˜σk = σod k . Therefore, each detected instance is presented in the annotation interface as (˜bk, ˜yk).
+
+2) Unmatched Cases and High-Confidence Pre-Labeling: 
+
+The detector may produce unmatched prediction boxes (e.g., SA-source does not cover them, or related SA candidates were filtered), and the SA-source may also contain un-matched high-quality candidates (e.g., detector misses). We handle them separately: Unmatched OD boxes. We keep 
+
+(bod k , ˆyk) unchanged for display, to avoid missing targets already discovered by the detector. Unmatched SA boxes. 
+
+They can be optionally displayed as “objects to confirm,” which is especially useful in remote sensing scenes with dense small objects for recovering missed detections. To control annotation burden, we only display candidates with high objectness and simple geometric filtering: 
+
+bsa j j / ∈ π2(P(I)) , s upn  
+
+> j
+
+≥ τupn , area( bsa j ) ≥ τb , (9) where π2(P(I)) denotes the set of SA indices that appear in the matched pairs. For such candidates, the category can be initialized as “unknown,” or optionally assigned a weak label using the detector’s maximum class response in that region. In addition, DSBS can be combined with a confi-dence threshold for semi-automatic pre-labeling: for high-confidence instances with ˜σk ≥ τcls , we directly provide pre-labels and the annotator only needs confirmation or minor edits; for low-confidence instances, the interface can prompt closer category inspection. 
+
+3) Dynamic Scheduling: When to Enable/Disable DSBS: 
+
+The benefit of DSBS is most significant in the cold-start stage. To make the switching dynamic, we provide two equivalent scheduling strategies: Fixed-round strategy. En-able DSBS for the first T rounds and disable it afterward: DSBS is enabled if s ≤ T. Adaptive strategy based on localization agreement. We use the matching quality from Sec. III-B to measure localization maturity. Let 
+
+¯σ(s)match = EI∈I (s)
+
+> u
+
+E(j,k )∈P (I)
+
+σmatch 
+
+> jk
+
+ . (10) If ¯σ(s)match < τ loc , we enable DSBS; otherwise, we disable it. This strategy is more robust across datasets and detectors with different convergence speeds. 
+
+E. Active Learning Loop 
+
+Let the initial labeled set be I(0)  
+
+> l
+
+, and the initial unlabeled set be I(0)  
+
+> u
+
+= I \ I (0)  
+
+> l
+
+. Let the total annotation budget be B (measured in number of images), and the per-round annotation budget be n. Then the maximum number of AL iterations is S =  Bn
+
+ . Our AL loop is as follows. 
+
+(0) Offline SA-source precomputation (one-time only). 
+
+For all I ∈ I , we precompute and cache the SA-source:  BSA (I), MSA (I), SSA (I). This is a one-time cost, and all later AL rounds directly read from the cache. 
+
+(1) Initial training (step s = 0 ). Train the detector on the initial labeled set I(0)  
+
+> l
+
+: OD (0) ← Train(OD; I(0)  
+
+> l
+
+).
+
+(2) Unlabeled inference and FDSU uncertainty eval-uation (step s ≥ 1). For every unlabeled image I ∈I(s) 
+
+> u
+
+, run inference with the current detector OD (s−1) to obtain the OD-source predictions  BOD (I), ΣOD (I). Then combine them with the cached SA-source BSA (I) and compute FDSU to obtain image-level uncertainty: U (I) ←
+
+FDSU  BSA (I), BOD (I), ΣOD (I), .
+
+(3) Candidate set expansion (uncertainty filtering). 
+
+Using a candidate expansion factor θ > 1, select the top 
+
+nθ most uncertain images from the unlabeled pool to form the candidate set: I(s)cond = Top nθ 
+
+
+
+{U (I)}I∈I (s)
+
+> u
+
+
+
+.
+
+(4) Diversity sampling (diversity selection). Com-pute the diversity score D(I) on I(s)cond , and select the top-n images as the final set for annotation in this round: D(I) ← Div  I; I(s) 
+
+> l
+
+, BSA (I), MSA (I), I(s)sel =Top n
+
+
+
+{D(I)}I∈I (s)cond 
+
+
+
+. Here, Div( ·) uses DINOv2-based mask-guided object embeddings and includes the UPN frag-mentation suppression term. 
+
+(5) DSBS semi-automated labeling and dataset update. 
+
+For each image I ∈ I (s)sel , we use DSBS for pre-labeling: by default, the bounding box comes from the SA-source 
+
+BSA (I), while the category comes from detector predictions, and the annotator confirms/corrects them. After annotation, we update the labeled/unlabeled sets: I(s+1)  
+
+> l
+
+= I(s) 
+
+> l
+
+∪I(s)sel , I(s+1)  
+
+> u
+
+= I \ I (s+1)  
+
+> l
+
+. Fine-tune the detector on the updated labeled set I(s+1)  
+
+> l
+
+to obtain OD (s): OD (s) ←
+
+FineTune  OD (s−1) ; I(s+1) 
+
+> l
+
+. Repeat steps (2)–(6) until the total budget B is exhausted or the unlabeled set empty. IV. E XPERIMENTS 
+
+A. Datasets and Settings 
+
+Datasets We evaluate the proposed framework on four public object detection datasets, including DIOR [14] (with  
+
+> Fig. 2. Comparison of improvements under different annotation budgets on DIOR [14], HRSC2016 [24], DOTAv2, and FAIR1M [23]. Entropy [33], CoreSet [13], PPAL [33], DivProto [28], AL4FM [3]
+
+diverse object categories and scene types), DOTAv2 (which contains a large number of extremely small object annota-tions, ≤ 10 pixels), FAIR1M [23] (a fine-grained remote sensing object detection dataset), and HRSC2016 [24] (a ship detection dataset). DIOR [14] and HRSC2016 provide predefined train/validation/test splits. Since the test split of DOTAv2 does not provide public labels, we adopt the data split proposed by Lee et al [12]. For FAIR1M [23], we randomly split the dataset into 40%/20%/20% for training, validation, and testing. 
+
+Model Settings: We follow the default hyperparameters and training configurations of RTDETRV2 [18], and use a ResNet50 backbone pretrained on FMOW. In implemen-tation, we adopt a one-time offline caching strategy for the SA-source, where reference boxes and masks are pre-stored for each image. We further control storage and subse-quent computation overhead through Top-Ku retention and lightweight geometric filtering, thereby avoiding repeated UPN and SAM2 inference in each active learning round. In the diversity sampling stage, we build mask-guided object embeddings using DINOv2 feature maps and SAM2 masks, and extract/cache features on demand for candidate images. Finally, DSBS is most effective during the cold-start stage, and can be scheduled either with a fixed-round strategy or an adaptive strategy based on global matching quality. 
+
+B. Experimental Results 
+
+Comparison with state-of-the-art methods: As shown in Fig. 2, even without DSBS, our method achieves the best or competitive performance under most annotation budgets, with particularly clear advantages in the low-budget regime. This demonstrates that the proposed sampling framework can more reliably identify informative samples during cold start and improve the utilization of limited annotation budgets. On DIOR [14] and HRSC2016 [24], our method consistently performs favorably across different budgets, with larger gains at 10, 20, and 50 labeled images. These results indicate that the localization-stable SA-source, combined with FDSU, reduces the influence of noisy detector boxes on early-stage sample selection. On FAIR1M [23], our method main-tains leading performance in the medium- and high-budget Fig. 3. Cold-start results under different methods on HRSC2016 [24].                                                                      
+
+> Stage 1 Stage 2 mAP on # of labeled images 10 50 100 200 300
+> Random 0.3±0.21.2±0.61.6±0.62.3±0.54.0±0.7
+> Entropy None 0.5±0.30.2±0.10.4±0.40.7±0.41.3±1.1
+> DSUE None 0.9±0.42.4±0.93.8±0.54.3±0.95.4±0.8
+> FDSU None 1.1±0.32.7±0.84.3±0.44.8±0.76.0±0.5
+> FDSU CoreSet 0.9±0.42.9±0.74.4±1.04.8±0.45.0±0.6
+> FDSU DivProto 1.0±0.41.5±0.61.0±0.51.3±0.51.4±0.5
+> FDSU CCMS 0.9±0.32.0±1.14.0±0.54.9±0.85.6±0.8
+> FDSU MDE 1.0±0.34.4±0.86.8±1.38.8±1.611 .0±0.7
+> FDSU OCDS 1.2±0.34.7±0.87.2±1.29.1±1.511 .3±0.6
+> TABLE I ABLATION STUDIES OF FDSU ON DIOR [14]. CCMS IS FROM PPAL; DSUE AND MDE USED IN AL4FM-OD; OCDS IS OURS .
+
+regimes, suggesting that DINOv2-based mask-guided object representations improve diversity coverage in complex multi-class scenes. On DOTAv2, our method outperforms AL4FM-OD under low and medium budgets and remains competitive at higher budgets, although it is slightly below PPAL at the largest budget. This comparison evaluates only the active learning sampling strategies and excludes DSBS, whose primary role is to accelerate semi-automatic annotation and reduce human correction effort. Its impact on cold-start annotation efficiency is evaluated separately in the following section. Analysis of DSBS in the Cold-Start Stage: We evaluate using Recall@100 with a stricter IoU threshold of 75%. As shown in Fig 3, DSBS (Ours) substantially im-proves cold-start performance under low annotation budgets. With only 20/30 annotated samples, DSBS achieves about 57%/61% mAP, outperforming No DSBS (22%/45%) and DBS (52%/56%). This indicates that, under extremely lim-ited supervision, using the SA-source as a stable geometric prior with dual-source box switching effectively mitigates early-stage localization noise and enables faster attainment of usable detection performance. These results show that DSBS is most beneficial in the low-budget regime, where improved box initialization reduces early training instability. Overall, DSBS serves as a practical semi-automatic annotation mod-ule for cold-start active learning by lowering the annotation cost required to reach usable performance and improving early-stage annotation efficiency. 
+
+C. Ablations Studies 
+
+The ablation results on the DIOR [14] dataset are shown in Table I. We first compare different Stage-1 uncertainty strategies when no second-stage re-ranking is used. Com-pared with Entropy and DSUE, the proposed FDSU achieves better results under all annotation budgets, with especially larger gains in the low-budget regime. This indicates that the FDSU, built upon a stronger SA-source (UPN+SAM2), can evaluate sample value more reliably, thereby improving sample selection quality and sample efficiency in the cold-start stage. Furthermore, with Stage 1 fixed to FDSU, we compare the effects of different Stage-2 strategies (Core-Set, DivProto, CCMS, MDE, and our OCDS). The results show that weaker diversity strategies (CoreSet and DivProto) provide limited gains, while stronger second-stage strategies (MDE) significantly improve performance in the medium- to high-budget regime. Notably, FDSU + OCDS achieves the best results at all budget points and consistently outperforms FDSU + MDE overall. This demonstrates that the proposed OCDS works synergistically with FDSU: the former im-proves second-stage selection quality through object-level semantic coverage and fragmentation suppression, while the latter improves first-stage candidate quality through more stable dual-source uncertainty estimation. 
+
+Foundation Pipeline Quality Analysis. Table II validates the effectiveness of the proposed foundation-model pipeline. UPN achieves strong category-agnostic proposal recall across all four datasets, with both R@0.5 and R@0.7 increasing consistently as the number of retained candidates grows from Top-50 to Top-200. HRSC2016 [24] achieves the highest recall, suggesting that UPN is particularly effective for ship scenes with relatively consistent object structures. In contrast, DOTAv2 shows lower recall at Top-200 (82.7%/50.6%), reflecting the difficulty of handling dense small objects and large orientation variations. Using UPN proposals as prompts, SAM2 further improves refined-box recall on all datasets, especially at the stricter IoU threshold. This demon-strates that SAM2 enhances proposal localization quality and strengthens the SA-source used by FDSU and DSBS. The fragmentation suppression strategy also consistently reduces both the Redundancy Ratio and Small-fragment Ratio, yield-ing an overall reduction of approximately 34%–38%. This confirms that it effectively suppresses repeated and frag-mented proposals that would otherwise introduce pseudo-diversity during sample selection. Overall, the collaborative pipeline provides reliable candidates for active learning and semi-automatic annotation. V. C ONCLUSION 
+
+This paper proposes a foundation-model-assisted active learning and semi-automatic annotation framework for ef-ficient remote sensing object detection dataset construction. Experimental results show that the proposed method achieves performance superior to or comparable with existing methods across multiple remote sensing object detection datasets un-der most annotation budgets. In addition, we propose DSBS for semi-automatic annotation acceleration in the cold-start stage, which effectively reduces the manual burden of box refinement. Overall, this work validates the effectiveness of integrating vision foundation models into the active learning pipeline and provides a new perspective for improving data construction efficiency in remote sensing object detection. Future work will explore adaptive DSBS switching strategies, stronger candidate de-redundancy mechanisms, and exten-sions to more complex settings. Dataset UPN (Top-50) UPN (Top-100) UPN (Top-200) UPN+SAM2 (Top-200) Fragmentation Suppression R@0.5 R@0.7 R@0.5 R@0.7 R@0.5 / R@0.7 R@0.5 / R@0.7 Avg ∆IoU Red. (w/o) Red. (w/) Frag. (w/o) Frag. (w/) Reduction (%)                                                 
+
+> DIOR [14] 78.6 51.2 86.9 60.8 91.7 / 68.4 94.8 / 74.9 4.7 0.41 0.27 0.36 0.21 34.1 HRSC2016 [24] 89.8 63.5 94.6 72.9 97.1 / 80.3 98.3 / 86.7 6.5 0.29 0.18 0.22 0.12 37.9 DOTAv2 62.4 31.7 73.8 40.9 82.7 / 50.6 87.9 / 58.8 5.9 0.58 0.36 0.49 0.29 37.9 FAIR1M [23] 75.1 46.8 84.5 56.4 90.2 / 64.9 93.6 / 71.8 5.1 0.46 0.30 0.39 0.24 34.8
+
+TABLE II RESULTS OF THE FOUNDATION PIPELINE QUALITY ANALYSIS ON 4 DIFFERENT DATASETS . R ED : R EDUNDANCY , AND FRAG : S MALL -FRAGMENT .
+
+ACKNOWLEDGMENT 
+
+This material is based upon work supported by the Air Force Research Laboratory. Any opinions, findings, conclu-sions, or recommendations expressed in this publication are those of the authors and do not necessarily reflect the views of the U.S. Air Force. The U.S. Government is authorized to reproduce and distribute reprints for Governmental purposes notwithstanding any copyright notation thereon. Approved for Public Release; Distribution Unlimited: AFR/PA Case No. AFRL-2026-3111. REFERENCES [1] Sharat Agarwal, Himanshu Arora, Saket Anand, and Chetan Arora. Contextual diversity for active learning. In ECCV . Springer, 2020. [2] Leah Bar, Boaz Lerner, Nir Darshan, and Rami Ben-Ari. Active learning via classifier impact and greedy selection for interactive image retrieval. arXiv preprint arXiv:2412.02310 , 2024. [3] Marvin Burges, Philipe Ambrozio Dias, Carson Woody, Sarah Walters, and Dalton Lunga. Active learning meets foundation models: fast remote sensing data annotation for object detection. In ICCV , 2025. [4] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detec-tion with transformers. In ECCV , pages 213–229. Springer, 2020. [5] Mathilde Caron, Hugo Touvron, Ishan Misra, Herv´ e J´ egou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In ICCV , 2021. [6] Liangyu Chen, Yutong Bai, Siyu Huang, Yongyi Lu, Bihan Wen, Alan L Yuille, and Zongwei Zhou. Making your first choice: To address cold start problem in vision active learning. arXiv preprint arXiv:2210.02442 , 2022. [7] Rong Fu, Jiekai Wu, Haiyun Wei, Yee Tan Jia, Yang Li, Xiaowen Ma, Wangyu Wu, and Simon Fong. Dav-gswt: Diffusion-active-view sampling for data-efficient gaussian splatting wang tiles. arXiv preprint arXiv:2602.15355 , 2026. [8] Qing Jiang, Feng Li, Zhaoyang Zeng, Tianhe Ren, Shilong Liu, and Lei Zhang. T-rex2: Towards generic object detection via text-visual prompt synergy. In ECCV , pages 38–57. Springer, 2024. [9] Qing Jiang, Gen Luo, Yuqin Yang, Yuda Xiong, Yihao Chen, Zhaoyang Zeng, Tianhe Ren, and Lei Zhang. Chatrex: Taming multimodal llm for joint perception and understanding. arXiv preprint arXiv:2411.18363 , 2024. [10] Ming Jing, Zhilong Ou, Hongxing Wang, Jiaxin Li, and Ziyi Zhao. Object recognition consistency in regression for active detection. 
+
+Machine Vision and Applications , 35(5):121, 2024. [11] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. In ICCV , 2023. [12] Chunggi Lee, Seonwook Park, Heon Song, Jeongun Ryu, Sanghoon Kim, Haejoon Kim, S´ ergio Pereira, and Donggeun Yoo. Interactive multi-class tiny-object detection. In CVPR , pages 14136–14145, 2022. [13] Hojun Lee, Suyoung Kim, Junhoo Lee, Jaeyoung Yoo, and Nojun Kwak. Coreset selection for object detection. In CVPR , 2024. [14] Ke Li, Gang Wan, Gong Cheng, Liqiu Meng, and Junwei Han. Object detection in optical remote sensing images: A survey and a new benchmark. ISPRS journal of photogrammetry and remote sensing ,159:296–307, 2020. [15] Yuqi Li, Qingqing Long, Yihang Zhou, Ran Zhang, Zhiyuan Ning, Zhihong Zhu, Yuanchun Zhou, Xuezhi Wang, and Meng Xiao. Comae: Comprehensive attribute exploration for zero-shot hashing. ICMR ,2025. [16] Jiakai Lin, Jinchang Zhang, Ge Jin, Wenzhan Song, Tianming Liu, and Guoyu Lu. 3d plant root skeleton detection and extraction. In 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 3011–3017. IEEE, 2025. [17] Jiakai Lin, Jinchang Zhang, and Guoyu Lu. Keypoint detection and description for raw bayer images. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 11736–11742. IEEE, 2025. [18] Wenyu Lv, Yian Zhao, Qinyao Chang, Kui Huang, Guanzhong Wang, and Yi Liu. Rt-detrv2: Improved baseline with bag-of-freebies for real-time detection transformer. arXiv preprint arXiv:2407.17140 , 2024. [19] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 , 2023. [20] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chai-tanya Ryali, Tengyu Ma, Haitham Khedr, Roman R¨ adle, Chloe Rol-land, Laura Gustafson, et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. [21] Ozan Sener and Silvio Savarese. Active learning for convolutional neural networks: A core-set approach. arXiv preprint , 2017. [22] Oriane Sim´ eoni, Huy V Vo, Maximilian Seitzer, Federico Baldas-sarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Micha¨ el Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. [23] Xian Sun, Peijin Wang, Zhiyuan Yan, Feng Xu, Ruiping Wang, Wenhui Diao, Jin Chen, Jihao Li, Yingchao Feng, Tao Xu, et al. Fair1m: A benchmark dataset for fine-grained object recognition in high-resolution remote sensing imagery. ISPRS , 184, 2022. [24] Gang Tang, Shibo Liu, Iwao Fujino, Christophe Claramunt, Yide Wang, and Shaoyang Men. H-yolo: A single-shot ship detection approach based on region of interest preselected network. Remote Sensing , 12(24):4192, 2020. [25] Songtao Tian, Guhan Chen, Bohan Li, Jingyi Ma, and Zixiong Yu. Curvature-adaptive consistency flow matching: Autonomous trajectory optimization via reinforcement learning, 2026. [26] Ran Wang, Xi-Zhao Wang, Sam Kwong, and Chen Xu. Incorporating diversity and informativeness in multiple-instance active learning. 
+
+IEEE transactions on fuzzy systems , 25(6):1460–1475, 2017. [27] Yuting Wang, Velibor Ilic, Jiatong Li, Branislav Kisaˇ canin, and Vladimir Pavlovic. Alwod: Active learning for weakly-supervised object detection. In ICCV , 2023. [28] Jiaxi Wu, Jiaxin Chen, and Di Huang. Entropy-based active learning for object detection with progressive diversity constraint. In CVPR ,2022. [29] Canran Xiao, Jiabao Dou, Zhiming Lin, Zong Ke, and Liwei Hou. From points to coalitions: Hierarchical contrastive shapley values for prioritizing data samples. In AAAI , 2026. [30] Canran Xiao, Liaoyuan Fan, Yanbin Li, Jing Tang, and Peilai Yu. Path matters: Unveiling geometric implicit bias via curvature-aware sparse view optimization. In ICLR , 2026. [31] Canran Xiao and Liwei Hou. Prototype-aligned federated soft-prompts for continual web personalization. In WWW , 2026. [32] Canran Xiao, Tianxiang Xu, Siyuan Ma, Yiyang Jiang, Haoyu Gao, and Yuhan Wu. Reversible primitive–composition alignment for continual vision–language learning. In ICLR , 2026. [33] Chenhongyi Yang, Lichao Huang, and Elliot J Crowley. Plug and play active learning for object detection. In CVPR , 2024. [34] Yi Yang, Zhigang Ma, Feiping Nie, Xiaojun Chang, and Alexander G Hauptmann. Multi-class active learning by uncertainty sampling with diversity maximization. IJCV , 113(2):113–127, 2015. [35] Donggeun Yoo and In So Kweon. Learning loss for active learning. In CVPR , 2019. [36] Tianning Yuan, Fang Wan, Mengying Fu, Jianzhuang Liu, Songcen Xu, Xiangyang Ji, and Qixiang Ye. Multiple instance active learning for object detection. In CVPR , 2021. [37] Jinchang Zhang, Zijun Li, Jiakai Lin, and Guoyu Lu. Adaptive event stream slicing for open-vocabulary event-based object de-tection via vision-language knowledge distillation. arXiv preprint arXiv:2510.00681 , 2025. [38] Jinchang Zhang and Guoyu Lu. Vision-language embodiment for monocular depth estimation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 29479–29489, 2025.
