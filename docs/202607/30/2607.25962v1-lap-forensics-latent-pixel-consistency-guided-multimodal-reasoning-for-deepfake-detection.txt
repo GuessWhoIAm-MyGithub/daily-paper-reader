@@ -1,0 +1,342 @@
+Title: LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection
+
+URL Source: https://arxiv.org/pdf/2607.25962v1
+
+Published Time: Wed, 29 Jul 2026 01:22:38 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection 
+
+## Can Wang 
+
+The Hong Kong Polytechnic University Hong Kong, China 
+
+## Yuhao Wang 
+
+University College London London, United Kingdom 
+
+## Yushe Cao 
+
+Tsinghua University Beijing, China 
+
+## Canran Xiao 
+
+Sun Yat-sen University Guangzhou, China 
+
+## Fei Shen ∗
+
+National University of Singapore Singapore, Singapore 
+
+## Abstract 
+
+Recent generative models can produce images with few obvious vi-sual artifacts, weakening detectors and explanations that rely only on surface appearance. We present LaP-Forensics, a multimodal framework that augments RGB semantics with reconstruction-based forensic evidence. A frozen Stable Diffusion DDIM inversion– reconstruction model provides a fixed reconstruction reference, and its residual map measures local compatibility with that ref-erence. Independent projectors encode the RGB image and resid-ual map before a structured Where–What–Why model predicts a textual analysis and an artifact mask. Supervised fine-tuning is followed by Group Relative Policy Optimization (GRPO), whose reward combines mask overlap with output-structure and evidence-reference terms. These text-side terms encourage the model to refer to the consistency map but do not constitute a verifier of free-form textual truth. A separate image-level head fuses RGB and DDIM-residual class features. Experiments show cross-generator detection on UniversalFakeDetect and competitive artifact localization on the official SynthScars benchmark. Controlled cue-construction, inversion-horizon, component, reward-term, and counterfactual analyses support the utility of the residual stream under the eval-uated settings, while free-form textual faithfulness and reliability under post-processing remain open limitations. The source code and models will be made publicly available. 
+
+## CCS Concepts 
+
+• Computing methodologies → Computer vision ; Neural net-works ; • Security and privacy → Privacy protections. 
+
+## Keywords 
+
+deepfake detection, explainable forensics, multimodal reasoning, chain-of-thought, reinforcement learning 
+
+## 1 Introduction 
+
+Recent advances in generative AI [ 32 , 34 ], exemplified by models such as Flux and Stable Diffusion 3.5, have substantially reduced the conspicuous artifacts that once made synthetic images easy to identify. As generated content becomes increasingly coherent at both semantic and local visual levels, human inspection and detectors relying on a narrow set of appearance cues struggle to provide reliable and generalizable forensic judgments [50]. 
+
+> ∗
+
+Corresponding author. RGB-only Forensic Reasoning     
+
+> LaP-Forensics
+> Appearance-based Response
+> RGB evidence only
+> No explicit reconstruction-based cue
+> May produce weakly supported explanations
+> RGB DDIM
+> Residual
+> +
+> Reconstruction-based
+> Compatibility Cue
+> LaP-Forensics
+> Structured Analysis
+> ● Where
+> ● What
+> ● Why
+> Evidence-referenced
+> Reasoning
+> Artifact Mask
+> Artifact
+> Localization
+> RGB-only
+> MLLM
+> RGB
+
+Figure 1: Motivation for LaP-Forensics. RGB-only forensic reasoning relies primarily on appearance cues and lacks an explicit reconstruction-based reference. LaP-Forensics com-plements RGB semantics with a DDIM-derived compatibil-ity residual computed against a fixed reconstruction refer-ence, providing auxiliary forensic evidence for structured, evidence-referenced reasoning and artifact localization. 
+
+Recent advances in controllable image synthesis, including pose-guided generation, virtual dressing, fine-grained garment synthesis, and story visualization [ 31 –35 ], have further increased the real-ism and diversity of synthetic visual content. Existing forensic approaches can be broadly divided into image-level detectors, such as FakeInversion [ 1], and MLLM-based forensic agents, such as LE-GION [ 14 ] and ManipShield [ 48 ]. Although image-level detectors can provide authenticity predictions, they typically offer limited semantic interpretation. In contrast, MLLM-based agents generate human-readable explanations, but their rationales may not be ad-equately grounded in explicit forensic evidence. As illustrated in Figure 1, an RGB-only model may attribute a prediction to an ap-parently malformed object even when the claimed artifact is absent or unsupported by the underlying forensic signal. This mismatch between the predicted label and the stated evidence undermines the reliability of free-form forensic explanations [ 12 , 38 ]. This limi-tation highlights the need for forensic models that not only predict image authenticity but also ground their explanations in explicit and spatially localized evidence. A promising solution is to integrate high-level RGB semantics with reconstruction-based compatibility cues, enabling the model to reason jointly about where suspicious 
+
+1arXiv:2607.25962v1 [cs.CV] 28 Jul 2026 Wang et al., Can Wang, Yuhao Wang, Yushe Cao, Canran Xiao, and Fei Shen 
+
+artifacts occur, what they represent, and why they support the final forensic judgment. LaP-Forensics (Latent-Pixel Forensics) complements RGB seman-tics with an explicit reconstruction-based compatibility signal for explainable image forensics. Specifically, a frozen Stable Diffusion v1.5 model performs deterministic DDIM inversion and reconstruc-tion, providing a fixed reference against which the input image is compared. The resulting residual map characterizes local recon-struction compatibility: regions with lower residuals are more read-ily reconstructed by the reference model, whereas higher residuals indicate greater mismatch [ 29 , 37 , 46 ]. Rather than treating this residual as a direct manipulation probability or source-attribution cue, LaP-Forensics encodes it jointly with RGB content as auxiliary forensic evidence. Building upon the Where–What–Why reasoning paradigm [ 56 ], the model jointly produces structured forensic anal-yses and pixel-level artifact masks. To further align its outputs with the supplied evidence, we introduce a GRPO-based objective that rewards localization quality, structural compliance, and explicit references to the residual map. Since the text-side reward evaluates observable output properties rather than semantic entailment, it is formulated as evidence-reference regularization rather than a guarantee of explanation faithfulness. Our main contributions are summarized as follows: 
+
+• We propose LaP-Forensics, a dual-stream framework that integrates RGB semantics with DDIM-derived reconstruc-tion residuals for image detection, reasoning, and artifact localization. 
+
+• We introduce a forensic Where–What–Why protocol and a GRPO objective that jointly optimize localization quality, output structure, and evidence referencing. 
+
+• Extensive experiments on cross-generator detection and artifact localization validate the effectiveness of the residual stream and its key design choices. 
+
+## 2 Related Work 
+
+General Deepfake Detection. Image forensics has evolved from manipulation localization in RGB and noise domains [ 55 ] to the open-world detection of fully synthetic images. Early methods ex-ploited compression artifacts [ 27 ], blending boundaries [ 17 ], CNN fingerprints [ 44 ], and frequency irregularities [ 21 , 25 ]. Recent meth-ods instead emphasize cross-generator generalization through pre-trained representations, inversion, and contrastive learning, as ex-emplified by UnivFD [ 24 ], FakeInversion [ 1 ], FatFormer [ 20 ], and DRCT [ 3]. Other approaches exploit patch-level discrepancies [ 52 ], reconstruction residuals [ 36 ], architectural priors [ 40 ], discrep-ancy learning [ 51 ], few-shot attribution [ 47 ], region-grounded re-examination [ 11 ], and high-resolution details [ 22 ]. Despite strong detection performance, most provide only image-level scores or coarse localization, with limited semantic explanation [12, 50]. 
+
+MLLM-based Explainable Forensics. Vision-language assistants such as MiniGPT-4 [ 57 ] and LLaVA [ 19 ] have motivated forensic models that jointly perform prediction, localization, and expla-nation. Representative systems include LEGION [ 14 ], SIDA [ 10 ], ManipShield [ 48 ], and related methods for face forensics and edit-ing attribution [ 13 , 18 , 38 ]. However, these models often rely on visible semantic anomalies, such as distorted hands or implausible geometry. For visually polished forgeries, they may therefore gen-erate persuasive explanations that are weakly grounded in explicit forensic evidence [12, 38]. 
+
+Consistency-based Detection. Reconstruction-based forensics assesses whether an image is compatible with a learned recon-struction reference rather than relying solely on visible artifacts. DIRE [ 46 ] introduced reconstruction errors for diffusion-image detection, while ZeroFake [ 29 ], JRC [ 49 ], and DRCT [ 3 ] further explored reconstruction discrepancies for generalized detection. More recently, studies have moved beyond surface artifacts to in-vestigate shared latent forgery knowledge across generators and modalities [ 5, 6]. Different from these works, LaP-Forensics uses reconstruction residuals as an explicit multimodal cue for joint artifact localization and evidence-referenced language generation, and further evaluates the model’s dependence on this cue through controlled interventions. 
+
+## 3 Method 3.1 Architecture Overview 
+
+LaP-Forensics is a two-stage training and alignment framework for explainable deepfake analysis. It combines a Multimodal Large Language Model (MLLM) with dual visual streams: an RGB se-mantic stream and a DDIM reconstruction-residual stream. The localization/reasoning model and the standalone detector evalu-ated in Section 4.4 use the same fixed DDIM residual construction but separate task heads and training objectives. As illustrated in Figure 2, an input image x ∈ R𝐻 ×𝑊 ×3 and its task-specific residual map are independently encoded and projected into a common token dimension. The full localization model feeds both token sequences to a LLaMA-2-7B language backbone [ 42 ]; a Segment Anything Model (SAM) [ 15 ] decoder converts generated [SEG] states into pixel masks. The standalone image detector instead concatenates the two stream-level class tokens and applies a lightweight MLP head. The reasoning model is optimized in two phases (Figure 3): supervised fine-tuning (SFT) on curated forensic reasoning data followed by Group Relative Policy Optimization (GRPO) [ 30 ] for mask quality and structured evidence references. 
+
+## 3.2 Dual-Stream Visual Representation 
+
+Semantic Feature Extraction. To capture scene understanding and object-level semantics, we process the input image x using a shared-weight frozen CLIP-ViT-L/14 encoder 𝑓 CLIP (·) [ 26 ]. We extract patch-level features from the penultimate transformer layer: 
+
+Z(𝑠 ) = 𝜙 proj (𝑓 CLIP (x)) ∈ R𝑁 𝑝 ×𝑑 , (1) where 𝑁 𝑝 denotes the number of spatial patches and 𝜙 proj (·) is a two-layer MLP projector that aligns the CLIP feature dimension to the language model’s hidden dimension 𝑑 .
+
+Latent-Pixel Consistency Stream. For localization and reasoning, we perform DDIM inversion [ 37 ] with a fixed 𝑇 = 50 schedule on a frozen Stable Diffusion v1.5 backbone. This frozen model provides a fixed reconstruction reference. The inversion maps the image latent x0 to terminal noise z𝑇 , and the deterministic reverse process yields ˆx. We compute the element-wise compatibility residual 
+
+R = |x − ˆx|. (2) 
+
+> 2
+
+LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection 
+
+Figure 2: Overview of the dual-stream interface. RGB and DDIM-residual inputs share a frozen CLIP encoder but use independent projectors; their projected tokens are concatenated for the MLLM, and generated [SEG] states are decoded by SAM. The separately trained detector retains the same inputs but concatenates only the two [CLS] features before its MLP head. 
+
+The residual is defined relative to the frozen reconstruction refer-ence rather than as a direct manipulation probability. Lower values in R indicate regions reconstructed more readily by that reference, whereas higher values indicate larger mismatch. Such mismatch may expose synthetic or edited structures, but it can also respond to benign texture, high-frequency detail, compression, resizing, or domain shift. We therefore neither threshold R into a standalone manipulation mask nor use it to identify the source generator. Instead, the spatial residual pattern is encoded and interpreted jointly with the RGB stream. This lets the downstream model com-bine semantic context with reconstruction compatibility rather than treating residual magnitude alone as an authenticity decision. For display, the Latent-Pixel Consistency Map uses a fixed grayscale rendering of R: darker regions denote lower residual values and brighter regions denote larger mismatch. The display transforma-tion is used only for interpretation and is not a calibrated probability map. We resize the input to 512 × 512 , compute R, and encode it with the same shared-weight frozen CLIP vision encoder: 
+
+Z(𝑐 ) = 𝜓 proj (𝑓 CLIP (R)) ∈ R𝑁 𝑝 ×𝑑 , (3) where 𝜓 proj (·) is a dedicated two-layer MLP, independent of the se-mantic projector 𝜙 proj , and maps residual features into the language-model dimension while preserving a separate representation for reconstruction compatibility. 
+
+Feature Fusion and Image-Level Classification. The two streams share the frozen CLIP weights but do not share a projector: RGB and residual features pass through 𝜙 proj and 𝜓 proj , respectively. For region-level reasoning, their projected patch tokens are concatenated in the sequence dimension with the text prompt, 
+
+X = [Z(𝑠 ) , Z(𝑐 ) , tprompt ], so the MLLM can attend to both semantic context and the reconstruction signal. The standalone detector follows a separate training and infer-ence path. It applies the shared-weight frozen CLIP encoder sep-arately to the RGB image and DDIM residual R, concatenates the two resulting [CLS] vectors, c(𝑠 ) and c(𝑐 ) , and applies a two-layer MLLM LoRA + two Projection MLPs 
+
+> TexttoPrompt Adapter
+> Format & EvidenceReference Reward
+> Format / Validity / Repetition Penalties
+> Updated Parameters:
+> MLLM LoRA TexttoPrompt Adapter Projection MLPs: Frozen
+
+Figure 3: Two-stage optimization of the localiza-tion/reasoning model. Stage I jointly learns structured text generation and artifact segmentation. Stage II uses mask quality, output-format checks, residual-map references, and repetition control, with a clipped policy update and KL regularization to the frozen SFT reference policy. These observable reward terms encourage evidence-referencing outputs but do not directly verify the semantic truth of free-form text. 
+
+MLP: ˆydet = MLP ([ c(𝑠 ) ; c(𝑐 ) ]) . Only this detection head is opti-mized. Thus Table 2 evaluates the final RGB+DDIM-residual detec-tor, whereas the localization/reasoning branch additionally uses token-level fusion, the language backbone, and SAM. 
+
+## 3.3 Supervised Fine-Tuning (Stage I) 
+
+Chain-of-Thought Data Construction. To connect visual obser-vations with explicit forensic evidence, we organize each training sample into a three-step Chain-of-Thought (CoT). The first step identifies observable semantic or visual anomalies, such as distorted textures or inconsistent illumination. The second step relates these observations to high- or low-response regions in the Latent-Pixel Consistency Map. The final step integrates the preceding evidence 
+
+3Wang et al., Can Wang, Yuhao Wang, Yushe Cao, Canran Xiao, and Fei Shen 
+
+to produce an authenticity judgment and appends a [SEG] token to trigger mask generation for the corresponding artifact region. 
+
+Joint Training Objective. During SFT, we train LoRA adapters [ 9 ]on the LLaMA-2-7B backbone together with the semantic projector 
+
+𝜙 proj , consistency projector 𝜓 proj , and text-to-prompt adapter 𝜙 tp ,while keeping CLIP, DDIM, and SAM frozen. We jointly optimize language modeling and artifact segmentation. For segmentation, the hidden state corresponding to the [SEG] token, h[SEG] , is processed by 𝜙 tp to produce a prompt embedding p ∈ R256 . This embedding guides the frozen SAM decoder [ 15 ] to output a predicted mask 
+
+ˆM. The comprehensive SFT loss LSFT integrates cross-entropy for text generation ( LCE ) with Dice ( LDice ) and Binary Cross-Entropy (LBCE ) losses for precise mask supervision: 
+
+LSFT = 𝜆 ce LCE + 𝜆 dice LDice + 𝜆 bce LBCE . (4) 
+
+## 3.4 Outcome-Driven Alignment (Stage II) 
+
+While SFT optimizes token-level likelihood, it does not directly opti-mize the mask produced from a generated [SEG] state. We therefore introduce a Group Relative Policy Optimization (GRPO) stage [ 30 ]that combines mask accuracy with observable text-structure con-straints. 
+
+Optimization Strategy. GRPO is a memory-efficient algorithm that computes advantages relative to a sampled group, bypassing the need for a separate critic network. For a given prompt x, we sample 𝐺 = 4 completions {y(1) , . . . , y(𝐺 ) }. The relative advantage 
+
+ˆ𝐴 (𝑖 ) for completion 𝑖 is calculated as: 
+
+ˆ𝐴 (𝑖 ) = 𝑅 (x, y(𝑖 ) ) − mean ({ 𝑅 (x, y( 𝑗 ) )} 𝐺 𝑗 =1)
+
+std ({ 𝑅 (x, y( 𝑗 ) )} 𝐺 𝑗 =1) + 𝜖 . (5) For clarity, we write the group-relative policy term as 
+
+LGRPO = −Ex,{y(𝑖 ) }
+
+"
+
+1
+
+𝐺 
+
+> 𝐺
+
+∑︁ 
+
+> 𝑖 =1
+
+ˆ𝐴 (𝑖 ) log 𝜋 𝜃 (y(𝑖 ) | x)
+
+#
+
+. (6) The implementation additionally applies PPO-style policy-ratio clipping and KL regularization relative to a frozen reference policy initialized from the SFT checkpoint; the displayed equation isolates the group-relative term. During GRPO, the shared CLIP encoder, DDIM module, SAM, and both SFT-trained visual projectors remain frozen. Only the LoRA adapters and text-to-prompt adapter receive gradient updates. 
+
+Reward Function Design. The reward is 𝑅 total = 𝛼 mask 𝑅 mask +
+
+𝛼 format 𝑅 format , with 𝛼 mask = 0.7 and 𝛼 format = 0.6. The two terms measure mask overlap and observable output compliance, respec-tively. 
+
+Mask Reward ( 𝑅 mask ): Evaluates segmentation accuracy against the ground-truth mask M∗ using Intersection over Union (IoU), adding a bonus for high-quality predictions: 
+
+𝑅 mask = IoU ( ˆM, M∗) + ⊮[IoU > 0.7] · 0.5. (7) 
+
+Format and Evidence-Reference Reward ( 𝑅 format ): This term re-wards the required step structure, the presence of [SEG] , explicit references to the consistency map, and a valid conclusion, while penalizing invalid character sequences and repetition: 
+
+𝑅 format = max (− 3.0, min (1.0, 𝑅 pos − 𝑃 invalid − 𝑃 rep )) . (8) Here, 𝑅 pos is computed from structural markers, evidence keywords, and conclusion markers. Missing [SEG] receives a separate −2.0
+
+penalty; 𝑃 invalid is triggered by a low ASCII-validity ratio and 𝑃 rep 
+
+by repetitive sentences. None of these rules evaluates whether a textual claim is semantically entailed by the consistency map. We therefore interpret this term as structural and evidence-reference regularization rather than a faithfulness reward. 
+
+## 4 Experiments 4.1 Datasets 
+
+Primary Benchmark (SynthScars). We conduct our experiments primarily on SynthScars [ 14 ], a recently released expert-annotated dataset designed for explainable AI-generated image forensics. Com-prising 12,236 fully synthetic images generated by modern diffusion models, SynthScars provides pixel-level segmentation masks, fine-grained textual explanations, and artifact-type labels. The images are distributed across four content categories (Human, Object, Ani-mal, and Scene) and encompass diverse forgery patterns, including structural anomalies, texture inconsistencies, and semantic implau-sibilities. This rich annotation makes it an ideal foundation for multimodal reasoning and localization tasks. 
+
+Chain-of-Thought Data Construction. To support the struc-tured Where, What, Why protocol, we curate a subset of SynthScars through a semi-automatic pipeline. We first compute Stable Dif-fusion v1.5 residual maps with a fixed 𝑇 = 50 DDIM schedule. A vision-language model (Qwen3-VL-Plus 1) then generates struc-tured fields conditioned on the RGB image, consistency map, and original expert annotations. Human reviewers screen and edit the generated annotations for evident factual and formatting errors before the fields are converted into three-step training targets with the mandatory [SEG] marker appended to the inference span. 
+
+Curated Split Statistics. The resulting curated data contain 3,673 unique images and 4,857 CoT annotations, as a single image may contain multiple independently annotated regions. We partition the annotations into 4,611 training entries and 246 test entries. All annotations associated with the same source image are assigned to a single split, so the training and test partitions are image-disjoint. Controlled CoT ablations use this curated test split; they are sepa-rate from the full official SynthScars evaluation in Table 1. 
+
+Evaluation Protocol. SFT and GRPO use the same 4,611-entry CoT training split. The baseline-ranking results in Table 1 use the full official SynthScars evaluation protocol; the curated test entries are used only for controlled CoT and component ablations. Scores should therefore be compared within a table, not across the offi-cial and curated protocols. LOKI and RichHF are not used in CoT training and provide additional out-of-domain evaluations. 
+
+## 4.2 Implementation Details 
+
+We implement LaP-Forensics with PyTorch and TRL. In the localization/reasoning model, the shared-weight CLIP vision encoder, DDIM inversion–reconstruction module, and SAM image encoder/decoder remain frozen. The standalone detector is a distinct task head over the same frozen DDIM reconstruction module and shared-weight frozen CLIP encoder. 
+
+> 1Official Qwen3-VL source: https://github.com/QwenLM/Qwen3-VL. 4LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection
+
+## Method SynthScars LOKI RichHF 
+
+## Object Animal Human Scene mIoU F1 mIoU F1 mIoU F1 mIoU F1 mIoU F1 mIoU F1 
+
+## HiFi-Net [8] 43.74 0.45 45.28 0.03 46.21 0.84 45.90 0.04 39.60 2.41 44.96 0.39 TruFor [7] 46.99 14.82 48.45 17.57 49.02 15.43 48.93 12.64 46.55 16.70 48.41 18.03 PAL4VST [53] 50.46 19.25 52.55 21.61 59.18 35.70 52.55 19.14 47.34 11.58 49.88 14.78 LISA-v1-7B [16] 35.49 23.70 32.44 18.77 34.11 17.50 37.56 18.31 31.10 9.29 35.90 21.94 InternVL2-8B [4] 41.08 13.36 41.22 7.83 41.21 3.91 41.68 7.55 42.03 10.06 39.90 9.58 Qwen2-VL-72B [43] 33.89 23.25 32.46 21.98 26.92 14.75 39.00 18.17 26.62 20.99 27.58 19.02 LEGION [14] 54.62 29.90 54.52 27.43 60.82 39.44 53.67 24.51 48.66 16.71 50.07 17.41 Gemini-3-Flash (ours eval.) 52.69 48.14 73.92 75.99 48.46 29.67 47.36 50.75 40.22 25.99 40.25 26.89 
+
+## Ours 55.40 60.20 55.30 62.10 61.40 66.00 54.20 59.11 51.40 37.91 52.27 36.61 
+
+Table 1: Artifact localization performance, measured by mIoU and F1, under the official SynthScars protocol and on the LOKI and RichHF benchmarks. This comparison is conducted independently of the 246-entry curated CoT test split used for controlled ablations. Published baseline results are taken from the SynthScars benchmark, whereas Gemini-3-Flash is evaluated by us under the same protocol. Supervised Fine-Tuning (SFT). In the supervised fine-tuning stage, we train the model on the SynthScars-CoT dataset for 5 epochs using the AdamW optimizer with a learning rate of 2 × 10 −5,
+
+𝛽 = (0.9, 0.95 ), and no weight decay. We apply a linear warmup schedule with 100 warmup steps, followed by linear decay. Training is performed in bf16 precision using DeepSpeed ZeRO-2 on four RTX 4090 GPUs. The per-GPU batch size is set to 7, resulting in an effective batch size of 28 without gradient accumulation. In total, the SFT stage runs for approximately 820 optimization steps. Low-Rank Adaptation (LoRA) [ 9] is applied to the language model backbone with rank 𝑟 = 8, scaling factor 𝛼 = 16 , and dropout rate 
+
+0.05 . Following prior practice, LoRA adapters are injected only into the query and value projection matrices ( q_proj , v_proj ) of the transformer layers. SFT updates these LoRA adapters, both visual projectors 𝜙 proj and 𝜓 proj , and the text-to-prompt adapter 𝜙 tp ; the shared CLIP encoder, DDIM inversion–reconstruction module, and SAM encoder-decoder remain frozen. 
+
+Reinforcement Learning with GRPO. After SFT converges at approximately 820 optimization steps, we further train the model for three epochs on the same SynthScars-CoT training split using AdamW with a learning rate of 1.0 × 10 −5. The per-device batch size is 4 with four gradient-accumulation steps. For each prompt, we sample 𝐺 = 4 completions with a temperature of 0.8 and a maximum generation length of 512 tokens. During this stage, only the LoRA and text-to-prompt adapters are updated, while the shared CLIP encoder, DDIM module, visual projectors, and SAM components remain frozen. Optimization employs the clipped GRPO objective with KL regularization against the frozen SFT reference policy. As detailed in Section 3.4, the mask and format/evidence-reference rewards are weighted by 0.7 and 0.6, respectively, with an addi-tional 0.5 bonus for predictions whose mask IoU exceeds 0.7. This stage jointly improves artifact localization and structured evidence referencing, but does not guarantee the semantic faithfulness of the generated explanations. 
+
+Standalone Detection Training. For image-level detection, we train only a binary head over RGB and residual features extracted by the shared-weight frozen CLIP backbone using cross-entropy. The forensic stream uses the same frozen Stable Diffusion v1.5 DDIM inversion–reconstruction pipeline with 𝑇 = 50 and computes 
+
+R = |x − ˆx|. Following the LEGION protocol [ 14 ], the detector is trained on ProGAN and evaluated on UniversalFakeDetect. We use AdamW at 1 × 10 −4, cosine learning-rate decay, bf16 precision, and concatenation of semantic and residual [CLS] features. 
+
+## 4.3 Baselines and Evaluation Protocol 
+
+We evaluate artifact localization under two deliberately separated protocols. Table 1 follows the full official SynthScars evaluation and additionally reports LOKI and RichHF. The comparison in-cludes forensic localization networks such as HiFi-Net, TruFor, and PAL4VST; general or multimodal segmentation models such as LISA, InternVL2, and Qwen2-VL; and the forensic reasoning model LEGION. Published baseline values are taken from the SynthScars benchmark rather than reimplemented, while Gemini-3-Flash is evaluated by us under the same official protocol. 2 These rows are used for benchmark-level comparison. The controlled component, cue-construction, reward, and counterfactual analyses in Section 4.6 instead use the image-disjoint SynthScars-CoT split with 246 test entries. They compare variants within a fixed internal setting and should not be compared numerically with the official-split results in Table 1. For image-level detection, we follow the UniversalFakeDe-tect protocol used by LEGION [ 14 ]: the LaP-Forensics detector is trained on ProGAN and evaluated separately on seven genera-tor families. Published detector rows are taken from the LEGION benchmark report. DRCT is our evaluation of the official DRCT-2M checkpoint under the same folder-level test protocol, and the LaP-Forensics row corresponds to the separately trained RGB+DDIM-residual detector described in Section 3. Because the compared checkpoints use method-specific objectives and training sources,                                                                                     
+
+> 2Official Gemini 3 Flash model documentation: https://ai.google.dev/gemini-api/docs/ models/gemini-3-flash-preview. 5Wang et al., Can Wang, Yuhao Wang, Yushe Cao, Canran Xiao, and Fei Shen
+> Method GANs Deepfakes Diffusion CRN IMLE SITD SAN
+> Co-occurrence [23] 75.17 59.14 73.06 87.21 68.98 60.42 85.53 Freq-spec [54] 75.28 45.18 53.61 50.98 47.46 57.12 69.00 CNNSpot [44] 85.29 53.47 86.31 86.26 66.67 48.69 58.63 PatchForensics [2] 69.97 75.54 72.33 55.30 75.14 75.28 72.54 UniFD [24] 95.25 66.60 59.50 72.00 63.00 57.50 82.02 LDGard [41] 89.17 58.00 50.74 50.78 62.50 50.00 89.79 FreqNet [39] 94.23 97.40 71.92 67.35 88.92 59.04 83.34 NPR [40] 94.16 76.89 50.00 50.00 66.94 98.63 94.54
+> LEGION [14] 97.01 63.37 90.78 98.93 79.44 57.76 83.10 DRCT [3] 56.66 57.10 78.33 50.06 51.18 76.94 87.90
+> LaP-Forensics (Ours) 97.23 71.30 92.18 98.98 98.62 81.11 88.62
+
+Table 2: Synthetic-image detection accuracy (%) on Universal-FakeDetect. Published baseline numbers are taken from [ 14 ]; DRCT is our evaluation of the official DRCT-2M checkpoint under the same folder protocol. The last row reports our separately trained RGB+DDIM-residual detector with [CLS] 
+
+concatenation. 
+
+Table 2 is a benchmark comparison rather than an isolated archi-tectural ablation. 
+
+## 4.4 Detection Performance 
+
+Table 2 reports accuracy across the seven UniversalFakeDetect fam-ilies, and Figure 4 visualizes the same profile. LaP-Forensics obtains 97.23% on GANs, 71.30% on Deepfakes, 92.18% on Diffusion, 98.98% on CRN, 98.62% on IMLE, 81.11% on SITD, and 88.62% on SAN. It gives the highest reported accuracy in the GANs, Diffusion, CRN, and IMLE columns. On Deepfakes, SITD, and SAN, specialized base-lines remain stronger, illustrating that no evaluated detector domi-nates every generator family. Relative to LEGION, LaP-Forensics is nearly tied on GANs (+0.22 points) and CRN (+0.05), while the largest differences occur on IMLE (+19.18) and SITD (+23.35). These family-level differences are descriptive and are not statistical signif-icance estimates. The official DRCT-2M checkpoint is also lower in this evaluation, although the difference narrows to 0.72 points on SAN and 4.17 on SITD and is larger on the remaining families. This official-checkpoint comparison does not isolate the residual rep-resentation because the methods use different training objectives and checkpoints. The resulting profile is not confined to diffusion-generated images: the RGB-plus-reconstruction representation also transfers numerically to GAN, CRN, and IMLE families under the evaluated protocol. We interpret the DDIM residual only as a fixed-reference compatibility cue. Performance on GAN or CRN images neither identifies their source mechanism nor implies that those generators follow a diffusion trajectory. Table 3 additionally reports LaP-Forensics on selected generator subsets from MSCOCOAI [ 28 ]and OpenSDI [ 45 ]. These results complement the UniversalFakeDe-tect evaluation but do not constitute a comprehensive assessment of open-world distribution shift or post-processing reliability. 
+
+## 4.5 Qualitative Visualization 
+
+Figure 5 compares six representative cases using the input image, consistency map, ground-truth mask, LEGION prediction, and LaP-Forensics prediction. In several examples, LaP-Forensics produces more spatially coherent masks that better cover the annotated regions, preserve thin or localized structures, and reduce discon-nected activations. The comparison also highlights differences in boundary continuity and in the suppression of scattered responses. 50 60 70 80 90 100 
+
+> GANs Deepfakes Diffusion CRN IMLE SITD SAN Methods
+> Co-occurrence (72.79) Freq-spec (56.95) CNNSpot (69.33) PatchForensics (70.87) UniFD (70.84) LDGard (64.43) FreqNet (80.31) NPR (75.88) LEGION (81.48) LaP-Forensics (Ours) (89.72)
+
+Figure 4: Family-level detection accuracy on Universal-FakeDetect, complementing Table 2. The LaP-Forensics curve corresponds to the RGB+DDIM-residual detector.           
+
+> Dataset Generator Accuracy (%)
+> MSCOCOAI DALL-E 3 80.89 Midjourney 81.06 OpenSDI SD1.5 83.02 SD2.1 78.34 SDXL 80.15 SD3 88.56
+> FLUX 81.71
+
+Table 3: Generator-specific detection accuracy (%) of LaP-Forensics on selected subsets of MSCOCOAI [ 28 ] and OpenSDI [ 45 ]. This evaluation complements the Universal-FakeDetect results and is not intended as a comprehensive assessment under open-world or post-processing conditions. 
+
+Notably, the consistency map provides complementary spatial cues when appearance-based anomalies are weak or distributed across multiple regions, helping the model associate reconstruction mis-match with semantic image content. However, some predictions remain conservative around subtle boundaries or small manipulated regions, indicating that weak residual responses can still lead to under-segmentation. These selected examples are intended to illus-trate mask extent, boundary alignment, and fragmentation rather than establish uniform superiority; the quantitative results remain the primary basis for distribution-level comparison. 
+
+## 4.6 Ablation Studies 
+
+Table 4 summarizes three controlled analyses under the same cu-rated SynthScars-CoT protocol. Overall, the results show that the reconstruction residual is the most critical component, while struc-tured CoT supervision and GRPO further improve localization and output alignment. Among the evaluated cue constructions, the multi-step DDIM residual clearly outperforms both RGB-only input and the single-step VAE residual, with 𝑇 = 50 providing the best balance among the tested inversion horizons. The reward ablation in Table 5 further demonstrates that mask, format, and evidence-reference objectives provide complementary supervision, while the counterfactual interventions in Table 6 confirm that the predicted masks materially depend on the supplied consistency map. All re-sults in this section are obtained using the curated internal split and should not be directly compared with the official benchmark results in Table 1. 
+
+> 6LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection
+
+Figure 5: Qualitative comparison against LEGION on six se-lected manipulated images. Each row shows the input image, consistency map, ground-truth edited region, LEGION mask, and LaP-Forensics mask. In these examples, our predictions more closely follow several fine boundaries and localized regions while reducing some scattered activations. Model components. Removing the residual stream causes the largest performance drop, reducing mIoU from 72.19 to 61.83 and F1 from 63.62 to 41.71, which highlights the importance of reconstruction-based compatibility cues beyond RGB semantics alone. The substantially larger decrease in F1 further suggests that the residual stream is particularly important for preserving coherent artifact regions and reducing fragmented predictions. Removing the structured CoT supervision leads to a smaller but consistent decline to 69.72 mIoU and 59.18 F1, indicating that the Where–What–Why reasoning structure also contributes to more accurate localization. This result implies that explicitly organizing observation, evidence analysis, and inference helps connect the generated [SEG] representation with the relevant forensic regions. Using SFT without the subsequent GRPO stage achieves 63.05/55.40, suggesting that supervised learning alone is insufficient to fully align the generated reasoning with the local-ization objective. In contrast, applying GRPO with only the mask reward further degrades performance to 55.46/37.91, showing that direct mask optimization without structural and evidence-reference constraints can produce unstable or poorly aligned outputs. The inferior mask-only result also indicates that optimizing a single outcome metric may disrupt the structured generation behavior                                 
+
+> Configuration mIoU (%) F1 (%)
+> Model components
+> Full model 72.19 63.62
+> w/o residual stream 61.83 41.71 w/o CoT supervision 69.72 59.18 SFT only 63.05 55.40 GRPO with mask reward only 55.46 37.91
+> Compatibility-cue construction
+> RGB input only 61.83 41.71 Single-step VAE 64.58 49.42 DDIM inversion ( 𝑇 =50 )72.19 63.62
+> DDIM inversion horizon
+> 𝑇 =20 69.89 56.72
+> 𝑇 =50 72.19 63.62
+> 𝑇 =100 60.50 48.77
+
+Table 4: Ablation studies on the curated SynthScars-CoT test split, evaluating model components, compatibility-cue con-struction, and the DDIM inversion horizon. The best result in each group is highlighted in bold. 
+
+learned during SFT. As further supported by Table 5, adding format and evidence-reference rewards progressively improves both localization accuracy and CoT-format compliance. Overall, the best performance is achieved only when the residual stream, structured CoT supervision, and the complete GRPO reward are jointly employed, demonstrating that these components provide complementary rather than redundant benefits. 
+
+Compatibility-cue construction. This ablation isolates the contri-bution of reconstruction-based information from the specific DDIM formulation. Compared with the RGB-only baseline, introducing a single-step VAE residual improves mIoU from 61.83 to 64.58 and F1 from 41.71 to 49.42, indicating that even a simple reconstruction cue provides complementary information beyond appearance se-mantics. Replacing the VAE residual with the 𝑇 = 50 DDIM residual further increases performance to 72.19 mIoU and 63.62 F1, corre-sponding to additional gains of 7.61 and 14.20 points, respectively. The larger improvement suggests that the multi-step inversion– reconstruction process yields a more informative spatial compati-bility pattern than a single-step reconstruction. In particular, the DDIM residual appears to better expose localized mismatches that can be aligned with artifact boundaries during multimodal reason-ing. These results support the use of the tested DDIM-based cue under the controlled setting, but do not imply that all source gen-erators follow a diffusion trajectory or that the residual directly identifies the underlying generation mechanism. 
+
+DDIM inversion horizon. The inversion horizon exhibits a clear non-monotonic effect on localization performance. Increasing 𝑇 
+
+from 20 to 50 improves mIoU from 69.89 to 72.19 and F1 from 56.72 to 63.62, indicating that a moderate inversion depth produces a more informative compatibility signal. However, further increas-ing the horizon to 𝑇 = 100 substantially reduces performance to 60.50 mIoU and 48.77 F1. This degradation suggests that overly long inversion may introduce excessive reconstruction deviation or amplify benign image details, thereby weakening the spatial cor-respondence between the residual map and actual artifact regions. Among the evaluated settings, 𝑇 = 50 provides the best balance be-tween residual sensitivity and localization reliability. Nevertheless,                
+
+> 7Wang et al., Can Wang, Yuhao Wang, Yushe Cao, Canran Xiao, and Fei Shen
+> GRPO Reward Configuration mIoU (%) F1 (%) CoT-Fmt (%)
+> Mask only 55.46 37.91 67.3 Mask + format 70.84 61.15 94.6 Mask + evidence reference 68.32 58.47 86.1 Full reward 72.19 63.62 97.5
+
+Table 5: Ablation of individual GRPO reward components on the curated SynthScars-CoT test split. CoT-Fmt denotes the rate of outputs satisfying the required CoT structure and formatting constraints. The best result in each column is highlighted in bold. 
+
+this result is specific to the current backbone and evaluation pro-tocol and does not establish 50 steps as universally optimal across datasets, resolutions, or post-processing conditions. 
+
+Per-term GRPO reward ablation. Table 5 examines the individual contributions of the mask, output-format, and evidence-reference rewards while keeping the SFT checkpoint and curated data fixed. Using the mask reward alone yields only 55.46 mIoU and 37.91 F1, indicating that direct localization supervision is insufficient to reliably align the generated [SEG] state with the desired output structure. Adding the format reward substantially improves perfor-mance to 70.84 mIoU and 61.15 F1, together with a CoT-Format-Rate of 94.6%. The evidence-reference term also produces clear gains over the mask-only setting, reaching 68.32 mIoU, 58.47 F1, and 86.1% format compliance. Combining all reward terms achieves the best overall results of 72.19 mIoU, 63.62 F1, and 97.5% CoT-Format-Rate, showing that structural constraints and evidence referencing provide complementary supervision. CoT-Format-Rate measures compliance with the required three-step structure and the presence of the [SEG] marker, rather than the semantic truth or faithfulness of the generated explanation. 
+
+Counterfactual map intervention. To examine whether the model genuinely uses the consistency map, we perform two coun-terfactual interventions at inference: replacing the map with an all-zero input or with a donor map from another image. The evaluation covers all 246 examples in the curated test split using greedy de-coding with seed 42, and predicted mask probabilities are binarized at 0.5 before computing mIoU@0.5. As reported in Table 6, remov-ing the consistency signal reduces mIoU@0.5 from 0.721 to 0.604, while the masks predicted with the normal and zero maps achieve an average mutual IoU of only 0.46. Replacing the original map with a donor map yields a similar performance drop to 0.611 and causes 41.2% of the predicted masks to shift toward high-response regions in the donor map. The zero-map intervention shows that performance cannot be recovered from RGB information alone, whereas the donor-map intervention further demonstrates sensitiv-ity to the spatial content of the supplied consistency signal rather than merely the presence of a second input stream. Together, these results provide intervention-based evidence that the predicted lo-calization masks materially depend on the consistency map. This analysis concerns spatial output dependence and does not establish the semantic faithfulness of the generated free-form explanations. 
+
+Residual interpretation. The pixel-level DDIM residual can also respond to benign high-frequency structures, such as hair, woven fabrics, foliage, specular highlights, and resampling boundaries, even in the absence of manipulation. We therefore interpret the     
+
+> Map Condition mIoU@0.5
+> Normal map 0.721
+> Zero map 0.604 Donor map 0.611
+
+Table 6: Counterfactual interventions on the consistency map over all 246 examples in the curated SynthScars-CoT test split. Greedy decoding is used with seed 42, and predicted mask probabilities are binarized at a threshold of 0.5. This experiment evaluates the dependence of spatial predictions on the consistency map rather than the semantic faithfulness of free-form explanations. 
+
+residual through region-level continuity, low-contrast spatial pat-terns, and boundary transitions in conjunction with the correspond-ing RGB content, rather than treating isolated high-response pixels as direct manipulation evidence. LaP-Forensics encodes the resid-ual and RGB image using a shared-weight frozen vision backbone and fuses their representations, enabling the model to relate dif-fuse or fragmented residual patterns to semantic image structure. Nevertheless, the residual map is neither a calibrated manipulation-probability map nor an indicator of the source generator, and multi-modal fusion cannot fully eliminate responses caused by nuisance textures or post-processing artifacts. The counterfactual experi-ments confirm that the predicted masks depend on the residual input, but they do not establish the validity of every residual acti-vation or the semantic faithfulness of the generated explanations. 
+
+Limitations. The DDIM residual is tied to a fixed Stable Diffu-sion reference and may be affected by post-processing, subtle edits, and natural high-frequency textures, leading to weakened or spu-rious localization responses. Robustness under such degradations requires further systematic evaluation. Moreover, the text-side re-ward encourages evidence referencing but does not verify semantic faithfulness, and the curated CoT split is smaller than the official SynthScars test set; results across the two protocols should there-fore not be directly compared. 
+
+## 5 Conclusion 
+
+In this paper, we proposed LaP-Forensics, a dual-stream multimodal framework for synthetic-image detection, explainable forensic rea-soning, and artifact localization. Specifically, LaP-Forensics inte-grates RGB semantics with DDIM-derived reconstruction residuals, employs a structured Where–What–Why protocol to generate foren-sic analyses and pixel-level masks, and introduces a GRPO objective to jointly optimize localization quality, output structure, and evi-dence referencing. Extensive experiments on UniversalFakeDetect and SynthScars demonstrate strong cross-generator detection per-formance and competitive artifact localization under the evaluated protocols. Further ablation studies on cue construction, inversion horizon, model components, reward terms, and counterfactual map interventions verify the effectiveness of the residual stream and the proposed alignment strategy. Nevertheless, robustness to post-processing operations and the semantic faithfulness of free-form explanations remain open challenges, which will be investigated in future work through degradation-aware training and more direct evidence-faithfulness evaluation. 
+
+> 8
+
+LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection 
+
+## References 
+
+[1] George Cazenavette, Avneesh Sud, Thomas Leung, and Ben Usman. 2024. FakeIn-version: Learning to Detect Images from Unseen Text-to-Image Models by In-verting Stable Diffusion. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE Computer Society, Los Alamitos, CA, USA, 10759–10769. https://doi.org/10.1109/CVPR52733.2024.01023 [2] Lucy Chai, David Bau, Ser-Nam Lim, and Phillip Isola. 2020. What Makes Fake Images Detectable? Understanding Properties that Generalize. https: //doi.org/10.48550/arXiv.2008.10588 [3] Baoying Chen, Jishen Zeng, Jianquan Yang, and Rui Yang. 2024. DRCT: Diffusion Reconstruction Contrastive Training towards Universal Detection of Diffusion Generated Images. In Proceedings of the 41st International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 235) . PMLR, Vienna, Austria, 7621–7639. https://proceedings.mlr.press/v235/chen24ay.html [4] Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen, Sen Xing, Muyan Zhong, Qinglong Zhang, Xizhou Zhu, Lewei Lu, et al . 2024. InternVL: Scal-ing up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Seattle, WA, USA, 24185–24198. [5] Jingtong Dou, Chuancheng Shi, Jian Wang, Fei Shen, Zhiyong Wang, and Tat-Seng Chua. 2026. Beyond surface artifacts: Capturing shared latent forgery knowledge across modalities. arXiv preprint arXiv:2604.07763 (2026). [6] Jingtong Dou, Chuancheng Shi, Yemin Wang, Shiming Guo, Anqi Yi, Wenhua Wu, Li Zhang, Fei Shen, and Tat-Seng Chua. 2026. DNA: Uncovering Universal Latent Forgery Knowledge. arXiv preprint arXiv:2601.22515 (2026). [7] Fabrizio Guillaro, Davide Cozzolino, Avneesh Sud, Nicholas Dufour, and Luisa Verdoliva. 2023. TruFor: Leveraging All-Round Clues for Trustworthy Image Forgery Detection and Localization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Vancouver, BC, Canada, 20606–20615. [8] Xiao Guo, Xiaohong Liu, Zhiyuan Ren, Steven Grosz, Iacopo Masi, and Xiaoming Liu. 2023. Hierarchical Fine-Grained Image Forgery Detection and Localiza-tion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Vancouver, BC, Canada, 3155–3165. [9] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. LoRA: Low-Rank Adaptation of Large Language Models. https://doi.org/10.48550/arXiv.2106.09685 [10] Zhenglin Huang, Jinwei Hu, Xiangtai Li, Yiwei He, Xingyu Zhao, Bei Peng, Baoyuan Wu, Xiaowei Huang, and Guangliang Cheng. 2025. SIDA: Social Media Image Deepfake Detection, Localization and Explanation with Large Multimodal Model. https://doi.org/10.48550/arXiv.2412.04292 [11] Yikun Ji, Yan Hong, Bowen Deng, Jun Lan, Huijia Zhu, Weiqiang Wang, Liqing Zhang, and Jianfu Zhang. 2025. Locate-Then-Examine: Grounded Region Rea-soning Improves Detection of AI-Generated Images. https://doi.org/10.48550/ arXiv.2510.04225 [12] Yikun Ji, Hong Yan, Jun Lan, Huijia Zhu, Weiqiang Wang, Qi Fan, Liqing Zhang, and Jianfu Zhang. 2025. Interpretable and Reliable Detection of AI-Generated Images via Grounded Reasoning in MLLMs. https://doi.org/10.48550/arXiv.2506. 07045 [13] Zhengyuan Jiang, Yuyang Zhang, Moyang Guo, and Neil Zhenqiang Gong. 2025. EditTrack: Detecting and Attributing AI-assisted Image Editing. https://doi.org/ 10.48550/arXiv.2510.01173 [14] Hengrui Kang, Siwei Wen, Zichen Wen, Junyan Ye, Weijia Li, Peilin Feng, Baichuan Zhou, Bin Wang, Dahua Lin, Linfeng Zhang, and Conghui He. 2025. LEGION: Learning to Ground and Explain for Synthetic Image Detection. https://doi.org/10.48550/arXiv.2503.15264 [15] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollar, and Ross Girshick. 2023. Segment Anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE, Paris, France, 4015– 4026. [16] Xin Lai, Zhuotao Tian, Yukang Chen, Yanwei Li, Yuhui Yuan, Shu Liu, and Jiaya Jia. 2024. LISA: Reasoning Segmentation via Large Language Model. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Seattle, WA, USA, 9579–9589. [17] Lingzhi Li, Jianmin Bao, Ting Zhang, Hao Yang, Dong Chen, Fang Wen, and Baining Guo. 2020. Face X-Ray for More General Face Forgery Detection. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Seattle, WA, USA, 5001–5010. [18] Kaiqing Lin, Zhiyuan Yan, Ruoxin Chen, Junyan Ye, Ke-Yue Zhang, Yue Zhou, Peng Jin, Bin Li, Taiping Yao, and Shouhong Ding. 2025. Seeing Before Reasoning: A Unified Framework for Generalizable and Explainable Fake Image Detection. https://doi.org/10.48550/arXiv.2509.25502 [19] Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee. 2023. Improved Baselines with Visual Instruction Tuning. https://doi.org/10.48550/arXiv.2310.03744 [20] Huan Liu, Zichang Tan, Chuangchuang Tan, Yunchao Wei, Jingdong Wang, and Yao Zhao. 2024. Forgery-aware Adaptive Transformer for Generalizable Synthetic Image Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Seattle, WA, USA, 10770–10780. [21] Yuchen Luo, Yong Zhang, Junchi Yan, and Wei Liu. 2021. Generalizing Face Forgery Detection with High-Frequency Features. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Nashville, TN, USA, 16317–16326. [22] Lianrui Mu, Xingze Zou, Jianhong Bai, Jiaqi Hu, Wenjie Zheng, Jiangnan Ye, Jiedong Zhuang, Mudassar Ali, Jing Wang, and Haoji Hu. 2025. No Pixel Left Be-hind: A Detail-Preserving Architecture for Robust High-Resolution AI-Generated Image Detection. https://doi.org/10.48550/arXiv.2508.17346 [23] Lakshmanan Nataraj, Tajuddin Manhar Mohammed, Shivkumar Chandrasekaran, Arjuna Flenner, Jawadul H. Bappy, Amit K. Roy-Chowdhury, and B. S. Manjunath. 2019. Detecting GAN Generated Fake Images Using Co-Occurrence Matrices. https://doi.org/10.48550/arXiv.1903.06836 [24] Utkarsh Ojha, Yuheng Li, and Yong Jae Lee. 2023. Towards Universal Fake Image Detectors that Generalize Across Generative Models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Vancouver, BC, Canada, 24480–24489. [25] Yuyang Qian, Guojun Yin, Lu Sheng, Zixuan Chen, and Jing Shao. 2020. Thinking in Frequency: Face Forgery Detection by Mining Frequency-Aware Clues. In 
+
+Computer Vision – ECCV 2020 . Springer, Glasgow, UK, 86–103. [26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. 2021. Learning Transferable Visual Models from Natural Language Supervision. https://doi.org/10.48550/arXiv.2103.00020 [27] Andreas Rössler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. 2019. FaceForensics++: Learning to Detect Manipulated Fa-cial Images. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE, Seoul, Korea, 1–11. [28] Rajarshi Roy, Ashhar Aziz, Shashwat Bajpai, Nasrin Imanpour, Gurpreet Singh, Shwetangshu Biswas, Kapil Wanaskar, Parth Patwa, Subhankar Ghosh, Shreyas Dixit, Nilesh Ranjan Pal, Vipula Rawte, Ritvik Garimella, Amitava Das, Amit Sheth, Gaytri Jena, Vasu Sharma, Aishwarya Naresh Reganti, Vinija Jain, and Aman Chadha. 2026. A Comprehensive Dataset for Human vs. AI Generated Image Detection. https://doi.org/10.48550/arXiv.2601.00553 [29] Zeyang Sha, Yicong Tan, Mingjie Li, Michael Backes, and Yang Zhang. 2024. ZeroFake: Zero-Shot Detection of Fake Images Generated and Edited by Text-to-Image Generation Models. In Proceedings of the 2024 ACM SIGSAC Conference on Computer and Communications Security . Association for Computing Machinery, New York, NY, USA, 4852–4866. https://doi.org/10.1145/3658644.3690297 [30] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, Daya Guo, et al . 2024. DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. https: //doi.org/10.48550/arXiv.2402.03300 [31] Fei Shen, Xin Jiang, Xin He, Hu Ye, Cong Wang, Xiaoyu Du, Zechao Li, and Jinhui Tang. 2025. Imagdressing-v1: Customizable virtual dressing. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 6795–6804. [32] Fei Shen and Jinhui Tang. 2024. Imagpose: A unified conditional framework for pose-guided person generation. Advances in neural information processing systems 37 (2024), 6246–6266. [33] Fei Shen, Hu Ye, Sibo Liu, Jun Zhang, Cong Wang, Xiao Han, and Yang Wei. 2025. Boosting consistency in story visualization with rich-contextual conditional diffusion models. In Proceedings of the AAAI Conference on Artificial Intelligence ,Vol. 39. 6785–6794. [34] Fei Shen, Hu Ye, Jun Zhang, Cong Wang, Xiao Han, and Yang Wei. 2024. Ad-vancing Pose-Guided Image Synthesis with Progressive Conditional Diffusion Models. In The Twelfth International Conference on Learning Representations .https://openreview.net/forum?id=rHzapPnCgT [35] Fei Shen, Jian Yu, Cong Wang, Xin Jiang, Xiaoyu Du, and Jinhui Tang. 2025. IMAGGarment-1: Fine-Grained Garment Generation for Controllable Fashion Design. arXiv preprint arXiv:2504.13176 (2025). [36] Zenan Shi, Wenyu Liu, and Haipeng Chen. 2025. Face Reconstruction-Based Generalized Deepfake Detection Model with Residual Outlook Attention. ACM Transactions on Multimedia Computing, Communications, and Applications 21, 4 (2025), 1–19. https://doi.org/10.1145/3686162 [37] Jiaming Song, Chenlin Meng, and Stefano Ermon. 2021. Denoising Diffusion Implicit Models. https://doi.org/10.48550/arXiv.2010.02502 [38] Ke Sun, Shen Chen, Taiping Yao, Ziyin Zhou, Jiayi Ji, Xiaoshuai Sun, Chia-Wen Lin, and Rongrong Ji. 2025. Towards General Visual-Linguistic Face Forgery Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Nashville, TN, USA, 19576–19586. [39] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. 2024. Frequency-Aware Deepfake Detection: Improving Generalizability through Frequency Space Domain Learning. Proceedings of the AAAI Conference on Artificial Intelligence 38, 5 (2024), 5052–5060. https://doi.org/10.1609/aaai. v38i5.28310 [40] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, Ping Liu, and Yunchao Wei. 2024. Rethinking the Up-Sampling Operations in CNN-Based Generative 9Wang et al., Can Wang, Yuhao Wang, Yushe Cao, Canran Xiao, and Fei Shen 
+
+Network for Generalizable Deepfake Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Seattle, WA, USA, 28130–28139. [41] Chuangchuang Tan, Yao Zhao, Shikui Wei, Guanghua Gu, and Yunchao Wei. 2023. Learning on Gradients: Generalized Artifacts Representation for GAN-Generated Images Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Vancouver, BC, Canada, 12105–12114. [42] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al . 2023. Llama 2: Open Foundation and Fine-Tuned Chat Models. https://doi.org/10.48550/arXiv.2307.09288 [43] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, et al . 2024. Qwen2-VL: Enhancing Vision-Language Model’s Perception of the World at Any Resolution. https: //doi.org/10.48550/arXiv.2409.12191 [44] Sheng-Yu Wang, Oliver Wang, Richard Zhang, Andrew Owens, and Alexei A. Efros. 2020. CNN-Generated Images Are Surprisingly Easy to Spot...for Now. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) . IEEE, Seattle, WA, USA, 8695–8704. [45] Yabin Wang, Zhiwu Huang, and Xiaopeng Hong. 2025. OpenSDI: Spotting Diffusion-Generated Images in the Open World. https://doi.org/10.48550/arXiv. 2503.19653 [46] Zhendong Wang, Jianmin Bao, Wengang Zhou, Weilun Wang, Hezhen Hu, Hong Chen, and Houqiang Li. 2023. DIRE for Diffusion-Generated Image Detection. https://doi.org/10.48550/arXiv.2303.09295 [47] Shiyu Wu, Shuyan Li, Jing Li, Jing Liu, and Yequan Wang. 2025. Few-Shot Syn-thetic Image Attribution: Identifying Unseen Generators with Limited Samples. https://doi.org/10.48550/arXiv.2509.25682 [48] Zitong Xu, Huiyu Duan, Xiaoyu Wang, Zhaolin Cai, Kaiwei Zhang, Qiang Hu, Jing Liu, Xiongkuo Min, and Guangtao Zhai. 2025. ManipShield: A Unified Framework for Image Manipulation Detection, Localization and Explanation. https://doi.org/10.48550/arXiv.2511.14259 [49] Bosheng Yan, Chang-Tsun Li, and Xuequan Lu. 2024. JRC: Deepfake detection via joint reconstruction and classification. Neurocomputing 598 (2024), 127862. https://doi.org/10.1016/j.neucom.2024.127862 [50] Shilin Yan, Ouxiang Li, Jiayin Cai, Yanbin Hao, Xiaolong Jiang, Yao Hu, and Weidi Xie. 2025. A Sanity Check for AI-generated Image Detection. https: //doi.org/10.48550/arXiv.2406.19435 [51] Yongqi Yang, Zhihao Qian, Ye Zhu, Olga Russakovsky, and Yu Wu. 2025. D 3:Scaling Up Deepfake Detection by Learning from Discrepancy. https://doi.org/ 10.48550/arXiv.2404.04584 [52] Zheng Yang, Ruoxin Chen, Zhiyuan Yan, Ke-Yue Zhang, Xinghe Fu, Shuang Wu, Xiujun Shu, Taiping Yao, Shouhong Ding, Zequn Qin, and Xi Li. 2025. All Patches Matter, More Patches Better: Enhance AI-Generated Image Detection via Panoptic Patch Learning. https://doi.org/10.48550/arXiv.2504.01396 [53] Lingzhi Zhang, Zhengjie Xu, Connelly Barnes, Yuqian Zhou, Qing Liu, He Zhang, Sohrab Amirghodsi, Zhe Lin, Eli Shechtman, and Jianbo Shi. 2023. Perceptual Artifacts Localization for Image Synthesis Tasks. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE, Paris, France, 7579– 7590. [54] Xu Zhang, Svebor Karaman, and Shih-Fu Chang. 2019. Detecting and Simulating Artifacts in GAN Fake Images. In 2019 IEEE International Workshop on Information Forensics and Security (WIFS) . IEEE, Delft, Netherlands, 1–6. [55] Peng Zhou, Xintong Han, Vlad I. Morariu, and Larry S. Davis. 2018. Learning Rich Features for Image Manipulation Detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, Salt Lake City, UT, USA, 1053–1061. [56] Yuchen Zhou, Jiayu Tang, Xiaoyan Xiao, Yueyao Lin, Linkai Liu, Zipeng Guo, Hao Fei, Xiaobo Xia, and Chao Gou. 2025. Where, What, Why: Towards Explainable Driver Attention Prediction. https://doi.org/10.48550/arXiv.2506.23088 [57] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. 2023. MiniGPT-4: Enhancing Vision-Language Understanding with Advanced Large Language Models. https://doi.org/10.48550/arXiv.2304.10592 10
